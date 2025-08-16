@@ -1,0 +1,23 @@
+{
+  "name": "@hello-terrain/workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/get-git-info.js && pnpm -r build",
+    "dev": "node scripts/get-git-info.js && pnpm -r --parallel dev",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --apply .",
+    "format": "biome format .",
+    "format:fix": "biome format --write .",
+    "check": "biome check .",
+    "check:fix": "biome check --apply .",
+    "type-check": "pnpm -r type-check",
+    "clean": "pnpm -r clean"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.8.3",
+    "typescript": "^5.5.4"
+  },
+  "packageManager": "pnpm@9.5.0"
+}

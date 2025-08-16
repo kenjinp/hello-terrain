@@ -1,0 +1,92 @@
+name: Deploy to Development
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  NODE_VERSION: '20'
+  PNPM_VERSION: '9.5.0'
+
+jobs:
+  build-and-deploy-dev:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build docs
+        run: |
+          cd apps/docs
+          pnpm build
+
+      - name: Build examples
+        run: |
+          cd apps/examples
+          pnpm build
+
+      - name: Setup Pulumi
+        uses: pulumi/setup-pulumi@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy infrastructure and assets (dev)
+        working-directory: infrastructure
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+          DOMAIN: ${{ secrets.DOMAIN || 'hello-terrain.kenny.wtf' }}
+          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'hello-terrain.kenny.wtf' }}
+          ENVIRONMENT: dev
+          PULUMI_AWS_REGION: us-east-1
+        run: |
+          # Install infrastructure dependencies
+          pnpm install --frozen-lockfile
+          
+          # Set Pulumi configuration for dev
+          pulumi config set aws:region $PULUMI_AWS_REGION
+          pulumi config set domain $DOMAIN
+          pulumi config set environment $ENVIRONMENT
+          pulumi config set route53:domainName $DOMAIN_NAME
+          
+          # Deploy infrastructure and assets
+          pulumi up --yes
+
+      - name: Deploy status (dev)
+        run: |
+          echo "✅ Development deployment completed successfully!"
+          echo "🌐 Main site: https://hello-terrain.kenny.wtf"
+          echo "🎮 Examples: https://hello-terrain.kenny.wtf/examples"
+          echo "⚠️  This is a development deployment"

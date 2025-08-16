@@ -1,0 +1,39 @@
+{
+  "name": "@hello-terrain/react",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "lint": "biome lint src",
+    "lint:fix": "biome lint --apply src",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@react-three/fiber": "^9.3.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "three": "^0.178.0"
+  },
+  "dependencies": {
+    "@hello-terrain/three": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.10",
+    "@types/react-dom": "^19.1.7",
+    "@types/three": "^0.178.0",
+    "typescript": "^5.5.4"
+  }
+}

@@ -1,0 +1,4 @@
+packages:
+  - 'packages/hello-terrain/*'
+  - 'apps/*'
+  - 'infrastructure'

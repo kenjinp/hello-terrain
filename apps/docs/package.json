@@ -1,0 +1,41 @@
+{
+  "name": "@hello-terrain/docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "prebuild": "node ../../scripts/get-git-info.js",
+    "build": "next build",
+    "dev": "next dev --turbo",
+    "start": "next start",
+    "postinstall": "fumadocs-mdx"
+  },
+  "dependencies": {
+    "@hello-terrain/react": "workspace:*",
+    "@hello-terrain/three": "workspace:*",
+    "@react-three/drei": "^10.7.3",
+    "@react-three/fiber": "^9.3.0",
+    "fumadocs-core": "15.7.2",
+    "fumadocs-mdx": "11.8.0",
+    "fumadocs-ui": "15.7.2",
+    "leva": "^0.10.0",
+    "maath": "^0.10.8",
+    "next": "15.5.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "three": "^0.179.1",
+    "three-stdlib": "^2.36.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "24.3.0",
+    "@types/react": "^19.1.11",
+    "@types/react-dom": "^19.1.7",
+    "@types/three": "^0.179.0",
+    "@types/uuid": "^10.0.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.12",
+    "typescript": "^5.9.2"
+  }
+}

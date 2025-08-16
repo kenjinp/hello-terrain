@@ -1,0 +1,26 @@
+{
+  "name": "@hello-terrain/infrastructure",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "PULUMI_NODEJS_EXEC=ts-node pulumi preview",
+    "deploy": "PULUMI_NODEJS_EXEC=ts-node pulumi up",
+    "destroy": "PULUMI_NODEJS_EXEC=ts-node pulumi destroy",
+    "refresh": "PULUMI_NODEJS_EXEC=ts-node pulumi refresh"
+  },
+  "dependencies": {
+    "@pulumi/aws": "^7.5.0",
+    "@pulumi/awsx": "^3.0.0",
+    "@pulumi/command": "^1.1.0",
+    "@pulumi/pulumi": "^3.191.0",
+    "mime": "^4.0.7"
+  },
+  "devDependencies": {
+    "@types/mime": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0"
+  }
+}
