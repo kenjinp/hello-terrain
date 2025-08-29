@@ -1,4 +1,5 @@
 "use client";
+import { useMetrics } from "@/components/Metrics/Metrics";
 import {
   Environment,
   OrbitControls,
@@ -69,6 +70,18 @@ const TerrainMaterial = () => {
 
   const dirLight = useRef<THREE.DirectionalLight>(null);
   const cameraLight = useRef<THREE.PointLight>(null);
+
+  const setMetric = useMetrics([
+    "computeTime",
+    "quadtreeResolutionTime",
+    "leafNodeCount",
+    "deepestLevel",
+    "cameraAltitude",
+    "terrainHeight",
+    "hashTime",
+    "hash",
+    "hasStateChanged",
+  ] as const);
 
   const quadtreeControls = useControls("Texture Settings", {
     lightPosition: {
@@ -780,10 +793,7 @@ const TerrainMaterial = () => {
         shaderData.cameraHeightBuffer
       );
       const after = performance.now();
-      const computeTimeElement = document.getElementById("computeTime");
-      if (computeTimeElement) {
-        computeTimeElement.textContent = `${(after - before).toFixed(2)}ms`;
-      }
+      setMetric("computeTime", `${(after - before).toFixed(2)}ms`);
       const dataView = new DataView(heightBuffer);
       tempCameraHeightBuffer[0] = dataView.getFloat32(0, true); // true for little-endian
       return tempCameraHeightBuffer[0];
@@ -795,6 +805,7 @@ const TerrainMaterial = () => {
     shaderData.computeHeightAtCameraPosition,
     gl,
     shaderData.cameraHeightBuffer,
+    setMetric,
   ]);
 
   useFrame(async (state, delta) => {
@@ -815,29 +826,19 @@ const TerrainMaterial = () => {
     const beforeUpdate = performance.now();
     // quadTree.update(cameraHeightVector);
     const afterUpdate = performance.now();
-    const quadtreeResolutionTimeElement = document.getElementById(
-      "quadtreeResolutionTime"
+    setMetric(
+      "quadtreeResolutionTime",
+      `${(afterUpdate - beforeUpdate).toFixed(2)}ms`
     );
-    if (quadtreeResolutionTimeElement) {
-      quadtreeResolutionTimeElement.textContent = `${(
-        afterUpdate - beforeUpdate
-      ).toFixed(2)}ms`;
-    }
 
     const nodeCount = quadTree.getNodeCount();
     const leafNodeCount = quadTree.getLeafNodeCount();
 
-    const leafNodeCountElement = document.getElementById("leafNodeCount");
-    if (leafNodeCountElement) {
-      leafNodeCountElement.textContent = `leaf ${leafNodeCount} / ${nodeCount}`;
-    }
+    setMetric("leafNodeCount", `leaf ${leafNodeCount} / ${nodeCount}`);
 
     const currentDeepestLevel = quadTree.getDeepestLevel();
 
-    const deepestLevelElement = document.getElementById("deepestLevel");
-    if (deepestLevelElement) {
-      deepestLevelElement.textContent = currentDeepestLevel.toString();
-    }
+    setMetric("deepestLevel", currentDeepestLevel.toString());
 
     // Update uniforms
     if (shaderData.rootSizeUniform) {
@@ -879,17 +880,12 @@ const TerrainMaterial = () => {
     shaderData.nodeStorageBufferAttribute.needsUpdate = true;
     shaderData.leafNodeMaskStorageBufferAttribute.needsUpdate = true;
 
-    const cameraAltitudeElement = document.getElementById("cameraAltitude");
-    if (cameraAltitudeElement) {
-      cameraAltitudeElement.textContent = `${(
-        camera.position.y - terrainHeight
-      ).toFixed(2)}m`;
-    }
+    setMetric(
+      "cameraAltitude",
+      `${(camera.position.y - terrainHeight).toFixed(2)}m`
+    );
 
-    const terrainHeightElement = document.getElementById("terrainHeight");
-    if (terrainHeightElement) {
-      terrainHeightElement.textContent = `${terrainHeight.toFixed(2)}m`;
-    }
+    setMetric("terrainHeight", `${terrainHeight.toFixed(2)}m`);
 
     if (dirLight.current) {
       easing.damp3(
@@ -950,28 +946,14 @@ const TerrainMaterial = () => {
       const beforeHash = performance.now();
       lastHash.current = quadTree.getStateHash();
       const afterHash = performance.now();
-      const hashTimeElement = document.getElementById("hashTime");
-      if (hashTimeElement) {
-        hashTimeElement.textContent = `${(afterHash - beforeHash).toFixed(
-          2
-        )}ms`;
-      }
-      const hashElement = document.getElementById("hash");
-      if (hashElement) {
-        hashElement.textContent = lastHash.current.toString();
-      }
+      setMetric("hashTime", `${(afterHash - beforeHash).toFixed(2)}ms`);
+      setMetric("hash", lastHash.current.toString());
       if (mesh) {
         mesh.instanceMatrix.needsUpdate = true;
       }
-      const hasStateChangedElement = document.getElementById("hasStateChanged");
-      if (hasStateChangedElement) {
-        hasStateChangedElement.textContent = "true";
-      }
+      setMetric("hasStateChanged", "true");
     } else {
-      const hasStateChangedElement = document.getElementById("hasStateChanged");
-      if (hasStateChangedElement) {
-        hasStateChangedElement.textContent = "false";
-      }
+      setMetric("hasStateChanged", "false");
     }
   });
 
@@ -1074,125 +1056,42 @@ const GPUQuadtree = () => {
 
 const Scene = () => {
   return (
-    <>
-      <Canvas
-        style={{
-          position: "absolute",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-        }}
-        shadows
-        // biome-ignore lint/suspicious/noExplicitAny: <can't get it to work :p>
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          // soft shadows
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters
-          );
+    <Canvas
+      style={{
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100%",
+      }}
+      shadows
+      // biome-ignore lint/suspicious/noExplicitAny: <can't get it to work :p>
+      gl={async (props) => {
+        props.alpha = true;
+        props.antialias = true;
+        // soft shadows
+        const renderer = new THREE.WebGPURenderer(
+          props as WebGPURendererParameters
+        );
 
-          renderer.logarithmicDepthBuffer = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.shadowMap.enabled = true;
+        renderer.logarithmicDepthBuffer = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.shadowMap.enabled = true;
 
-          await renderer.init();
-          return renderer;
-        }}
-        camera={{
-          near: 0.1,
-          far: Number.MAX_SAFE_INTEGER,
-          position: [100, 2000, 100],
-        }}
-        dpr={[1, 1]}
-        performance={{ min: 0.5 }}
-      >
-        <GPUQuadtree />
-        <Skybox size={ROOT_SIZE_M * 2} />
-      </Canvas>
-
-      {/* Active Node Count Display */}
-      <div
-        className="absolute top-5 left-5 z-[1000] pointer-events-none bg-black/70 border border-white/20 rounded-lg"
-        style={{ fontFamily: "monospace", fontSize: "14px" }}
-      >
-        <div className="p-3 text-white">
-          <div className="space-y-1">
-            <div>
-              Quadtree resolution time:{" "}
-              <span
-                id="quadtreeResolutionTime"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Active Nodes:{" "}
-              <span
-                id="leafNodeCount"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Deepest Level:{" "}
-              <span
-                id="deepestLevel"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Compute Time:{" "}
-              <span
-                id="computeTime"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Camera Altitude:{" "}
-              <span
-                id="cameraAltitude"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Terrain Height:{" "}
-              <span
-                id="terrainHeight"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Camera Speed:{" "}
-              <span
-                id="cameraSpeed"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Hash Time:{" "}
-              <span
-                id="hashTime"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              Hash:{" "}
-              <span
-                id="hash"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-            <div>
-              hasStateChanged:{" "}
-              <span
-                id="hasStateChanged"
-                className="px-1 py-0.5 rounded bg-white/20 text-white text-sm"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
+        await renderer.init();
+        return renderer;
+      }}
+      camera={{
+        near: 0.1,
+        far: Number.MAX_SAFE_INTEGER,
+        position: [100, 2000, 100],
+      }}
+      dpr={[1, 1]}
+      performance={{ min: 0.5 }}
+    >
+      <GPUQuadtree />
+      <Skybox size={ROOT_SIZE_M * 2} />
+    </Canvas>
   );
 };
 

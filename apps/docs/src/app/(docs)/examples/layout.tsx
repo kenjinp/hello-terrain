@@ -1,4 +1,5 @@
 import Footer from "@/components/Footer";
+import { Metrics, MetricsProvider } from "@/components/Metrics/Metrics";
 import { baseOptions } from "@/lib/layout.shared";
 import { docsSource } from "@/lib/source";
 import { DocsLayout } from "fumadocs-ui/layouts/docs";
@@ -6,16 +7,22 @@ import { DocsLayout } from "fumadocs-ui/layouts/docs";
 export default function Layout({ children }: LayoutProps<"/examples">) {
   const layoutProps = { ...baseOptions() };
   return (
-    <DocsLayout
-      tree={docsSource.pageTree}
-      {...layoutProps}
-      nav={{
-        transparentMode: "top",
-        component: null,
-      }}
-    >
-      {children}
-      <Footer />
-    </DocsLayout>
+    <MetricsProvider>
+      <DocsLayout
+        tree={docsSource.pageTree}
+        {...layoutProps}
+        nav={{
+          transparentMode: "top",
+          component: null,
+        }}
+        sidebar={{
+          banner: <Metrics />,
+          footer: <h2>BANANANANAN</h2>,
+        }}
+      >
+        {children}
+        <Footer />
+      </DocsLayout>
+    </MetricsProvider>
   );
 }
