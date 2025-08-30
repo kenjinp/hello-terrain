@@ -1,4 +1,3 @@
-import Footer from "@/components/Footer";
 import { Metrics, MetricsProvider } from "@/components/Metrics/Metrics";
 import { baseOptions } from "@/lib/layout.shared";
 import { docsSource } from "@/lib/source";
@@ -17,11 +16,9 @@ export default function Layout({ children }: LayoutProps<"/examples">) {
         }}
         sidebar={{
           banner: <Metrics />,
-          footer: <h2>BANANANANAN</h2>,
         }}
       >
         {children}
-        <Footer />
       </DocsLayout>
     </MetricsProvider>
   );

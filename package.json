@@ -6,6 +6,7 @@
   "scripts": {
     "build": "node scripts/get-git-info.js && pnpm -r build",
     "dev": "node scripts/get-git-info.js && pnpm -r --parallel dev",
+    "deploy-local": "./scripts/deploy-local.sh",
     "lint": "biome lint .",
     "lint:fix": "biome lint --apply .",
     "format": "biome format .",

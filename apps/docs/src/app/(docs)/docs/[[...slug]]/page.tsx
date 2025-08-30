@@ -1,7 +1,5 @@
-import { baseOptions } from "@/lib/layout.shared";
 import { docsSource } from "@/lib/source";
 import { getMDXComponents } from "@/mdx-components";
-import { DocsLayout } from "fumadocs-ui/layouts/docs";
 import { createRelativeLink } from "fumadocs-ui/mdx";
 import {
   DocsBody,
@@ -20,20 +18,18 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
   const MDXContent = page.data.body;
 
   return (
-    <DocsLayout tree={docsSource.pageTree} {...baseOptions()}>
-      <DocsPage toc={page.data.toc} full={page.data.full}>
-        <DocsTitle>{page.data.title}</DocsTitle>
-        <DocsDescription>{page.data.description}</DocsDescription>
-        <DocsBody>
-          <MDXContent
-            components={getMDXComponents({
-              // this allows you to link to other pages with relative file paths
-              a: createRelativeLink(docsSource, page),
-            })}
-          />
-        </DocsBody>
-      </DocsPage>
-    </DocsLayout>
+    <DocsPage toc={page.data.toc} full={page.data.full}>
+      <DocsTitle>{page.data.title}</DocsTitle>
+      <DocsDescription>{page.data.description}</DocsDescription>
+      <DocsBody>
+        <MDXContent
+          components={getMDXComponents({
+            // this allows you to link to other pages with relative file paths
+            a: createRelativeLink(docsSource, page),
+          })}
+        />
+      </DocsBody>
+    </DocsPage>
   );
 }
 
