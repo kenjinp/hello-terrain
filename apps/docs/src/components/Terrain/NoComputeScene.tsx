@@ -6,13 +6,7 @@ import {
   useHelper,
   useTexture,
 } from "@react-three/drei";
-import {
-  Canvas,
-  type ThreeToJSXElements,
-  extend,
-  useFrame,
-  useThree,
-} from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { easing } from "maath";
 import { useCallback, useMemo, useRef } from "react";
@@ -46,13 +40,6 @@ import { vec2_fbm, warp_fbm } from "./fmb";
 import { HelloTerrain, useHelloTerrain } from "./lib/HelloTerrain/HelloTerrain";
 import { blendNormalsRNM } from "./lib/TSLNodes/Normals";
 import { createTriplanarTextureBlend } from "./lib/TSLNodes/Textures";
-
-declare module "@react-three/fiber" {
-  interface ThreeElements extends ThreeToJSXElements<typeof THREE> {}
-}
-
-// biome-ignore lint/suspicious/noExplicitAny: <idk its recommended way from drei>
-extend(THREE as any);
 
 const cameraHeightVector = new THREE.Vector3(0, 0, 0);
 const tempCameraHeightBuffer = new Float32Array(1);
@@ -333,7 +320,7 @@ const TerrainMaterial = () => {
       1
     );
     const cameraPositionHeight = storage(cameraHeightBuffer, "f32", 1);
-    const cameraPositionUniform = uniform(vec3(0, 0, 0)).label(
+    const cameraPositionUniform = uniform(vec3(0, 0, 0)).setname(
       "uCameraPosition"
     );
     const vNormal = varying(vec3(), "vNormal");
@@ -341,25 +328,25 @@ const TerrainMaterial = () => {
     const vWorldUv = varying(vec2(), "vWorldUv");
 
     // Create uniforms for all control values
-    const deltaUniform = uniform(0.1).label("delta");
-    const fbmIterationsUniform = uniform(12).label("fbmIterations");
-    const fbmAmplitudeUniform = uniform(8).label("fbmAmplitude");
-    const fbmFrequencyUniform = uniform(2).label("fbmFrequency");
-    const fbmLacunarityUniform = uniform(0.4).label("fbmLacunarity");
-    const fbmPersistenceUniform = uniform(0.85).label("fbmPersistence");
+    const deltaUniform = uniform(0.1).setname("delta");
+    const fbmIterationsUniform = uniform(12).setname("fbmIterations");
+    const fbmAmplitudeUniform = uniform(8).setname("fbmAmplitude");
+    const fbmFrequencyUniform = uniform(2).setname("fbmFrequency");
+    const fbmLacunarityUniform = uniform(0.4).setname("fbmLacunarity");
+    const fbmPersistenceUniform = uniform(0.85).setname("fbmPersistence");
 
-    const colorUniform = uniform(vec3(1, 1, 1)).label("myColorUniform");
-    const timeUniform = uniform(0).label("myTimeUniform");
+    const colorUniform = uniform(vec3(1, 1, 1)).setname("myColorUniform");
+    const timeUniform = uniform(0).setname("myTimeUniform");
     const { nodeBuffer, leafNodeMask } = quadTree
       ?.getNodeView()
       .getBuffers() ?? {
       nodeBuffer: new Float32Array(),
       leafNodeMask: new Uint32Array(),
     };
-    const rootOriginUniform = uniform(vec3(0, 0, 0)).label("rootOrigin");
-    const skirtLengthUniform = uniform(0).label("skirtLength");
-    const rootSizeUniform = uniform(1024 * PLANE_SIZE).label("rootSize");
-    const heightmapScaleUniform = uniform(100000).label("heightmapScale");
+    const rootOriginUniform = uniform(vec3(0, 0, 0)).setname("rootOrigin");
+    const skirtLengthUniform = uniform(0).setname("skirtLength");
+    const rootSizeUniform = uniform(1024 * PLANE_SIZE).setname("rootSize");
+    const heightmapScaleUniform = uniform(100000).setname("heightmapScale");
     const nodeStorageBufferAttribute =
       new THREE.StorageInstancedBufferAttribute(nodeBuffer, 4);
     const leafNodeMaskStorageBufferAttribute =
@@ -368,26 +355,28 @@ const TerrainMaterial = () => {
     // const lod = int(8); // Unused variable
     const bias = int(1);
 
-    const textureScaleUniform = uniform(0.01).label("textureScale");
-    const contrastUniform = uniform(1.0).label("contrast");
-    const slopeTransitionStartUniform = uniform(0.18).label(
+    const textureScaleUniform = uniform(0.01).setname("textureScale");
+    const contrastUniform = uniform(1.0).setname("contrast");
+    const slopeTransitionStartUniform = uniform(0.18).setname(
       "slopeTransitionStart"
     );
-    const slopeTransitionEndUniform = uniform(0.25).label("slopeTransitionEnd");
+    const slopeTransitionEndUniform =
+      uniform(0.25).setname("slopeTransitionEnd");
 
     // Distance-based normal blending uniforms
-    const enableDistanceBlendingUniform = uniform(1).label(
+    const enableDistanceBlendingUniform = uniform(1).setname(
       "enableDistanceBlending"
     );
-    const distanceBlendStartUniform = uniform(1000).label("distanceBlendStart");
-    const distanceBlendEndUniform = uniform(5000).label("distanceBlendEnd");
-    const distanceBlendStrengthUniform = uniform(1.0).label(
+    const distanceBlendStartUniform =
+      uniform(1000).setname("distanceBlendStart");
+    const distanceBlendEndUniform = uniform(5000).setname("distanceBlendEnd");
+    const distanceBlendStrengthUniform = uniform(1.0).setname(
       "distanceBlendStrength"
     );
 
     // LOD control uniforms
-    const lodBiasUniform = uniform(0.0).label("lodBias");
-    const lodScaleUniform = uniform(0.5).label("lodScale");
+    const lodBiasUniform = uniform(0.0).setname("lodBias");
+    const lodScaleUniform = uniform(0.5).setname("lodScale");
 
     // Helper function to calculate LOD level based on texture coordinate derivatives
     const calculateLODLevel = Fn(

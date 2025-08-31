@@ -333,7 +333,7 @@ const TerrainMaterial = () => {
       1
     );
     const cameraPositionHeight = storage(cameraHeightBuffer, "f32", 1);
-    const cameraPositionUniform = uniform(vec3(0, 0, 0)).label(
+    const cameraPositionUniform = uniform(vec3(0, 0, 0)).setName(
       "uCameraPosition"
     );
     const vNormal = varying(vec3(), "vNormal");
@@ -341,25 +341,25 @@ const TerrainMaterial = () => {
     const vWorldUv = varying(vec2(), "vWorldUv");
 
     // Create uniforms for all control values
-    const deltaUniform = uniform(0.1).label("delta");
-    const fbmIterationsUniform = uniform(12).label("fbmIterations");
-    const fbmAmplitudeUniform = uniform(8).label("fbmAmplitude");
-    const fbmFrequencyUniform = uniform(2).label("fbmFrequency");
-    const fbmLacunarityUniform = uniform(0.4).label("fbmLacunarity");
-    const fbmPersistenceUniform = uniform(0.85).label("fbmPersistence");
+    const deltaUniform = uniform(0.1).setName("delta");
+    const fbmIterationsUniform = uniform(12).setName("fbmIterations");
+    const fbmAmplitudeUniform = uniform(8).setName("fbmAmplitude");
+    const fbmFrequencyUniform = uniform(2).setName("fbmFrequency");
+    const fbmLacunarityUniform = uniform(0.4).setName("fbmLacunarity");
+    const fbmPersistenceUniform = uniform(0.85).setName("fbmPersistence");
 
-    const colorUniform = uniform(vec3(1, 1, 1)).label("myColorUniform");
-    const timeUniform = uniform(0).label("myTimeUniform");
+    const colorUniform = uniform(vec3(1, 1, 1)).setName("myColorUniform");
+    const timeUniform = uniform(0).setName("myTimeUniform");
     const { nodeBuffer, leafNodeMask } = quadTree
       ?.getNodeView()
       .getBuffers() ?? {
       nodeBuffer: new Float32Array(),
       leafNodeMask: new Uint32Array(),
     };
-    const rootOriginUniform = uniform(vec3(0, 0, 0)).label("rootOrigin");
-    const skirtLengthUniform = uniform(0).label("skirtLength");
-    const rootSizeUniform = uniform(1024 * PLANE_SIZE).label("rootSize");
-    const heightmapScaleUniform = uniform(100000).label("heightmapScale");
+    const rootOriginUniform = uniform(vec3(0, 0, 0)).setName("rootOrigin");
+    const skirtLengthUniform = uniform(0).setName("skirtLength");
+    const rootSizeUniform = uniform(1024 * PLANE_SIZE).setName("rootSize");
+    const heightmapScaleUniform = uniform(100000).setName("heightmapScale");
     const nodeStorageBufferAttribute =
       new THREE.StorageInstancedBufferAttribute(nodeBuffer, 4);
     const leafNodeMaskStorageBufferAttribute =
@@ -368,26 +368,28 @@ const TerrainMaterial = () => {
     // const lod = int(8); // Unused variable
     const bias = int(1);
 
-    const textureScaleUniform = uniform(0.01).label("textureScale");
-    const contrastUniform = uniform(1.0).label("contrast");
-    const slopeTransitionStartUniform = uniform(0.18).label(
+    const textureScaleUniform = uniform(0.01).setName("textureScale");
+    const contrastUniform = uniform(1.0).setName("contrast");
+    const slopeTransitionStartUniform = uniform(0.18).setName(
       "slopeTransitionStart"
     );
-    const slopeTransitionEndUniform = uniform(0.25).label("slopeTransitionEnd");
+    const slopeTransitionEndUniform =
+      uniform(0.25).setName("slopeTransitionEnd");
 
     // Distance-based normal blending uniforms
-    const enableDistanceBlendingUniform = uniform(1).label(
+    const enableDistanceBlendingUniform = uniform(1).setName(
       "enableDistanceBlending"
     );
-    const distanceBlendStartUniform = uniform(1000).label("distanceBlendStart");
-    const distanceBlendEndUniform = uniform(5000).label("distanceBlendEnd");
-    const distanceBlendStrengthUniform = uniform(1.0).label(
+    const distanceBlendStartUniform =
+      uniform(1000).setName("distanceBlendStart");
+    const distanceBlendEndUniform = uniform(5000).setName("distanceBlendEnd");
+    const distanceBlendStrengthUniform = uniform(1.0).setName(
       "distanceBlendStrength"
     );
 
     // LOD control uniforms
-    const lodBiasUniform = uniform(0.0).label("lodBias");
-    const lodScaleUniform = uniform(0.5).label("lodScale");
+    const lodBiasUniform = uniform(0.0).setName("lodBias");
+    const lodScaleUniform = uniform(0.5).setName("lodScale");
 
     // Helper function to calculate LOD level based on texture coordinate derivatives
     const calculateLODLevel = Fn(
