@@ -10,10 +10,6 @@ export default function Layout({ children }: LayoutProps<"/examples">) {
       <DocsLayout
         tree={docsSource.pageTree}
         {...layoutProps}
-        nav={{
-          transparentMode: "top",
-          component: null,
-        }}
         sidebar={{
           banner: <Metrics />,
         }}

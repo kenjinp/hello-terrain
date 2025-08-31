@@ -1,5 +1,5 @@
 import "@/app/global.css";
-import { Footer } from "@/components/Footer";
+import { Footer } from "@/components/Footer/Footer";
 import { RootProvider } from "fumadocs-ui/provider";
 import { Inter } from "next/font/google";
 
