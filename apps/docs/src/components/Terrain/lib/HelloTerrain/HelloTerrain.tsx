@@ -4,21 +4,20 @@ import {
   type PropsWithChildren,
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useRef,
-  useState,
 } from "react";
 import {
   Fn,
   instanceIndex,
   int,
+  pow,
   storage,
   uniform,
   uv,
   vec3,
 } from "three/src/Three.TSL.js";
-import { float } from "three/src/nodes/TSL.js";
+import { float, hash } from "three/src/nodes/TSL.js";
 import * as THREE from "three/webgpu";
 import {
   StorageBufferAttribute,
@@ -26,7 +25,6 @@ import {
   Vector3,
 } from "three/webgpu";
 import { Quadtree, type QuadtreeConfig } from "./Quadtree";
-import { getDevice } from "./getDevice";
 
 // Extend THREE to include node materials in JSX
 extend(THREE as any);
@@ -59,12 +57,10 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
   resolveLODPosition,
   children,
   elevationNode,
-  splatNode,
 }) => {
   const { camera, gl } = useThree();
   const lastHash = useRef<number>(0);
   const meshRef = useRef<THREE.InstancedMesh>(undefined);
-  const [device, setDevice] = useState<globalThis.GPUDevice>(undefined);
   const lodPosition = useMemo(() => {
     if (resolveLODPosition) {
       return resolveLODPosition;
@@ -90,12 +86,6 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
     }),
     [quadTree]
   );
-
-  useEffect(() => {
-    (async () => {
-      setDevice(await getDevice());
-    })();
-  }, []);
 
   const nodeBuffers = useMemo(() => {
     const { nodeBuffer, leafNodeMask } = quadTree.getNodeView().getBuffers();
@@ -172,37 +162,67 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
 
   const computeShader = useMemo(() => {
     return Fn(({ heightmapStorageNode, nodeStorage }) => {
-      const index = instanceIndex;
+      const index = int(instanceIndex);
 
-      // Calculate 2D coordinates for the heightmap
-      const x = index.mod(planeEdgeVertexCount);
-      const y = index.div(planeEdgeVertexCount).toFloat().floor();
-      const layer = index
-        .div(planeEdgeVertexCount * planeEdgeVertexCount)
-        .toFloat()
-        .floor();
+      // Calculate which node and vertex within that node this index represents
+      const verticesPerNode =
+        int(planeEdgeVertexCount).mul(planeEdgeVertexCount);
+      const nodeIndex = index.div(verticesPerNode).toFloat().floor().toInt();
+      const vertexIndex = index.mod(verticesPerNode);
 
-      // Generate height value based on position
-      const height = x
-        .toFloat()
-        .mul(0.01)
-        .add(y.toFloat().mul(0.01))
-        .add(layer.toFloat().mul(0.1));
+      // Calculate 2D coordinates within the node's vertex grid
+      const x = vertexIndex.mod(int(planeEdgeVertexCount));
+      const y = vertexIndex.div(int(planeEdgeVertexCount)).toFloat().floor();
 
-      const nodeIndex = instanceIndex;
+      // Get node data
       const nodeOffset = nodeIndex.mul(int(4));
       const level = nodeStorage.element(nodeOffset);
       const nodeX = nodeStorage.element(nodeOffset.add(int(1)));
       const nodeY = nodeStorage.element(nodeOffset.add(int(2)));
       const isLeaf = nodeStorage.element(nodeOffset.add(int(3))).equal(int(1));
+      const root = float(rootSize);
 
-      heightmapStorageNode
-        .element(index)
-        .assign(isLeaf.select(height, float(0)));
+      const tileSize = float(rootSize).div(pow(2.0, level.toFloat()));
+
+      // Calculate world position for this specific vertex within the node
+      const vertexOffsetX = x
+        .toFloat()
+        .div(float(planeEdgeVertexCount).sub(1))
+        .sub(0.5);
+      const vertexOffsetY = y
+        .toFloat()
+        .div(float(planeEdgeVertexCount).sub(1))
+        .sub(0.5);
+
+      const worldX = vec3(origin).x.add(
+        nodeX
+          .add(0.5)
+          .mul(tileSize)
+          .add(vertexOffsetX.mul(tileSize))
+          .sub(root.div(2.0))
+      );
+      const worldZ = vec3(origin).z.add(
+        nodeY
+          .add(0.5)
+          .mul(tileSize)
+          .add(vertexOffsetY.mul(tileSize))
+          .sub(root.div(2.0))
+      );
+
+      const height = isLeaf.select(
+        elevationNode
+          ? elevationNode({
+              worldPosition: vec3(worldX, 0, worldZ),
+              rootSize: root,
+              heightmapScale: float(1),
+            })
+          : float(0),
+        float(0)
+      );
+
+      heightmapStorageNode.element(index).assign(height);
     });
-  }, [planeEdgeVertexCount, nodeBuffers, maxNodes]);
-
-  console.log("device", device);
+  }, [planeEdgeVertexCount, elevationNode, origin, rootSize]);
 
   useFrame(async () => {
     // TODO, offset by terrain Height ???
@@ -220,7 +240,10 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
       });
       computeShaderNode.needsUpdate = true;
       await gpu.computeAsync(
-        computeShaderNode.compute(maxNodes, [planeEdgeVertexCount])
+        computeShaderNode.compute(
+          maxNodes * planeEdgeVertexCount * planeEdgeVertexCount,
+          [64]
+        )
       );
       const end = performance.now();
       console.log(`computeShaderNode took ${end - start}ms`);
@@ -232,7 +255,6 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
 
       if (meshRef?.current) {
         meshRef.current.instanceMatrix.needsUpdate = true;
-        meshRef.current.material.needsUpdate = true;
       }
     }
   });
@@ -242,21 +264,54 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
       // Use textureLoad to sample the WebGPU texture directly
       const xy = uv();
 
-      // Create a board pattern where each node is a single pixel
-      // Calculate which node this pixel belongs to
-      const nodeX = xy.x.mul(planeEdgeVertexCount).floor();
-      const nodeY = xy.y.mul(planeEdgeVertexCount).floor();
+      // Calculate grid size as sqrt(maxNodes) to get a square grid
+      const gridSize = pow(maxNodes, 0.5);
+
+      // Calculate which node this pixel belongs to in the grid
+      const nodeX = xy.x.mul(gridSize).floor();
+      const nodeY = xy.y.mul(gridSize).floor();
 
       // Calculate node index in the grid
-      const nodeIndex = nodeY.mul(planeEdgeVertexCount).add(nodeX);
+      const gridNodeIndex = nodeY.mul(gridSize).add(nodeX);
 
-      // Get heightmap value for this node
-      const heightValue = nodeBuffers.heightmapStorageNode.element(nodeIndex);
+      // Clamp the grid node index to valid range
+      const clampedGridIndex = gridNodeIndex.clamp(0, maxNodes - 1);
 
-      // Display heightmap value as grayscale
-      return vec3(heightValue, heightValue, heightValue);
+      const nodeOffset = clampedGridIndex.mul(int(4));
+      const isLeaf = nodeBuffers.nodeStorage
+        .element(nodeOffset.add(int(3)))
+        .equal(int(1));
+
+      const nodeHashColor = vec3(
+        hash(clampedGridIndex),
+        hash(clampedGridIndex.add(1)),
+        hash(clampedGridIndex.add(2))
+      );
+
+      // Calculate vertex coordinates within the node
+      const nodeLocalU = xy.x.mul(gridSize).sub(nodeX);
+      const nodeLocalV = xy.y.mul(gridSize).sub(nodeY);
+      const vertexX = nodeLocalU.mul(planeEdgeVertexCount).floor();
+      const vertexY = nodeLocalV.mul(planeEdgeVertexCount).floor();
+      const vertexIndex = vertexY.mul(int(planeEdgeVertexCount)).add(vertexX);
+
+      const verticesPerNode = int(planeEdgeVertexCount * planeEdgeVertexCount);
+      const globalVertexIndex = clampedGridIndex
+        .mul(verticesPerNode)
+        .add(vertexIndex);
+
+      const height =
+        nodeBuffers.heightmapStorageNode.element(globalVertexIndex);
+
+      // Return the color
+      return isLeaf.select(vec3(height), vec3(1, 0, 0));
     })();
-  }, [nodeBuffers, planeEdgeVertexCount]);
+  }, [
+    maxNodes,
+    planeEdgeVertexCount,
+    nodeBuffers.nodeStorage,
+    nodeBuffers.heightmapStorageNode,
+  ]);
 
   // Create a ref to the material so we can force updates
   const materialRef = useRef<THREE.MeshStandardNodeMaterial>(null);

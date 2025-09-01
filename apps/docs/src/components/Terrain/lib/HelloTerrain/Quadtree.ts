@@ -1,10 +1,10 @@
-import * as THREE from 'three';
+import * as THREE from "three";
 import {
   type ChildIndices,
   EMPTY_SENTINEL_VALUE,
   type NeighborIndices,
   NodeView,
-} from './Node';
+} from "./Node";
 
 export interface QuadtreeConfig {
   maxLevel: number;
@@ -80,7 +80,7 @@ export class Quadtree {
     const shouldSubdivide = this.shouldSubdivide(
       this.nodeView.getLevel(nodeIndex),
       distance,
-      nodeSize,
+      nodeSize
     );
 
     if (
@@ -112,7 +112,7 @@ export class Quadtree {
   private shouldSubdivide(
     _level: number, // Unused parameter
     distance: number,
-    nodeSize: number,
+    nodeSize: number
   ): boolean {
     // Don't subdivide if node is too small
     if (nodeSize <= this.config.minNodeSize) {
@@ -129,7 +129,7 @@ export class Quadtree {
   private createNode(level: number, x: number, y: number): number {
     // Safety check to prevent buffer overflow
     if (this.nodeCount >= this.config.maxNodes) {
-      console.warn('Maximum node count reached, skipping node creation');
+      console.warn("Maximum node count reached, skipping node creation");
       return -1;
     }
 
@@ -179,7 +179,7 @@ export class Quadtree {
 
     // Check if any child creation failed
     if (childIndices.some((index) => index === -1)) {
-      console.warn('Failed to create all children, skipping subdivision');
+      console.warn("Failed to create all children, skipping subdivision");
       return;
     }
 
@@ -195,7 +195,7 @@ export class Quadtree {
    */
   private updateChildNeighbors(
     _parentIndex: number, // Unused parameter
-    childIndices: ChildIndices,
+    childIndices: ChildIndices
   ): void {
     // For each child, find its neighbors
     for (let i = 0; i < 4; i++) {

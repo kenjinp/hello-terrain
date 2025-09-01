@@ -15,7 +15,7 @@ import {
 } from "@react-three/fiber";
 import { useControls } from "leva";
 import { easing } from "maath";
-import { useCallback, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { Fn } from "three/src/nodes/TSL.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
@@ -95,7 +95,7 @@ const TerrainMaterial = () => {
       label: "Max Level",
     },
     maxNodes: {
-      value: 2000,
+      value: 512,
       min: 100,
       max: 10000,
       step: 100,
@@ -764,6 +764,7 @@ const TerrainMaterial = () => {
       slopeTransitionStartUniform,
       slopeTransitionEndUniform,
       roughnessNode,
+      elevationAtWorldPosition,
       // Distance blending uniforms
       enableDistanceBlendingUniform,
       distanceBlendStartUniform,
@@ -786,29 +787,29 @@ const TerrainMaterial = () => {
     quadTree,
   ]);
 
-  const compute = useCallback(async () => {
-    const gpu = gl as unknown as THREE.WebGPURenderer;
-    try {
-      const before = performance.now();
-      await gpu.computeAsync(shaderData.computeHeightAtCameraPosition);
-      const heightBuffer = await gpu.getArrayBufferAsync(
-        shaderData.cameraHeightBuffer
-      );
-      const after = performance.now();
-      setMetric("computeTime", `${(after - before).toFixed(2)}ms`);
-      const dataView = new DataView(heightBuffer);
-      tempCameraHeightBuffer[0] = dataView.getFloat32(0, true); // true for little-endian
-      return tempCameraHeightBuffer[0];
-    } catch (error) {
-      console.error("Error in compute shader:", error);
-    }
-    return 0;
-  }, [
-    shaderData.computeHeightAtCameraPosition,
-    gl,
-    shaderData.cameraHeightBuffer,
-    setMetric,
-  ]);
+  // const compute = useCallback(async () => {
+  //   const gpu = gl as unknown as THREE.WebGPURenderer;
+  //   try {
+  //     const before = performance.now();
+  //     await gpu.computeAsync(shaderData.computeHeightAtCameraPosition);
+  //     const heightBuffer = await gpu.getArrayBufferAsync(
+  //       shaderData.cameraHeightBuffer
+  //     );
+  //     const after = performance.now();
+  //     setMetric("computeTime", `${(after - before).toFixed(2)}ms`);
+  //     const dataView = new DataView(heightBuffer);
+  //     tempCameraHeightBuffer[0] = dataView.getFloat32(0, true); // true for little-endian
+  //     return tempCameraHeightBuffer[0];
+  //   } catch (error) {
+  //     console.error("Error in compute shader:", error);
+  //   }
+  //   return 0;
+  // }, [
+  //   shaderData.computeHeightAtCameraPosition,
+  //   gl,
+  //   shaderData.cameraHeightBuffer,
+  //   setMetric,
+  // ]);
 
   useFrame(async (state, delta) => {
     const { clock, camera } = state;
@@ -818,12 +819,12 @@ const TerrainMaterial = () => {
     if (!quadTree) return;
     shaderData.cameraPositionUniform.value = camera.position;
 
-    const terrainHeight = await compute();
-    terrainHeightRef.current = terrainHeight;
-    cameraHeightVector.copy(camera.position);
-    // offset the camera height by the terrain height
-    // so we can resolve the quadtree correctly
-    cameraHeightVector.y = camera.position.y - terrainHeight;
+    // // const terrainHeight = await compute();
+    // terrainHeightRef.current = terrainHeight;
+    // cameraHeightVector.copy(camera.position);
+    // // offset the camera height by the terrain height
+    // // so we can resolve the quadtree correctly
+    // cameraHeightVector.y = camera.position.y - terrainHeight;
 
     const beforeUpdate = performance.now();
     // quadTree.update(cameraHeightVector);
@@ -882,12 +883,12 @@ const TerrainMaterial = () => {
     shaderData.nodeStorageBufferAttribute.needsUpdate = true;
     shaderData.leafNodeMaskStorageBufferAttribute.needsUpdate = true;
 
-    setMetric(
-      "cameraAltitude",
-      `${(camera.position.y - terrainHeight).toFixed(2)}m`
-    );
+    // setMetric(
+    //   "cameraAltitude",
+    //   `${(camera.position.y - terrainHeight).toFixed(2)}m`
+    // );
 
-    setMetric("terrainHeight", `${terrainHeight.toFixed(2)}m`);
+    // setMetric("terrainHeight", `${terrainHeight.toFixed(2)}m`);
 
     if (dirLight.current) {
       easing.damp3(
@@ -992,7 +993,7 @@ const GPUQuadtree = () => {
       label: "Max Level",
     },
     maxNodes: {
-      value: 2000,
+      value: 512,
       min: 100,
       max: 10000,
       step: 100,
@@ -1037,6 +1038,35 @@ const GPUQuadtree = () => {
         subdivisionFactor={quadtreeControls.subdivisionFactor}
         maxNodes={quadtreeControls.maxNodes}
         planeEdgeVertexCount={quadtreeControls.planeEdgeVertexCount}
+        elevationNode={Fn(
+          ({
+            worldPosition,
+            rootSize,
+            heightmapScale,
+          }: {
+            worldPosition: THREE.TSL.ShaderNodeObject<
+              THREE.ConstNode<THREE.Vector3>
+            >;
+            rootSize: THREE.TSL.ShaderNodeObject<THREE.ConstNode<THREE.Float>>;
+            heightmapScale: THREE.TSL.ShaderNodeObject<
+              THREE.ConstNode<THREE.Float>
+            >;
+          }) => {
+            const worldUV = vec2(
+              worldPosition.x.div(rootSize).add(0.5),
+              worldPosition.z.div(rootSize).mul(-1.0).add(0.5)
+            );
+            const fbm = vec2_fbm(
+              worldUV,
+              8, // fbmIterations
+              1.0, // fbmAmplitude
+              2.4, // fbmFrequency
+              0.4, // fbmLacunarity
+              0.85 // fbmPersistence
+            );
+            return fbm;
+          }
+        )}
       >
         <OrbitControls />
         <TerrainMaterial />
