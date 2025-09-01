@@ -44,6 +44,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Skybox } from "./Skybox";
 import { vec2_fbm, warp_fbm } from "./fmb";
 import { HelloTerrain, useHelloTerrain } from "./lib/HelloTerrain/HelloTerrain";
+import { ElevationFn } from "./lib/TSLNodes/Elevation";
 import { blendNormalsRNM } from "./lib/TSLNodes/Normals";
 import { createTriplanarTextureBlend } from "./lib/TSLNodes/Textures";
 
@@ -1029,6 +1030,10 @@ const GPUQuadtree = () => {
     },
   });
 
+  const blah = Fn(() => {
+    return float(1);
+  });
+
   return (
     <>
       <HelloTerrain
@@ -1038,35 +1043,17 @@ const GPUQuadtree = () => {
         subdivisionFactor={quadtreeControls.subdivisionFactor}
         maxNodes={quadtreeControls.maxNodes}
         planeEdgeVertexCount={quadtreeControls.planeEdgeVertexCount}
-        elevationNode={Fn(
-          ({
-            worldPosition,
-            rootSize,
-            heightmapScale,
-          }: {
-            worldPosition: THREE.TSL.ShaderNodeObject<
-              THREE.ConstNode<THREE.Vector3>
-            >;
-            rootSize: THREE.TSL.ShaderNodeObject<THREE.ConstNode<THREE.Float>>;
-            heightmapScale: THREE.TSL.ShaderNodeObject<
-              THREE.ConstNode<THREE.Float>
-            >;
-          }) => {
-            const worldUV = vec2(
-              worldPosition.x.div(rootSize).add(0.5),
-              worldPosition.z.div(rootSize).mul(-1.0).add(0.5)
-            );
-            const fbm = vec2_fbm(
-              worldUV,
-              8, // fbmIterations
-              1.0, // fbmAmplitude
-              2.4, // fbmFrequency
-              0.4, // fbmLacunarity
-              0.85 // fbmPersistence
-            );
-            return fbm;
-          }
-        )}
+        elevationNode={ElevationFn(({ worldUv }) => {
+          const fbm = vec2_fbm(
+            worldUv,
+            8, // fbmIterations
+            1.0, // fbmAmplitude
+            2.4, // fbmFrequency
+            0.4, // fbmLacunarity
+            0.85 // fbmPersistence
+          );
+          return fbm.toFloat();
+        })}
       >
         <OrbitControls />
         <TerrainMaterial />

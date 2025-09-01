@@ -15,6 +15,7 @@ import {
   storage,
   uniform,
   uv,
+  vec2,
   vec3,
 } from "three/src/Three.TSL.js";
 import { float, hash } from "three/src/nodes/TSL.js";
@@ -24,6 +25,7 @@ import {
   StorageInstancedBufferAttribute,
   Vector3,
 } from "three/webgpu";
+import type { ElevationReturn } from "../TSLNodes/Elevation";
 import { Quadtree, type QuadtreeConfig } from "./Quadtree";
 
 // Extend THREE to include node materials in JSX
@@ -40,7 +42,7 @@ export const HelloTerrainContext = createContext<HelloTerrainContextType>(
 
 export interface HelloTerrainProps extends Omit<QuadtreeConfig, "origin"> {
   planeEdgeVertexCount: number;
-  elevationNode?: THREE.Node | Readonly<THREE.Node | null | undefined>;
+  elevationNode?: ElevationReturn;
   splatNode?: THREE.Node | Readonly<THREE.Node | null | undefined>;
   origin?: THREE.Vector3;
   resolveLODPosition?: THREE.Vector3;
@@ -187,6 +189,7 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
       // Calculate world position for this specific vertex within the node
       const vertexOffsetX = x
         .toFloat()
+
         .div(float(planeEdgeVertexCount).sub(1))
         .sub(0.5);
       const vertexOffsetY = y
@@ -208,6 +211,9 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
           .add(vertexOffsetY.mul(tileSize))
           .sub(root.div(2.0))
       );
+      // build uv coordinates from world position
+      // 0 to 1
+      const worldUv = vec2(worldX.div(rootSize), worldZ.div(rootSize));
 
       const height = isLeaf.select(
         elevationNode
@@ -215,6 +221,11 @@ export const HelloTerrain: FC<PropsWithChildren<HelloTerrainProps>> = ({
               worldPosition: vec3(worldX, 0, worldZ),
               rootSize: root,
               heightmapScale: float(1),
+              worldUv,
+              level,
+              tileSize,
+              nodeX,
+              nodeY,
             })
           : float(0),
         float(0)
