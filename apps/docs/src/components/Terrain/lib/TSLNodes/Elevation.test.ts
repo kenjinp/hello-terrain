@@ -1,4 +1,4 @@
-import { ElevationFn } from "./Elevation";
+import { ElevationFn } from "./ElevationFn";
 
 // Test that the ElevationFn works correctly
 export const testElevationFunction = ElevationFn((params) => {
@@ -19,10 +19,12 @@ export const testElevationFunction = ElevationFn((params) => {
 });
 
 // Test with destructured parameters
-export const testDestructuredElevationFunction = ElevationFn(({ heightmapScale }) => {
-  // This should also compile without errors and have proper typing
-  return heightmapScale;
-});
+export const testDestructuredElevationFunction = ElevationFn(
+  ({ heightmapScale }) => {
+    // This should also compile without errors and have proper typing
+    return heightmapScale;
+  }
+);
 
 // Test that the callback type is correct
 export const testCallbackType = ElevationFn((params) => {

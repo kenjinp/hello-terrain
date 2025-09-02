@@ -44,7 +44,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Skybox } from "./Skybox";
 import { vec2_fbm, warp_fbm } from "./fmb";
 import { HelloTerrain, useHelloTerrain } from "./lib/HelloTerrain/HelloTerrain";
-import { ElevationFn } from "./lib/TSLNodes/Elevation";
+import { ElevationFn } from "./lib/TSLNodes/ElevationFn";
 import { blendNormalsRNM } from "./lib/TSLNodes/Normals";
 import { createTriplanarTextureBlend } from "./lib/TSLNodes/Textures";
 
@@ -64,7 +64,15 @@ const PLANE_EDGE_VERTEX_COUNT = 64 + 1;
 const PLANE_SIZE = PLANE_EDGE_VERTEX_COUNT * PLANE_EDGE_VERTEX_COUNT;
 
 // TerrainMaterial component that uses the HelloTerrain context
-const TerrainMaterial = () => {
+const TerrainMaterial = ({
+  positionNode,
+  normalNode,
+  colorNode,
+}: {
+  positionNode: THREE.Node;
+  normalNode: THREE.Node;
+  colorNode: THREE.Node;
+}) => {
   const { quadTree, mesh } = useHelloTerrain();
   const { gl } = useThree();
   const lastHash = useRef<number>(0);
@@ -464,28 +472,6 @@ const TerrainMaterial = () => {
           fbmPersistenceUniform
         );
         const noise = warpStrength.mul(warpFbm).add(baseStrength.mul(fbm));
-        // const voronoiUV = vec2_fbm(
-        //   worldUV,
-        //   float(8),
-        //   float(1),
-        //   float(2.4),
-        //   float(0.4),
-        //   float(0.85),
-        // ).xy.mix(worldUV, 0.95);
-        // const voronoiUV2 = vec2_fbm(
-        //   voronoiUV,
-        //   float(5),
-        //   float(1),
-        //   float(2),
-        //   float(0.4),
-        //   float(0.85),
-        // ).xy.mix(voronoiUV, 0.6);
-        // const voronoi = voronoiCells({
-        //   scale: 100,
-        //   facet: 0,
-        //   seed: 0,
-        //   uv: voronoiUV2,
-        // });
 
         const height = noise;
         const heightmapMinElevation = 0;
@@ -697,7 +683,7 @@ const TerrainMaterial = () => {
 
     const normalNode = transformNormalToView(normalNodeCalc);
 
-    const colorNode = Fn(() => {
+    const colorNodeCalc = Fn(() => {
       const worldPosition = vPosition.toVar();
       const normal = vNormal.toVar();
 
@@ -972,11 +958,12 @@ const TerrainMaterial = () => {
       <meshPhysicalNodeMaterial
         key={uuidv4()}
         side={THREE.FrontSide}
-        positionNode={shaderData.positionNode}
-        colorNode={shaderData.colorNode}
+        positionNode={positionNode}
+        // colorNode={shaderData.colorNode}
         // THis takes most of the GPU time!
-        // normalNode={shaderData.normalNode}
-        roughnessNode={shaderData.roughnessNode}
+        normalNode={normalNode}
+        colorNode={colorNode}
+        // roughnessNode={shaderData.roughnessNode}
         metalness={0.1}
       />
     </>
@@ -1028,10 +1015,55 @@ const GPUQuadtree = () => {
       step: 10,
       label: "Plane Edge Vertex Count",
     },
-  });
-
-  const blah = Fn(() => {
-    return float(1);
+    skirtLength: {
+      value: 100,
+      min: 0,
+      max: 2000,
+      step: 10,
+      label: "Skirt Length",
+    },
+    heightmapScale: {
+      value: 8000,
+      min: 0.0,
+      max: 10000.0,
+      step: 1000.0,
+      label: "Heightmap Scale",
+    },
+    fbmIterations: {
+      value: 12,
+      min: 1,
+      max: 30,
+      step: 1,
+      label: "FBM Iterations",
+    },
+    fbmAmplitude: {
+      value: 8,
+      min: 0.0,
+      max: 10.0,
+      step: 0.1,
+      label: "FBM Amplitude",
+    },
+    fbmFrequency: {
+      value: 2.4,
+      min: 0.0,
+      max: 10.0,
+      step: 0.1,
+      label: "FBM Frequency",
+    },
+    fbmLacunarity: {
+      value: 0.4,
+      min: 0.0,
+      max: 10.0,
+      step: 0.1,
+      label: "FBM Lacunarity",
+    },
+    fbmPersistence: {
+      value: 0.85,
+      min: 0.0,
+      max: 1.0,
+      step: 0.01,
+      label: "FBM Persistence",
+    },
   });
 
   return (
@@ -1040,23 +1072,45 @@ const GPUQuadtree = () => {
         maxLevel={quadtreeControls.maxLevel}
         rootSize={quadtreeControls.rootSize}
         minNodeSize={quadtreeControls.minNodeSize}
+        skirtLength={quadtreeControls.skirtLength}
         subdivisionFactor={quadtreeControls.subdivisionFactor}
         maxNodes={quadtreeControls.maxNodes}
         planeEdgeVertexCount={quadtreeControls.planeEdgeVertexCount}
         elevationNode={ElevationFn(({ worldUv }) => {
+          const warpStrength = float(0.5);
+          const baseStrength = float(1);
+          const warpFbm = warp_fbm({
+            position: worldUv,
+          });
           const fbm = vec2_fbm(
             worldUv,
-            8, // fbmIterations
-            1.0, // fbmAmplitude
-            2.4, // fbmFrequency
-            0.4, // fbmLacunarity
-            0.85 // fbmPersistence
+            quadtreeControls.fbmIterations,
+            quadtreeControls.fbmAmplitude,
+            quadtreeControls.fbmFrequency,
+            quadtreeControls.fbmLacunarity,
+            quadtreeControls.fbmPersistence
           );
-          return fbm.toFloat();
+          const noise = warpStrength.mul(warpFbm).add(baseStrength.mul(fbm));
+
+          const height = noise;
+          const heightmapMinElevation = 0;
+          const heightmapMaxElevation = 1;
+          const remappedHeight = height
+            .remap(heightmapMinElevation, heightmapMaxElevation, 0, 1)
+            .mul(quadtreeControls.heightmapScale);
+          return remappedHeight;
         })}
       >
-        <OrbitControls />
-        <TerrainMaterial />
+        {({ positionNode, normalNode, colorNode }) => (
+          <>
+            <OrbitControls />
+            <TerrainMaterial
+              positionNode={positionNode}
+              normalNode={normalNode}
+              colorNode={colorNode}
+            />
+          </>
+        )}
       </HelloTerrain>
       <fog
         attach="fog"
