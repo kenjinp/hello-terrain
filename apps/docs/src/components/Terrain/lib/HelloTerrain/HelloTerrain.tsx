@@ -437,30 +437,42 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         nodeY.add(0.5).mul(tileSize).sub(rootSize.div(2.0))
       );
 
-      const scaleFromSkirt = float(
-        chunkEdgeVertextCountWithSkirt / chunkEdgeVertextCount
-      );
+      // Calculate the UV step size for the geometry with skirt
+      const uvStep = float(1.0).div(float(chunkEdgeVertextCountWithSkirt - 1));
 
-      const isOnEdge = uv()
-        .x.greaterThan(0.9999)
-        .or(uv().x.lessThan(0.0001))
-        .or(uv().y.greaterThan(0.9999))
-        .or(uv().y.lessThan(0.0001));
+      // Detect if we're on the first or last vertex (skirt vertices)
+      const isOnEdgeX = uv()
+        .x.lessThan(uvStep.mul(0.5))
+        .or(uv().x.greaterThan(float(1.0).sub(uvStep.mul(0.5))));
+      const isOnEdgeY = uv()
+        .y.lessThan(uvStep.mul(0.5))
+        .or(uv().y.greaterThan(float(1.0).sub(uvStep.mul(0.5))));
+      const isOnEdge = isOnEdgeX.or(isOnEdgeY);
+
+      // For inner vertices, remap UV coordinates to span only the inner vertex range
+      // This ensures inner vertices are positioned as if no skirt exists
+      const skirtOffset = uvStep;
+      const innerUvX = uv()
+        .x.sub(skirtOffset)
+        .div(float(1.0).sub(skirtOffset.mul(2.0)));
+      const innerUvY = uv()
+        .y.sub(skirtOffset)
+        .div(float(1.0).sub(skirtOffset.mul(2.0)));
 
       // Convert UV coordinates to local offsets (-0.5 to 0.5 range)
-      const localU = uv().x.sub(0.5);
-      const localV = uv().y.sub(0.5);
+      const localU = isOnEdge.select(uv().x.sub(0.5), innerUvX.sub(0.5));
+      const localV = isOnEdge.select(uv().y.sub(0.5), innerUvY.sub(0.5));
 
-      const scaledLocalX = localU.mul(tileSize.mul(scaleFromSkirt));
-      const scaledLocalZ = localV.mul(tileSize.mul(scaleFromSkirt));
+      const scaledLocalX = localU.mul(tileSize);
+      const scaledLocalZ = localV.mul(tileSize);
       const finalWorldX = worldX.add(scaledLocalX);
       const finalWorldZ = worldZ.sub(scaledLocalZ);
 
-      // For skirts, use unscaled coordinates to go straight down from edge vertices
-      const unscaledLocalX = localU.mul(tileSize);
-      const unscaledLocalZ = localV.mul(tileSize);
-      const skirtWorldX = worldX.add(unscaledLocalX);
-      const skirtWorldZ = worldZ.sub(unscaledLocalZ);
+      // For skirts, use the original UV coordinates to position at edges
+      const skirtLocalX = uv().x.sub(0.5).mul(tileSize);
+      const skirtLocalZ = uv().y.sub(0.5).mul(tileSize);
+      const skirtWorldX = worldX.add(skirtLocalX);
+      const skirtWorldZ = worldZ.sub(skirtLocalZ);
 
       const scaledPositionExcludingSkirt = Fn(() => {
         return vec3(finalWorldX, 0, finalWorldZ);
