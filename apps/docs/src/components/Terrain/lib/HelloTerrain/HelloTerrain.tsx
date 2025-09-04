@@ -5,7 +5,6 @@ import {
   instanceIndex,
   int,
   mix,
-  positionLocal,
   pow,
   select,
   storage,
@@ -23,14 +22,13 @@ import {
   StorageInstancedBufferAttribute,
   Vector3,
 } from "three/webgpu";
-import { InstancedTerrainGeometry } from "../../mesh/InstancedTerrainGeometry";
 import type { ElevationReturn } from "../TSLNodes/ElevationFn";
 import { Quadtree, type QuadtreeConfig } from "./Quadtree";
 
 // Extend THREE to include node materials in JSX
 extend(THREE as any);
 
-extend(InstancedTerrainGeometry);
+// extend({ InstancedTerrainGeometry });
 
 export interface HelloTerrainContextType {
   quadTree?: Quadtree;
@@ -42,7 +40,7 @@ export const HelloTerrainContext = createContext<HelloTerrainContextType>(
 );
 
 export interface HelloTerrainProps extends Omit<QuadtreeConfig, "origin"> {
-  planeEdgeVertexCount: number;
+  chunkSegments: number;
   elevationNode?: ElevationReturn;
   splatNode?: THREE.Node | Readonly<THREE.Node | null | undefined>;
   origin?: THREE.Vector3;
@@ -67,7 +65,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
   origin = new Vector3(0, 0, 0),
   subdivisionFactor,
   maxNodes,
-  planeEdgeVertexCount,
+  chunkSegments,
   resolveLODPosition,
   children,
   elevationNode,
@@ -81,6 +79,9 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     }
     return camera.position;
   }, [resolveLODPosition, camera]);
+
+  const chunkEdgeVertextCount = chunkSegments + 1;
+  const chunkEdgeVertextCountWithSkirt = chunkSegments + 1 + 2;
 
   const quadTree = useMemo(() => {
     return new Quadtree({
@@ -118,20 +119,22 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     // );
 
     const heightmapStorageBufferAttribute = new StorageBufferAttribute(
-      new Float32Array(planeEdgeVertexCount * planeEdgeVertexCount * maxNodes),
+      new Float32Array(
+        chunkEdgeVertextCount * chunkEdgeVertextCount * maxNodes
+      ),
       1
     );
 
     const heightmapStorageNode = storage(
       heightmapStorageBufferAttribute,
       "f32",
-      planeEdgeVertexCount * planeEdgeVertexCount * maxNodes
+      chunkEdgeVertextCount * chunkEdgeVertextCount * maxNodes
     );
 
     const normalMapStorageBufferAttribute = new StorageBufferAttribute(
       // 3 components per vertex (x, y, z)
       new Float32Array(
-        planeEdgeVertexCount * planeEdgeVertexCount * maxNodes * 3
+        chunkEdgeVertextCount * chunkEdgeVertextCount * maxNodes * 3
       ),
       3
     );
@@ -139,18 +142,18 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     const normalMapStorageNode = storage(
       normalMapStorageBufferAttribute,
       "f32",
-      planeEdgeVertexCount * planeEdgeVertexCount * maxNodes
+      chunkEdgeVertextCount * chunkEdgeVertextCount * maxNodes
     );
 
     const splatStorageNode = storage(
       new StorageBufferAttribute(
         new Float32Array(
-          planeEdgeVertexCount * planeEdgeVertexCount * maxNodes
+          chunkEdgeVertextCount * chunkEdgeVertextCount * maxNodes
         ),
         4
       ),
       "f32",
-      planeEdgeVertexCount * planeEdgeVertexCount * maxNodes
+      chunkEdgeVertextCount * chunkEdgeVertextCount * maxNodes
     );
 
     const leafNodeMaskStorageBufferAttribute =
@@ -182,7 +185,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
       nodeStorage,
       leafNodeMaskStorage,
     };
-  }, [quadTree, rootSize, planeEdgeVertexCount, maxNodes]);
+  }, [quadTree, rootSize, chunkEdgeVertextCount, maxNodes]);
 
   const computeShaders = useMemo(() => {
     const heightmapComputeShader = Fn(
@@ -190,14 +193,16 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         const index = int(instanceIndex);
 
         // Calculate which node and vertex within that node this index represents
-        const verticesPerNode =
-          int(planeEdgeVertexCount).mul(planeEdgeVertexCount);
+        const verticesPerNode = int(chunkEdgeVertextCount).mul(
+          chunkEdgeVertextCount
+        );
         const nodeIndex = index.div(verticesPerNode).toFloat().floor().toInt();
         const vertexIndex = index.mod(verticesPerNode);
 
-        // Calculate 2D coordinates within the node's vertex grid (including skirts)
-        const x = vertexIndex.mod(int(planeEdgeVertexCount));
-        const y = vertexIndex.div(int(planeEdgeVertexCount)).toFloat().floor();
+        // Calculate 2D coordinates within the node's vertex grid
+        const x = vertexIndex.mod(int(chunkEdgeVertextCount));
+        const y = vertexIndex.div(int(chunkEdgeVertextCount)).toFloat().floor();
+        const nodeUv = vec2(x.toFloat(), y.toFloat());
 
         // Get node data
         const nodeOffset = nodeIndex.mul(int(4));
@@ -214,11 +219,11 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         // Calculate world position for this specific vertex within the node
         const vertexOffsetX = x
           .toFloat()
-          .div(float(planeEdgeVertexCount + 1))
+          .div(float(chunkEdgeVertextCount))
           .sub(0.5);
         const vertexOffsetY = y
           .toFloat()
-          .div(float(planeEdgeVertexCount + 1))
+          .div(float(chunkEdgeVertextCount))
           .sub(0.5);
 
         const worldX = vec3(origin).x.add(
@@ -268,7 +273,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
       heightmapComputeShader,
       normalMapComputeShader,
     };
-  }, [planeEdgeVertexCount, elevationNode, origin, rootSize]);
+  }, [chunkEdgeVertextCount, elevationNode, origin, rootSize]);
 
   useFrame(async () => {
     // TODO, offset by terrain Height ???
@@ -287,7 +292,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
       });
       await gpu.computeAsync(
         heightmapComputeShaderNode.compute(
-          maxNodes * planeEdgeVertexCount * planeEdgeVertexCount,
+          maxNodes * chunkEdgeVertextCount * chunkEdgeVertextCount,
           [64]
         )
       );
@@ -303,7 +308,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
 
       await gpu.computeAsync(
         normalMapComputeShaderNode.compute(
-          maxNodes * planeEdgeVertexCount * planeEdgeVertexCount,
+          maxNodes * chunkEdgeVertextCount * chunkEdgeVertextCount,
           [64]
         )
       );
@@ -355,16 +360,16 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
       // Flip Y coordinate to match the compute shader's coordinate system
       const nodeLocalU = xy.x.mul(gridSize).sub(nodeX);
       const nodeLocalV = xy.y.mul(gridSize).sub(nodeY);
-      const vertexX = nodeLocalU.mul(planeEdgeVertexCount + 2).floor();
-      const vertexY = float(planeEdgeVertexCount + 1).sub(
-        nodeLocalV.mul(planeEdgeVertexCount + 2).floor()
+      const vertexX = nodeLocalU.mul(chunkEdgeVertextCountWithSkirt).floor();
+      const vertexY = float(chunkEdgeVertextCountWithSkirt).sub(
+        nodeLocalV.mul(chunkEdgeVertextCountWithSkirt).floor()
       );
       const vertexIndex = vertexY
-        .mul(int(planeEdgeVertexCount + 2))
+        .mul(int(chunkEdgeVertextCountWithSkirt))
         .add(vertexX);
 
       const verticesPerNode = int(
-        (planeEdgeVertexCount + 2) * (planeEdgeVertexCount + 2)
+        chunkEdgeVertextCountWithSkirt * chunkEdgeVertextCountWithSkirt
       );
       const globalVertexIndex = clampedGridIndex
         .mul(verticesPerNode)
@@ -378,7 +383,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     })();
   }, [
     maxNodes,
-    planeEdgeVertexCount,
+    chunkEdgeVertextCount,
     nodeBuffers.nodeStorage,
     nodeBuffers.heightmapStorageNode,
   ]);
@@ -420,13 +425,20 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         .element(nodeOffset.add(int(3)))
         .equal(int(1));
 
+      const rootSize = uniforms.rootSizeUniform.toVar();
+      const rootOrigin = uniforms.rootOriginUniform.toVar();
+
       // // Compute world-space position centred so that the entire root tile spans [-rootSize/2, rootSize/2]
-      const tileSize = uniforms.rootSizeUniform.div(pow(2.0, level.toFloat()));
-      const worldX = uniforms.rootOriginUniform.x.add(
-        nodeX.add(0.5).mul(tileSize).sub(uniforms.rootSizeUniform.div(2.0))
+      const tileSize = rootSize.div(pow(2.0, level.toFloat()));
+      const worldX = rootOrigin.x.add(
+        nodeX.add(0.5).mul(tileSize).sub(rootSize.div(2.0))
       );
-      const worldZ = uniforms.rootOriginUniform.z.add(
-        nodeY.add(0.5).mul(tileSize).sub(uniforms.rootSizeUniform.div(2.0))
+      const worldZ = rootOrigin.z.add(
+        nodeY.add(0.5).mul(tileSize).sub(rootSize.div(2.0))
+      );
+
+      const scaleFromSkirt = float(
+        chunkEdgeVertextCountWithSkirt / chunkEdgeVertextCount
       );
 
       const isOnEdge = uv()
@@ -435,31 +447,35 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         .or(uv().y.greaterThan(0.9999))
         .or(uv().y.lessThan(0.0001));
 
-      const scaleFromSkirt = float(
-        (planeEdgeVertexCount + 2) / planeEdgeVertexCount
-      );
+      // Convert UV coordinates to local offsets (-0.5 to 0.5 range)
+      const localU = uv().x.sub(0.5);
+      const localV = uv().y.sub(0.5);
 
-      const scaledLocalX = positionLocal.x.mul(tileSize.mul(scaleFromSkirt));
-      const scaledLocalZ = positionLocal.y.mul(tileSize.mul(scaleFromSkirt));
+      const scaledLocalX = localU.mul(tileSize.mul(scaleFromSkirt));
+      const scaledLocalZ = localV.mul(tileSize.mul(scaleFromSkirt));
       const finalWorldX = worldX.add(scaledLocalX);
       const finalWorldZ = worldZ.sub(scaledLocalZ);
 
-      const scaledPositionExcludingSkirt = vec3(
-        finalWorldX,
-        0,
-        finalWorldZ
-      ).toVar();
-      const skirtPosition = vec3(
-        finalWorldX,
-        uniforms.skirtLengthUniform.mul(-1),
-        finalWorldZ
-      ).toVar();
+      // For skirts, use unscaled coordinates to go straight down from edge vertices
+      const unscaledLocalX = localU.mul(tileSize);
+      const unscaledLocalZ = localV.mul(tileSize);
+      const skirtWorldX = worldX.add(unscaledLocalX);
+      const skirtWorldZ = worldZ.sub(unscaledLocalZ);
+
+      const scaledPositionExcludingSkirt = Fn(() => {
+        return vec3(finalWorldX, 0, finalWorldZ);
+      });
+
+      const skirtPosition = Fn(() => {
+        const skirtLength = uniforms.skirtLengthUniform.toVar();
+        return vec3(skirtWorldX, skirtLength.mul(-1), skirtWorldZ);
+      });
 
       varyings.vPosition.assign(
         select(
           isLeaf.not(),
-          vec3(0.0, 0.0, 0.0),
-          select(isOnEdge, skirtPosition, scaledPositionExcludingSkirt)
+          vec3(0.0),
+          select(isOnEdge, skirtPosition(), scaledPositionExcludingSkirt())
         )
       );
 
@@ -472,7 +488,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     varyings,
     nodeBuffers.nodeStorage,
     nodeBuffers.heightmapStorageNode,
-    planeEdgeVertexCount,
+    chunkEdgeVertextCount,
   ]);
 
   const normalNode = useMemo(() => {
@@ -514,7 +530,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
           args={[undefined, undefined, maxNodes]}
         >
           {/* add 2 to the edge vertex count to account for the skirt */}
-          <instancedTerrainGeometry args={[planeEdgeVertexCount + 2]} />
+          <planeGeometry args={[1, 1, chunkSegments + 2, chunkSegments + 2]} />
           {children({ positionNode, colorNode: colorByNodeVertex, normalNode })}
         </instancedMesh>
       </HelloTerrainContext.Provider>

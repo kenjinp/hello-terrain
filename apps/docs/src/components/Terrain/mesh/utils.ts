@@ -18,13 +18,13 @@ export const generateIndices = (resolution: number) => {
   return indices;
 };
 
-export const generationPositions = (resolution: number) => {
-  const effectiveResolution = resolution + 2;
-  const positions = [];
-  for (let i = 0; i < effectiveResolution; i++) {
-    for (let j = 0; j < effectiveResolution; j++) {
-      positions.push(i, j);
-    }
-  }
-  return positions;
-};
+// export const generationPositions = (resolution: number) => {
+//   const effectiveResolution = resolution + 2;
+//   const positions = [];
+//   for (let i = 0; i < effectiveResolution; i++) {
+//     for (let j = 0; j < effectiveResolution; j++) {
+//       positions.push(i, j);
+//     }
+//   }
+//   return positions;
+// };

@@ -1008,7 +1008,7 @@ const GPUQuadtree = () => {
       step: 0.1,
       label: "Subdivision Factor",
     },
-    planeEdgeVertexCount: {
+    planeEdgeSubdivisionCount: {
       value: PLANE_EDGE_VERTEX_COUNT,
       min: 8,
       max: 1024,
@@ -1075,7 +1075,7 @@ const GPUQuadtree = () => {
         skirtLength={quadtreeControls.skirtLength}
         subdivisionFactor={quadtreeControls.subdivisionFactor}
         maxNodes={quadtreeControls.maxNodes}
-        planeEdgeVertexCount={quadtreeControls.planeEdgeVertexCount}
+        chunkSegments={quadtreeControls.planeEdgeSubdivisionCount}
         elevationNode={ElevationFn(({ worldUv }) => {
           const warpStrength = float(0.5);
           const baseStrength = float(1);
