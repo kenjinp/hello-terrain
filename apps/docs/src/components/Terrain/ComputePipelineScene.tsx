@@ -1,11 +1,6 @@
 "use client";
 import { useMetrics } from "@/components/Metrics/Metrics";
-import {
-  Environment,
-  OrbitControls,
-  useHelper,
-  useTexture,
-} from "@react-three/drei";
+import { OrbitControls, useHelper, useTexture } from "@react-three/drei";
 import {
   Canvas,
   type ThreeToJSXElements,
@@ -964,6 +959,7 @@ const TerrainMaterial = ({
         normalNode={normalNode}
         colorNode={colorNode}
         // roughnessNode={shaderData.roughnessNode}
+        wireframe={quadtreeControls.wireframe}
         metalness={0.1}
       />
     </>
@@ -1112,17 +1108,18 @@ const GPUQuadtree = () => {
           </>
         )}
       </HelloTerrain>
-      <fog
+      {/* <fog
         attach="fog"
         args={[
           "#6dd1ed",
           0,
           Math.sqrt(quadtreeControls.rootSize * quadtreeControls.rootSize),
         ]}
-      />
+      /> */}
       <color attach="background" args={["#6dd1ed"]} />
-      <Environment preset="park" background={false} environmentIntensity={1} />
+      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
       <ambientLight intensity={0.15} />
+      <ambientLight intensity={2} />
     </>
   );
 };

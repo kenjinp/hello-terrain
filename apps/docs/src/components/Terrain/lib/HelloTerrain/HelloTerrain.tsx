@@ -4,7 +4,6 @@ import {
   Fn,
   instanceIndex,
   int,
-  mix,
   pow,
   select,
   storage,
@@ -15,7 +14,12 @@ import {
   vec2,
   vec3,
 } from "three/src/Three.TSL.js";
-import { float, hash } from "three/src/nodes/TSL.js";
+import {
+  type ShaderNodeObject,
+  float,
+  hash,
+  vertexIndex,
+} from "three/src/nodes/TSL.js";
 import * as THREE from "three/webgpu";
 import {
   StorageBufferAttribute,
@@ -28,7 +32,8 @@ import { Quadtree, type QuadtreeConfig } from "./Quadtree";
 // Extend THREE to include node materials in JSX
 extend(THREE as any);
 
-// extend({ InstancedTerrainGeometry });
+// Extend THREE to include custom terrain geometry
+extend({ TerrainSkirtGeometry });
 
 export interface HelloTerrainContextType {
   quadTree?: Quadtree;
@@ -202,7 +207,6 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         // Calculate 2D coordinates within the node's vertex grid
         const x = vertexIndex.mod(int(chunkEdgeVertextCount));
         const y = vertexIndex.div(int(chunkEdgeVertextCount)).toFloat().floor();
-        const nodeUv = vec2(x.toFloat(), y.toFloat());
 
         // Get node data
         const nodeOffset = nodeIndex.mul(int(4));
@@ -327,7 +331,7 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     }
   });
 
-  const colorNode = useMemo(() => {
+  const debugNodeColor = useMemo(() => {
     return Fn(() => {
       // Use textureLoad to sample the WebGPU texture directly
       const xy = uv();
@@ -411,7 +415,35 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
       vPosition: varying(vec3()),
       vGlobalVertexIndex: varying(int()),
       vNodeIndex: varying(int()),
+      vVertexIndex: varying(vertexIndex),
     };
+  }, []);
+
+  // Reusable function to calculate global vertex index from UV coordinates
+  const calculateGlobalVertexIndex = useMemo(() => {
+    return Fn(
+      ({
+        uvX,
+        uvY,
+        edgeVertexCount,
+      }: {
+        uvX: ShaderNodeObject<THREE.Node>;
+        uvY: ShaderNodeObject<THREE.Node>;
+        edgeVertexCount: number;
+      }) => {
+        const nodeIndex = instanceIndex;
+        const verticesPerNode = int(edgeVertexCount * edgeVertexCount);
+
+        // Calculate vertex coordinates within the node based on UV coordinates
+        // Use the same coordinate system as the compute shader
+        const vertexX = uvX.mul(edgeVertexCount).floor();
+        const vertexY = uvY.mul(edgeVertexCount).floor();
+        const vertexIndex = vertexY.mul(int(edgeVertexCount)).add(vertexX);
+
+        // Calculate global vertex index
+        return nodeIndex.mul(verticesPerNode).add(vertexIndex);
+      }
+    );
   }, []);
 
   const positionNode = useMemo(() => {
@@ -468,30 +500,111 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
       const finalWorldX = worldX.add(scaledLocalX);
       const finalWorldZ = worldZ.sub(scaledLocalZ);
 
+      return vec3(finalWorldX, 0, finalWorldZ);
+
       // For skirts, use the original UV coordinates to position at edges
       const skirtLocalX = uv().x.sub(0.5).mul(tileSize);
       const skirtLocalZ = uv().y.sub(0.5).mul(tileSize);
       const skirtWorldX = worldX.add(skirtLocalX);
       const skirtWorldZ = worldZ.sub(skirtLocalZ);
 
+      // Calculate the global vertex index using built-in vertexIndex
+      // The built-in vertexIndex goes from 0 to (chunkEdgeVertextCountWithSkirt * chunkEdgeVertextCountWithSkirt - 1)
+      const currentNodeIndex = instanceIndex; // Node index (0 to maxNodes-1)
+      const verticesPerNode = int(
+        chunkEdgeVertextCount * chunkEdgeVertextCount
+      );
+
+      // Map the built-in vertexIndex to inner vertex coordinates (excluding skirt)
+      // The geometry has skirt vertices, but the heightmap only covers inner vertices
+      const geometryVertexIndex = vertexIndex; // Built-in vertex index
+      const geometryVerticesPerEdge = int(chunkEdgeVertextCountWithSkirt);
+
+      // Calculate 2D coordinates within the geometry
+      const geometryX = geometryVertexIndex.mod(geometryVerticesPerEdge);
+      const geometryY = geometryVertexIndex.div(geometryVerticesPerEdge);
+
+      // Check if this vertex is a skirt vertex (on the edges)
+      const isSkirtVertex = geometryX
+        .lessThan(int(1))
+        .or(geometryX.greaterThan(int(chunkEdgeVertextCount)))
+        .or(geometryY.lessThan(int(1)))
+        .or(geometryY.greaterThan(int(chunkEdgeVertextCount)));
+
+      // Map geometry coordinates to inner vertex coordinates (subtract 1 to account for skirt)
+      const innerVertexX = geometryX.sub(int(1));
+      const innerVertexY = geometryY.sub(int(1));
+      const innerVertexIndex = innerVertexY
+        .mul(int(chunkEdgeVertextCount))
+        .add(innerVertexX);
+
+      // Calculate the global vertex index (same as compute shader)
+      const calculatedIndex = currentNodeIndex
+        .mul(verticesPerNode)
+        .add(innerVertexIndex);
+      const maxValidIndex = int(
+        maxNodes * chunkEdgeVertextCount * chunkEdgeVertextCount - 1
+      );
+      const clampedIndex = calculatedIndex.clamp(0, maxValidIndex);
+
+      const globalVertexIndex = isSkirtVertex.select(
+        int(0), // Use index 0 for skirt vertices
+        clampedIndex
+      );
+
+      varyings.vGlobalVertexIndex.assign(globalVertexIndex);
+      varyings.vVertexIndex.assign(geometryVertexIndex);
+
+      // Calculate height for both inner and skirt vertices
+      const innerVertexHeight =
+        nodeBuffers.heightmapStorageNode.element(globalVertexIndex);
+
+      // For skirt vertices, find the nearest inner vertex and use its height
+      const nearestInnerVertexX = geometryX.clamp(
+        int(1),
+        int(chunkEdgeVertextCount)
+      );
+      const nearestInnerVertexY = geometryY.clamp(
+        int(1),
+        int(chunkEdgeVertextCount)
+      );
+      const nearestInnerVertexIndex = nearestInnerVertexY
+        .sub(int(1))
+        .mul(int(chunkEdgeVertextCount))
+        .add(nearestInnerVertexX.sub(int(1)));
+      const nearestInnerGlobalIndex = currentNodeIndex
+        .mul(verticesPerNode)
+        .add(nearestInnerVertexIndex);
+      const nearestInnerHeight = nodeBuffers.heightmapStorageNode.element(
+        nearestInnerGlobalIndex
+      );
+
+      const height = isSkirtVertex.select(
+        nearestInnerHeight, // Use height from nearest inner vertex for skirt vertices
+        innerVertexHeight // Use calculated height for inner vertices
+      );
+
       const scaledPositionExcludingSkirt = Fn(() => {
-        return vec3(finalWorldX, 0, finalWorldZ);
+        return vec3(finalWorldX, height, finalWorldZ);
       });
 
       const skirtPosition = Fn(() => {
+        // For skirt vertices, subtract skirt length from the nearest inner vertex height
         const skirtLength = uniforms.skirtLengthUniform.toVar();
-        return vec3(skirtWorldX, skirtLength.mul(-1), skirtWorldZ);
+        const skirtHeight = height.sub(skirtLength);
+
+        return vec3(skirtWorldX, skirtHeight, skirtWorldZ);
       });
 
       varyings.vPosition.assign(
         select(
           isLeaf.not(),
           vec3(0.0),
-          select(isOnEdge, skirtPosition(), scaledPositionExcludingSkirt())
+          select(isSkirtVertex, skirtPosition(), scaledPositionExcludingSkirt())
         )
       );
 
-      return varyings.vPosition;
+      // return varyings.vPosition;
     });
 
     return vertexPositions();
@@ -501,29 +614,64 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
     nodeBuffers.nodeStorage,
     nodeBuffers.heightmapStorageNode,
     chunkEdgeVertextCount,
+    calculateGlobalVertexIndex,
   ]);
 
   const normalNode = useMemo(() => {
     return transformNormalToView(varyings.vNormal);
   }, [varyings.vNormal]);
 
-  const colorByNodeVertex = useMemo(() => {
+  const colorNode = useMemo(() => {
     return Fn(() => {
-      return mix(
-        vec3(
-          hash(varyings.vGlobalVertexIndex),
-          hash(varyings.vGlobalVertexIndex.add(1)),
-          hash(varyings.vGlobalVertexIndex.add(2))
-        ),
-        vec3(
-          hash(instanceIndex),
-          hash(instanceIndex.add(1)),
-          hash(instanceIndex.add(2))
-        ),
-        0.5
+      // Use the vertex index from the varying (calculated in position shader)
+      const vVertexIndex = vertexIndex;
+
+      // Calculate 2D coordinates within the geometry
+      const geometryVerticesPerEdge = int(chunkEdgeVertextCountWithSkirt);
+      const geometryX = vVertexIndex.mod(geometryVerticesPerEdge);
+      const geometryY = vVertexIndex.div(geometryVerticesPerEdge);
+
+      // Map to inner vertex grid coordinates (clamp to inner vertex range)
+      const innerVertexX = geometryX.clamp(int(1), int(chunkEdgeVertextCount));
+      const innerVertexY = geometryY.clamp(int(1), int(chunkEdgeVertextCount));
+
+      // Convert to 0-1 range for color components
+      // R component: increases along Y-axis (rows)
+      const rComponent = innerVertexY
+        .sub(int(1))
+        .toFloat()
+        .div(float(chunkEdgeVertextCount - 1));
+
+      // B component: increases along X-axis (columns)
+      const bComponent = innerVertexX
+        .sub(int(1))
+        .toFloat()
+        .div(float(chunkEdgeVertextCount - 1));
+
+      // G component: can be used to show if this is a skirt vertex or inner vertex
+      const isSkirtVertex = geometryX
+        .lessThan(int(1))
+        .or(geometryX.greaterThan(int(chunkEdgeVertextCount)))
+        .or(geometryY.lessThan(int(1)))
+        .or(geometryY.greaterThan(int(chunkEdgeVertextCount)));
+      const gComponent = isSkirtVertex.select(float(0), float(1.0)); // Skirt vertices are dimmer
+
+      // Create the grid color
+      const gridColor = vec3(
+        rComponent,
+        rComponent,
+        // bComponent.clamp(0.0, 1.0)
+        rComponent
       );
+
+      // return select(isSkirtVertex, vec3(0, 0, 0), gridColor);
+      return vec3(uv().x, uv().y, 0);
     })();
-  }, [varyings.vGlobalVertexIndex]);
+  }, [
+    varyings.vVertexIndex,
+    chunkEdgeVertextCount,
+    chunkEdgeVertextCountWithSkirt,
+  ]);
 
   return (
     <>
@@ -531,7 +679,10 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
         <boxGeometry
           args={[rootSize / 1000, rootSize / 1000, rootSize / 1000]}
         />
-        <meshPhysicalNodeMaterial ref={materialRef} colorNode={colorNode} />
+        <meshPhysicalNodeMaterial
+          ref={materialRef}
+          colorNode={debugNodeColor}
+        />
       </mesh>
       <HelloTerrainContext.Provider value={value}>
         <instancedMesh
@@ -541,9 +692,9 @@ export const HelloTerrain: FC<HelloTerrainProps> = ({
           frustumCulled={false}
           args={[undefined, undefined, maxNodes]}
         >
-          {/* add 2 to the edge vertex count to account for the skirt */}
-          <planeGeometry args={[1, 1, chunkSegments + 2, chunkSegments + 2]} />
-          {children({ positionNode, colorNode: colorByNodeVertex, normalNode })}
+          {/* Use custom terrain geometry with proper skirt corner handling */}
+          <terrainSkirtGeometry args={[chunkSegments]} />
+          {children({ positionNode, colorNode, normalNode })}
         </instancedMesh>
       </HelloTerrainContext.Provider>
     </>
