@@ -1,6 +1,11 @@
 "use client";
 
-import { Environment, OrbitControls } from "@react-three/drei";
+import {
+  Environment,
+  Html,
+  OrbitControls,
+  useTexture,
+} from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useMemo } from "react";
@@ -11,6 +16,7 @@ import {
   int,
   positionLocal,
   select,
+  texture,
   uniform,
   uv,
   vec3,
@@ -43,7 +49,13 @@ const TerrainPlane = () => {
       value: false,
       label: "Wireframe",
     },
+    extendUv: {
+      value: false,
+      label: "Extend UV to skirts",
+    },
   });
+
+  const uvMap = useTexture("/assets/uv-12x12.png");
 
   // Memoized varyings
   const uniforms = useMemo(() => {
@@ -111,8 +123,10 @@ const TerrainPlane = () => {
   }, [terrainGeometryControls.segments, uniforms.uSkirtLength]);
 
   const colorNode = useMemo(() => {
-    return Fn(() => vec3(uv().x, 0, uv().y))();
-  }, []);
+    return Fn(() => {
+      return texture(uvMap, uv());
+    })();
+  }, [uvMap]);
 
   useFrame(() => {
     uniforms.uSkirtLength.value = terrainGeometryControls.skirtLength;
@@ -121,7 +135,19 @@ const TerrainPlane = () => {
   return (
     <group>
       <mesh position={[-0.5, 0, -0.5]}>
-        <terrainGeometry args={[terrainGeometryControls.segments]} />
+        <Html>
+          <div className="flex flex-col items-center justify-center border-2 border-white rounded-md p-2 bg-black/50">
+            <span className="text-white text-2xl text-shadow-xl">
+              TerrainGeometry
+            </span>
+          </div>
+        </Html>
+        <terrainGeometry
+          args={[
+            terrainGeometryControls.segments,
+            terrainGeometryControls.extendUv,
+          ]}
+        />
         <meshStandardNodeMaterial
           wireframe={terrainGeometryControls.wireframe}
           positionNode={positionNode}
@@ -129,6 +155,13 @@ const TerrainPlane = () => {
         />
       </mesh>
       <mesh position={[0.5, 0, -0.5]} rotation={[-Math.PI / 2, 0, 0]}>
+        <Html>
+          <div className="flex flex-col items-center justify-center border-2 border-white rounded-md p-2 bg-black/50">
+            <span className="text-white text-2xl text-shadow-xl">
+              PlaneGeometry
+            </span>
+          </div>
+        </Html>
         <planeGeometry
           args={[
             1,
@@ -185,7 +218,7 @@ const TerrainGeometryScene = () => {
       <color attach="background" args={["#6dd1ed"]} />
       <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
-      <ambientLight intensity={2} />
+      <directionalLight intensity={1} position={[1, 1, 1]} />
       <OrbitControls />
       <TerrainPlane />
     </Canvas>

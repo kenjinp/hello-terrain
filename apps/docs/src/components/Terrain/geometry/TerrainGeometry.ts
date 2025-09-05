@@ -5,7 +5,7 @@ import { BufferAttribute, BufferGeometry } from "three";
  * This geometry ensures that corner triangles are subdivided correctly.
  */
 export class TerrainGeometry extends BufferGeometry {
-  constructor(innerSegments: number) {
+  constructor(innerSegments: number, extendUV = false) {
     super();
 
     // Validate innerSegments parameter
@@ -38,7 +38,11 @@ export class TerrainGeometry extends BufferGeometry {
       this.setAttribute(
         "uv",
         new BufferAttribute(
-          new Float32Array(this.generateUvs(innerSegments)),
+          new Float32Array(
+            extendUV
+              ? this.generateUvsExtended(innerSegments)
+              : this.generateUvsOnlyInner(innerSegments)
+          ),
           2
         )
       );
@@ -119,10 +123,10 @@ export class TerrainGeometry extends BufferGeometry {
   }
 
   /**
-   * Generate UV coordinates for the terrain with skirts.
-   * UVs are normalized to [0, 1] range.
+   * Generate UV coordinates for the inner grid only (skirt duplicates clamped to border).
+   * UVs are normalized to [0, 1] range with flipped V.
    */
-  private generateUvs(innerSegments: number): number[] {
+  private generateUvsOnlyInner(innerSegments: number): number[] {
     const edgeVertexCountWithSkirt = innerSegments + 1 + 2;
 
     const uvs: number[] = [];
@@ -131,7 +135,29 @@ export class TerrainGeometry extends BufferGeometry {
       const v = Math.min(Math.max((iy - 1) / innerSegments, 0), 1);
       for (let ix = 0; ix < edgeVertexCountWithSkirt; ix++) {
         const u = Math.min(Math.max((ix - 1) / innerSegments, 0), 1);
-        uvs.push(u, v);
+        uvs.push(u, 1 - v);
+      }
+    }
+
+    return uvs;
+  }
+
+  /**
+   * Generate UVs that extend 1 extra unit outward to the skirt ring.
+   * Map the entire geometry (including skirts) into [0,1] so side faces
+   * receive proper UVs without relying on texture wrapping. V is flipped.
+   */
+  private generateUvsExtended(innerSegments: number): number[] {
+    const edgeVertexCountWithSkirt = innerSegments + 1 + 2;
+
+    const uvs: number[] = [];
+    const denom = edgeVertexCountWithSkirt - 1;
+
+    for (let iy = 0; iy < edgeVertexCountWithSkirt; iy++) {
+      const v = iy / denom; // [0,1]
+      for (let ix = 0; ix < edgeVertexCountWithSkirt; ix++) {
+        const u = ix / denom; // [0,1]
+        uvs.push(u, 1 - v);
       }
     }
 
@@ -140,8 +166,6 @@ export class TerrainGeometry extends BufferGeometry {
 
   /**
    * Generate vertex normals.
-   * - Inner vertices: up (0, 1, 0)
-   * - Skirt ring vertices (outermost edge): down (0, -1, 0)
    */
   private generateNormals(innerSegments: number): number[] {
     const edgeVertexCountWithSkirt = innerSegments + 1 + 2;
@@ -149,12 +173,25 @@ export class TerrainGeometry extends BufferGeometry {
     const normals: number[] = [];
 
     for (let iy = 0; iy < edgeVertexCountWithSkirt; iy++) {
-      const onEdgeY = iy === 0 || iy === last;
       for (let ix = 0; ix < edgeVertexCountWithSkirt; ix++) {
         const onEdgeX = ix === 0 || ix === last;
-        const isSkirt = onEdgeX || onEdgeY;
-        if (isSkirt) {
-          normals.push(0, -1, 0);
+        const onEdgeY = iy === 0 || iy === last;
+
+        if (onEdgeX || onEdgeY) {
+          let nx = 0;
+          let nz = 0;
+
+          if (ix === 0) nx -= 1; // left edge
+          if (ix === last) nx += 1; // right edge
+          if (iy === 0) nz -= 1; // back edge (-Z)
+          if (iy === last) nz += 1; // forward edge (+Z)
+
+          const len = Math.hypot(nx, nz);
+          if (len > 0) {
+            normals.push(nx / len, 0, nz / len);
+          } else {
+            normals.push(0, 1, 0);
+          }
         } else {
           normals.push(0, 1, 0);
         }
