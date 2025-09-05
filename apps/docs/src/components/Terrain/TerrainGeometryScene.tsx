@@ -33,10 +33,10 @@ const TerrainPlane = () => {
       label: "Segments",
     },
     skirtLength: {
-      value: 0,
+      value: 1,
       min: 0,
-      max: 100,
-      step: 1,
+      max: 20,
+      step: 0.2,
       label: "Skirt Length",
     },
     wireframe: {
@@ -78,6 +78,38 @@ const TerrainPlane = () => {
     })();
   }, [terrainGeometryControls.segments, uniforms.uSkirtLength]);
 
+  const positionNodePlane = useMemo(() => {
+    return Fn(() => {
+      const skirtLength = uniforms.uSkirtLength.toVar();
+      const vIndex = vertexIndex; // built-in per-vertex index
+      // Edge length includes the duplicated outer ring for skirts: (segments + 1 + 2)
+      const edge = int(terrainGeometryControls.segments + 3);
+      const vx = vIndex.mod(edge);
+      const vy = vIndex.div(edge);
+      const last = edge.sub(int(1));
+      const isSkirtVertex = vx
+        .equal(int(0))
+        .or(vx.equal(last))
+        .or(vy.equal(int(0)))
+        .or(vy.equal(last));
+
+      const wp = positionLocal;
+      // Scale inner vertices outward so they align directly above the outer skirt ring.
+      // Map inner extent [-0.5 + step, 0.5 - step] -> [-0.5, 0.5]
+      const step = float(1).div(edge.sub(int(1)).toFloat());
+      const scale = float(1).div(float(1).sub(step.mul(2.0)));
+      const scaledInner = vec3(wp.x.mul(scale), wp.y.mul(scale), wp.z);
+
+      const afterScale = select(isSkirtVertex, wp, scaledInner);
+      const beforeTransform = select(
+        isSkirtVertex,
+        vec3(afterScale.x, afterScale.y, afterScale.z.sub(float(skirtLength))),
+        afterScale
+      );
+      return beforeTransform;
+    })();
+  }, [terrainGeometryControls.segments, uniforms.uSkirtLength]);
+
   const colorNode = useMemo(() => {
     return Fn(() => vec3(uv().x, 0, uv().y))();
   }, []);
@@ -89,14 +121,6 @@ const TerrainPlane = () => {
   return (
     <group>
       <mesh position={[-0.5, 0, -0.5]}>
-        {/* <planeGeometry
-          args={[
-            1,
-            1,
-            terrainGeometryControls.segments,
-            terrainGeometryControls.segments,
-          ]}
-        /> */}
         <terrainGeometry args={[terrainGeometryControls.segments]} />
         <meshStandardNodeMaterial
           wireframe={terrainGeometryControls.wireframe}
@@ -115,7 +139,7 @@ const TerrainPlane = () => {
         />
         <meshStandardNodeMaterial
           wireframe={terrainGeometryControls.wireframe}
-          positionNode={positionNode}
+          positionNode={positionNodePlane}
           colorNode={colorNode}
         />
       </mesh>
