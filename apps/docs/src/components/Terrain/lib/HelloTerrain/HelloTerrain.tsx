@@ -32,9 +32,6 @@ import { Quadtree, type QuadtreeConfig } from "./Quadtree";
 // Extend THREE to include node materials in JSX
 extend(THREE as any);
 
-// Extend THREE to include custom terrain geometry
-extend({ TerrainSkirtGeometry });
-
 export interface HelloTerrainContextType {
   quadTree?: Quadtree;
   mesh?: THREE.InstancedMesh;

@@ -10,9 +10,7 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -22,18 +20,17 @@
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "@react-three/fiber": "^9.3.0",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "three": "^0.178.0"
+    "@react-three/fiber": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "three": "catalog:"
   },
   "dependencies": {
     "@hello-terrain/three": "workspace:*"
   },
   "devDependencies": {
-    "@types/react": "^19.1.10",
-    "@types/react-dom": "^19.1.7",
-    "@types/three": "^0.178.0",
-    "typescript": "^5.5.4"
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "catalog:"
   }
 }

@@ -1,4 +1,6 @@
-export { TerrainCanvas } from './TerrainCanvas';
-export { useThreeWorld } from './hooks/useThreeWorld';
-export { TerrainProvider, useTerrainContext } from './TerrainContext';
-export type { TerrainCanvasProps, TerrainContextType } from './types';
+import { TerrainGeometry as TerrainGeometryImpl } from "@hello-terrain/three";
+import { extend } from "@react-three/fiber";
+
+const TerrainGeometry = extend(TerrainGeometryImpl);
+
+export { TerrainGeometry };

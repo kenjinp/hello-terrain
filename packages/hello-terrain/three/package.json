@@ -10,9 +10,7 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": [
-    "dist"
-  ],
+  "files": ["dist"],
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
@@ -22,10 +20,9 @@
     "type-check": "tsc --noEmit"
   },
   "peerDependencies": {
-    "three": "^0.178.0"
+    "three": "catalog:"
   },
   "devDependencies": {
-    "@types/three": "^0.178.0",
-    "typescript": "^5.5.4"
+    "@types/three": "catalog:"
   }
 }

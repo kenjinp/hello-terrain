@@ -1,5 +1,6 @@
 "use client";
 
+import * as hello from "@hello-terrain/react";
 import {
   Environment,
   Html,
@@ -23,13 +24,13 @@ import {
   vertexIndex,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
-import { TerrainGeometry } from "./geometry/TerrainGeometry";
 
 // biome-ignore lint/suspicious/noExplicitAny: <idk its recommended way from drei>
 extend(THREE as any);
-extend({ TerrainGeometry });
 
 const TerrainPlane = () => {
+  // const ref = useRef<ComponentRef<typeof hello.TerrainGeometry>>(null!);
+
   const terrainGeometryControls = useControls("TerrainGeometry", {
     segments: {
       value: 10,
@@ -53,6 +54,10 @@ const TerrainPlane = () => {
       value: false,
       label: "Extend UV to skirts",
     },
+    paintSkirts: {
+      value: false,
+      label: "Paint Skirts",
+    },
   });
 
   const uvMap = useTexture("/assets/uv-12x12.png");
@@ -60,7 +65,9 @@ const TerrainPlane = () => {
   // Memoized varyings
   const uniforms = useMemo(() => {
     return {
+      uWireframe: uniform(false).setName("uWireframe"),
       uSkirtLength: uniform(0).setName("uSkirtLength"),
+      uPaintSkirts: uniform(false).setName("uPaintSkirts"),
     };
   }, []);
 
@@ -124,12 +131,33 @@ const TerrainPlane = () => {
 
   const colorNode = useMemo(() => {
     return Fn(() => {
-      return texture(uvMap, uv());
+      const ux = uv().x;
+      const uy = uv().y;
+
+      const segmentCount = terrainGeometryControls.segments + 2;
+      const segmentStep = 1 / segmentCount;
+
+      const innerX = ux
+        .greaterThan(segmentStep)
+        .and(ux.lessThan(1 - segmentStep));
+      const innerY = uy
+        .greaterThan(segmentStep)
+        .and(uy.lessThan(1 - segmentStep));
+      const isSkirtFragment = innerX.and(innerY).not();
+
+      const color = select(
+        uniforms.uPaintSkirts.and(isSkirtFragment),
+        vec3(0, 0, 0),
+        texture(uvMap, uv())
+      );
+      return select(uniforms.uWireframe, vec3(1, 0, 0), color);
     })();
-  }, [uvMap]);
+  }, [uvMap, terrainGeometryControls.segments, uniforms]);
 
   useFrame(() => {
     uniforms.uSkirtLength.value = terrainGeometryControls.skirtLength;
+    uniforms.uWireframe.value = terrainGeometryControls.wireframe;
+    uniforms.uPaintSkirts.value = terrainGeometryControls.paintSkirts;
   });
 
   return (
@@ -142,7 +170,7 @@ const TerrainPlane = () => {
             </span>
           </div>
         </Html>
-        <terrainGeometry
+        <hello.TerrainGeometry
           args={[
             terrainGeometryControls.segments,
             terrainGeometryControls.extendUv,
@@ -191,7 +219,6 @@ const TerrainGeometryScene = () => {
         height: "100%",
       }}
       shadows
-      // biome-ignore lint/suspicious/noExplicitAny: <can't get it to work :p>
       gl={async (props) => {
         props.alpha = true;
         props.antialias = true;
