@@ -19,7 +19,7 @@ catalogs:
       specifier: ^19.1.7
       version: 19.1.7
     '@types/three':
-      specifier: ^0.180.0
+      specifier: 0.180.0
       version: 0.180.0
     react:
       specifier: ^19.1.1
@@ -28,7 +28,7 @@ catalogs:
       specifier: ^19.1.1
       version: 19.1.1
     three:
-      specifier: ^0.180.0
+      specifier: 0.180.0
       version: 0.180.0
 
 importers:

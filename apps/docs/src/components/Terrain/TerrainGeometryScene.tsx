@@ -2,6 +2,12 @@
 
 import * as hello from "@hello-terrain/react";
 import {
+  isSkirtFragment,
+  isSkirtVertex,
+  uSegments,
+  uSkirtLength,
+} from "@hello-terrain/three";
+import {
   Environment,
   Html,
   OrbitControls,
@@ -10,9 +16,9 @@ import {
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useMemo } from "react";
-import { Fn } from "three/src/nodes/TSL.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
+  Fn,
   float,
   int,
   positionLocal,
@@ -66,7 +72,6 @@ const TerrainPlane = () => {
   const uniforms = useMemo(() => {
     return {
       uWireframe: uniform(false).setName("uWireframe"),
-      uSkirtLength: uniform(0).setName("uSkirtLength"),
       uPaintSkirts: uniform(false).setName("uPaintSkirts"),
     };
   }, []);
@@ -74,18 +79,7 @@ const TerrainPlane = () => {
   // Memoized nodes
   const positionNode = useMemo(() => {
     return Fn(() => {
-      const skirtLength = uniforms.uSkirtLength.toVar();
-      const vIndex = vertexIndex; // built-in per-vertex index
-      // Edge length includes the duplicated outer ring for skirts: (segments + 1 + 2)
-      const edge = int(terrainGeometryControls.segments + 3);
-      const vx = vIndex.mod(edge);
-      const vy = vIndex.div(edge);
-      const last = edge.sub(int(1));
-      const isSkirtVertex = vx
-        .equal(int(0))
-        .or(vx.equal(last))
-        .or(vy.equal(int(0)))
-        .or(vy.equal(last));
+      const skirtLength = uSkirtLength.toVar();
 
       const wp = positionLocal;
       const beforeTransform = select(
@@ -95,12 +89,11 @@ const TerrainPlane = () => {
       );
       return beforeTransform;
     })();
-  }, [terrainGeometryControls.segments, uniforms.uSkirtLength]);
+  }, []);
 
   const positionNodePlane = useMemo(() => {
     return Fn(() => {
-      const skirtLength = uniforms.uSkirtLength.toVar();
-      const vIndex = vertexIndex; // built-in per-vertex index
+      const vIndex = int(vertexIndex); // cast to i32 to match arithmetic
       // Edge length includes the duplicated outer ring for skirts: (segments + 1 + 2)
       const edge = int(terrainGeometryControls.segments + 3);
       const vx = vIndex.mod(edge);
@@ -122,29 +115,19 @@ const TerrainPlane = () => {
       const afterScale = select(isSkirtVertex, wp, scaledInner);
       const beforeTransform = select(
         isSkirtVertex,
-        vec3(afterScale.x, afterScale.y, afterScale.z.sub(float(skirtLength))),
+        vec3(
+          afterScale.x,
+          afterScale.y,
+          afterScale.z.sub(uSkirtLength.toVar())
+        ),
         afterScale
       );
       return beforeTransform;
     })();
-  }, [terrainGeometryControls.segments, uniforms.uSkirtLength]);
+  }, [terrainGeometryControls.segments]);
 
   const colorNode = useMemo(() => {
     return Fn(() => {
-      const ux = uv().x;
-      const uy = uv().y;
-
-      const segmentCount = terrainGeometryControls.segments + 2;
-      const segmentStep = 1 / segmentCount;
-
-      const innerX = ux
-        .greaterThan(segmentStep)
-        .and(ux.lessThan(1 - segmentStep));
-      const innerY = uy
-        .greaterThan(segmentStep)
-        .and(uy.lessThan(1 - segmentStep));
-      const isSkirtFragment = innerX.and(innerY).not();
-
       const color = select(
         uniforms.uPaintSkirts.and(isSkirtFragment),
         vec3(0, 0, 0),
@@ -152,10 +135,11 @@ const TerrainPlane = () => {
       );
       return select(uniforms.uWireframe, vec3(1, 0, 0), color);
     })();
-  }, [uvMap, terrainGeometryControls.segments, uniforms]);
+  }, [uvMap, uniforms]);
 
   useFrame(() => {
-    uniforms.uSkirtLength.value = terrainGeometryControls.skirtLength;
+    uSegments.value = terrainGeometryControls.segments;
+    uSkirtLength.value = terrainGeometryControls.skirtLength;
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uPaintSkirts.value = terrainGeometryControls.paintSkirts;
   });
