@@ -1,4 +1,4 @@
-import { fnv1a } from "./hash";
+import { fnv1a } from "../hash";
 
 export type NeighborIndices = [number, number, number, number]; // [left, right, top, bottom]
 export type ChildIndices = [number, number, number, number]; // [left, right, top, bottom]
@@ -353,6 +353,7 @@ export class NodeView {
    * Release internal buffers and mark this view as destroyed
    */
   destroy(): void {
+    // Replace buffers with zero-length views to allow GC
     this.childrenIndicesBuffer = new Uint16Array(0);
     this.neighborsIndicesBuffer = new Uint16Array(0);
     this.nodeBuffer = new Int32Array(0);

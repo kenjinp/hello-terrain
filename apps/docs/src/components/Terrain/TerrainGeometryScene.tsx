@@ -57,7 +57,7 @@ const TerrainPlane = () => {
       label: "Wireframe",
     },
     extendUv: {
-      value: false,
+      value: true,
       label: "Extend UV to skirts",
     },
     paintSkirts: {

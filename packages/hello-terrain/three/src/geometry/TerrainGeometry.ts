@@ -5,7 +5,7 @@ import { BufferAttribute, BufferGeometry } from "three";
  * This geometry ensures that corner triangles are subdivided correctly.
  */
 export class TerrainGeometry extends BufferGeometry {
-  constructor(innerSegments: number, extendUV = false) {
+  constructor(innerSegments: number, extendUV = true) {
     super();
 
     // Validate innerSegments parameter

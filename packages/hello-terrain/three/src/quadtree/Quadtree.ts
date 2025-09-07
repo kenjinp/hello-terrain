@@ -6,7 +6,7 @@ import {
   NodeView,
 } from "./Node";
 
-export interface QuadtreeConfig {
+export interface QuadtreeParams {
   maxLevel: number;
   rootSize: number;
   minNodeSize: number;
@@ -20,14 +20,14 @@ const tempVector3 = new THREE.Vector3();
 export class Quadtree {
   private nodeCount = 0;
   private deepestLevel = 0;
-  private config: QuadtreeConfig;
+  private config: QuadtreeParams;
   private nodeView: NodeView;
 
   // Pre-allocated buffers to avoid object creation
   private tempChildIndices: ChildIndices = [-1, -1, -1, -1];
   private tempNeighborIndices: NeighborIndices = [-1, -1, -1, -1];
 
-  constructor(config: QuadtreeConfig) {
+  constructor(config: QuadtreeParams) {
     this.config = config;
     this.nodeView = new NodeView(config.maxNodes);
     this.initialize();
@@ -249,7 +249,7 @@ export class Quadtree {
   /**
    * Get the configuration
    */
-  getConfig(): QuadtreeConfig {
+  getConfig(): QuadtreeParams {
     return this.config;
   }
 

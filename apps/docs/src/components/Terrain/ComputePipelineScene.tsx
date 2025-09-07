@@ -1,6 +1,11 @@
 "use client";
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { OrbitControls, useHelper, useTexture } from "@react-three/drei";
+import {
+  Environment,
+  OrbitControls,
+  useHelper,
+  useTexture,
+} from "@react-three/drei";
 import {
   Canvas,
   type ThreeToJSXElements,
@@ -1117,7 +1122,7 @@ const GPUQuadtree = () => {
         ]}
       /> */}
       <color attach="background" args={["#6dd1ed"]} />
-      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
+      <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
       <ambientLight intensity={2} />
     </>
