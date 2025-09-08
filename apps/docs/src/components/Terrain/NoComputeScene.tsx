@@ -68,7 +68,7 @@ const TerrainMaterial = () => {
     "hashTime",
     "hash",
     "hasStateChanged",
-  ] as const);
+  ]);
 
   const quadtreeControls = useControls("Texture Settings", {
     lightPosition: {

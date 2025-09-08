@@ -1,4 +1,5 @@
 "use client";
+import type { ReactNode, RefObject } from "react";
 import {
   createContext,
   createRef,
@@ -9,7 +10,6 @@ import {
   useRef,
   useState,
 } from "react";
-import type { ReactNode, RefObject } from "react";
 
 export type MetricId = string;
 
