@@ -1,6 +1,12 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
 export { isSkirtFragment, isSkirtVertex } from "./nodes/skirt";
-export { tileData } from "./nodes/tile";
+export {
+  rootUV,
+  tileIsLeaf,
+  tileLevel,
+  tileOriginVec2,
+  tileVertexWorldPosition,
+} from "./nodes/tile";
 export {
   uRootOrigin,
   uRootSize,

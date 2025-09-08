@@ -1,12 +1,6 @@
-import {
-  DynamicDrawUsage,
-  InstancedMesh,
-  type NodeMaterial,
-  type Vector3,
-} from "three/webgpu";
+import { InstancedMesh, type NodeMaterial, type Vector3 } from "three/webgpu";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
-import { tileData } from "./nodes/tile";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
@@ -25,11 +19,8 @@ export class TerrainMesh extends InstancedMesh {
     super(geometry, material, quadtreeParams.maxNodes);
     this.quadtree = new Quadtree({
       ...quadtreeParams,
-      origin: this.position,
+      origin: this.position.clone(),
     });
-    this.instanceMatrix.setUsage(DynamicDrawUsage);
-    this.count = quadtreeParams.maxNodes;
-    this.instanceMatrix.needsUpdate = true;
 
     // const tileEdgeVertextCount = innerTileSegments + 1 + 2;
     this.nodeStorage = new StorageBuffer(
@@ -64,7 +55,6 @@ export class TerrainMesh extends InstancedMesh {
       this.nodeStorage.update(
         this.quadtree.getNodeView().getBuffers().nodeBuffer
       );
-      this.instanceMatrix.needsUpdate = true;
       this.setMetric("hashTime", `${(afterHash - beforeHash).toFixed(2)}ms`);
       this.setMetric("hash", this.lastHash.toString());
       this.setMetric(
@@ -110,8 +100,6 @@ export class TerrainMesh extends InstancedMesh {
   //   // return the result
   //   return 0;
   // }
-
-  tileDataFn = () => tileData(this.nodeStorage.storageNode);
 
   destroy() {
     // destroy storage buffers and other resources

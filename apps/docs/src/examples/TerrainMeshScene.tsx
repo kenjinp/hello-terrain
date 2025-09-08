@@ -5,12 +5,20 @@ import * as hello from "@hello-terrain/react";
 import {
   type TerrainMesh,
   isSkirtVertex,
+  rootUV,
+  tileIsLeaf,
+  tileVertexWorldPosition,
   uRootOrigin,
   uRootSize,
   uSegments,
   uSkirtLength,
 } from "@hello-terrain/three";
-import { Environment, Html, OrbitControls } from "@react-three/drei";
+import {
+  Environment,
+  Html,
+  OrbitControls,
+  useTexture,
+} from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useState } from "react";
@@ -20,10 +28,8 @@ import {
   float,
   hash,
   instanceIndex,
-  int,
-  positionLocal,
-  pow,
   select,
+  texture,
   uniform,
   vec3,
 } from "three/tsl";
@@ -33,7 +39,6 @@ import * as THREE from "three/webgpu";
 extend(THREE as any);
 
 const TerrainPlane = () => {
-  // biome-ignore lint/style/noNonNullAssertion: it's dumb
   const { camera } = useThree();
   const [helloTerrainMesh, setHelloTerrainMesh] = useState<TerrainMesh | null>(
     null
@@ -101,14 +106,19 @@ const TerrainPlane = () => {
       step: 0.1,
       label: "Subdivision Factor",
     },
+    useTexture: {
+      value: false,
+      label: "Use Texture",
+    },
   });
 
-  // const uvMap = useTexture("/assets/uv-12x12.png");
+  const uvMap = useTexture("/assets/uv-12x12.png");
 
   // Memoized varyings
   const uniforms = useMemo(() => {
     return {
       uWireframe: uniform(false).setName("uWireframe"),
+      uUseTexture: uniform(false).setName("uUseTexture"),
     };
   }, []);
 
@@ -125,28 +135,11 @@ const TerrainPlane = () => {
       })();
     }
     return Fn(() => {
-      const skirtLength = uSkirtLength.toVar();
       const nodeStorage = helloTerrainMesh.nodeStorage.storageNode;
-      const nodeIndex = instanceIndex;
-      const nodeOffset = nodeIndex.mul(int(4));
-      const level = nodeStorage.element(nodeOffset);
-      const nodeX = nodeStorage.element(nodeOffset.add(int(1)));
-      const nodeY = nodeStorage.element(nodeOffset.add(int(2)));
-      const isLeaf = nodeStorage.element(nodeOffset.add(int(3))).equal(int(1));
-      const tileSize = uRootSize.div(pow(2.0, level.toFloat()));
-      const worldX = uRootOrigin.x.add(
-        nodeX.add(0.5).mul(tileSize).sub(uRootSize.div(2.0))
-      );
-      const worldZ = uRootOrigin.z.add(
-        nodeY.add(0.5).mul(tileSize).sub(uRootSize.div(2.0))
-      );
-      const localOffsetX = positionLocal.x.mul(tileSize);
-      const localOffsetZ = positionLocal.z.mul(tileSize);
-      const worldPosition = vec3(
-        worldX.add(localOffsetX),
-        uRootOrigin.y,
-        worldZ.add(localOffsetZ)
-      );
+      const worldPosition = tileVertexWorldPosition(nodeStorage);
+      const isLeaf = tileIsLeaf(nodeStorage);
+      const skirtLength = uSkirtLength.toVar();
+
       const beforeTransform = select(
         isSkirtVertex,
         vec3(
@@ -162,25 +155,41 @@ const TerrainPlane = () => {
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the uniform will be updated by the useFrame hook
   const colorNode = useMemo(() => {
+    if (!helloTerrainMesh) {
+      return Fn(() => {
+        return vec3(0, 0, 0);
+      })();
+    }
     return Fn(() => {
+      const worldUv = rootUV;
+      const textureColor = texture(uvMap, worldUv);
+      const indexHashColor = vec3(
+        hash(instanceIndex),
+        hash(instanceIndex.add(1)),
+        hash(instanceIndex.add(2))
+      );
+
       return select(
         uniforms.uWireframe,
         vec3(1, 0, 0),
-        vec3(
-          hash(instanceIndex),
-          hash(instanceIndex.add(1)),
-          hash(instanceIndex.add(2))
-        )
+        select(uniforms.uUseTexture, textureColor, indexHashColor)
       );
     })();
-  }, []);
+  }, [helloTerrainMesh]);
 
   useFrame(() => {
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
+    uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
     uSegments.value = terrainGeometryControls.segments;
     uSkirtLength.value = terrainGeometryControls.skirtLength;
     uRootSize.value = terrainGeometryControls.rootSize;
     if (helloTerrainMesh) {
+      // Keep quadtree config in sync with UI controls so subdivision matches rootSize changes
+      const qConfig = helloTerrainMesh.quadtree.getConfig();
+      qConfig.rootSize = terrainGeometryControls.rootSize;
+      qConfig.minNodeSize = terrainGeometryControls.minNodeSize;
+      qConfig.subdivisionFactor = terrainGeometryControls.subdivisionFactor;
+      qConfig.maxLevel = terrainGeometryControls.maxLevel;
       helloTerrainMesh.update(camera.position);
       setMetric(
         "updatePosition",
