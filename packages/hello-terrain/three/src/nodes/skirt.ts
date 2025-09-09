@@ -28,7 +28,7 @@ export const isSkirtVertex: Node = Fn(() => {
 })();
 
 /**
- * Note: Only available in the fragment shader
+ * Note: Only available in the fragme nt shader
  *
  * Node that evaluates to true for fragments that belong to the terrain skirt.
  *

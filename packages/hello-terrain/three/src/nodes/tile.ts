@@ -12,6 +12,12 @@ import { Fn, instanceIndex } from "three/tsl";
 import type { StorageBufferNode } from "three/webgpu";
 import { uRootOrigin, uRootSize } from "./uniforms";
 
+export const tileSize = (nodeStorage: ShaderNodeObject<StorageBufferNode>) =>
+  Fn(([nodeStorage]: [ShaderNodeObject<StorageBufferNode>]) => {
+    const level = tileLevel(nodeStorage);
+    return uRootSize.div(pow(2.0, level.toFloat()));
+  })(nodeStorage);
+
 export const tileLevel = (nodeStorage: ShaderNodeObject<StorageBufferNode>) =>
   Fn(([nodeStorage]: [ShaderNodeObject<StorageBufferNode>]) => {
     const nodeIndex = instanceIndex;
@@ -40,23 +46,23 @@ export const tileIsLeaf = (nodeStorage: ShaderNodeObject<StorageBufferNode>) =>
     return isLeaf;
   })(nodeStorage);
 
+// TODO: this is only for vertex/fragment shader
 export const tileVertexWorldPosition = (
   nodeStorage: ShaderNodeObject<StorageBufferNode>
 ) =>
   Fn(([nodeStorage]: [ShaderNodeObject<StorageBufferNode>]) => {
-    const level = tileLevel(nodeStorage);
     const nodeVec2 = tileOriginVec2(nodeStorage);
     const nodeX = nodeVec2.x;
     const nodeY = nodeVec2.y;
-    const tileSize = uRootSize.div(pow(2.0, level.toFloat()));
+    const size = tileSize(nodeStorage);
     const worldX = uRootOrigin.x.add(
-      nodeX.add(0.5).mul(tileSize).sub(uRootSize.div(2.0))
+      nodeX.add(0.5).mul(size).sub(uRootSize.div(2.0))
     );
     const worldZ = uRootOrigin.z.add(
-      nodeY.add(0.5).mul(tileSize).sub(uRootSize.div(2.0))
+      nodeY.add(0.5).mul(size).sub(uRootSize.div(2.0))
     );
-    const localOffsetX = positionLocal.x.mul(tileSize);
-    const localOffsetZ = positionLocal.z.mul(tileSize);
+    const localOffsetX = positionLocal.x.mul(size);
+    const localOffsetZ = positionLocal.z.mul(size);
     const worldPosition = vec3(
       worldX.add(localOffsetX),
       uRootOrigin.y,
@@ -64,8 +70,8 @@ export const tileVertexWorldPosition = (
     );
     return worldPosition;
   })(nodeStorage);
-// World-space UV that does not depend on node storage or instance index.
-// Use this in fragment shading to avoid per-fragment instance index issues.
+
+// TODO: this is only for vertex/fragment shader
 export const rootUV = Fn(() => {
   const worldX = positionWorld.x;
   const worldZ = positionWorld.z;

@@ -5,6 +5,8 @@ import {
 import { extend } from "@react-three/fiber";
 
 const TerrainGeometry = extend(TerrainGeometryImpl);
+const terrainGeometry = TerrainGeometry;
 const TerrainMesh = extend(TerrainMeshImpl);
+const terrainMesh = TerrainMesh;
 
-export { TerrainGeometry, TerrainMesh };
+export { TerrainGeometry, terrainGeometry, TerrainMesh, terrainMesh };

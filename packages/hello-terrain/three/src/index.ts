@@ -1,4 +1,10 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
+export {
+  ElevationFn,
+  type ElevationCallback,
+  type ElevationParams,
+  type ElevationReturn,
+} from "./nodes/ElevationFn";
 export { isSkirtFragment, isSkirtVertex } from "./nodes/skirt";
 export {
   rootUV,
