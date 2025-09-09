@@ -1,7 +1,16 @@
-import { InstancedMesh, type NodeMaterial, type Vector3 } from "three/webgpu";
+import {
+  InstancedMesh,
+  type NodeMaterial,
+  type Texture,
+  type Vector3,
+  type WebGPURenderer,
+} from "three/webgpu";
+import { ComputeShader } from "./compute/ComputeToTexture";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
+import { floatToRG } from "./nodes/RGtexture";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
+import { RGTexture } from "./texture/RGTexture";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
   innerTileSegments: number;
@@ -13,6 +22,8 @@ export class TerrainMesh extends InstancedMesh {
   lastHash: number;
   metrics: Record<string, string | number | boolean>;
   public readonly nodeStorage: StorageBuffer;
+  private heightmapComputeShader: ComputeShader;
+  public readonly heightmapTexture: Texture;
   constructor(public readonly params: TerrainMeshParams) {
     const { innerTileSegments, material, ...quadtreeParams } = params;
     const geometry = new TerrainGeometry(params.innerTileSegments);
@@ -37,9 +48,28 @@ export class TerrainMesh extends InstancedMesh {
       leafNodeCount: 0,
       nodeCount: 0,
     };
-    console.log("TerrainMesh construced", this);
+
+    const tileEdgeVertexCount = innerTileSegments + 1 + 2;
+    const computeTextureHeight = tileEdgeVertexCount;
+    const computeTextureWidth = computeTextureHeight * quadtreeParams.maxNodes;
+    this.heightmapTexture = new RGTexture(
+      computeTextureWidth,
+      computeTextureHeight
+    );
+    this.heightmapComputeShader = new ComputeShader(
+      (_pixelPos, _uvPos, textelSize) => {
+        return floatToRG(textelSize);
+      }
+    );
+    this.heightmapComputeShader.createBinds(
+      computeTextureWidth,
+      computeTextureHeight,
+      this.heightmapTexture
+    );
+
+    console.log("TerrainMesh constructed", this);
   }
-  update(position: Vector3) {
+  update(renderer: WebGPURenderer, position: Vector3) {
     this.setMetric(
       "updatePosition",
       `${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`
@@ -49,6 +79,7 @@ export class TerrainMesh extends InstancedMesh {
     // update storage buffers
 
     if (this.quadtree.hasStateChanged(this.lastHash)) {
+      this.heightmapComputeShader.renderBind(renderer, this.heightmapTexture);
       const beforeHash = performance.now();
       this.lastHash = this.quadtree.getStateHash();
       const afterHash = performance.now();

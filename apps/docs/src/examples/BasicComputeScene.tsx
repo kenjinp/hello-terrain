@@ -39,7 +39,7 @@ import * as THREE from "three/webgpu";
 extend(THREE as any);
 
 const TerrainPlane = () => {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const [helloTerrainMesh, setHelloTerrainMesh] = useState<TerrainMesh | null>(
     null
   );

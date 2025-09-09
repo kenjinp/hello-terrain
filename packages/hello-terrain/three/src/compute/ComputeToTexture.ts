@@ -7,7 +7,7 @@ import {
 } from "three/tsl";
 import type { ComputeNode, Node, Texture, WebGPURenderer } from "three/webgpu";
 
-export class ComputeShader {
+export class ComputeToTexture {
   private textureToShader: Map<Texture, ShaderNodeObject<ComputeNode>>;
 
   constructor(
