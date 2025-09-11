@@ -1,17 +1,21 @@
+import { int, vec3 } from "three/tsl";
 import {
   InstancedMesh,
   type NodeMaterial,
-  type Vector3,
+  Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
 import { ComputeToBufferMap } from "./compute/ComputeToBufferMap";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
+import type { ElevationReturn } from "./nodes/ElevationFn";
+import { height } from "./nodes/height";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
   innerTileSegments: number;
   material?: NodeMaterial;
+  elevationFn?: ElevationReturn;
 }
 
 export class TerrainMesh extends InstancedMesh {
@@ -67,8 +71,20 @@ export class TerrainMesh extends InstancedMesh {
     );
 
     this.heightmapComputeShader = new ComputeToBufferMap(
-      (_nodeIndex, vertexIndex, uv, _texelSize) => {
-        this.heightmapStorage.storageNode.element(vertexIndex).assign(uv.x);
+      (nodeIndex, globalVertexIndex, uv, _texelSize) => {
+        const origin = vec3(
+          new Vector3(this.position.x, this.position.y, this.position.z)
+        );
+
+        const h = height(
+          nodeIndex,
+          this.nodeStorage.storageNode,
+          int(this.params.rootSize),
+          origin,
+          uv,
+          this.params.elevationFn
+        );
+        this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
       }
     );
     this.heightmapComputeShader.createBinds(

@@ -1,8 +1,10 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
+import { vec2_fbm, warp_fbm } from "@/components/Terrain/fmb";
 import * as hello from "@hello-terrain/react";
 import {
+  ElevationFn,
   type TerrainMesh,
   isSkirtVertex,
   rootUV,
@@ -28,6 +30,7 @@ import {
   float,
   hash,
   instanceIndex,
+  positionLocal,
   select,
   texture,
   uniform,
@@ -111,6 +114,48 @@ const TerrainPlane = () => {
       value: false,
       label: "Use Texture",
     },
+    heightmapScale: {
+      value: 1.0,
+      min: 0.0,
+      max: 1000.0,
+      step: 0.1,
+      label: "Heightmap Scale",
+    },
+    fbmIterations: {
+      value: 8,
+      min: 1,
+      max: 30,
+      step: 1,
+      label: "FBM Iterations",
+    },
+    fbmAmplitude: {
+      value: 1.0,
+      min: 0.0,
+      max: 10.0,
+      step: 0.1,
+      label: "FBM Amplitude",
+    },
+    fbmFrequency: {
+      value: 2.0,
+      min: 0.0,
+      max: 10.0,
+      step: 0.1,
+      label: "FBM Frequency",
+    },
+    fbmLacunarity: {
+      value: 2.0,
+      min: 0.0,
+      max: 10.0,
+      step: 0.1,
+      label: "FBM Lacunarity",
+    },
+    fbmPersistence: {
+      value: 0.5,
+      min: 0.0,
+      max: 1.0,
+      step: 0.01,
+      label: "FBM Persistence",
+    },
   });
 
   const uvMap = useTexture("/assets/uv-12x12.png");
@@ -137,8 +182,17 @@ const TerrainPlane = () => {
     }
     return Fn(() => {
       const nodeStorage = helloTerrainMesh.nodeStorage.storageNode;
-      const worldPosition = tileVertexWorldPosition(nodeStorage);
-      const isLeaf = tileIsLeaf(nodeStorage);
+      const nodeIndex = instanceIndex;
+      const rootSize = uRootSize.toVar();
+      const rootOrigin = uRootOrigin.toVar();
+      const worldPosition = tileVertexWorldPosition(
+        nodeIndex,
+        nodeStorage,
+        rootSize,
+        rootOrigin,
+        positionLocal
+      );
+      const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
       const skirtLength = uSkirtLength.toVar();
 
       const beforeTransform = select(
@@ -245,6 +299,32 @@ const TerrainPlane = () => {
         }}
         args={[
           {
+            elevationFn: ElevationFn(({ rootUV }) => {
+              const warpStrength = float(0.5);
+              const baseStrength = float(1);
+              const warpFbm = warp_fbm({
+                position: rootUV,
+              });
+              const fbm = vec2_fbm(
+                rootUV,
+                terrainGeometryControls.fbmIterations,
+                terrainGeometryControls.fbmAmplitude,
+                terrainGeometryControls.fbmFrequency,
+                terrainGeometryControls.fbmLacunarity,
+                terrainGeometryControls.fbmPersistence
+              );
+              const noise = warpStrength
+                .mul(warpFbm)
+                .add(baseStrength.mul(fbm));
+
+              const height = noise;
+              const heightmapMinElevation = 0;
+              const heightmapMaxElevation = 1;
+              const remappedHeight = height
+                .remap(heightmapMinElevation, heightmapMaxElevation, 0, 1)
+                .mul(terrainGeometryControls.heightmapScale);
+              return remappedHeight;
+            }),
             innerTileSegments: terrainGeometryControls.segments,
             maxLevel: terrainGeometryControls.maxLevel,
             rootSize: terrainGeometryControls.rootSize,

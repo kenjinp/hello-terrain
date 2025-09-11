@@ -1,4 +1,11 @@
-import { Fn, type ShaderNodeObject, instanceIndex, int, vec2 } from "three/tsl";
+import {
+  Fn,
+  type ShaderNodeObject,
+  instanceIndex,
+  int,
+  localId,
+  vec2,
+} from "three/tsl";
 import type { ComputeNode, Node, WebGPURenderer } from "three/webgpu";
 import type { StorageBuffer } from "./StorageBuffer";
 
@@ -24,34 +31,16 @@ export class ComputeToBufferMap {
     // One instance per "vertex" of the bufferMap
     const computeInstanceCount = outTo.maxItems;
     return Fn(() => {
-      const index = int(instanceIndex).mul(numComponents);
+      const localWorkgroupId = localId.toVar();
+      const vertexPosition = vec2(localWorkgroupId.x, localWorkgroupId.y);
+      const index = int(instanceIndex).mul(localWorkgroupId.y);
       // Calculate which node and vertex within that node this index represents // Calculate which node and vertex within that node this index represents
       const verticesPerNode = int(width).mul(width);
       const nodeIndex = index.div(verticesPerNode).toFloat().floor().toInt();
       const vertexIndex = index.mod(verticesPerNode);
 
-      // const nodeIndex = int(instanceIndex);
-
-      // Loop(width, ({ i }) => {
-      //   return Loop(width, ({ i: j }) => {
-      //     const vertexIndex = int(i).mul(width).add(j);
-
-      //     const texelSize = vec2(1, 1).div(width);
-      //     const pixelPosition = vec2(i, j);
-      //     const uvCoord = vec2(pixelPosition.add(vec2(0.5, 0.5))).div(width);
-
-      //     this.fn(nodeIndex, vertexIndex, uvCoord, texelSize);
-      //   });
-      // });
-
-      // const vertexIndex = int(instanceIndex).mod(int(width * width));
-
-      // // Calculate 2D coordinates within the node's vertex grid
-      const x = vertexIndex.mod(int(width));
-      const y = vertexIndex.div(int(width)).toFloat().floor();
       const texelSize = vec2(1, 1).div(width);
-      const pixelPosition = vec2(x, y);
-      const uvCoord = vec2(pixelPosition.add(vec2(0.5, 0.5))).div(width);
+      const uvCoord = vec2(vertexPosition).div(width);
 
       this.fn(nodeIndex, vertexIndex, uvCoord, texelSize);
 
