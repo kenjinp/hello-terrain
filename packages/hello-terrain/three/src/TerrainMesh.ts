@@ -1,16 +1,13 @@
 import {
   InstancedMesh,
   type NodeMaterial,
-  type Texture,
   type Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
-import { ComputeShader } from "./compute/ComputeToTexture";
+import { ComputeToBufferMap } from "./compute/ComputeToBufferMap";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
-import { floatToRG } from "./nodes/RGtexture";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
-import { RGTexture } from "./texture/RGTexture";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
   innerTileSegments: number;
@@ -22,8 +19,9 @@ export class TerrainMesh extends InstancedMesh {
   lastHash: number;
   metrics: Record<string, string | number | boolean>;
   public readonly nodeStorage: StorageBuffer;
-  private heightmapComputeShader: ComputeShader;
-  public readonly heightmapTexture: Texture;
+  public readonly heightmapStorage: StorageBuffer;
+  public readonly normalmapStorage: StorageBuffer;
+  private heightmapComputeShader: ComputeToBufferMap;
   constructor(public readonly params: TerrainMeshParams) {
     const { innerTileSegments, material, ...quadtreeParams } = params;
     const geometry = new TerrainGeometry(params.innerTileSegments);
@@ -50,21 +48,33 @@ export class TerrainMesh extends InstancedMesh {
     };
 
     const tileEdgeVertexCount = innerTileSegments + 1 + 2;
+
+    if (tileEdgeVertexCount > 256) {
+      throw new Error("innerTileSegments exceeds the maximum of 253");
+    }
+
     const computeTextureHeight = tileEdgeVertexCount;
     const computeTextureWidth = computeTextureHeight * quadtreeParams.maxNodes;
-    this.heightmapTexture = new RGTexture(
-      computeTextureWidth,
-      computeTextureHeight
+    this.heightmapStorage = new StorageBuffer(
+      new Float32Array(computeTextureWidth * computeTextureHeight),
+      1,
+      quadtreeParams.maxNodes
     );
-    this.heightmapComputeShader = new ComputeShader(
-      (_pixelPos, _uvPos, textelSize) => {
-        return floatToRG(textelSize);
+    this.normalmapStorage = new StorageBuffer(
+      new Float32Array(computeTextureWidth * computeTextureHeight * 3),
+      3,
+      quadtreeParams.maxNodes
+    );
+
+    this.heightmapComputeShader = new ComputeToBufferMap(
+      (_nodeIndex, vertexIndex, uv, _texelSize) => {
+        this.heightmapStorage.storageNode.element(vertexIndex).assign(uv.x);
       }
     );
     this.heightmapComputeShader.createBinds(
-      computeTextureWidth,
-      computeTextureHeight,
-      this.heightmapTexture
+      tileEdgeVertexCount,
+      1,
+      this.heightmapStorage
     );
 
     console.log("TerrainMesh constructed", this);
@@ -79,7 +89,14 @@ export class TerrainMesh extends InstancedMesh {
     // update storage buffers
 
     if (this.quadtree.hasStateChanged(this.lastHash)) {
-      this.heightmapComputeShader.renderBind(renderer, this.heightmapTexture);
+      const beforeHeightmapCompute = performance.now();
+      this.heightmapComputeShader.renderBind(renderer, this.heightmapStorage);
+      this.heightmapStorage.update();
+      const afterHeightmapCompute = performance.now();
+      this.setMetric(
+        "heightmapComputeTime",
+        `${afterHeightmapCompute - beforeHeightmapCompute}ms`
+      );
       const beforeHash = performance.now();
       this.lastHash = this.quadtree.getStateHash();
       const afterHash = performance.now();

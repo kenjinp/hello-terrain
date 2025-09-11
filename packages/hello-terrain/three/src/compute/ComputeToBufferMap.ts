@@ -1,16 +1,18 @@
-import { Fn, type ShaderNodeObject, instanceIndex, vec2 } from "three/tsl";
+import { Fn, type ShaderNodeObject, instanceIndex, int, vec2 } from "three/tsl";
 import type { ComputeNode, Node, WebGPURenderer } from "three/webgpu";
 import type { StorageBuffer } from "./StorageBuffer";
 
-export class ComputeToBuffer {
+// A buffer map is an array-like representation of a texture with a width and height times number of nodes
+export class ComputeToBufferMap {
   private bufferToShader: Map<StorageBuffer, ShaderNodeObject<ComputeNode>>;
 
   constructor(
     private fn: (
-      pixelPos: ShaderNodeObject<Node>,
-      uvPos: ShaderNodeObject<Node>,
+      nodeIndex: ShaderNodeObject<Node>,
+      vertexIndex: ShaderNodeObject<Node>,
+      uv: ShaderNodeObject<Node>,
       texelSize: ShaderNodeObject<Node>
-    ) => Node
+    ) => void
   ) {
     this.bufferToShader = new Map<
       StorageBuffer,
@@ -18,31 +20,64 @@ export class ComputeToBuffer {
     >();
   }
 
-  private create(outTo: StorageBuffer, width: number, height: number) {
+  private create(outTo: StorageBuffer, width: number, numComponents: number) {
+    // One instance per "vertex" of the bufferMap
+    const computeInstanceCount = outTo.maxItems;
     return Fn(() => {
-      const resolution = vec2(width, height);
-      const posX = instanceIndex.mod(width);
-      const posY = instanceIndex.div(width);
-      const pixelPosition = vec2(posX, posY);
-      const uvCoord = vec2(pixelPosition.add(vec2(0.5, 0.5))).div(resolution);
-      const textelSize = vec2(1, 1).div(resolution);
+      const index = int(instanceIndex).mul(numComponents);
+      // Calculate which node and vertex within that node this index represents // Calculate which node and vertex within that node this index represents
+      const verticesPerNode = int(width).mul(width);
+      const nodeIndex = index.div(verticesPerNode).toFloat().floor().toInt();
+      const vertexIndex = index.mod(verticesPerNode);
 
-      outTo.storageNode
-        .element(index)
-        .assign(this.fn(pixelPosition, uvCoord, textelSize));
-    })().compute(width * height);
+      // const nodeIndex = int(instanceIndex);
+
+      // Loop(width, ({ i }) => {
+      //   return Loop(width, ({ i: j }) => {
+      //     const vertexIndex = int(i).mul(width).add(j);
+
+      //     const texelSize = vec2(1, 1).div(width);
+      //     const pixelPosition = vec2(i, j);
+      //     const uvCoord = vec2(pixelPosition.add(vec2(0.5, 0.5))).div(width);
+
+      //     this.fn(nodeIndex, vertexIndex, uvCoord, texelSize);
+      //   });
+      // });
+
+      // const vertexIndex = int(instanceIndex).mod(int(width * width));
+
+      // // Calculate 2D coordinates within the node's vertex grid
+      const x = vertexIndex.mod(int(width));
+      const y = vertexIndex.div(int(width)).toFloat().floor();
+      const texelSize = vec2(1, 1).div(width);
+      const pixelPosition = vec2(x, y);
+      const uvCoord = vec2(pixelPosition.add(vec2(0.5, 0.5))).div(width);
+
+      this.fn(nodeIndex, vertexIndex, uvCoord, texelSize);
+
+      // outTo.storageNode
+      //   .element(vertexIndex)
+      //   .assign(this.fn(nodeIndex, vertexIndex, uvCoord, texelSize));
+    })().compute(computeInstanceCount, [width, width, numComponents]);
   }
 
-  createBinds(width: number, height: number, ...targets: StorageBuffer[]) {
+  createBinds(
+    width: number,
+    numComponents: number,
+    ...targets: StorageBuffer[]
+  ) {
     for (const target of targets)
-      this.bufferToShader.set(target, this.create(target, width, height));
+      this.bufferToShader.set(
+        target,
+        this.create(target, width, numComponents)
+      );
     return this;
   }
 
   renderBind(renderer: WebGPURenderer, bindTarget: StorageBuffer) {
     if (!this.bufferToShader.has(bindTarget)) {
       throw new Error(
-        "You are trying to render to a texture that this shader doesn't have. Did you forgot to call createBindTo?"
+        "You are trying to render to a StorageBuffer that this shader doesn't have. Did you forgot to call createBindTo?"
       );
     }
 

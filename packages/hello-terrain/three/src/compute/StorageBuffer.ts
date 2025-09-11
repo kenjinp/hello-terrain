@@ -5,19 +5,25 @@ import {
   type TypedArray,
 } from "three/webgpu";
 
-export function inferWGSLType(buffer: TypedArray): "i32" | "u32" | "f32" {
-  if (buffer instanceof Float32Array) return "f32";
-  if (buffer instanceof Int32Array) return "i32";
-  if (
-    buffer instanceof Uint32Array ||
-    buffer instanceof Uint16Array ||
-    buffer instanceof Uint8Array
-  )
-    return "u32";
-  if (buffer instanceof Int16Array || buffer instanceof Int8Array) return "i32";
-
-  // Default to i32 if unknown, matching common index/flag usage
-  return "i32";
+export function inferWGSLType(buffer: TypedArray) {
+  switch (buffer.constructor) {
+    case Float32Array:
+      return "f32";
+    case Int32Array:
+      return "i32";
+    case Uint32Array:
+      return "u32";
+    case Uint8Array:
+      return "u8";
+    case Uint16Array:
+      return "u16";
+    case Int8Array:
+      return "i8";
+    case Int16Array:
+      return "i16";
+    default:
+      return "i32";
+  }
 }
 
 export class StorageBuffer {
@@ -26,8 +32,8 @@ export class StorageBuffer {
 
   constructor(
     public readonly buffer: TypedArray,
-    itemSize: number,
-    maxItems: number
+    public itemSize: number,
+    public readonly maxItems: number
   ) {
     this.storageBufferAttribute = new StorageInstancedBufferAttribute(
       buffer,
@@ -41,8 +47,10 @@ export class StorageBuffer {
     );
   }
 
-  update(buffer: TypedArray) {
-    this.storageBufferAttribute.array.set(buffer);
+  update(buffer?: TypedArray) {
+    if (buffer) {
+      this.storageBufferAttribute.array.set(buffer);
+    }
     this.storageBufferAttribute.needsUpdate = true;
   }
 }

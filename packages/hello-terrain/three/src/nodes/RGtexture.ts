@@ -1,4 +1,11 @@
-import { Fn, type ShaderNodeObject, texture, vec4 } from "three/tsl";
+import {
+  Fn,
+  type ShaderNodeObject,
+  float,
+  int,
+  texture,
+  vec2,
+} from "three/tsl";
 import type { Node, Texture } from "three/webgpu";
 
 // converts a uInt8 RB texture to a 16bit float
@@ -17,8 +24,7 @@ export const readGreyStyle = Fn(
 
 export const floatToRG = Fn(([value]: [value: ShaderNodeObject<Node>]) => {
   // Pack a normalized float into two 8-bit channels (RG)
-  // v16 = floor(value * 65535)
-  const v16 = value.mul(65535.0);
+  const v16 = float(value).mul(65535.0);
   const hi = v16.div(256.0).floor();
   const lo = v16.sub(hi.mul(256.0));
 
@@ -26,5 +32,5 @@ export const floatToRG = Fn(([value]: [value: ShaderNodeObject<Node>]) => {
   const r = hi.div(255.0);
   const g = lo.div(255.0);
 
-  return vec4(r, g, 0.0, 1.0);
+  return vec2(int(r), int(g));
 });

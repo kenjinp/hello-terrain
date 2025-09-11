@@ -46,6 +46,7 @@ const TerrainPlane = () => {
 
   const setMetric = useMetrics([
     "updatePosition",
+    "heightmapComputeTime",
     "nodeCount",
     "deepestLevel",
     "hash",
@@ -190,7 +191,10 @@ const TerrainPlane = () => {
       qConfig.minNodeSize = terrainGeometryControls.minNodeSize;
       qConfig.subdivisionFactor = terrainGeometryControls.subdivisionFactor;
       qConfig.maxLevel = terrainGeometryControls.maxLevel;
-      helloTerrainMesh.update(camera.position);
+      helloTerrainMesh.update(
+        gl as unknown as THREE.WebGPURenderer,
+        camera.position
+      );
       setMetric(
         "updatePosition",
         helloTerrainMesh.metrics.updatePosition.toString()
@@ -208,6 +212,10 @@ const TerrainPlane = () => {
         `${helloTerrainMesh.metrics.leafNodeCount} / ${helloTerrainMesh.metrics.nodeCount}`
       );
       setMetric("hash", helloTerrainMesh.metrics.hash.toString());
+      setMetric(
+        "heightmapComputeTime",
+        helloTerrainMesh.metrics.heightmapComputeTime.toString()
+      );
     }
   });
 
