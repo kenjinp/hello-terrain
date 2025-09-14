@@ -1,13 +1,12 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { vec2_fbm, warp_fbm } from "@/components/Terrain/fmb";
+import {} from "@/components/Terrain/fmb";
 import * as hello from "@hello-terrain/react";
 import {
   ElevationFn,
   type TerrainMesh,
   isSkirtVertex,
-  rootUV,
   tileIsLeaf,
   tileVertexWorldPosition,
   uRootOrigin,
@@ -15,12 +14,7 @@ import {
   uSegments,
   uSkirtLength,
 } from "@hello-terrain/three";
-import {
-  Environment,
-  Html,
-  OrbitControls,
-  useTexture,
-} from "@react-three/drei";
+import { Environment, OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useState } from "react";
@@ -28,13 +22,15 @@ import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPU
 import {
   Fn,
   float,
-  hash,
   instanceIndex,
+  int,
   positionLocal,
   select,
-  texture,
   uniform,
+  uv,
+  varying,
   vec3,
+  vertexIndex,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
@@ -58,10 +54,10 @@ const TerrainPlane = () => {
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
     segments: {
-      value: 10,
+      value: 13,
       min: 2,
-      max: 1024,
-      step: 16,
+      max: 256 - 3,
+      step: 2,
       label: "Segments",
     },
     skirtLength: {
@@ -173,6 +169,9 @@ const TerrainPlane = () => {
     uRootSize.value = terrainGeometryControls.rootSize;
   }, [terrainGeometryControls.rootSize]);
 
+  // Shared varying for global vertex index
+  const vGlobalVertexIndex = useMemo(() => varying(int()), []);
+
   // Memoized nodes
   const positionNode = useMemo(() => {
     if (!helloTerrainMesh) {
@@ -195,6 +194,13 @@ const TerrainPlane = () => {
       const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
       const skirtLength = uSkirtLength.toVar();
 
+      // Compute and pass global vertex index to fragment stage
+      const edge = helloTerrainMesh.params.innerTileSegments + 1 + 2;
+      const intEdge = int(edge);
+      const verticesPerNode = intEdge.mul(intEdge);
+      const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
+      vGlobalVertexIndex.assign(globalIndex);
+
       const beforeTransform = select(
         isSkirtVertex,
         vec3(
@@ -206,7 +212,7 @@ const TerrainPlane = () => {
       );
       return select(isLeaf, beforeTransform, vec3(0, 0, 0));
     })();
-  }, [helloTerrainMesh]);
+  }, [helloTerrainMesh, vGlobalVertexIndex]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the uniform will be updated by the useFrame hook
   const colorNode = useMemo(() => {
@@ -216,23 +222,62 @@ const TerrainPlane = () => {
       })();
     }
     return Fn(() => {
-      const worldUv = rootUV;
-      const textureColor = texture(uvMap, worldUv);
-      const indexHashColor = vec3(
-        hash(instanceIndex),
-        hash(instanceIndex.add(1)),
-        hash(instanceIndex.add(2))
-      );
+      return Fn(() => {
+        const isLeaf = tileIsLeaf(
+          instanceIndex,
+          helloTerrainMesh.nodeStorage.storageNode
+        );
+        // const nodeHashColor = vec3(
+        //   hash(clampedGridIndex),
+        //   hash(clampedGridIndex.add(1)),
+        //   hash(clampedGridIndex.add(2))
+        // );
+        // const xy = uv();
 
-      return select(
-        uniforms.uWireframe,
-        vec3(1, 0, 0),
-        select(uniforms.uUseTexture, textureColor, indexHashColor)
-      );
+        // Calculate vertex coordinates within the node
+        // Flip Y coordinate to match the compute shader's coordinate system
+        // const nodeLocalU = xy.x.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeX);
+        // const nodeLocalV = xy.y.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeY);
+        const vertexX = uv()
+          .x.mul(helloTerrainMesh.tileEdgeVertexCount)
+          .floor();
+        const vertexY = float(helloTerrainMesh.tileEdgeVertexCount).sub(
+          uv().y.mul(helloTerrainMesh.tileEdgeVertexCount).floor()
+        );
+        const vertexIndex = vertexY
+          .mul(int(helloTerrainMesh.tileEdgeVertexCount))
+          .add(vertexX);
+
+        const verticesPerNode = int(
+          helloTerrainMesh.tileEdgeVertexCount *
+            helloTerrainMesh.tileEdgeVertexCount
+        );
+        const globalVertexIndex = instanceIndex
+          .mul(verticesPerNode)
+          .add(vertexIndex);
+
+        const height = helloTerrainMesh.heightmapStorage.storageNode
+          .element(globalVertexIndex)
+          .remap(0, 15, 0, 1);
+
+        // Return the color
+        return isLeaf.select(vec3(height), vec3(1, 0, 0));
+      })();
     })();
   }, [helloTerrainMesh]);
 
-  useFrame(() => {
+  useFrame(async () => {
+    // const adapter = await navigator.gpu.requestAdapter();
+    // const device = await adapter.requestDevice();
+    // console.log(
+    //   "device.limits.maxComputeWorkgroupSizeX",
+    //   device.limits.maxComputeWorkgroupSizeX
+    // ); // Usually 256 or 1024
+    // console.log(
+    //   "device.limits.maxComputeInvocationsPerWorkgroup",
+    //   device.limits.maxComputeInvocationsPerWorkgroup
+    // );
+
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
     uSegments.value = terrainGeometryControls.segments;
@@ -281,13 +326,70 @@ const TerrainPlane = () => {
     };
   }, [helloTerrainMesh]);
 
+  const debugNodeColor = useMemo(() => {
+    if (!helloTerrainMesh) {
+      return Fn(() => {
+        return vec3(0, 0, 0);
+      })();
+    }
+    return Fn(() => {
+      const isLeaf = tileIsLeaf(
+        instanceIndex,
+        helloTerrainMesh.nodeStorage.storageNode
+      );
+      // const nodeHashColor = vec3(
+      //   hash(clampedGridIndex),
+      //   hash(clampedGridIndex.add(1)),
+      //   hash(clampedGridIndex.add(2))
+      // );
+      // const xy = uv();
+
+      // Calculate vertex coordinates within the node
+      // Flip Y coordinate to match the compute shader's coordinate system
+      // const nodeLocalU = xy.x.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeX);
+      // const nodeLocalV = xy.y.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeY);
+      const vertexX = uv().x.mul(helloTerrainMesh.tileEdgeVertexCount).floor();
+      const vertexY = float(helloTerrainMesh.tileEdgeVertexCount).sub(
+        uv().y.mul(helloTerrainMesh.tileEdgeVertexCount).floor()
+      );
+      const vertexIndex = vertexY
+        .mul(int(helloTerrainMesh.tileEdgeVertexCount))
+        .add(vertexX);
+
+      const verticesPerNode = int(
+        helloTerrainMesh.tileEdgeVertexCount *
+          helloTerrainMesh.tileEdgeVertexCount
+      );
+      const globalVertexIndex = instanceIndex
+        .mul(verticesPerNode)
+        .add(vertexIndex);
+
+      const height = helloTerrainMesh.heightmapStorage.storageNode
+        .element(globalVertexIndex)
+        .remap(0, helloTerrainMesh.tileEdgeVertexCount, 0, 1);
+
+      // Return the color
+      return isLeaf.select(vec3(height), vec3(1, 0, 0));
+    })();
+  }, [helloTerrainMesh]);
+
   return (
     <group>
-      <Html>
+      {/* <Html>
         <div className="flex flex-col items-center justify-center border-2 border-white rounded-md p-2 bg-black/50">
           <span className="text-white text-lg text-shadow-xl">TerrainMesh</span>
         </div>
-      </Html>
+      </Html> */}
+      <mesh visible={false}>
+        <boxGeometry
+          args={[
+            terrainGeometryControls.rootSize,
+            terrainGeometryControls.rootSize,
+            terrainGeometryControls.rootSize,
+          ]}
+        />
+        <meshPhysicalNodeMaterial colorNode={debugNodeColor} />
+      </mesh>
       <hello.TerrainMesh
         receiveShadow
         castShadow
@@ -299,31 +401,31 @@ const TerrainPlane = () => {
         }}
         args={[
           {
-            elevationFn: ElevationFn(({ rootUV }) => {
-              const warpStrength = float(0.5);
-              const baseStrength = float(1);
-              const warpFbm = warp_fbm({
-                position: rootUV,
-              });
-              const fbm = vec2_fbm(
-                rootUV,
-                terrainGeometryControls.fbmIterations,
-                terrainGeometryControls.fbmAmplitude,
-                terrainGeometryControls.fbmFrequency,
-                terrainGeometryControls.fbmLacunarity,
-                terrainGeometryControls.fbmPersistence
-              );
-              const noise = warpStrength
-                .mul(warpFbm)
-                .add(baseStrength.mul(fbm));
-
-              const height = noise;
-              const heightmapMinElevation = 0;
-              const heightmapMaxElevation = 1;
-              const remappedHeight = height
-                .remap(heightmapMinElevation, heightmapMaxElevation, 0, 1)
-                .mul(terrainGeometryControls.heightmapScale);
-              return remappedHeight;
+            elevationFn: ElevationFn(({ rootUV, tileLevel }) => {
+              // const warpStrength = float(0.5);
+              // const baseStrength = float(1);
+              // const warpFbm = warp_fbm({
+              //   position: rootUV,
+              // });
+              // const fbm = vec2_fbm(
+              //   rootUV,
+              //   terrainGeometryControls.fbmIterations,
+              //   terrainGeometryControls.fbmAmplitude,
+              //   terrainGeometryControls.fbmFrequency,
+              //   terrainGeometryControls.fbmLacunarity,
+              //   terrainGeometryControls.fbmPersistence
+              // );
+              // const noise = warpStrength
+              //   .mul(warpFbm)
+              //   .add(baseStrength.mul(fbm));
+              // const height = noise;
+              // const heightmapMinElevation = 0;
+              // const heightmapMaxElevation = 1;
+              // const remappedHeight = heig ht
+              //   .remap(heightmapMinElevation, heightmapMaxElevation, 0, 1)
+              //   .mul(terrainGeometryControls.heightmapScale);
+              // return remappedHeight;
+              return rootUV.x.toFloat().mul(tileLevel.toFloat());
             }),
             innerTileSegments: terrainGeometryControls.segments,
             maxLevel: terrainGeometryControls.maxLevel,
@@ -359,6 +461,13 @@ const BasicComputeScene = () => {
       gl={async (props) => {
         props.alpha = true;
         props.antialias = true;
+        // @ts-ignore
+        props.requiredLimits = {
+          maxComputeWorkgroupsPerDimension: 65535, // Much higher limit
+          maxComputeWorkgroupSizeX: 1024,
+          maxComputeWorkgroupSizeY: 1024,
+          maxComputeWorkgroupSizeZ: 64,
+        };
         // soft shadows
         const renderer = new THREE.WebGPURenderer(
           props as WebGPURendererParameters

@@ -10,6 +10,7 @@ export interface ElevationParams {
   tileLevel: ShaderNodeObject<ConstNode<number>>;
   tileSize: ShaderNodeObject<ConstNode<number>>;
   tileOriginVec2: ShaderNodeObject<ConstNode<Vector2>>;
+  nodeIndex: ShaderNodeObject<ConstNode<number>>;
 }
 
 export type ElevationReturn = ShaderNodeFn<[ProxiedObject<ElevationParams>]>;
@@ -27,6 +28,7 @@ export function ElevationFn(callback: ElevationCallback): ElevationReturn {
       tileLevel: args.tileLevel,
       tileSize: args.tileSize,
       tileOriginVec2: args.tileOriginVec2,
+      nodeIndex: args.nodeIndex,
     };
 
     return callback(params);

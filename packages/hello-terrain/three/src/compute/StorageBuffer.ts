@@ -1,7 +1,7 @@
 import { type ShaderNodeObject, storage } from "three/tsl";
 import {
+  StorageBufferAttribute,
   type StorageBufferNode,
-  StorageInstancedBufferAttribute,
   type TypedArray,
 } from "three/webgpu";
 
@@ -27,24 +27,24 @@ export function inferWGSLType(buffer: TypedArray) {
 }
 
 export class StorageBuffer {
-  private storageBufferAttribute: StorageInstancedBufferAttribute;
+  public readonly storageBufferAttribute: StorageBufferAttribute;
   public readonly storageNode: ShaderNodeObject<StorageBufferNode>;
 
   constructor(
+    public readonly name: string,
     public readonly buffer: TypedArray,
     public itemSize: number,
     public readonly maxItems: number
   ) {
-    this.storageBufferAttribute = new StorageInstancedBufferAttribute(
-      buffer,
-      itemSize
-    );
+    this.storageBufferAttribute = new StorageBufferAttribute(buffer, itemSize);
     const wgslType = inferWGSLType(buffer);
     this.storageNode = storage(
       this.storageBufferAttribute,
       wgslType,
-      maxItems * itemSize
-    );
+      this.buffer.length
+    )
+      .setPBO(true)
+      .setName(name);
   }
 
   update(buffer?: TypedArray) {
