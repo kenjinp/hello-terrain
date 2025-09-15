@@ -5,26 +5,26 @@ import {
   int,
   max,
   min,
+  select,
   vertexIndex,
 } from "three/tsl";
 
 import { Fn } from "three/tsl";
 import type { Node, StorageBufferNode } from "three/webgpu";
 import { ElevationFn, type ElevationReturn } from "./ElevationFn";
-import {} from "./tile";
 
 export const height = (
-  _nodeIndex: ShaderNodeObject<Node>,
-  _nodeStorage: ShaderNodeObject<StorageBufferNode>,
+  nodeIndex: ShaderNodeObject<Node>,
+  nodeStorage: ShaderNodeObject<StorageBufferNode>,
   _rootSize: ShaderNodeObject<Node>,
   _rootOrigin: ShaderNodeObject<Node>,
-  positionLocal: ShaderNodeObject<Node>,
+  localUV: ShaderNodeObject<Node>,
   _elevationFn: ElevationReturn = ElevationFn(() => float(0))
 ) =>
   Fn(() => {
-    // const nodeIndex = instanceIndex;
-    // const nodeOffset = nodeIndex.mul(int(4));
-    // const isLeaf = nodeStorage.element(nodeOffset.add(int(3))).equal(int(1));
+    // const positionLocal = vec2(localUV.x, localUV.y);
+    const nodeOffset = nodeIndex.mul(int(4));
+    const isLeaf = nodeStorage.element(nodeOffset.add(int(3))).equal(int(1));
     // const vertexWorldPosition = tileVertexWorldPosition(
     //   nodeIndex,
     //   nodeStorage,
@@ -32,7 +32,7 @@ export const height = (
     //   rootOrigin,
     //   positionLocal
     // );
-    // // Derive rootUV from the computed world position to ensure compute compatibility
+    // Derive rootUV from the computed world position to ensure compute compatibility
     // const rootUVFromWorld = Fn(
     //   ([worldPosition, rootSize, rootOrigin]: [
     //     ShaderNodeObject<Node>,
@@ -47,7 +47,6 @@ export const height = (
     //     );
     //   }
     // )(vertexWorldPosition, rootSize, rootOrigin);
-
     // return elevationFn({
     //   tileVertexWorldPosition: vertexWorldPosition,
     //   rootSize: rootSize,
@@ -56,22 +55,11 @@ export const height = (
     //   tileSize: tileSize(nodeIndex, nodeStorage, rootSize),
     //   tileOriginVec2: tileOriginVec2(nodeIndex, nodeStorage),
     //   nodeIndex: nodeIndex,
+    //   tileUV: localUV,
     // });
-
-    // return select(
-    //   isLeaf,
-    //   elevationFn({
-    //     tileVertexWorldPosition: vertexWorldPosition,
-    //     rootSize: rootSize,
-    //     rootUV: rootUVFromWorld,
-    //     tileLevel: tileLevel(nodeIndex, nodeStorage),
-    //     tileSize: tileSize(nodeIndex, nodeStorage, rootSize),
-    //     tileOriginVec2: tileOriginVec2(nodeIndex, nodeStorage),
-    //     nodeIndex: nodeIndex,
-    //   }),
-    //   float(0)
-    // );
-    return positionLocal.x.mul(positionLocal.z);
+    return select(isLeaf, localUV.x.max(localUV.y), float(0));
+    // return positionLocal.z;
+    // return float().min(positionLocal.x, positionLocal.z, positionLocal.z);
   })();
 
 export const readHeightVertex = (

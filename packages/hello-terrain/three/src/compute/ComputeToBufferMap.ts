@@ -1,8 +1,8 @@
 import {
   Fn,
   type ShaderNodeObject,
+  float,
   instanceIndex,
-  localId,
   vec2,
   workgroupId,
 } from "three/tsl";
@@ -30,20 +30,23 @@ export class ComputeToBufferMap {
     >();
   }
 
-  private create(outTo: StorageBuffer, width: number, numComponents: number) {
+  private create(outTo: StorageBuffer, width: number, _numComponents: number) {
     const computeInstanceCount = outTo.maxItems;
     this.computeInstanceCount = computeInstanceCount;
-    this.workgroupSize = [width, width, numComponents];
-    this.dispatchSize = [computeInstanceCount, 1, 1];
+    // this.workgroupSize = [64, 1, 1];
+    this.workgroupSize = [_numComponents, 1, 1];
+    this.dispatchSize = [width, width, computeInstanceCount];
     return Fn(() => {
-      const globalVertexIndex = instanceIndex;
+      const fWidth = float(width);
+      const globalIndex = instanceIndex;
+      // this should be the same as above?
       // const nodeIndex = instanceIndex
       //   .div(float(width).mul(width))
       //   .div(float(numComponents));
-      const nodeIndex = workgroupId;
-      const texelSize = vec2(1, 1).div(width);
-      const localUVCoords = vec2(localId.x, localId.y);
-      this.fn(nodeIndex, globalVertexIndex, localUVCoords, texelSize);
+      const nodeIndex = workgroupId.z;
+      const texelSize = vec2(1, 1).div(fWidth);
+      const localUVCoords = vec2(workgroupId.x, workgroupId.y);
+      this.fn(nodeIndex, globalIndex, localUVCoords, texelSize);
     })().computeKernel(this.workgroupSize);
   }
 

@@ -14,7 +14,7 @@ import {
   uSegments,
   uSkirtLength,
 } from "@hello-terrain/three";
-import { Environment, OrbitControls, useTexture } from "@react-three/drei";
+import { OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useState } from "react";
@@ -54,7 +54,7 @@ const TerrainPlane = () => {
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
     segments: {
-      value: 13,
+      value: 64 - 3,
       min: 2,
       max: 256 - 3,
       step: 2,
@@ -425,7 +425,7 @@ const TerrainPlane = () => {
               //   .remap(heightmapMinElevation, heightmapMaxElevation, 0, 1)
               //   .mul(terrainGeometryControls.heightmapScale);
               // return remappedHeight;
-              return rootUV.x.toFloat().mul(tileLevel.toFloat());
+              return rootUV.x.toFloat().max(rootUV.y.toFloat());
             }),
             innerTileSegments: terrainGeometryControls.segments,
             maxLevel: terrainGeometryControls.maxLevel,
@@ -489,7 +489,7 @@ const BasicComputeScene = () => {
       performance={{ min: 0.5 }}
     >
       <color attach="background" args={["#6dd1ed"]} />
-      <Environment preset="park" background={false} environmentIntensity={1} />
+      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
       <ambientLight intensity={0.15} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
       <OrbitControls />

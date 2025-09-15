@@ -76,7 +76,7 @@ export class TerrainMesh extends InstancedMesh {
     );
 
     this.heightmapComputeShader = new ComputeToBufferMap(
-      (nodeIndex, globalVertexIndex, uv, _texelSize) => {
+      (nodeIndex, globalVertexIndex, localUV, _texelSize) => {
         const origin = vec3(
           new Vector3(this.position.x, this.position.y, this.position.z)
         );
@@ -85,7 +85,7 @@ export class TerrainMesh extends InstancedMesh {
           this.nodeStorage.storageNode,
           int(this.params.rootSize),
           origin,
-          vec3(uv.x, 0, uv.y),
+          localUV,
           this.params.elevationFn ?? ElevationFn(() => float(0))
         );
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
@@ -121,13 +121,13 @@ export class TerrainMesh extends InstancedMesh {
       this.heightmapStorage.update();
       this.heightmapComputeShader.renderBind(renderer, this.heightmapStorage);
 
-      const buffer = await renderer.getArrayBufferAsync(
-        this.heightmapStorage.storageBufferAttribute
-      );
+      // const buffer = await renderer.getArrayBufferAsync(
+      //   this.heightmapStorage.storageBufferAttribute
+      // );
 
-      const f32 = new Float32Array(buffer);
+      // const f32 = new Float32Array(buffer);
       // const first100 = f32.subarray(0, Math.min(100, f32.length));
-      console.log("heightmapStorage first 100 f32:", Array.from(f32));
+      // console.log("heightmapStorage first 100 f32:", Array.from(f32));
 
       const afterHeightmapCompute = performance.now();
       this.setMetric(

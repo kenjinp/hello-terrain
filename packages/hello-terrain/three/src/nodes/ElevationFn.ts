@@ -7,6 +7,7 @@ export interface ElevationParams {
   tileVertexWorldPosition: ShaderNodeObject<ConstNode<Vector3>>;
   rootSize: ShaderNodeObject<ConstNode<number>>;
   rootUV: ShaderNodeObject<ConstNode<Vector2>>;
+  tileUV: ShaderNodeObject<ConstNode<Vector2>>;
   tileLevel: ShaderNodeObject<ConstNode<number>>;
   tileSize: ShaderNodeObject<ConstNode<number>>;
   tileOriginVec2: ShaderNodeObject<ConstNode<Vector2>>;
@@ -25,6 +26,7 @@ export function ElevationFn(callback: ElevationCallback): ElevationReturn {
       tileVertexWorldPosition: args.tileVertexWorldPosition,
       rootSize: args.rootSize,
       rootUV: args.rootUV,
+      tileUV: args.tileUV,
       tileLevel: args.tileLevel,
       tileSize: args.tileSize,
       tileOriginVec2: args.tileOriginVec2,
