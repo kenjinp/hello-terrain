@@ -1,7 +1,7 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import {} from "@/components/Terrain/fmb";
+import { vec2_fbm, warp_fbm } from "@/components/Terrain/fmb";
 import * as hello from "@hello-terrain/react";
 import {
   ElevationFn,
@@ -25,6 +25,7 @@ import {
   instanceIndex,
   int,
   positionLocal,
+  remap,
   select,
   uniform,
   uv,
@@ -258,10 +259,11 @@ const TerrainPlane = () => {
 
         const height = helloTerrainMesh.heightmapStorage.storageNode
           .element(globalVertexIndex)
-          .remap(0, 15, 0, 1);
+          .remap(0, 1, 0, 255)
+          .toColor();
 
         // Return the color
-        return isLeaf.select(vec3(height), vec3(1, 0, 0));
+        return isLeaf.select(height, vec3(1, 0, 0).toColor());
       })();
     })();
   }, [helloTerrainMesh]);
@@ -326,53 +328,6 @@ const TerrainPlane = () => {
     };
   }, [helloTerrainMesh]);
 
-  const debugNodeColor = useMemo(() => {
-    if (!helloTerrainMesh) {
-      return Fn(() => {
-        return vec3(0, 0, 0);
-      })();
-    }
-    return Fn(() => {
-      const isLeaf = tileIsLeaf(
-        instanceIndex,
-        helloTerrainMesh.nodeStorage.storageNode
-      );
-      // const nodeHashColor = vec3(
-      //   hash(clampedGridIndex),
-      //   hash(clampedGridIndex.add(1)),
-      //   hash(clampedGridIndex.add(2))
-      // );
-      // const xy = uv();
-
-      // Calculate vertex coordinates within the node
-      // Flip Y coordinate to match the compute shader's coordinate system
-      // const nodeLocalU = xy.x.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeX);
-      // const nodeLocalV = xy.y.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeY);
-      const vertexX = uv().x.mul(helloTerrainMesh.tileEdgeVertexCount).floor();
-      const vertexY = float(helloTerrainMesh.tileEdgeVertexCount).sub(
-        uv().y.mul(helloTerrainMesh.tileEdgeVertexCount).floor()
-      );
-      const vertexIndex = vertexY
-        .mul(int(helloTerrainMesh.tileEdgeVertexCount))
-        .add(vertexX);
-
-      const verticesPerNode = int(
-        helloTerrainMesh.tileEdgeVertexCount *
-          helloTerrainMesh.tileEdgeVertexCount
-      );
-      const globalVertexIndex = instanceIndex
-        .mul(verticesPerNode)
-        .add(vertexIndex);
-
-      const height = helloTerrainMesh.heightmapStorage.storageNode
-        .element(globalVertexIndex)
-        .remap(0, helloTerrainMesh.tileEdgeVertexCount, 0, 1);
-
-      // Return the color
-      return isLeaf.select(vec3(height), vec3(1, 0, 0));
-    })();
-  }, [helloTerrainMesh]);
-
   return (
     <group>
       {/* <Html>
@@ -380,16 +335,6 @@ const TerrainPlane = () => {
           <span className="text-white text-lg text-shadow-xl">TerrainMesh</span>
         </div>
       </Html> */}
-      <mesh visible={false}>
-        <boxGeometry
-          args={[
-            terrainGeometryControls.rootSize,
-            terrainGeometryControls.rootSize,
-            terrainGeometryControls.rootSize,
-          ]}
-        />
-        <meshPhysicalNodeMaterial colorNode={debugNodeColor} />
-      </mesh>
       <hello.TerrainMesh
         receiveShadow
         castShadow
@@ -401,32 +346,47 @@ const TerrainPlane = () => {
         }}
         args={[
           {
-            elevationFn: ElevationFn(({ rootUV, tileLevel }) => {
-              // const warpStrength = float(0.5);
-              // const baseStrength = float(1);
-              // const warpFbm = warp_fbm({
-              //   position: rootUV,
-              // });
-              // const fbm = vec2_fbm(
-              //   rootUV,
-              //   terrainGeometryControls.fbmIterations,
-              //   terrainGeometryControls.fbmAmplitude,
-              //   terrainGeometryControls.fbmFrequency,
-              //   terrainGeometryControls.fbmLacunarity,
-              //   terrainGeometryControls.fbmPersistence
-              // );
-              // const noise = warpStrength
-              //   .mul(warpFbm)
-              //   .add(baseStrength.mul(fbm));
-              // const height = noise;
-              // const heightmapMinElevation = 0;
-              // const heightmapMaxElevation = 1;
-              // const remappedHeight = heig ht
-              //   .remap(heightmapMinElevation, heightmapMaxElevation, 0, 1)
-              //   .mul(terrainGeometryControls.heightmapScale);
-              // return remappedHeight;
-              return rootUV.x.toFloat().max(rootUV.y.toFloat());
-            }),
+            elevationFn: ElevationFn(
+              ({
+                tileVertexWorldPosition,
+                rootSize,
+                tileUV,
+                tileSize,
+                tileLevel,
+                nodeIndex,
+              }) => {
+                const warpStrength = float(0.5);
+                const baseStrength = float(1);
+                const warpFbm = warp_fbm({
+                  position: tileUV,
+                });
+                const fbm = vec2_fbm(
+                  tileUV,
+                  terrainGeometryControls.fbmIterations,
+                  terrainGeometryControls.fbmAmplitude,
+                  terrainGeometryControls.fbmFrequency,
+                  terrainGeometryControls.fbmLacunarity,
+                  terrainGeometryControls.fbmPersistence
+                );
+                const noise = warpStrength
+                  .mul(warpFbm)
+                  .add(baseStrength.mul(fbm));
+                const height = noise;
+                const heightmapMinElevation = 0;
+                const heightmapMaxElevation = 1;
+                const remappedHeight = height
+                  .remap(heightmapMinElevation, heightmapMaxElevation, 0, 255)
+                  .mul(terrainGeometryControls.heightmapScale);
+                // return remappedHeight;
+                return remap(
+                  float(tileLevel),
+                  float(0),
+                  float(terrainGeometryControls.maxLevel),
+                  float(1),
+                  float(0)
+                ).toFloat();
+              }
+            ),
             innerTileSegments: terrainGeometryControls.segments,
             maxLevel: terrainGeometryControls.maxLevel,
             rootSize: terrainGeometryControls.rootSize,

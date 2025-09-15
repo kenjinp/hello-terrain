@@ -1,5 +1,6 @@
 import {
   type ShaderNodeObject,
+  float,
   int,
   positionWorld,
   pow,
@@ -23,7 +24,7 @@ export const tileSize = (
       ShaderNodeObject<Node>,
     ]) => {
       const level = tileLevel(nodeIndex, nodeStorage);
-      return rootSize.div(pow(2.0, level.toFloat()));
+      return float(rootSize).div(pow(float(2), level.toFloat()));
     }
   )(nodeStorage, nodeIndex, rootSize);
 
@@ -37,8 +38,7 @@ export const tileLevel = (
       ShaderNodeObject<Node>,
     ]) => {
       const nodeOffset = nodeIndex.mul(int(4));
-      const level = nodeStorage.element(nodeOffset);
-      return level;
+      return nodeStorage.element(nodeOffset).toInt();
     }
   )(nodeStorage, nodeIndex);
 
@@ -52,7 +52,6 @@ export const tileOriginVec2 = (
       ShaderNodeObject<Node>,
     ]) => {
       const nodeOffset = nodeIndex.mul(int(4));
-      // Convert to float before constructing vec2 to avoid WGSL i32 -> f32 mismatch
       const nodeX = nodeStorage.element(nodeOffset.add(int(1))).toFloat();
       const nodeY = nodeStorage.element(nodeOffset.add(int(2))).toFloat();
       return vec2(nodeX, nodeY);

@@ -39,10 +39,6 @@ export class ComputeToBufferMap {
     return Fn(() => {
       const fWidth = float(width);
       const globalIndex = instanceIndex;
-      // this should be the same as above?
-      // const nodeIndex = instanceIndex
-      //   .div(float(width).mul(width))
-      //   .div(float(numComponents));
       const nodeIndex = workgroupId.z;
       const texelSize = vec2(1, 1).div(fWidth);
       const localUVCoords = vec2(workgroupId.x, workgroupId.y);
