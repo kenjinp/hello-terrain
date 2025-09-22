@@ -25,11 +25,11 @@ import {
   instanceIndex,
   int,
   positionLocal,
-  remap,
   select,
   uniform,
   uv,
   varying,
+  vec2,
   vec3,
   vertexIndex,
 } from "three/tsl";
@@ -55,7 +55,7 @@ const TerrainPlane = () => {
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
     segments: {
-      value: 64 - 3,
+      value: 16 - 3,
       min: 2,
       max: 256 - 3,
       step: 2,
@@ -87,7 +87,7 @@ const TerrainPlane = () => {
       label: "Max Nodes",
     },
     rootSize: {
-      value: 10,
+      value: 100,
       min: 1,
       max: 10000,
       step: 1,
@@ -126,14 +126,14 @@ const TerrainPlane = () => {
       label: "FBM Iterations",
     },
     fbmAmplitude: {
-      value: 1.0,
+      value: 0.8,
       min: 0.0,
       max: 10.0,
       step: 0.1,
       label: "FBM Amplitude",
     },
     fbmFrequency: {
-      value: 2.0,
+      value: 0.005,
       min: 0.0,
       max: 10.0,
       step: 0.1,
@@ -190,17 +190,23 @@ const TerrainPlane = () => {
         nodeStorage,
         rootSize,
         rootOrigin,
-        positionLocal
+        positionLocal,
+        uSegments.toVar()
       );
       const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
       const skirtLength = uSkirtLength.toVar();
 
       // Compute and pass global vertex index to fragment stage
-      const edge = helloTerrainMesh.params.innerTileSegments + 1 + 2;
-      const intEdge = int(edge);
-      const verticesPerNode = intEdge.mul(intEdge);
+      const edgeVertexCount = uSegments.toVar().add(3);
+      const intEdgeVertexCount = int(edgeVertexCount);
+      const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
       const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
       vGlobalVertexIndex.assign(globalIndex);
+
+      const height =
+        helloTerrainMesh.heightmapStorage.storageNode.element(
+          vGlobalVertexIndex
+        );
 
       const beforeTransform = select(
         isSkirtVertex,
@@ -209,8 +215,9 @@ const TerrainPlane = () => {
           worldPosition.y.sub(float(skirtLength)),
           worldPosition.z
         ),
-        worldPosition
+        vec3(worldPosition.x, worldPosition.y.add(height), worldPosition.z)
       );
+
       return select(isLeaf, beforeTransform, vec3(0, 0, 0));
     })();
   }, [helloTerrainMesh, vGlobalVertexIndex]);
@@ -228,17 +235,6 @@ const TerrainPlane = () => {
           instanceIndex,
           helloTerrainMesh.nodeStorage.storageNode
         );
-        // const nodeHashColor = vec3(
-        //   hash(clampedGridIndex),
-        //   hash(clampedGridIndex.add(1)),
-        //   hash(clampedGridIndex.add(2))
-        // );
-        // const xy = uv();
-
-        // Calculate vertex coordinates within the node
-        // Flip Y coordinate to match the compute shader's coordinate system
-        // const nodeLocalU = xy.x.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeX);
-        // const nodeLocalV = xy.y.mul(helloTerrainMesh.tileEdgeVertexCount).sub(nodeY);
         const vertexX = uv()
           .x.mul(helloTerrainMesh.tileEdgeVertexCount)
           .floor();
@@ -259,7 +255,7 @@ const TerrainPlane = () => {
 
         const height = helloTerrainMesh.heightmapStorage.storageNode
           .element(globalVertexIndex)
-          .remap(0, 1, 0, 255)
+          // .remap(0, 1, 0, 255)
           .toColor();
 
         // Return the color
@@ -336,6 +332,7 @@ const TerrainPlane = () => {
         </div>
       </Html> */}
       <hello.TerrainMesh
+        key={JSON.stringify(terrainGeometryControls)}
         receiveShadow
         castShadow
         frustumCulled={false}
@@ -348,9 +345,10 @@ const TerrainPlane = () => {
           {
             elevationFn: ElevationFn(
               ({
-                tileVertexWorldPosition,
+                worldPosition,
                 rootSize,
                 tileUV,
+                rootUV,
                 tileSize,
                 tileLevel,
                 nodeIndex,
@@ -358,10 +356,10 @@ const TerrainPlane = () => {
                 const warpStrength = float(0.5);
                 const baseStrength = float(1);
                 const warpFbm = warp_fbm({
-                  position: tileUV,
+                  position: vec2(worldPosition.x, worldPosition.z),
                 });
                 const fbm = vec2_fbm(
-                  tileUV,
+                  vec2(worldPosition.x, worldPosition.z),
                   terrainGeometryControls.fbmIterations,
                   terrainGeometryControls.fbmAmplitude,
                   terrainGeometryControls.fbmFrequency,
@@ -372,19 +370,8 @@ const TerrainPlane = () => {
                   .mul(warpFbm)
                   .add(baseStrength.mul(fbm));
                 const height = noise;
-                const heightmapMinElevation = 0;
-                const heightmapMaxElevation = 1;
-                const remappedHeight = height
-                  .remap(heightmapMinElevation, heightmapMaxElevation, 0, 255)
-                  .mul(terrainGeometryControls.heightmapScale);
-                // return remappedHeight;
-                return remap(
-                  float(tileLevel),
-                  float(0),
-                  float(terrainGeometryControls.maxLevel),
-                  float(1),
-                  float(0)
-                ).toFloat();
+                // const remappedHeight = height.remap(-100, 100, 0, 1);
+                return rootUV.x.max(rootUV.y).mul(50);
               }
             ),
             innerTileSegments: terrainGeometryControls.segments,
@@ -395,6 +382,7 @@ const TerrainPlane = () => {
             maxNodes: terrainGeometryControls.maxNodes,
           },
         ]}
+        rootSize={terrainGeometryControls.rootSize}
       >
         <meshStandardNodeMaterial
           name="TerrainMeshMaterial"
@@ -403,6 +391,7 @@ const TerrainPlane = () => {
           colorNode={colorNode}
         />
       </hello.TerrainMesh>
+      <axesHelper scale={terrainGeometryControls.rootSize * 1.1} />
     </group>
   );
 };

@@ -10,7 +10,8 @@ import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
 import { ElevationFn, type ElevationReturn } from "./nodes/ElevationFn";
 import { height } from "./nodes/height";
-import { uRootOrigin, uRootSize } from "./nodes/uniforms";
+import {} from "./nodes/tile";
+import { uRootOrigin, uRootSize, uSegments } from "./nodes/uniforms";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
@@ -76,16 +77,25 @@ export class TerrainMesh extends InstancedMesh {
     );
 
     this.heightmapComputeShader = new ComputeToBufferMap(
-      (nodeIndex, globalVertexIndex, localUV, _texelSize) => {
+      (
+        nodeIndex,
+        globalVertexIndex,
+        localUV,
+        _localCoordinates,
+        _texelSize
+      ) => {
         const origin = vec3(
           new Vector3(this.position.x, this.position.y, this.position.z)
         );
+
+        const rootSize = float(params.rootSize).toVar();
         const h = height(
           nodeIndex,
           this.nodeStorage.storageNode,
-          int(this.params.rootSize),
+          rootSize,
           origin,
           localUV,
+          int(this.params.innerTileSegments),
           this.params.elevationFn ?? ElevationFn(() => float(0))
         );
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
@@ -99,8 +109,24 @@ export class TerrainMesh extends InstancedMesh {
 
     uRootOrigin.value = this.position;
     uRootSize.value = this.params.rootSize;
-    console.log("TerrainMesh constructed", this);
+    uSegments.value = this.params.innerTileSegments;
   }
+
+  set rootSize(size: number) {
+    this.quadtree.destroy();
+    this.params.rootSize = size;
+    uRootSize.value = size;
+    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+    this.quadtree = new Quadtree({
+      ...quadtreeParams,
+      origin: this.position.clone(),
+    });
+  }
+
+  get rootSize() {
+    return this.params.rootSize;
+  }
+
   async update(renderer: WebGPURenderer, position: Vector3) {
     uRootOrigin.value = this.position;
     uRootSize.value = this.params.rootSize;
@@ -126,8 +152,7 @@ export class TerrainMesh extends InstancedMesh {
       // );
 
       // const f32 = new Float32Array(buffer);
-      // const first100 = f32.subarray(0, Math.min(100, f32.length));
-      // console.log("heightmapStorage first 100 f32:", Array.from(f32));
+      // const first100 = f32.subarray(0, Math.min(10, f32.length));
 
       const afterHeightmapCompute = performance.now();
       this.setMetric(
@@ -184,6 +209,7 @@ export class TerrainMesh extends InstancedMesh {
   // }
 
   destroy() {
+    console.log("destroy");
     // destroy storage buffers and other resources
     // destroy quadtree
     this.quadtree.destroy();

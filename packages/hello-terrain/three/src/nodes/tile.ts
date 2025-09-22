@@ -79,11 +79,20 @@ export const tileVertexWorldPosition = (
   nodeStorage: ShaderNodeObject<StorageBufferNode>,
   rootSize: ShaderNodeObject<Node>,
   rootOrigin: ShaderNodeObject<Node>,
-  positionLocal: ShaderNodeObject<Node>
+  positionLocal: ShaderNodeObject<Node>,
+  innerTileSegments: ShaderNodeObject<Node>
 ) =>
   Fn(
-    ([nodeStorage, nodeIndex, rootSize, rootOrigin, positionLocal]: [
+    ([
+      nodeStorage,
+      nodeIndex,
+      rootSize,
+      rootOrigin,
+      positionLocal,
+      innerTileSegments,
+    ]: [
       ShaderNodeObject<StorageBufferNode>,
+      ShaderNodeObject<Node>,
       ShaderNodeObject<Node>,
       ShaderNodeObject<Node>,
       ShaderNodeObject<Node>,
@@ -92,12 +101,18 @@ export const tileVertexWorldPosition = (
       const nodeVec2 = tileOriginVec2(nodeIndex, nodeStorage);
       const nodeX = nodeVec2.x;
       const nodeY = nodeVec2.y;
-      const size = tileSize(nodeIndex, nodeStorage, rootSize);
+      const innerTileSize = tileSize(nodeIndex, nodeStorage, rootSize);
+      const size = innerTileSize
+        .div(innerTileSegments)
+        .mul(innerTileSegments.add(2));
+      const scaleWithOverlap = size.div(innerTileSize);
+      rootSize.mulAssign(scaleWithOverlap);
+      const half = float(0.5);
       const worldX = rootOrigin.x.add(
-        nodeX.add(0.5).mul(size).sub(uRootSize.div(2.0))
+        nodeX.add(half).mul(size).sub(uRootSize.div(2.0))
       );
       const worldZ = rootOrigin.z.add(
-        nodeY.add(0.5).mul(size).sub(uRootSize.div(2.0))
+        nodeY.add(half).mul(size).sub(uRootSize.div(2.0))
       );
       const localOffsetX = positionLocal.x.mul(size);
       const localOffsetZ = positionLocal.z.mul(size);
@@ -108,7 +123,65 @@ export const tileVertexWorldPosition = (
       );
       return worldPosition;
     }
-  )(nodeStorage, nodeIndex, rootSize, rootOrigin, positionLocal);
+  )(
+    nodeStorage,
+    nodeIndex,
+    rootSize,
+    rootOrigin,
+    positionLocal,
+    innerTileSegments
+  );
+
+export const tileVertexWorldPositionCompute = (
+  nodeIndex: ShaderNodeObject<Node>,
+  nodeStorage: ShaderNodeObject<StorageBufferNode>,
+  rootSize: ShaderNodeObject<Node>,
+  rootOrigin: ShaderNodeObject<Node>,
+  localUV: ShaderNodeObject<Node>,
+  innerTileSegments: ShaderNodeObject<Node>
+) =>
+  Fn(
+    ([
+      nodeStorage,
+      nodeIndex,
+      rootSize,
+      rootOrigin,
+      localUV,
+      innerTileSegments,
+    ]: [
+      ShaderNodeObject<StorageBufferNode>,
+      ShaderNodeObject<Node>,
+      ShaderNodeObject<Node>,
+      ShaderNodeObject<Node>,
+      ShaderNodeObject<Node>,
+      ShaderNodeObject<Node>,
+    ]) => {
+      const nodeVec2 = tileOriginVec2(nodeIndex, nodeStorage);
+      const nodeX = nodeVec2.x;
+      const nodeY = nodeVec2.y;
+      const innerTileSize = tileSize(nodeIndex, nodeStorage, rootSize);
+      const size = innerTileSize
+        .div(innerTileSegments)
+        .mul(innerTileSegments.add(2));
+      const half = float(0.5);
+      const scaleWithOverlap = size.div(innerTileSize);
+      rootSize.mulAssign(scaleWithOverlap);
+      const halfRoot = float(rootSize).mul(half);
+
+      // Compute world-space center of this tile
+      const centerX = rootOrigin.x.add(nodeX.add(half).mul(size)).sub(halfRoot);
+      const centerZ = rootOrigin.z.add(nodeY.add(half).mul(size)).sub(halfRoot);
+
+      const localX = localUV.x.mul(size);
+      const localZ = localUV.y.mul(size);
+
+      const worldX = centerX.add(localX);
+      const worldZ = centerZ.add(localZ);
+      const worldY = rootOrigin.y;
+
+      return vec3(worldX, worldY, worldZ);
+    }
+  )(nodeStorage, nodeIndex, rootSize, rootOrigin, localUV, innerTileSegments);
 
 // TODO: this is only for vertex/fragment shader
 export const rootUV = Fn(() => {

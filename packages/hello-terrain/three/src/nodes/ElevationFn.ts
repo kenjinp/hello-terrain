@@ -4,7 +4,7 @@ import type { ProxiedObject, ShaderNodeObject } from "three/tsl";
 import type { ConstNode, Vector2, Vector3 } from "three/webgpu";
 
 export interface ElevationParams {
-  tileVertexWorldPosition: ShaderNodeObject<ConstNode<Vector3>>;
+  worldPosition: ShaderNodeObject<ConstNode<Vector3>>;
   rootSize: ShaderNodeObject<ConstNode<number>>;
   rootUV: ShaderNodeObject<ConstNode<Vector2>>;
   tileUV: ShaderNodeObject<ConstNode<Vector2>>;
@@ -23,7 +23,7 @@ export type ElevationCallback = (
 export function ElevationFn(callback: ElevationCallback): ElevationReturn {
   const tslFunction = (args: ElevationParams) => {
     const params: ElevationParams = {
-      tileVertexWorldPosition: args.tileVertexWorldPosition,
+      worldPosition: args.worldPosition,
       rootSize: args.rootSize,
       rootUV: args.rootUV,
       tileUV: args.tileUV,

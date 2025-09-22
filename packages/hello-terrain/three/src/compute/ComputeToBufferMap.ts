@@ -21,6 +21,7 @@ export class ComputeToBufferMap {
       nodeIndex: ShaderNodeObject<Node>,
       globalVertexIndex: ShaderNodeObject<Node>,
       uv: ShaderNodeObject<Node>,
+      localCoordinates: ShaderNodeObject<Node>,
       texelSize: ShaderNodeObject<Node>
     ) => void
   ) {
@@ -33,7 +34,6 @@ export class ComputeToBufferMap {
   private create(outTo: StorageBuffer, width: number, _numComponents: number) {
     const computeInstanceCount = outTo.maxItems;
     this.computeInstanceCount = computeInstanceCount;
-    // this.workgroupSize = [64, 1, 1];
     this.workgroupSize = [_numComponents, 1, 1];
     this.dispatchSize = [width, width, computeInstanceCount];
     return Fn(() => {
@@ -41,8 +41,15 @@ export class ComputeToBufferMap {
       const globalIndex = instanceIndex;
       const nodeIndex = workgroupId.z;
       const texelSize = vec2(1, 1).div(fWidth);
-      const localUVCoords = vec2(workgroupId.x, workgroupId.y);
-      this.fn(nodeIndex, globalIndex, localUVCoords, texelSize);
+      const localCoordinates = vec2(workgroupId.x, workgroupId.y);
+      const localUVCoords = localCoordinates.div(fWidth);
+      this.fn(
+        nodeIndex,
+        globalIndex,
+        localUVCoords,
+        localCoordinates,
+        texelSize
+      );
     })().computeKernel(this.workgroupSize);
   }
 

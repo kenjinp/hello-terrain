@@ -27,9 +27,9 @@ export class Quadtree {
   private tempChildIndices: ChildIndices = [-1, -1, -1, -1];
   private tempNeighborIndices: NeighborIndices = [-1, -1, -1, -1];
 
-  constructor(config: QuadtreeParams) {
+  constructor(config: QuadtreeParams, nodeView?: NodeView) {
     this.config = config;
-    this.nodeView = new NodeView(config.maxNodes);
+    this.nodeView = nodeView ?? new NodeView(config.maxNodes);
     this.initialize();
   }
 
@@ -309,5 +309,9 @@ export class Quadtree {
     this.nodeView.destroy();
     this.nodeCount = 0;
     this.deepestLevel = 0;
+  }
+
+  clone(): Quadtree {
+    return new Quadtree(this.config, this.nodeView.clone());
   }
 }

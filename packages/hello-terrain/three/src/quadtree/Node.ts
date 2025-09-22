@@ -33,19 +33,26 @@ export class NodeView {
   private leafNodeMask: Uint8Array;
   private leafNodeCountBuffer: Uint16Array;
 
-  constructor(maxNodeCount: number) {
+  constructor(
+    maxNodeCount: number,
+
+    childrenIndicesBuffer?: Uint16Array,
+    neighborsIndicesBuffer?: Uint16Array,
+    nodeBuffer?: Int32Array,
+    leafNodeMask?: Uint8Array,
+    leafNodeCountBuffer?: Uint16Array
+  ) {
     this.maxNodeCount = maxNodeCount;
 
     // Initialize all buffers
-    this.childrenIndicesBuffer = new Uint16Array(
-      CHILDREN_STRIDE * maxNodeCount
-    );
-    this.neighborsIndicesBuffer = new Uint16Array(
-      NEIGHBORS_STRIDE * maxNodeCount
-    );
-    this.nodeBuffer = new Int32Array(NODE_STRIDE * maxNodeCount);
-    this.leafNodeMask = new Uint8Array(maxNodeCount);
-    this.leafNodeCountBuffer = new Uint16Array(1);
+    this.childrenIndicesBuffer =
+      childrenIndicesBuffer ?? new Uint16Array(CHILDREN_STRIDE * maxNodeCount);
+    this.neighborsIndicesBuffer =
+      neighborsIndicesBuffer ??
+      new Uint16Array(NEIGHBORS_STRIDE * maxNodeCount);
+    this.nodeBuffer = nodeBuffer ?? new Int32Array(NODE_STRIDE * maxNodeCount);
+    this.leafNodeMask = leafNodeMask ?? new Uint8Array(maxNodeCount);
+    this.leafNodeCountBuffer = leafNodeCountBuffer ?? new Uint16Array(1);
 
     this.clear();
   }
@@ -361,5 +368,16 @@ export class NodeView {
     this.leafNodeCountBuffer = new Uint16Array(0);
     this.maxNodeCount = 0;
     this.incrementalHash = 0x811c9dc5;
+  }
+
+  clone(): NodeView {
+    return new NodeView(
+      this.maxNodeCount,
+      this.childrenIndicesBuffer,
+      this.neighborsIndicesBuffer,
+      this.nodeBuffer,
+      this.leafNodeMask,
+      this.leafNodeCountBuffer
+    );
   }
 }
