@@ -182,7 +182,7 @@ const TerrainPlane = () => {
       })();
     }
     return Fn(() => {
-      const nodeStorage = helloTerrainMesh.nodeStorage.storageNode;
+      const nodeStorage = helloTerrainMesh.tileNode;
       const nodeIndex = instanceIndex;
       const rootSize = uRootSize.toVar();
       const rootOrigin = uRootOrigin.toVar();
@@ -204,10 +204,7 @@ const TerrainPlane = () => {
       const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
       vGlobalVertexIndex.assign(globalIndex);
 
-      const height =
-        helloTerrainMesh.heightmapStorage.storageNode.element(
-          vGlobalVertexIndex
-        );
+      const height = helloTerrainMesh.heightmapNode.element(vGlobalVertexIndex);
 
       const beforeTransform = select(
         isSkirtVertex,
@@ -228,10 +225,7 @@ const TerrainPlane = () => {
     }
     return Fn(() => {
       return Fn(() => {
-        const isLeaf = tileIsLeaf(
-          instanceIndex,
-          helloTerrainMesh.nodeStorage.storageNode
-        );
+        const isLeaf = tileIsLeaf(instanceIndex, helloTerrainMesh.tileNode);
         const vertexX = uv()
           .x.mul(helloTerrainMesh.tileEdgeVertexCount)
           .floor();
@@ -250,7 +244,7 @@ const TerrainPlane = () => {
           .mul(verticesPerNode)
           .add(vertexIndex);
 
-        const height = helloTerrainMesh.heightmapStorage.storageNode
+        const height = helloTerrainMesh.heightmapNode
           .element(globalVertexIndex)
           // .remap(0, 1, 0, 255)
           .toColor();
@@ -371,15 +365,14 @@ const TerrainPlane = () => {
                 return remappedHeight;
               }
             ),
-            innerTileSegments: terrainGeometryControls.segments,
-            maxLevel: terrainGeometryControls.maxLevel,
-            rootSize: terrainGeometryControls.rootSize,
-            minNodeSize: terrainGeometryControls.minNodeSize,
-            subdivisionFactor: terrainGeometryControls.subdivisionFactor,
-            maxNodes: terrainGeometryControls.maxNodes,
           },
         ]}
+        maxNodes={terrainGeometryControls.maxNodes}
         rootSize={terrainGeometryControls.rootSize}
+        innerTileSegments={terrainGeometryControls.segments}
+        subdivisionFactor={terrainGeometryControls.subdivisionFactor}
+        minNodeSize={terrainGeometryControls.minNodeSize}
+        maxLevel={terrainGeometryControls.maxLevel}
       >
         <meshStandardNodeMaterial
           name="TerrainMeshMaterial"

@@ -314,6 +314,18 @@ export class TerrainMesh extends InstancedMesh {
     }
   }
 
+  get heightmapNode() {
+    return this.heightmapStorage.storageNode;
+  }
+
+  get normalMapNode() {
+    return this.normalmapStorage.storageNode;
+  }
+
+  get tileNode() {
+    return this.nodeStorage.storageNode;
+  }
+
   setMetric(key: string, value: string | number | boolean) {
     this.metrics[key] = value;
   }
