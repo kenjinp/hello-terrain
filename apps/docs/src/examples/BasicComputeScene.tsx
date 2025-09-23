@@ -1,7 +1,7 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import {} from "@/components/Terrain/fmb";
+import { vec2_fbm, warp_fbm } from "@/components/Terrain/fmb";
 import * as hello from "@hello-terrain/react";
 import {
   ElevationFn,
@@ -30,6 +30,7 @@ import {
   uniform,
   uv,
   varying,
+  vec2,
   vec3,
   vertexIndex,
 } from "three/tsl";
@@ -349,25 +350,25 @@ const TerrainPlane = () => {
                 tileLevel,
                 nodeIndex,
               }) => {
-                // const warpStrength = float(0.5);
-                // const baseStrength = float(1);
-                // const warpFbm = warp_fbm({
-                //   position: vec2(worldPosition.x, worldPosition.z),
-                // });
-                // const fbm = vec2_fbm(
-                //   vec2(worldPosition.x, worldPosition.z),
-                //   terrainGeometryControls.fbmIterations,
-                //   terrainGeometryControls.fbmAmplitude,
-                //   terrainGeometryControls.fbmFrequency,
-                //   terrainGeometryControls.fbmLacunarity,
-                //   terrainGeometryControls.fbmPersistence
-                // );
-                // const noise = warpStrength
-                //   .mul(warpFbm)
-                //   .add(baseStrength.mul(fbm));
-                // const height = noise;
-                // const remappedHeight = height.remap(-100, 100, 0, 1);
-                return rootUV.x.max(rootUV.y).mul(50);
+                const warpStrength = float(0.5);
+                const baseStrength = float(1);
+                const warpFbm = warp_fbm({
+                  position: vec2(worldPosition.x, worldPosition.z),
+                });
+                const fbm = vec2_fbm(
+                  vec2(worldPosition.x, worldPosition.z),
+                  terrainGeometryControls.fbmIterations,
+                  terrainGeometryControls.fbmAmplitude,
+                  terrainGeometryControls.fbmFrequency,
+                  terrainGeometryControls.fbmLacunarity,
+                  terrainGeometryControls.fbmPersistence
+                );
+                const noise = warpStrength
+                  .mul(warpFbm)
+                  .add(baseStrength.mul(fbm));
+                const height = noise;
+                const remappedHeight = height.remap(-5, 5, 0, 1);
+                return remappedHeight;
               }
             ),
             innerTileSegments: terrainGeometryControls.segments,

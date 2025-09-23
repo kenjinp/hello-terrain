@@ -311,7 +311,13 @@ export class Quadtree {
     this.deepestLevel = 0;
   }
 
-  clone(): Quadtree {
-    return new Quadtree(this.config, this.nodeView.clone());
+  /**
+   * Set the configuration
+   */
+  setConfig(config: QuadtreeParams, reset = false): void {
+    this.config = config;
+    if (reset) {
+      this.initialize();
+    }
   }
 }

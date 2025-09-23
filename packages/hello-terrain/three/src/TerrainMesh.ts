@@ -1,6 +1,7 @@
 import { float, int, vec3 } from "three/tsl";
 import {
   InstancedMesh,
+  type Material,
   type NodeMaterial,
   Vector3,
   type WebGPURenderer,
@@ -24,26 +25,39 @@ export class TerrainMesh extends InstancedMesh {
   quadtree: Quadtree;
   lastHash: number;
   metrics: Record<string, string | number | boolean>;
-  public readonly tileEdgeVertexCount: number;
-  public readonly nodeStorage: StorageBuffer;
-  public readonly heightmapStorage: StorageBuffer;
-  public readonly normalmapStorage: StorageBuffer;
+  // @ts-ignore will be initialized
+  private nodeStorage: StorageBuffer;
+  // @ts-ignore will be initialized
+  private heightmapStorage: StorageBuffer;
+  // @ts-ignore will be initialized
+  private normalmapStorage: StorageBuffer;
+  // @ts-ignore will be initialized
   private heightmapComputeShader: ComputeToBufferMap;
-  constructor(public readonly params: TerrainMeshParams) {
-    const { innerTileSegments, material, ...quadtreeParams } = params;
-    const geometry = new TerrainGeometry(params.innerTileSegments, true);
-    super(geometry, material, quadtreeParams.maxNodes);
+  public readonly params: TerrainMeshParams;
+  constructor(params: Partial<TerrainMeshParams> = {}) {
+    const defaults = {
+      innerTileSegments: 13, // 16 total vertices per tile
+      elevationFn: ElevationFn(() => float(0)),
+      maxLevel: 10,
+      rootSize: 100,
+      minNodeSize: 1,
+      subdivisionFactor: 2,
+      maxNodes: 1000,
+    } satisfies Omit<TerrainMeshParams, "material">;
+    const merged: TerrainMeshParams = {
+      ...defaults,
+      ...params,
+    } as TerrainMeshParams;
+
+    const { innerTileSegments, material, ...quadtreeParams } = merged;
+    const geometry = new TerrainGeometry(merged.innerTileSegments, true);
+    // material may be set later by consumers; pass through if present
+    super(geometry, material as unknown as Material, quadtreeParams.maxNodes);
+    this.params = merged;
     this.quadtree = new Quadtree({
       ...quadtreeParams,
       origin: this.position.clone(),
     });
-
-    this.nodeStorage = new StorageBuffer(
-      "nodeStorage",
-      this.quadtree.getNodeView().getBuffers().nodeBuffer,
-      4,
-      quadtreeParams.maxNodes
-    );
 
     this.lastHash = 0;
     this.metrics = {
@@ -55,34 +69,68 @@ export class TerrainMesh extends InstancedMesh {
     };
 
     const tileEdgeVertexCount = innerTileSegments + 1 + 2;
-    this.tileEdgeVertexCount = tileEdgeVertexCount;
     if (tileEdgeVertexCount > 256) {
       throw new Error("innerTileSegments exceeds the maximum of 253");
     }
 
+    uRootOrigin.value = this.position;
+    uRootSize.value = this.params.rootSize;
+    uSegments.value = this.params.innerTileSegments;
+
+    this.initializeStorage();
+    this.initializeComputeShaders();
+  }
+
+  get tileEdgeVertexCount() {
+    return this.params.innerTileSegments + 2 + 1;
+  }
+
+  private initializeStorage(): {
+    nodeStorage: StorageBuffer;
+    heightmapStorage: StorageBuffer;
+    normalmapStorage: StorageBuffer;
+  } {
+    const maxNodes = this.quadtree.getConfig().maxNodes;
+    const nodeStorage = new StorageBuffer(
+      "nodeStorage",
+      this.quadtree.getNodeView().getBuffers().nodeBuffer,
+      4,
+      maxNodes
+    );
+
+    const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
     const computeTextureHeight = tileEdgeVertexCount;
-    const computeTextureWidth = computeTextureHeight * quadtreeParams.maxNodes;
+    const computeTextureWidth = computeTextureHeight * maxNodes;
     const heightmapDimensions = computeTextureWidth * computeTextureHeight;
-    this.heightmapStorage = new StorageBuffer(
+    const heightmapStorage = new StorageBuffer(
       "heightmapStorage",
       new Float32Array(heightmapDimensions).fill(1),
       1,
-      quadtreeParams.maxNodes
+      maxNodes
     );
-    this.normalmapStorage = new StorageBuffer(
+    const normalmapStorage = new StorageBuffer(
       "normalmapStorage",
       new Float32Array(heightmapDimensions * 3),
       3,
-      quadtreeParams.maxNodes
+      maxNodes
     );
 
-    this.heightmapComputeShader = new ComputeToBufferMap(
+    this.nodeStorage = nodeStorage;
+    this.heightmapStorage = heightmapStorage;
+    this.normalmapStorage = normalmapStorage;
+
+    return { nodeStorage, heightmapStorage, normalmapStorage };
+  }
+
+  private initializeComputeShaders(): ComputeToBufferMap {
+    const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
+    const shader = new ComputeToBufferMap(
       (nodeIndex, globalVertexIndex, localUV, _localCoordinates, texelSize) => {
         const origin = vec3(
           new Vector3(this.position.x, this.position.y, this.position.z)
         );
 
-        const rootSize = float(params.rootSize).toVar();
+        const rootSize = float(this.params.rootSize).toVar();
         const h = height(
           nodeIndex,
           this.nodeStorage.storageNode,
@@ -96,23 +144,16 @@ export class TerrainMesh extends InstancedMesh {
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
       }
     );
-    this.heightmapComputeShader.createBinds(
-      tileEdgeVertexCount,
-      1,
-      this.heightmapStorage
-    );
-
-    uRootOrigin.value = this.position;
-    uRootSize.value = this.params.rootSize;
-    uSegments.value = this.params.innerTileSegments;
+    shader.createBinds(tileEdgeVertexCount, 1, this.heightmapStorage);
+    this.heightmapComputeShader = shader;
+    return shader;
   }
 
   set rootSize(size: number) {
-    this.quadtree.destroy();
     this.params.rootSize = size;
     uRootSize.value = size;
     const { innerTileSegments, material, ...quadtreeParams } = this.params;
-    this.quadtree = new Quadtree({
+    this.quadtree.setConfig({
       ...quadtreeParams,
       origin: this.position.clone(),
     });
@@ -120,6 +161,105 @@ export class TerrainMesh extends InstancedMesh {
 
   get rootSize() {
     return this.params.rootSize;
+  }
+
+  set innerTileSegments(segments: number) {
+    const tileEdgeVertexCount = segments + 1 + 2;
+    if (tileEdgeVertexCount > 256) {
+      throw new Error("innerTileSegments exceeds the maximum of 253");
+    }
+
+    this.params.innerTileSegments = segments;
+    uSegments.value = segments;
+    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+    this.quadtree.setConfig({
+      ...quadtreeParams,
+      origin: this.position.clone(),
+    });
+  }
+
+  get innerTileSegments() {
+    return this.params.innerTileSegments;
+  }
+
+  setMaterial(material: NodeMaterial) {
+    this.params.material = material;
+    // Assign to base InstancedMesh material
+    (this as unknown as { material: Material | Material[] }).material =
+      material as unknown as Material;
+  }
+
+  getMaterial(): NodeMaterial | undefined {
+    return (
+      this.params.material ??
+      (this as unknown as { material?: NodeMaterial }).material
+    );
+  }
+
+  set elevationFn(fn: ElevationReturn) {
+    this.params.elevationFn = fn;
+    this.heightmapComputeShader = this.initializeComputeShaders();
+  }
+
+  get elevationFn() {
+    return this.params.elevationFn ?? ElevationFn(() => float(0));
+  }
+
+  set maxLevel(level: number) {
+    this.params.maxLevel = level;
+    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+    this.quadtree.setConfig({
+      ...quadtreeParams,
+      origin: this.position.clone(),
+    });
+  }
+
+  get maxLevel() {
+    return this.params.maxLevel;
+  }
+
+  set minNodeSize(size: number) {
+    this.params.minNodeSize = size;
+    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+    this.quadtree.setConfig({
+      ...quadtreeParams,
+      origin: this.position.clone(),
+    });
+  }
+
+  get minNodeSize() {
+    return this.params.minNodeSize;
+  }
+
+  set subdivisionFactor(factor: number) {
+    this.params.subdivisionFactor = factor;
+    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+    this.quadtree.setConfig({
+      ...quadtreeParams,
+      origin: this.position.clone(),
+    });
+  }
+
+  get subdivisionFactor() {
+    return this.params.subdivisionFactor;
+  }
+
+  set maxNodes(count: number) {
+    this.params.maxNodes = count;
+    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+    this.quadtree.setConfig({
+      ...quadtreeParams,
+      origin: this.position.clone(),
+    });
+    const storages = this.initializeStorage();
+    this.nodeStorage = storages.nodeStorage;
+    this.heightmapStorage = storages.heightmapStorage;
+    this.normalmapStorage = storages.normalmapStorage;
+    this.heightmapComputeShader = this.initializeComputeShaders();
+  }
+
+  get maxNodes() {
+    return this.params.maxNodes;
   }
 
   async update(renderer: WebGPURenderer, position: Vector3) {
