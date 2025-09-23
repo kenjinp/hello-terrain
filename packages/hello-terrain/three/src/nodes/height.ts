@@ -5,8 +5,6 @@ import {
   int,
   max,
   min,
-  pow,
-  vec2,
   vertexIndex,
 } from "three/tsl";
 
@@ -14,6 +12,7 @@ import { Fn } from "three/tsl";
 import type { Node, StorageBufferNode } from "three/webgpu";
 import { ElevationFn, type ElevationReturn } from "./ElevationFn";
 import {
+  rootUVCompute,
   tileLevel,
   tileOriginVec2,
   tileSize,
@@ -27,9 +26,19 @@ export const height = (
   rootOrigin: ShaderNodeObject<Node>,
   localUV: ShaderNodeObject<Node>,
   innerTileSegments: ShaderNodeObject<Node>,
+  _texelSize: ShaderNodeObject<Node>,
   elevationFn: ElevationReturn = ElevationFn(() => float(0))
 ) =>
   Fn(() => {
+    const rootUV = rootUVCompute(
+      nodeIndex,
+      nodeStorage,
+      rootSize,
+      rootOrigin,
+      localUV,
+      innerTileSegments
+    );
+
     const worldPosition = tileVertexWorldPositionCompute(
       nodeIndex,
       nodeStorage,
@@ -38,23 +47,6 @@ export const height = (
       localUV,
       innerTileSegments
     ).setName("worldPositionWithSkirt");
-
-    // Compute rootUV analytically from tile coordinates to avoid precision drift
-    const level = tileLevel(nodeIndex, nodeStorage);
-    const tilesPerAxis = pow(2.0, level.toFloat());
-    const nodeOrigin = tileOriginVec2(nodeIndex, nodeStorage);
-
-    // Remap localUV [0,1] with skirt into inner range and clamp
-    const edgeVertexCount = innerTileSegments.add(3);
-    const uvStep = float(1.0).div(float(edgeVertexCount.sub(1)));
-    const innerUvX = localUV.x.sub(uvStep).div(float(1.0).sub(uvStep.mul(2.0)));
-    const innerUvY = localUV.y.sub(uvStep).div(float(1.0).sub(uvStep.mul(2.0)));
-    const innerUvXClamped = max(min(innerUvX, float(1.0)), float(0.0));
-    const innerUvYClamped = max(min(innerUvY, float(1.0)), float(0.0));
-
-    const rootU = nodeOrigin.x.add(innerUvXClamped).div(tilesPerAxis);
-    const rootV = nodeOrigin.y.add(innerUvYClamped).div(tilesPerAxis);
-    const rootUV = vec2(rootU, rootV);
 
     return elevationFn({
       worldPosition,

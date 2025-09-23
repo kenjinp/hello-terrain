@@ -77,13 +77,7 @@ export class TerrainMesh extends InstancedMesh {
     );
 
     this.heightmapComputeShader = new ComputeToBufferMap(
-      (
-        nodeIndex,
-        globalVertexIndex,
-        localUV,
-        _localCoordinates,
-        _texelSize
-      ) => {
+      (nodeIndex, globalVertexIndex, localUV, _localCoordinates, texelSize) => {
         const origin = vec3(
           new Vector3(this.position.x, this.position.y, this.position.z)
         );
@@ -96,6 +90,7 @@ export class TerrainMesh extends InstancedMesh {
           origin,
           localUV,
           int(this.params.innerTileSegments),
+          texelSize,
           this.params.elevationFn ?? ElevationFn(() => float(0))
         );
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);

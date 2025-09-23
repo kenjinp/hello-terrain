@@ -1,14 +1,14 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { vec2_fbm, warp_fbm } from "@/components/Terrain/fmb";
+import {} from "@/components/Terrain/fmb";
 import * as hello from "@hello-terrain/react";
 import {
   ElevationFn,
   type TerrainMesh,
   isSkirtVertex,
+  tileGeometryPosition,
   tileIsLeaf,
-  tileVertexWorldPosition,
   uRootOrigin,
   uRootSize,
   uSegments,
@@ -17,6 +17,7 @@ import {
 import { OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
+
 import { useEffect, useMemo, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
@@ -29,7 +30,6 @@ import {
   uniform,
   uv,
   varying,
-  vec2,
   vec3,
   vertexIndex,
 } from "three/tsl";
@@ -185,16 +185,16 @@ const TerrainPlane = () => {
       const nodeIndex = instanceIndex;
       const rootSize = uRootSize.toVar();
       const rootOrigin = uRootOrigin.toVar();
-      const worldPosition = tileVertexWorldPosition(
+      const skirtLength = uSkirtLength.toVar();
+      const worldPosition = tileGeometryPosition(
         nodeIndex,
         nodeStorage,
         rootSize,
         rootOrigin,
         positionLocal,
-        uSegments.toVar()
+        skirtLength
       );
       const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
-      const skirtLength = uSkirtLength.toVar();
 
       // Compute and pass global vertex index to fragment stage
       const edgeVertexCount = uSegments.toVar().add(3);
@@ -210,11 +210,7 @@ const TerrainPlane = () => {
 
       const beforeTransform = select(
         isSkirtVertex,
-        vec3(
-          worldPosition.x,
-          worldPosition.y.sub(float(skirtLength)),
-          worldPosition.z
-        ),
+        vec3(worldPosition.x, worldPosition.y, worldPosition.z),
         vec3(worldPosition.x, worldPosition.y.add(height), worldPosition.z)
       );
 
@@ -353,23 +349,23 @@ const TerrainPlane = () => {
                 tileLevel,
                 nodeIndex,
               }) => {
-                const warpStrength = float(0.5);
-                const baseStrength = float(1);
-                const warpFbm = warp_fbm({
-                  position: vec2(worldPosition.x, worldPosition.z),
-                });
-                const fbm = vec2_fbm(
-                  vec2(worldPosition.x, worldPosition.z),
-                  terrainGeometryControls.fbmIterations,
-                  terrainGeometryControls.fbmAmplitude,
-                  terrainGeometryControls.fbmFrequency,
-                  terrainGeometryControls.fbmLacunarity,
-                  terrainGeometryControls.fbmPersistence
-                );
-                const noise = warpStrength
-                  .mul(warpFbm)
-                  .add(baseStrength.mul(fbm));
-                const height = noise;
+                // const warpStrength = float(0.5);
+                // const baseStrength = float(1);
+                // const warpFbm = warp_fbm({
+                //   position: vec2(worldPosition.x, worldPosition.z),
+                // });
+                // const fbm = vec2_fbm(
+                //   vec2(worldPosition.x, worldPosition.z),
+                //   terrainGeometryControls.fbmIterations,
+                //   terrainGeometryControls.fbmAmplitude,
+                //   terrainGeometryControls.fbmFrequency,
+                //   terrainGeometryControls.fbmLacunarity,
+                //   terrainGeometryControls.fbmPersistence
+                // );
+                // const noise = warpStrength
+                //   .mul(warpFbm)
+                //   .add(baseStrength.mul(fbm));
+                // const height = noise;
                 // const remappedHeight = height.remap(-100, 100, 0, 1);
                 return rootUV.x.max(rootUV.y).mul(50);
               }

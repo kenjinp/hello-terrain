@@ -12,6 +12,7 @@ export {
   tileLevel,
   tileOriginVec2,
   tileVertexWorldPosition,
+  tileGeometryPosition,
 } from "./nodes/tile";
 export {
   uRootOrigin,
