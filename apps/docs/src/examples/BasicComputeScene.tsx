@@ -1,7 +1,8 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { vec2_fbm, warp_fbm } from "@/components/Terrain/fmb";
+import { vec2_fbm } from "@/components/Terrain/fmb";
+import { voronoiCells } from "@/components/Terrain/lib/TSLNodes/Voronoi";
 import * as hello from "@hello-terrain/react";
 import {
   ElevationFn,
@@ -23,12 +24,12 @@ import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPU
 import {
   Fn,
   float,
+  hash,
   instanceIndex,
   int,
   positionLocal,
   select,
   uniform,
-  uv,
   varying,
   vec2,
   vec3,
@@ -38,6 +39,12 @@ import * as THREE from "three/webgpu";
 
 // biome-ignore lint/suspicious/noExplicitAny: <idk its recommended way from drei>
 extend(THREE as any);
+
+const VERTEX_COUNT = 32;
+const SEGMENT_COUNT = VERTEX_COUNT - 3;
+
+const PERSISTENCE = 0.5;
+const LACUNARITY = 2.1369;
 
 const TerrainPlane = () => {
   const { camera, gl } = useThree();
@@ -52,11 +59,13 @@ const TerrainPlane = () => {
     "deepestLevel",
     "hash",
     "hasStateChanged",
+    "lastUpdateHeight",
+    "closestLeafIndex",
   ] as const);
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
     segments: {
-      value: 16 - 3,
+      value: SEGMENT_COUNT,
       min: 2,
       max: 256 - 3,
       step: 2,
@@ -65,7 +74,7 @@ const TerrainPlane = () => {
     skirtLength: {
       value: 1,
       min: 0,
-      max: 20,
+      max: 10000,
       step: 0.2,
       label: "Skirt Length",
     },
@@ -88,14 +97,14 @@ const TerrainPlane = () => {
       label: "Max Nodes",
     },
     rootSize: {
-      value: 100,
+      value: SEGMENT_COUNT * 100,
       min: 1,
       max: 10000,
       step: 1,
       label: "Root Size",
     },
     minNodeSize: {
-      value: 0.1,
+      value: SEGMENT_COUNT,
       min: 0.1,
       max: 10000,
       step: 0.1,
@@ -113,7 +122,7 @@ const TerrainPlane = () => {
       label: "Use Texture",
     },
     heightmapScale: {
-      value: 1.0,
+      value: SEGMENT_COUNT,
       min: 0.0,
       max: 1000.0,
       step: 0.1,
@@ -127,42 +136,69 @@ const TerrainPlane = () => {
       label: "FBM Iterations",
     },
     fbmAmplitude: {
-      value: 0.8,
+      value: 100,
       min: 0.0,
-      max: 10.0,
-      step: 0.1,
+      max: 100.0,
+      step: 0.001,
       label: "FBM Amplitude",
     },
     fbmFrequency: {
-      value: 0.005,
+      value: 0.0001,
       min: 0.0,
       max: 10.0,
-      step: 0.1,
+      step: 0.00001,
       label: "FBM Frequency",
     },
     fbmLacunarity: {
-      value: 2.0,
+      value: LACUNARITY,
       min: 0.0,
       max: 10.0,
       step: 0.1,
       label: "FBM Lacunarity",
     },
     fbmPersistence: {
-      value: 0.5,
+      value: PERSISTENCE,
       min: 0.0,
       max: 1.0,
       step: 0.01,
       label: "FBM Persistence",
     },
+    fbmNoiseScale: {
+      value: 0.01,
+      min: -1,
+      max: 1,
+      step: 0.0001,
+      label: "FBM Noise Scale",
+    },
   });
 
   const uvMap = useTexture("/assets/uv-12x12.png");
+
+  console.log({ helloTerrainMesh });
 
   // Memoized varyings
   const uniforms = useMemo(() => {
     return {
       uWireframe: uniform(false).setName("uWireframe"),
       uUseTexture: uniform(false).setName("uUseTexture"),
+    };
+  }, []);
+
+  const elevationUniforms = useMemo(() => {
+    return {
+      uFbmIterations: uniform(8).setName("uFbmIterations"),
+      uFbmAmplitude: uniform(1.0).setName("uFbmAmplitude"),
+      uFbmFrequency: uniform(0.005).setName("uFbmFrequency"),
+      uFbmLacunarity: uniform(2.0).setName("uFbmLacunarity"),
+      uFbmPersistence: uniform(0.5).setName("uFbmPersistence"),
+      uHeightmapScale: uniform(1.0).setName("uHeightmapScale"),
+      uNoiseScale: uniform(1.0).setName("uNoiseScale"),
+    };
+  }, []);
+
+  const varyings = useMemo(() => {
+    return {
+      vElevation: varying(float(), "vElevation"),
     };
   }, []);
 
@@ -204,7 +240,10 @@ const TerrainPlane = () => {
       const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
       vGlobalVertexIndex.assign(globalIndex);
 
-      const height = helloTerrainMesh.heightmapNode.element(vGlobalVertexIndex);
+      const height = helloTerrainMesh.heightmapNode
+        .element(vGlobalVertexIndex)
+        .mul(elevationUniforms.uHeightmapScale.toVar());
+      varyings.vElevation.assign(height);
 
       const beforeTransform = select(
         isSkirtVertex,
@@ -214,9 +253,13 @@ const TerrainPlane = () => {
 
       return select(isLeaf, beforeTransform, vec3(0, 0, 0));
     })();
-  }, [helloTerrainMesh, vGlobalVertexIndex]);
+  }, [
+    vGlobalVertexIndex,
+    varyings.vElevation,
+    elevationUniforms.uHeightmapScale,
+    helloTerrainMesh,
+  ]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the uniform will be updated by the useFrame hook
   const colorNode = useMemo(() => {
     if (!helloTerrainMesh) {
       return Fn(() => {
@@ -224,54 +267,54 @@ const TerrainPlane = () => {
       })();
     }
     return Fn(() => {
-      return Fn(() => {
-        const isLeaf = tileIsLeaf(instanceIndex, helloTerrainMesh.tileNode);
-        const vertexX = uv()
-          .x.mul(helloTerrainMesh.tileEdgeVertexCount)
-          .floor();
-        const vertexY = float(helloTerrainMesh.tileEdgeVertexCount).sub(
-          uv().y.mul(helloTerrainMesh.tileEdgeVertexCount).floor()
-        );
-        const vertexIndex = vertexY
-          .mul(int(helloTerrainMesh.tileEdgeVertexCount))
-          .add(vertexX);
+      const height = varyings.vElevation
+        .remap(0, elevationUniforms.uHeightmapScale.toVar(), 0, 1)
+        .toColor();
+      const nodeHashColor = vec3(
+        hash(instanceIndex),
+        hash(instanceIndex.add(1)),
+        hash(instanceIndex.add(2))
+      ).toColor();
 
-        const verticesPerNode = int(
-          helloTerrainMesh.tileEdgeVertexCount *
-            helloTerrainMesh.tileEdgeVertexCount
-        );
-        const globalVertexIndex = instanceIndex
-          .mul(verticesPerNode)
-          .add(vertexIndex);
-
-        const height = helloTerrainMesh.heightmapNode
-          .element(globalVertexIndex)
-          // .remap(0, 1, 0, 255)
-          .toColor();
-
-        // Return the color
-        return isLeaf.select(height, vec3(1, 0, 0).toColor());
-      })();
+      // Return the color
+      return height.oneMinus().mix(nodeHashColor, 0.5);
     })();
-  }, [helloTerrainMesh]);
+  }, [
+    helloTerrainMesh,
+    varyings.vElevation,
+    elevationUniforms.uHeightmapScale,
+  ]);
 
   useFrame(async () => {
-    // const adapter = await navigator.gpu.requestAdapter();
-    // const device = await adapter.requestDevice();
-    // console.log(
-    //   "device.limits.maxComputeWorkgroupSizeX",
-    //   device.limits.maxComputeWorkgroupSizeX
-    // ); // Usually 256 or 1024
-    // console.log(
-    //   "device.limits.maxComputeInvocationsPerWorkgroup",
-    //   device.limits.maxComputeInvocationsPerWorkgroup
-    // );
-
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
     uSegments.value = terrainGeometryControls.segments;
     uSkirtLength.value = terrainGeometryControls.skirtLength;
     uRootSize.value = terrainGeometryControls.rootSize;
+    // Elevation uniforms updated from controls each frame
+    elevationUniforms.uFbmIterations.value =
+      terrainGeometryControls.fbmIterations;
+    elevationUniforms.uFbmAmplitude.value =
+      terrainGeometryControls.fbmAmplitude;
+    elevationUniforms.uFbmFrequency.value =
+      terrainGeometryControls.fbmFrequency;
+    elevationUniforms.uFbmLacunarity.value =
+      terrainGeometryControls.fbmLacunarity;
+    elevationUniforms.uFbmPersistence.value =
+      terrainGeometryControls.fbmPersistence;
+    elevationUniforms.uFbmIterations.value =
+      terrainGeometryControls.fbmIterations;
+    elevationUniforms.uFbmAmplitude.value =
+      terrainGeometryControls.fbmAmplitude;
+    elevationUniforms.uFbmFrequency.value =
+      terrainGeometryControls.fbmFrequency;
+    elevationUniforms.uFbmLacunarity.value =
+      terrainGeometryControls.fbmLacunarity;
+    elevationUniforms.uFbmPersistence.value =
+      terrainGeometryControls.fbmPersistence;
+    elevationUniforms.uHeightmapScale.value =
+      terrainGeometryControls.heightmapScale;
+    elevationUniforms.uNoiseScale.value = terrainGeometryControls.fbmNoiseScale;
     if (helloTerrainMesh) {
       // Keep quadtree config in sync with UI controls so subdivision matches rootSize changes
       const qConfig = helloTerrainMesh.quadtree.getConfig();
@@ -304,16 +347,38 @@ const TerrainPlane = () => {
         "heightmapComputeTime",
         helloTerrainMesh.metrics.heightmapComputeTime.toString()
       );
+      setMetric(
+        "lastUpdateHeight",
+        helloTerrainMesh.metrics.lastUpdateHeight.toString()
+      );
+      setMetric(
+        "closestLeafIndex",
+        helloTerrainMesh.metrics.closestLeafIndex.toString()
+      );
     }
   });
 
-  useEffect(() => {
-    return () => {
-      if (helloTerrainMesh) {
-        helloTerrainMesh.destroy();
-      }
-    };
-  }, [helloTerrainMesh]);
+  const elevationFn = useMemo(() => {
+    return ElevationFn(({ worldPosition }) => {
+      const noiseScale = elevationUniforms.uNoiseScale.toVar();
+      const fbm = vec2_fbm(
+        vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
+        int(elevationUniforms.uFbmIterations.toVar()),
+        elevationUniforms.uFbmAmplitude.toVar(),
+        elevationUniforms.uFbmFrequency.toVar(),
+        elevationUniforms.uFbmLacunarity.toVar(),
+        elevationUniforms.uFbmPersistence.toVar()
+      );
+      const noise = voronoiCells({
+        scale: noiseScale,
+        facet: 0,
+        seed: 0,
+        uv: vec2(worldPosition.x, worldPosition.z),
+      }).add(fbm);
+
+      return noise;
+    });
+  }, [elevationUniforms]);
 
   return (
     <group>
@@ -323,50 +388,16 @@ const TerrainPlane = () => {
         </div>
       </Html> */}
       <hello.TerrainMesh
-        key={JSON.stringify(terrainGeometryControls)}
         receiveShadow
         castShadow
         frustumCulled={false}
         ref={(ref) => {
-          if (!helloTerrainMesh) {
+          if (!helloTerrainMesh && ref) {
+            console.log("setting helloTerrainMesh", ref);
             setHelloTerrainMesh(ref);
           }
         }}
-        args={[
-          {
-            elevationFn: ElevationFn(
-              ({
-                worldPosition,
-                rootSize,
-                tileUV,
-                rootUV,
-                tileSize,
-                tileLevel,
-                nodeIndex,
-              }) => {
-                const warpStrength = float(0.5);
-                const baseStrength = float(1);
-                const warpFbm = warp_fbm({
-                  position: vec2(worldPosition.x, worldPosition.z),
-                });
-                const fbm = vec2_fbm(
-                  vec2(worldPosition.x, worldPosition.z),
-                  terrainGeometryControls.fbmIterations,
-                  terrainGeometryControls.fbmAmplitude,
-                  terrainGeometryControls.fbmFrequency,
-                  terrainGeometryControls.fbmLacunarity,
-                  terrainGeometryControls.fbmPersistence
-                );
-                const noise = warpStrength
-                  .mul(warpFbm)
-                  .add(baseStrength.mul(fbm));
-                const height = noise;
-                const remappedHeight = height.remap(-5, 5, 0, 1);
-                return remappedHeight;
-              }
-            ),
-          },
-        ]}
+        elevationFn={elevationFn}
         maxNodes={terrainGeometryControls.maxNodes}
         rootSize={terrainGeometryControls.rootSize}
         innerTileSegments={terrainGeometryControls.segments}

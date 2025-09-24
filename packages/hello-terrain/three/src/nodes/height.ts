@@ -5,6 +5,7 @@ import {
   int,
   max,
   min,
+  select,
   vertexIndex,
 } from "three/tsl";
 
@@ -13,6 +14,7 @@ import type { Node, StorageBufferNode } from "three/webgpu";
 import { ElevationFn, type ElevationReturn } from "./ElevationFn";
 import {
   rootUVCompute,
+  tileIsLeaf,
   tileLevel,
   tileOriginVec2,
   tileSize,
@@ -30,34 +32,40 @@ export const height = (
   elevationFn: ElevationReturn = ElevationFn(() => float(0))
 ) =>
   Fn(() => {
-    const rootUV = rootUVCompute(
-      nodeIndex,
-      nodeStorage,
-      rootSize,
-      rootOrigin,
-      localUV,
-      innerTileSegments
-    );
+    const isActive = nodeStorage.element(nodeIndex.mul(4).add(3)).equal(int(1));
+    const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
+    const resolveElevation = Fn(() => {
+      const rootUV = rootUVCompute(
+        nodeIndex,
+        nodeStorage,
+        rootSize,
+        rootOrigin,
+        localUV,
+        innerTileSegments
+      );
 
-    const worldPosition = tileVertexWorldPositionCompute(
-      nodeIndex,
-      nodeStorage,
-      rootSize,
-      rootOrigin,
-      localUV,
-      innerTileSegments
-    ).setName("worldPositionWithSkirt");
+      const worldPosition = tileVertexWorldPositionCompute(
+        nodeIndex,
+        nodeStorage,
+        rootSize,
+        rootOrigin,
+        localUV,
+        innerTileSegments
+      ).setName("worldPositionWithSkirt");
 
-    return elevationFn({
-      worldPosition,
-      rootSize,
-      rootUV,
-      tileOriginVec2: tileOriginVec2(nodeIndex, nodeStorage),
-      tileSize: tileSize(nodeIndex, nodeStorage, rootSize),
-      tileLevel: tileLevel(nodeIndex, nodeStorage),
-      nodeIndex: int(nodeIndex),
-      tileUV: localUV,
+      return elevationFn({
+        worldPosition,
+        rootSize,
+        rootUV,
+        tileOriginVec2: tileOriginVec2(nodeIndex, nodeStorage),
+        tileSize: tileSize(nodeIndex, nodeStorage, rootSize),
+        tileLevel: tileLevel(nodeIndex, nodeStorage),
+        nodeIndex: int(nodeIndex),
+        tileUV: localUV,
+      });
     });
+
+    return select(isActive.and(isLeaf), resolveElevation(), float(0));
   })();
 
 export const readHeightVertex = (

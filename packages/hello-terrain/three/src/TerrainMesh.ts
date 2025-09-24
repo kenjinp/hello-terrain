@@ -1,9 +1,11 @@
-import { float, int, vec3 } from "three/tsl";
+import { Vector2 as ThreeVector2, Vector3 as ThreeVector3 } from "three";
+import type { Ray as ThreeRay } from "three";
+import { float, int } from "three/tsl";
 import {
   InstancedMesh,
   type Material,
   type NodeMaterial,
-  Vector3,
+  type Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
 import { ComputeToBufferMap } from "./compute/ComputeToBufferMap";
@@ -25,6 +27,13 @@ export class TerrainMesh extends InstancedMesh {
   quadtree: Quadtree;
   lastHash: number;
   metrics: Record<string, string | number | boolean>;
+  lastUpdateHeight: number | null = null;
+  private needsRecompute = false;
+  // Debounce/update control
+  private isUpdateInFlight = false;
+  private hasPendingUpdate = false;
+  private pendingRenderer: WebGPURenderer | null = null;
+  private pendingPosition: Vector3 | null = null;
   // @ts-ignore will be initialized
   private nodeStorage: StorageBuffer;
   // @ts-ignore will be initialized
@@ -66,6 +75,7 @@ export class TerrainMesh extends InstancedMesh {
       hasStateChanged: false,
       leafNodeCount: 0,
       nodeCount: 0,
+      lastUpdateHeight: 0,
     };
 
     const tileEdgeVertexCount = innerTileSegments + 1 + 2;
@@ -73,10 +83,7 @@ export class TerrainMesh extends InstancedMesh {
       throw new Error("innerTileSegments exceeds the maximum of 253");
     }
 
-    uRootOrigin.value = this.position;
-    uRootSize.value = this.params.rootSize;
-    uSegments.value = this.params.innerTileSegments;
-
+    this.applyUniforms();
     this.initializeStorage();
     this.initializeComputeShaders();
   }
@@ -98,13 +105,12 @@ export class TerrainMesh extends InstancedMesh {
       maxNodes
     );
 
-    const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
-    const computeTextureHeight = tileEdgeVertexCount;
+    const computeTextureHeight = this.tileEdgeVertexCount;
     const computeTextureWidth = computeTextureHeight * maxNodes;
     const heightmapDimensions = computeTextureWidth * computeTextureHeight;
     const heightmapStorage = new StorageBuffer(
       "heightmapStorage",
-      new Float32Array(heightmapDimensions).fill(1),
+      new Float32Array(heightmapDimensions).fill(0),
       1,
       maxNodes
     );
@@ -126,18 +132,18 @@ export class TerrainMesh extends InstancedMesh {
     const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
     const shader = new ComputeToBufferMap(
       (nodeIndex, globalVertexIndex, localUV, _localCoordinates, texelSize) => {
-        const origin = vec3(
-          new Vector3(this.position.x, this.position.y, this.position.z)
-        );
+        // Value nodes to ensure evaluation at compute time
+        const rootOrigin = uRootOrigin.toVar();
+        const rootSize = uRootSize.toVar();
+        const segments = uSegments.toVar();
 
-        const rootSize = float(this.params.rootSize).toVar();
         const h = height(
           nodeIndex,
           this.nodeStorage.storageNode,
           rootSize,
-          origin,
+          rootOrigin,
           localUV,
-          int(this.params.innerTileSegments),
+          int(segments),
           texelSize,
           this.params.elevationFn ?? ElevationFn(() => float(0))
         );
@@ -149,14 +155,69 @@ export class TerrainMesh extends InstancedMesh {
     return shader;
   }
 
-  set rootSize(size: number) {
-    this.params.rootSize = size;
-    uRootSize.value = size;
-    const { innerTileSegments, material, ...quadtreeParams } = this.params;
+  private applyUniforms(): void {
+    uRootOrigin.value = this.position;
+    uRootSize.value = this.params.rootSize;
+    uSegments.value = this.params.innerTileSegments;
+  }
+
+  private updateQuadtreeConfig(): void {
+    const {
+      innerTileSegments: _s,
+      material: _m,
+      ...quadtreeParams
+    } = this.params;
     this.quadtree.setConfig({
       ...quadtreeParams,
       origin: this.position.clone(),
     });
+  }
+
+  private validateInnerTileSegments(segments: number): void {
+    const tileEdgeVertexCount = segments + 1 + 2;
+    if (tileEdgeVertexCount > 256) {
+      throw new Error("innerTileSegments exceeds the maximum of 253");
+    }
+  }
+
+  private refreshNodeStorageFromQuadtree(): void {
+    this.nodeStorage.update(
+      this.quadtree.getNodeView().getBuffers().nodeBuffer
+    );
+  }
+
+  private shouldRecompute(): boolean {
+    return this.needsRecompute || this.quadtree.hasStateChanged(this.lastHash);
+  }
+
+  private runHeightmapCompute(renderer: WebGPURenderer): void {
+    const beforeCompute = performance.now();
+    this.refreshNodeStorageFromQuadtree();
+    this.heightmapStorage.update();
+    this.heightmapComputeShader.renderBind(renderer, this.heightmapStorage);
+    const afterCompute = performance.now();
+    this.setMetric("heightmapComputeTime", `${afterCompute - beforeCompute}ms`);
+
+    const beforeHash = performance.now();
+    this.lastHash = this.quadtree.getStateHash();
+    const afterHash = performance.now();
+    this.setMetric("hashTime", `${(afterHash - beforeHash).toFixed(2)}ms`);
+    this.setMetric("hash", this.lastHash.toString());
+    this.setMetric("deepestLevel", this.quadtree.getDeepestLevel().toString());
+    this.setMetric(
+      "leafNodeCount",
+      this.quadtree.getLeafNodeCount().toString()
+    );
+    this.setMetric("nodeCount", this.quadtree.getNodeCount().toString());
+    this.setMetric("hasStateChanged", "true");
+    this.needsRecompute = false;
+  }
+
+  set rootSize(size: number) {
+    this.params.rootSize = size;
+    this.applyUniforms();
+    this.updateQuadtreeConfig();
+    this.needsRecompute = true;
   }
 
   get rootSize() {
@@ -164,18 +225,18 @@ export class TerrainMesh extends InstancedMesh {
   }
 
   set innerTileSegments(segments: number) {
-    const tileEdgeVertexCount = segments + 1 + 2;
-    if (tileEdgeVertexCount > 256) {
-      throw new Error("innerTileSegments exceeds the maximum of 253");
-    }
+    this.validateInnerTileSegments(segments);
+
+    this.geometry.dispose();
+    this.geometry = new TerrainGeometry(segments, true);
 
     this.params.innerTileSegments = segments;
-    uSegments.value = segments;
-    const { innerTileSegments, material, ...quadtreeParams } = this.params;
-    this.quadtree.setConfig({
-      ...quadtreeParams,
-      origin: this.position.clone(),
-    });
+    this.applyUniforms();
+    this.updateQuadtreeConfig();
+    this.quadtree.reset();
+    this.initializeStorage();
+    this.initializeComputeShaders();
+    this.needsRecompute = true;
   }
 
   get innerTileSegments() {
@@ -199,6 +260,7 @@ export class TerrainMesh extends InstancedMesh {
   set elevationFn(fn: ElevationReturn) {
     this.params.elevationFn = fn;
     this.heightmapComputeShader = this.initializeComputeShaders();
+    this.needsRecompute = true;
   }
 
   get elevationFn() {
@@ -207,11 +269,9 @@ export class TerrainMesh extends InstancedMesh {
 
   set maxLevel(level: number) {
     this.params.maxLevel = level;
-    const { innerTileSegments, material, ...quadtreeParams } = this.params;
-    this.quadtree.setConfig({
-      ...quadtreeParams,
-      origin: this.position.clone(),
-    });
+    this.updateQuadtreeConfig();
+    // Quadtree distribution may change on next update; force recompute
+    this.needsRecompute = true;
   }
 
   get maxLevel() {
@@ -220,11 +280,8 @@ export class TerrainMesh extends InstancedMesh {
 
   set minNodeSize(size: number) {
     this.params.minNodeSize = size;
-    const { innerTileSegments, material, ...quadtreeParams } = this.params;
-    this.quadtree.setConfig({
-      ...quadtreeParams,
-      origin: this.position.clone(),
-    });
+    this.updateQuadtreeConfig();
+    this.needsRecompute = true;
   }
 
   get minNodeSize() {
@@ -233,11 +290,8 @@ export class TerrainMesh extends InstancedMesh {
 
   set subdivisionFactor(factor: number) {
     this.params.subdivisionFactor = factor;
-    const { innerTileSegments, material, ...quadtreeParams } = this.params;
-    this.quadtree.setConfig({
-      ...quadtreeParams,
-      origin: this.position.clone(),
-    });
+    this.updateQuadtreeConfig();
+    this.needsRecompute = true;
   }
 
   get subdivisionFactor() {
@@ -246,16 +300,13 @@ export class TerrainMesh extends InstancedMesh {
 
   set maxNodes(count: number) {
     this.params.maxNodes = count;
-    const { innerTileSegments, material, ...quadtreeParams } = this.params;
-    this.quadtree.setConfig({
-      ...quadtreeParams,
-      origin: this.position.clone(),
-    });
+    this.updateQuadtreeConfig();
     const storages = this.initializeStorage();
     this.nodeStorage = storages.nodeStorage;
     this.heightmapStorage = storages.heightmapStorage;
     this.normalmapStorage = storages.normalmapStorage;
     this.heightmapComputeShader = this.initializeComputeShaders();
+    this.needsRecompute = true;
   }
 
   get maxNodes() {
@@ -263,54 +314,71 @@ export class TerrainMesh extends InstancedMesh {
   }
 
   async update(renderer: WebGPURenderer, position: Vector3) {
-    uRootOrigin.value = this.position;
-    uRootSize.value = this.params.rootSize;
-    this.setMetric(
-      "updatePosition",
-      `${position.x.toFixed(2)}, ${position.y.toFixed(2)}, ${position.z.toFixed(2)}`
+    // Always capture the latest call arguments
+    this.pendingRenderer = renderer;
+    // Reuse a single Vector3 instance to avoid allocations
+    if (!this.pendingPosition) {
+      this.pendingPosition = new ThreeVector3();
+    }
+    (this.pendingPosition as unknown as ThreeVector3).set(
+      position.x,
+      position.y,
+      position.z
     );
-    this.quadtree.update(position);
-    // update compute shader nodes
-    // update storage buffers
 
-    if (this.quadtree.hasStateChanged(this.lastHash)) {
-      const beforeHeightmapCompute = performance.now();
-      // Ensure node storage reflects latest quadtree state before compute
-      this.nodeStorage.update(
-        this.quadtree.getNodeView().getBuffers().nodeBuffer
-      );
-      this.heightmapStorage.update();
-      this.heightmapComputeShader.renderBind(renderer, this.heightmapStorage);
+    // If a compute is already in flight, mark that we have a pending update and exit early
+    if (this.isUpdateInFlight) {
+      this.hasPendingUpdate = true;
+      return;
+    }
 
-      // const buffer = await renderer.getArrayBufferAsync(
-      //   this.heightmapStorage.storageBufferAttribute
-      // );
+    this.isUpdateInFlight = true;
 
-      // const f32 = new Float32Array(buffer);
-      // const first100 = f32.subarray(0, Math.min(10, f32.length));
+    try {
+      do {
+        // Consume the latest pending args at the start of each cycle
+        if (!this.pendingRenderer || !this.pendingPosition) {
+          // Nothing to process
+          break;
+        }
+        const currentRenderer = this.pendingRenderer;
+        const currentPosition = this.pendingPosition;
+        // Reset the pending flag; if another update() arrives during work, it will set this back to true
+        this.hasPendingUpdate = false;
 
-      const afterHeightmapCompute = performance.now();
-      this.setMetric(
-        "heightmapComputeTime",
-        `${afterHeightmapCompute - beforeHeightmapCompute}ms`
-      );
-      const beforeHash = performance.now();
-      this.lastHash = this.quadtree.getStateHash();
-      const afterHash = performance.now();
-      this.setMetric("hashTime", `${(afterHash - beforeHash).toFixed(2)}ms`);
-      this.setMetric("hash", this.lastHash.toString());
-      this.setMetric(
-        "deepestLevel",
-        this.quadtree.getDeepestLevel().toString()
-      );
-      this.setMetric(
-        "leafNodeCount",
-        this.quadtree.getLeafNodeCount().toString()
-      );
-      this.setMetric("nodeCount", this.quadtree.getNodeCount().toString());
-      this.setMetric("hasStateChanged", "true");
-    } else {
-      this.setMetric("hasStateChanged", "false");
+        // Update uniforms and quadtree using the latest position
+        this.applyUniforms();
+        this.setMetric(
+          "updatePosition",
+          `${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)}, ${currentPosition.z.toFixed(2)}`
+        );
+        const closestLeafIndex = this.quadtree.update(currentPosition);
+        this.setMetric("closestLeafIndex", closestLeafIndex);
+
+        // If recompute is needed or quadtree state changed, run the compute pass
+        if (this.shouldRecompute()) {
+          this.runHeightmapCompute(currentRenderer);
+        } else {
+          this.setMetric("hasStateChanged", "false");
+        }
+
+        // After compute (or if not needed), sample height at the current position
+        {
+          const localUV = this.worldToLocalUV(
+            closestLeafIndex,
+            currentPosition as unknown as ThreeVector3
+          );
+          this.lastUpdateHeight = this.sampleHeightFromBuffer(
+            closestLeafIndex,
+            localUV.x,
+            localUV.y
+          );
+          this.setMetric("lastUpdateHeight", this.lastUpdateHeight);
+        }
+        // Loop again if another update was queued while we were computing
+      } while (this.hasPendingUpdate);
+    } finally {
+      this.isUpdateInFlight = false;
     }
   }
 
@@ -329,34 +397,196 @@ export class TerrainMesh extends InstancedMesh {
   setMetric(key: string, value: string | number | boolean) {
     this.metrics[key] = value;
   }
-  // TODO
-  // getWorldUVAtPosition(position: Vector3): Vector2 | null {
-  //   // call quadtree get world uv at position
-  //   // return the result
-  // }
 
-  // TODO
-  // rayIntersection(ray: Ray) {
-  //   // call quadtree raycast
-  //   // return the result
-  // }
+  // Returns world-UV within the root tile for the given world-space position, or null if out of bounds.
+  getWorldUVAtPosition(position: Vector3): ThreeVector2 | null {
+    const { rootSize } = this.params;
+    const half = 0.5 * rootSize;
+    const minX = this.position.x - half;
+    const minZ = this.position.z - half;
+    const maxX = minX + rootSize;
+    const maxZ = minZ + rootSize;
 
-  // TODO
-  // queryHeightAtPosition(position: Vector3): number | null {
-  //   // call quadtree get height at position
-  //   // return the result
-  //   return 0;
-  // }
+    // Reject when outside the root tile bounds in XZ
+    if (
+      position.x < minX ||
+      position.x > maxX ||
+      position.z < minZ ||
+      position.z > maxZ
+    ) {
+      return null;
+    }
 
-  // TODO
-  // queryHeightAtWorldUV(worldUV: Vector2): number {
-  //   // call quadtree get height at world uv
-  //   // return the result
-  //   return 0;
-  // }
+    // Map world XZ to [0,1] range across the root tile
+    const u = (position.x - minX) / rootSize;
+    const v = (position.z - minZ) / rootSize;
+    return new ThreeVector2(u, v);
+  }
+
+  // Intersect a ray with the height field using sampling + binary refinement. Returns hit point and t, or null.
+  rayIntersection(ray: ThreeRay): { point: ThreeVector3; t: number } | null {
+    const { rootSize } = this.params;
+    const half = 0.5 * rootSize;
+
+    // Axis-aligned XZ bounds of the terrain root
+    const minX = this.position.x - half;
+    const minZ = this.position.z - half;
+    const maxX = minX + rootSize;
+    const maxZ = minZ + rootSize;
+
+    // March along the ray with a conservative step in world units
+    const maxSteps = 256;
+    const step = rootSize / 64;
+
+    // Start a bit in front of the origin to avoid self-intersections
+    let t = 0;
+    let prevT = t;
+    let prevVal: number | null = null;
+    const tmp = new ThreeVector3();
+
+    for (let i = 0; i < maxSteps; i++) {
+      const p = ray.at(t, tmp);
+      // Skip samples outside the XZ bounds
+      if (p.x >= minX && p.x <= maxX && p.z >= minZ && p.z <= maxZ) {
+        const h = this.queryHeightAtPosition(p);
+        if (h != null) {
+          const val = p.y - h; // sign indicates whether we're above (>0) or below (<0) the surface
+          if (prevVal !== null && val * prevVal <= 0) {
+            // Sign change: refine between prevT and t
+            let a = prevT;
+            let b = t;
+            for (let it = 0; it < 20; it++) {
+              const m = 0.5 * (a + b);
+              const pm = ray.at(m, tmp);
+              const hm = this.queryHeightAtPosition(pm);
+              if (hm == null) break;
+              const fm = pm.y - hm;
+              if (prevVal * fm <= 0) {
+                b = m;
+              } else {
+                a = m;
+                prevVal = fm;
+                prevT = m;
+              }
+            }
+            const hitT = 0.5 * (a + b);
+            const hit = ray.at(hitT, new ThreeVector3());
+            return { point: hit, t: hitT };
+          }
+          prevVal = val;
+          prevT = t;
+        }
+      }
+      t += step;
+    }
+    return null;
+  }
+
+  // Returns the sampled height at a world position using the current heightmap buffer, or null if no leaf covers it.
+  queryHeightAtPosition(position: Vector3): number | null {
+    const nodeIndex = this.findLeafNodeIndexAt(
+      position as unknown as ThreeVector3
+    );
+    if (nodeIndex == null) return null;
+    const uv = this.worldToLocalUV(
+      nodeIndex,
+      position as unknown as ThreeVector3
+    );
+    return this.sampleHeightFromBuffer(nodeIndex, uv.x, uv.y);
+  }
+
+  // Returns height at a root-space world UV (0..1), clamped into domain.
+  queryHeightAtWorldUV(worldUV: ThreeVector2): number {
+    const clampedU = Math.min(Math.max(worldUV.x, 0), 1);
+    const clampedV = Math.min(Math.max(worldUV.y, 0), 1);
+    const { rootSize } = this.params;
+    const minX = this.position.x - 0.5 * rootSize;
+    const minZ = this.position.z - 0.5 * rootSize;
+    const world = new ThreeVector3(
+      minX + clampedU * rootSize,
+      this.position.y,
+      minZ + clampedV * rootSize
+    );
+    const h = this.queryHeightAtPosition(world);
+    return h == null ? this.position.y : h;
+  }
+
+  // Find the index of the leaf quadtree node that contains the given world position (XZ), or null if none.
+  private findLeafNodeIndexAt(world: ThreeVector3): number | null {
+    const nodeView = this.quadtree.getNodeView();
+    const nodeCount = this.quadtree.getNodeCount();
+    for (let i = 0; i < nodeCount; i++) {
+      if (!nodeView.getLeaf(i)) continue;
+      const level = nodeView.getLevel(i);
+      const size = this.params.rootSize / (1 << level);
+      const x = nodeView.getX(i);
+      const y = nodeView.getY(i);
+      const minX = this.position.x + (x * size - 0.5 * this.params.rootSize);
+      const minZ = this.position.z + (y * size - 0.5 * this.params.rootSize);
+      if (
+        world.x >= minX &&
+        world.x <= minX + size &&
+        world.z >= minZ &&
+        world.z <= minZ + size
+      ) {
+        return i;
+      }
+    }
+    return null;
+  }
+
+  // Compute local UV (0..1) within a specific node tile for a given world position.
+  private worldToLocalUV(nodeIndex: number, world: ThreeVector3): ThreeVector2 {
+    const nodeView = this.quadtree.getNodeView();
+    const level = nodeView.getLevel(nodeIndex);
+    const size = this.params.rootSize / (1 << level);
+    const x = nodeView.getX(nodeIndex);
+    const y = nodeView.getY(nodeIndex);
+    const minX = this.position.x + (x * size - 0.5 * this.params.rootSize);
+    const minZ = this.position.z + (y * size - 0.5 * this.params.rootSize);
+    const u = (world.x - minX) / size;
+    const v = (world.z - minZ) / size;
+    return new ThreeVector2(
+      Math.min(Math.max(u, 0), 1),
+      Math.min(Math.max(v, 0), 1)
+    );
+  }
+
+  // Bilinearly sample the heightmap buffer for a node at local UV. Assumes per-node packed N*N floats.
+  private sampleHeightFromBuffer(
+    nodeIndex: number,
+    u: number,
+    v: number
+  ): number {
+    const N = this.tileEdgeVertexCount;
+    const x = u * (N - 1);
+    const y = v * (N - 1);
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(x0 + 1, N - 1);
+    const y1 = Math.min(y0 + 1, N - 1);
+    const tx = x - x0;
+    const ty = y - y0;
+
+    const perNode = N * N;
+    const base = nodeIndex * perNode;
+    const idx = (ix: number, iy: number) => base + iy * N + ix;
+
+    const arr = this.heightmapStorage.buffer as Float32Array;
+    const h00 = arr[idx(x0, y0)];
+    const h10 = arr[idx(x1, y0)];
+    const h01 = arr[idx(x0, y1)];
+    const h11 = arr[idx(x1, y1)];
+
+    return (
+      (1 - tx) * (1 - ty) * h00 +
+      tx * (1 - ty) * h10 +
+      (1 - tx) * ty * h01 +
+      tx * ty * h11
+    );
+  }
 
   destroy() {
-    console.log("destroy");
     // destroy storage buffers and other resources
     // destroy quadtree
     this.quadtree.destroy();

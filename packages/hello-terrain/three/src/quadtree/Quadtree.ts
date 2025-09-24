@@ -43,22 +43,26 @@ export class Quadtree {
   }
 
   /**
-   * Update the quadtree based on the given position
+   * Update the quadtree based on the given position and return the index
+   * of the leaf node that best corresponds to the position (closest leaf).
    */
-  update(position: THREE.Vector3): void {
+  update(position: THREE.Vector3): number {
     this.reset();
 
-    // Start from root node
-    this.updateNode(0, position);
+    // Start from root node and capture the closest leaf index
+    const closestLeafIndex = this.updateNode(0, position);
 
     // Update the leaf node index buffer after all updates are complete
     this.nodeView.updateLeafNodeIndices();
+
+    return closestLeafIndex;
   }
 
   /**
    * Recursively update a node and its children based on distance and size criteria
+   * and return the closest leaf node index to the provided position.
    */
-  private updateNode(nodeIndex: number, position: THREE.Vector3): void {
+  private updateNode(nodeIndex: number, position: THREE.Vector3): number {
     const nodeSize =
       this.config.rootSize / (1 << this.nodeView.getLevel(nodeIndex));
 
@@ -92,18 +96,41 @@ export class Quadtree {
 
       // Update children
       const children = this.nodeView.getChildren(nodeIndex);
+      let bestLeafIndex = -1;
+      let bestDistSq = Number.POSITIVE_INFINITY;
       for (let i = 0; i < 4; i++) {
         if (children[i] !== -1) {
-          this.updateNode(children[i], position);
+          const leafIdx = this.updateNode(children[i], position);
+          if (leafIdx !== -1) {
+            // Compute center of the returned leaf and track the closest
+            const level = this.nodeView.getLevel(leafIdx);
+            const size = this.config.rootSize / (1 << level);
+            const x = this.nodeView.getX(leafIdx);
+            const y = this.nodeView.getY(leafIdx);
+            const cx =
+              this.config.origin.x +
+              ((x + 0.5) * size - 0.5 * this.config.rootSize);
+            const cz =
+              this.config.origin.z +
+              ((y + 0.5) * size - 0.5 * this.config.rootSize);
+            const dx = position.x - cx;
+            const dz = position.z - cz;
+            const d2 = dx * dx + dz * dz;
+            if (d2 < bestDistSq) {
+              bestDistSq = d2;
+              bestLeafIndex = leafIdx;
+            }
+          }
         }
       }
 
       // Deactivate this node since it's subdivided
       this.nodeView.setLeaf(nodeIndex, false);
-    } else {
-      // This is a leaf node - activate it
-      this.nodeView.setLeaf(nodeIndex, true);
+      return bestLeafIndex;
     }
+    // This is a leaf node - activate it
+    this.nodeView.setLeaf(nodeIndex, true);
+    return nodeIndex;
   }
 
   /**
