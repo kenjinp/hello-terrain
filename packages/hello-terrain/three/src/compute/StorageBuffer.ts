@@ -42,9 +42,7 @@ export class StorageBuffer {
       this.storageBufferAttribute,
       wgslType,
       this.buffer.length
-    )
-      .setPBO(true)
-      .setName(name);
+    ).setName(name);
   }
 
   update(buffer?: TypedArray) {

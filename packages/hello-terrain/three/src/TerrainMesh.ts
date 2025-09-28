@@ -190,11 +190,13 @@ export class TerrainMesh extends InstancedMesh {
     return this.needsRecompute || this.quadtree.hasStateChanged(this.lastHash);
   }
 
-  private runHeightmapCompute(renderer: WebGPURenderer): void {
+  private async runHeightmapCompute(renderer: WebGPURenderer): Promise<void> {
     const beforeCompute = performance.now();
     this.refreshNodeStorageFromQuadtree();
-    this.heightmapStorage.update();
-    this.heightmapComputeShader.renderBind(renderer, this.heightmapStorage);
+    await this.heightmapComputeShader.renderBind(
+      renderer,
+      this.heightmapStorage
+    );
     const afterCompute = performance.now();
     this.setMetric("heightmapComputeTime", `${afterCompute - beforeCompute}ms`);
 
@@ -357,24 +359,22 @@ export class TerrainMesh extends InstancedMesh {
 
         // If recompute is needed or quadtree state changed, run the compute pass
         if (this.shouldRecompute()) {
-          this.runHeightmapCompute(currentRenderer);
+          await this.runHeightmapCompute(currentRenderer);
         } else {
           this.setMetric("hasStateChanged", "false");
         }
 
         // After compute (or if not needed), sample height at the current position
-        {
-          const localUV = this.worldToLocalUV(
-            closestLeafIndex,
-            currentPosition as unknown as ThreeVector3
-          );
-          this.lastUpdateHeight = this.sampleHeightFromBuffer(
-            closestLeafIndex,
-            localUV.x,
-            localUV.y
-          );
-          this.setMetric("lastUpdateHeight", this.lastUpdateHeight);
-        }
+        const localUV = this.worldToLocalUV(
+          closestLeafIndex,
+          currentPosition as unknown as ThreeVector3
+        );
+        this.lastUpdateHeight = this.sampleHeightFromBuffer(
+          closestLeafIndex,
+          localUV.x,
+          localUV.y
+        );
+        this.setMetric("lastUpdateHeight", this.lastUpdateHeight);
         // Loop again if another update was queued while we were computing
       } while (this.hasPendingUpdate);
     } finally {
@@ -572,7 +572,8 @@ export class TerrainMesh extends InstancedMesh {
     const base = nodeIndex * perNode;
     const idx = (ix: number, iy: number) => base + iy * N + ix;
 
-    const arr = this.heightmapStorage.buffer as Float32Array;
+    const arr = this.heightmapStorage.storageBufferAttribute
+      .array as Float32Array;
     const h00 = arr[idx(x0, y0)];
     const h10 = arr[idx(x1, y0)];
     const h01 = arr[idx(x0, y1)];

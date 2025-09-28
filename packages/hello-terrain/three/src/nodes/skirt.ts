@@ -1,18 +1,17 @@
 import { Fn, float, int, uv, vertexIndex } from "three/tsl";
-import type { Node } from "three/webgpu";
 import { uSegments } from "./uniforms";
 
 /**
- * Note: Only available in the vertex shader
+ * Returns a node that is true for skirt vertices in the vertex stage.
  *
- * Node that evaluates to true for vertices that belong to the terrain skirt.
+ * @remarks
+ * Only valid in the vertex shader. A vertex belongs to the skirt if it is on
+ * the outermost ring of the tile grid (first/last column or row). The grid
+ * resolution is derived from `uSegments`.
  *
- * Determines if the current vertex lies on the outermost ring of the grid,
- * i.e. first/last column or first/last row, based on `uSegments`.
- *
- * @returns Node that resolves to a boolean indicating a skirt vertex.
+ * @returns A node resolving to a boolean indicating a skirt vertex.
  */
-export const isSkirtVertex: Node = Fn(() => {
+export const isSkirtVertex = /*@__PURE__*/ Fn(() => {
   const vIndex = int(vertexIndex);
   const segments = uSegments.toVar();
   const segmentEdges = int(segments.add(3));
@@ -25,19 +24,23 @@ export const isSkirtVertex: Node = Fn(() => {
     .or(vy.equal(int(0)))
     .or(vy.equal(last));
   return isSkirtVertex;
-})();
+}).setLayout({
+  name: "isSkirtVertex",
+  type: "bool",
+  inputs: [],
+});
 
 /**
- * Note: Only available in the fragme nt shader
+ * Returns a node that is true for skirt fragments in the fragment stage.
  *
- * Node that evaluates to true for fragments that belong to the terrain skirt.
+ * @remarks
+ * Only valid in the fragment shader. Uses interpolated UVs and the grid size
+ * from `uSegments` to mark fragments outside the inner range
+ * `(step, 1 - step)` on either axis as skirt, where `step = 1 / (uSegments + 2)`.
  *
- * Uses interpolated UVs and the grid size from `uSegments` to mark fragments
- * outside the inner range `(segmentStep, 1 - segmentStep)` on either axis as skirt.
- *
- * @returns Node that resolves to a boolean indicating a skirt fragment.
+ * @returns A node resolving to a boolean indicating a skirt fragment.
  */
-export const isSkirtFragment: Node = Fn(() => {
+export const isSkirtFragment = /*@__PURE__*/ Fn(() => {
   const ux = uv().x;
   const uy = uv().y;
   const segments = uSegments.toVar();
@@ -51,4 +54,8 @@ export const isSkirtFragment: Node = Fn(() => {
     .and(uy.lessThan(segmentStep.oneMinus()));
   const isSkirtFragment = innerX.and(innerY).not();
   return isSkirtFragment;
-})();
+}).setLayout({
+  name: "isSkirtFragment",
+  type: "bool",
+  inputs: [],
+});
