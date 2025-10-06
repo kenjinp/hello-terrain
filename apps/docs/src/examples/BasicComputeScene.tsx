@@ -7,15 +7,13 @@ import * as hello from "@hello-terrain/react";
 import {
   ElevationFn,
   type TerrainMesh,
-  isSkirtVertex,
-  tileGeometryPosition,
-  tileIsLeaf,
   uRootOrigin,
   uRootSize,
   uSegments,
   uSkirtLength,
+  worldPosition,
 } from "@hello-terrain/three";
-import { OrbitControls, useTexture } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 
@@ -27,13 +25,10 @@ import {
   hash,
   instanceIndex,
   int,
-  positionLocal,
-  select,
   uniform,
   varying,
   vec2,
   vec3,
-  vertexIndex,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
@@ -172,7 +167,7 @@ const TerrainPlane = () => {
     },
   });
 
-  const uvMap = useTexture("/assets/uv-12x12.png");
+  // const uvMap = useTexture("/assets/uv-12x12.png");
 
   console.log({ helloTerrainMesh });
 
@@ -208,57 +203,57 @@ const TerrainPlane = () => {
   }, [terrainGeometryControls.rootSize]);
 
   // Shared varying for global vertex index
-  const vGlobalVertexIndex = useMemo(() => varying(int()), []);
+  // const vGlobalVertexIndex = useMemo(() => varying(int()), []);
 
-  // Memoized nodes
-  const positionNode = useMemo(() => {
-    if (!helloTerrainMesh) {
-      return Fn(() => {
-        return vec3(0, 0, 0);
-      })();
-    }
-    return Fn(() => {
-      const nodeStorage = helloTerrainMesh.tileNode;
-      const nodeIndex = instanceIndex;
-      const rootSize = uRootSize.toVar();
-      const rootOrigin = uRootOrigin.toVar();
-      const skirtLength = uSkirtLength.toVar();
-      const worldPosition = tileGeometryPosition(
-        nodeIndex,
-        nodeStorage,
-        rootSize,
-        rootOrigin,
-        positionLocal,
-        skirtLength
-      );
-      const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
+  // // Memoized nodes
+  // const positionNode = useMemo(() => {
+  //   if (!helloTerrainMesh) {
+  //     return Fn(() => {
+  //       return vec3(0, 0, 0);
+  //     })();
+  //   }
+  //   return Fn(() => {
+  //     const nodeStorage = helloTerrainMesh.tileNode;
+  //     const nodeIndex = instanceIndex;
+  //     const rootSize = uRootSize.toVar();
+  //     const rootOrigin = uRootOrigin.toVar();
+  //     const skirtLength = uSkirtLength.toVar();
+  //     const worldPosition = tileGeometryPosition(
+  //       nodeIndex,
+  //       nodeStorage,
+  //       rootSize,
+  //       rootOrigin,
+  //       positionLocal,
+  //       skirtLength
+  //     );
+  //     const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
 
-      // Compute and pass global vertex index to fragment stage
-      const edgeVertexCount = uSegments.toVar().add(3);
-      const intEdgeVertexCount = int(edgeVertexCount);
-      const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
-      const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
-      vGlobalVertexIndex.assign(globalIndex);
+  //     // Compute and pass global vertex index to fragment stage
+  //     const edgeVertexCount = uSegments.toVar().add(3);
+  //     const intEdgeVertexCount = int(edgeVertexCount);
+  //     const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
+  //     const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
+  //     vGlobalVertexIndex.assign(globalIndex);
 
-      const height = helloTerrainMesh.heightmapNode
-        .element(vGlobalVertexIndex)
-        .mul(elevationUniforms.uHeightmapScale.toVar());
-      varyings.vElevation.assign(height);
+  //     const height = helloTerrainMesh.heightmapNode
+  //       .element(vGlobalVertexIndex)
+  //       .mul(elevationUniforms.uHeightmapScale.toVar());
+  //     varyings.vElevation.assign(height);
 
-      const beforeTransform = select(
-        isSkirtVertex,
-        vec3(worldPosition.x, worldPosition.y, worldPosition.z),
-        vec3(worldPosition.x, worldPosition.y.add(height), worldPosition.z)
-      );
+  //     const beforeTransform = select(
+  //       isSkirtVertex,
+  //       vec3(worldPosition.x, worldPosition.y, worldPosition.z),
+  //       vec3(worldPosition.x, worldPosition.y.add(height), worldPosition.z)
+  //     );
 
-      return select(isLeaf, beforeTransform, vec3(0, 0, 0));
-    })();
-  }, [
-    vGlobalVertexIndex,
-    varyings.vElevation,
-    elevationUniforms.uHeightmapScale,
-    helloTerrainMesh,
-  ]);
+  //     return select(isLeaf, beforeTransform, vec3(0, 0, 0));
+  //   })();
+  // }, [
+  //   vGlobalVertexIndex,
+  //   varyings.vElevation,
+  //   elevationUniforms.uHeightmapScale,
+  //   helloTerrainMesh,
+  // ]);
 
   const colorNode = useMemo(() => {
     if (!helloTerrainMesh) {
@@ -328,32 +323,32 @@ const TerrainPlane = () => {
       );
       setMetric(
         "updatePosition",
-        helloTerrainMesh.metrics.updatePosition.toString()
+        (helloTerrainMesh.metrics.updatePosition ?? "").toString()
       );
       setMetric(
         "hasStateChanged",
-        helloTerrainMesh.metrics.hasStateChanged.toString()
+        (helloTerrainMesh.metrics.hasStateChanged ?? "").toString()
       );
       setMetric(
         "deepestLevel",
-        helloTerrainMesh.metrics.deepestLevel.toString()
+        (helloTerrainMesh.metrics.deepestLevel ?? "").toString()
       );
       setMetric(
         "nodeCount",
         `${helloTerrainMesh.metrics.leafNodeCount} / ${helloTerrainMesh.metrics.nodeCount}`
       );
-      setMetric("hash", helloTerrainMesh.metrics.hash.toString());
+      setMetric("hash", (helloTerrainMesh.metrics.hash ?? "").toString());
       setMetric(
         "heightmapComputeTime",
-        helloTerrainMesh.metrics.heightmapComputeTime.toString()
+        (helloTerrainMesh.metrics.heightmapComputeTime ?? "").toString()
       );
       setMetric(
         "lastUpdateHeight",
-        helloTerrainMesh.metrics.lastUpdateHeight.toString()
+        (helloTerrainMesh.metrics.lastUpdateHeight ?? "").toString()
       );
       setMetric(
         "closestLeafIndex",
-        helloTerrainMesh.metrics.closestLeafIndex.toString()
+        (helloTerrainMesh.metrics.closestLeafIndex ?? "").toString()
       );
     }
   });
@@ -408,7 +403,7 @@ const TerrainPlane = () => {
         <meshStandardNodeMaterial
           name="TerrainMeshMaterial"
           wireframe={terrainGeometryControls.wireframe}
-          positionNode={positionNode}
+          positionNode={worldPosition()}
           colorNode={colorNode}
         />
       </hello.TerrainMesh>

@@ -1,4 +1,12 @@
-import { Fn, float, int, uv, vertexIndex } from "three/tsl";
+import {
+  Fn,
+  type ShaderNodeObject,
+  float,
+  int,
+  uv,
+  vertexIndex,
+} from "three/tsl";
+import type { ConstNode, Vector2 } from "three/webgpu";
 import { uSegments } from "./uniforms";
 
 /**
@@ -58,4 +66,42 @@ export const isSkirtFragment = /*@__PURE__*/ Fn(() => {
   name: "isSkirtFragment",
   type: "bool",
   inputs: [],
+});
+
+/**
+ * Returns a node that is true for skirt vertices in the compute shader.
+ *
+ * @remarks
+ * Only valid in the compute shader. Uses interpolated UVs and the grid size
+ * from `uSegments` to mark fragments outside the inner range
+ * `(step, 1 - step)` on either axis as skirt, where `step = 1 / (uSegments + 2)`.
+ *
+ * @returns A node resolving to a boolean indicating a skirt fragment.
+ */
+export const isSkirtCompute = /*@__PURE__*/ Fn(
+  ([localUV]: [ShaderNodeObject<ConstNode<Vector2>>]) => {
+    const ux = localUV.x;
+    const uy = localUV.y;
+    const segments = uSegments.toVar();
+    const segmentCount = segments.add(2);
+    const segmentStep = float(1).div(segmentCount);
+    const innerX = ux
+      .greaterThan(segmentStep)
+      .and(ux.lessThan(segmentStep.oneMinus()));
+    const innerY = uy
+      .greaterThan(segmentStep)
+      .and(uy.lessThan(segmentStep.oneMinus()));
+    const isSkirtFragment = innerX.and(innerY).not();
+    return isSkirtFragment;
+  }
+).setLayout({
+  name: "isSkirtFragment",
+  type: "bool",
+  inputs: [
+    {
+      name: "localUV",
+      type: "vec2",
+      qualifier: "in",
+    },
+  ],
 });

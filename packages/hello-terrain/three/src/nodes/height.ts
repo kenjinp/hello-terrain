@@ -10,8 +10,9 @@ import {
 } from "three/tsl";
 
 import { Fn } from "three/tsl";
-import type { Node, StorageBufferNode } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import { ElevationFn, type ElevationReturn } from "./ElevationFn";
+import { nodeStorageProperty } from "./properties";
 import {
   rootUVCompute,
   tileIsLeaf,
@@ -20,46 +21,35 @@ import {
   tileSize,
   tileVertexWorldPositionCompute,
 } from "./tile";
+import { uRootSize } from "./uniforms";
 
 export const height = (
   nodeIndex: ShaderNodeObject<Node>,
-  nodeStorage: ShaderNodeObject<StorageBufferNode>,
-  rootSize: ShaderNodeObject<Node>,
-  rootOrigin: ShaderNodeObject<Node>,
   localUV: ShaderNodeObject<Node>,
-  innerTileSegments: ShaderNodeObject<Node>,
   _texelSize: ShaderNodeObject<Node>,
   elevationFn: ElevationReturn = ElevationFn(() => float(0))
 ) =>
   Fn(() => {
-    const isActive = nodeStorage.element(nodeIndex.mul(4).add(3)).equal(int(1));
-    const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
+    const isActive = nodeStorageProperty
+      .element(nodeIndex.mul(4).add(3))
+      .equal(int(1));
+    const isLeaf = tileIsLeaf(nodeIndex);
     const resolveElevation = Fn(() => {
-      const rootUV = rootUVCompute(
-        nodeIndex,
-        nodeStorage,
-        rootSize,
-        rootOrigin,
-        localUV,
-        innerTileSegments
-      );
+      const rootUV = rootUVCompute(nodeIndex, localUV);
 
       const worldPosition = tileVertexWorldPositionCompute(
         nodeIndex,
-        nodeStorage,
-        rootSize,
-        rootOrigin,
-        localUV,
-        innerTileSegments
+        localUV
       ).setName("worldPositionWithSkirt");
 
+      const rootSize = uRootSize.toVar();
       return elevationFn({
         worldPosition,
         rootSize,
         rootUV,
-        tileOriginVec2: tileOriginVec2(nodeIndex, nodeStorage),
-        tileSize: tileSize(nodeIndex, nodeStorage, rootSize),
-        tileLevel: tileLevel(nodeIndex, nodeStorage),
+        tileOriginVec2: tileOriginVec2(nodeIndex),
+        tileSize: tileSize(nodeIndex),
+        tileLevel: tileLevel(nodeIndex),
         nodeIndex: int(nodeIndex),
         tileUV: localUV,
       });
@@ -69,7 +59,7 @@ export const height = (
   })();
 
 export const readHeightVertex = (
-  heightmapStorage: ShaderNodeObject<StorageBufferNode>,
+  heightmapStorage: ShaderNodeObject<Node>,
   edgeVertextCount: number
 ) =>
   Fn(() => {
@@ -85,7 +75,7 @@ export const readHeightVertex = (
 
 // Read height by deriving the per-node vertex index from positionLocal.xz
 export const readHeightAtPositionLocal = (
-  heightmapStorage: ShaderNodeObject<StorageBufferNode>,
+  heightmapStorage: ShaderNodeObject<Node>,
   edgeVertextCount: number,
   positionLocal: ShaderNodeObject<Node>
 ) =>

@@ -2,7 +2,7 @@ import {
   Fn,
   type ShaderNodeObject,
   float,
-  instanceIndex,
+  int,
   vec2,
   workgroupId,
 } from "three/tsl";
@@ -31,18 +31,25 @@ export class ComputeToBufferMap {
     >();
   }
 
-  private create(outTo: StorageBuffer, width: number, _numComponents: number) {
-    const computeInstanceCount = outTo.maxItems;
-    this.computeInstanceCount = computeInstanceCount;
-    this.workgroupSize = [_numComponents, 1, 1];
-    this.dispatchSize = [width, width, computeInstanceCount];
+  private create(width: number, _numComponents: number, instanceCount: number) {
+    // Use explicit instanceCount (e.g., maxNodes) for Z dimension, not outTo.maxItems
+    this.computeInstanceCount = instanceCount;
+    this.workgroupSize = [1, 1, 1];
+    this.dispatchSize = [width, width, instanceCount];
     return Fn(() => {
       const fWidth = float(width);
-      const globalIndex = instanceIndex;
       const nodeIndex = workgroupId.z;
       const texelSize = vec2(1, 1).div(fWidth);
       const localCoordinates = vec2(workgroupId.x, workgroupId.y);
       const localUVCoords = localCoordinates.div(fWidth);
+      // Compute global vertex index: nodeIndex * (width*width) + y * width + x
+      const iWidth = int(width);
+      const verticesPerNode = iWidth.mul(iWidth);
+      const ix = int(workgroupId.x);
+      const iy = int(workgroupId.y);
+      const globalIndex = int(nodeIndex)
+        .mul(verticesPerNode)
+        .add(iy.mul(iWidth).add(ix));
       this.fn(
         nodeIndex,
         globalIndex,
@@ -56,12 +63,13 @@ export class ComputeToBufferMap {
   createBinds(
     width: number,
     numComponents: number,
+    instanceCount: number,
     ...targets: StorageBuffer[]
   ) {
     for (const target of targets)
       this.bufferToShader.set(
         target,
-        this.create(target, width, numComponents)
+        this.create(width, numComponents, instanceCount)
       );
     return this;
   }

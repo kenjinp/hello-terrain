@@ -1,6 +1,6 @@
 import { Vector2 as ThreeVector2, Vector3 as ThreeVector3 } from "three";
 import type { Ray as ThreeRay } from "three";
-import { float, int } from "three/tsl";
+import { float } from "three/tsl";
 import {
   InstancedMesh,
   type Material,
@@ -13,6 +13,10 @@ import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
 import { ElevationFn, type ElevationReturn } from "./nodes/ElevationFn";
 import { height } from "./nodes/height";
+import {
+  heightmapStorageProperty,
+  nodeStorageProperty,
+} from "./nodes/properties";
 import {} from "./nodes/tile";
 import { uRootOrigin, uRootSize, uSegments } from "./nodes/uniforms";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
@@ -112,13 +116,17 @@ export class TerrainMesh extends InstancedMesh {
       "heightmapStorage",
       new Float32Array(heightmapDimensions).fill(0),
       1,
-      maxNodes
+      heightmapDimensions
     );
+
+    nodeStorageProperty.value = nodeStorage.storageBufferAttribute;
+    heightmapStorageProperty.value = heightmapStorage.storageBufferAttribute;
+
     const normalmapStorage = new StorageBuffer(
       "normalmapStorage",
       new Float32Array(heightmapDimensions * 3),
       3,
-      maxNodes
+      heightmapDimensions
     );
 
     this.nodeStorage = nodeStorage;
@@ -132,25 +140,21 @@ export class TerrainMesh extends InstancedMesh {
     const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
     const shader = new ComputeToBufferMap(
       (nodeIndex, globalVertexIndex, localUV, _localCoordinates, texelSize) => {
-        // Value nodes to ensure evaluation at compute time
-        const rootOrigin = uRootOrigin.toVar();
-        const rootSize = uRootSize.toVar();
-        const segments = uSegments.toVar();
-
         const h = height(
           nodeIndex,
-          this.nodeStorage.storageNode,
-          rootSize,
-          rootOrigin,
           localUV,
-          int(segments),
           texelSize,
           this.params.elevationFn ?? ElevationFn(() => float(0))
         );
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
       }
     );
-    shader.createBinds(tileEdgeVertexCount, 1, this.heightmapStorage);
+    shader.createBinds(
+      tileEdgeVertexCount,
+      1,
+      this.quadtree.getConfig().maxNodes,
+      this.heightmapStorage
+    );
     this.heightmapComputeShader = shader;
     return shader;
   }

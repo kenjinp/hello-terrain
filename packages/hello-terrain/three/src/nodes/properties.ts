@@ -1,3 +1,19 @@
-import { property } from "three/tsl";
+import { StorageBufferAttribute } from "three/src/Three.WebGPU.js";
+import { storage } from "three/tsl";
 
-export const nodeStorage = property("", "nodeStorage");
+// Initialize with proper default values that match the expected structure
+const dummyNodeStorage = new StorageBufferAttribute(new Float32Array(4), 4);
+const dummyHeightmapStorage = new StorageBufferAttribute(
+  new Float32Array(1),
+  1
+);
+export const nodeStorageProperty = storage(
+  dummyNodeStorage,
+  "i32",
+  1
+).toReadOnly();
+export const heightmapStorageProperty = storage(
+  dummyHeightmapStorage,
+  "f32",
+  1
+).toReadOnly();
