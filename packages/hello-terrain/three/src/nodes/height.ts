@@ -63,16 +63,17 @@ export const readHeightVertex = (
   edgeVertextCount: number
 ) =>
   Fn(() => {
-    const nodeIndex = instanceIndex;
+    const nodeIndex = int(instanceIndex);
     const intEdgeVertextCount = int(edgeVertextCount);
 
-    const verticesPerNode = int(intEdgeVertextCount.mul(intEdgeVertextCount));
-    const globalVertexIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
+    const verticesPerNode = intEdgeVertextCount.mul(intEdgeVertextCount);
+    const globalVertexIndex = nodeIndex
+      .mul(verticesPerNode)
+      .add(int(vertexIndex));
 
     const height = heightmapStorage.element(globalVertexIndex);
     return height;
-  })();
-
+  });
 // Read height by deriving the per-node vertex index from positionLocal.xz
 export const readHeightAtPositionLocal = (
   heightmapStorage: ShaderNodeObject<Node>,
@@ -80,7 +81,7 @@ export const readHeightAtPositionLocal = (
   positionLocal: ShaderNodeObject<Node>
 ) =>
   Fn(() => {
-    const nodeIndex = instanceIndex;
+    const nodeIndex = int(instanceIndex);
     const intEdge = int(edgeVertextCount);
     const edgeF = intEdge.toFloat();
     const last = intEdge.sub(int(1));
@@ -102,4 +103,4 @@ export const readHeightAtPositionLocal = (
       .add(perNodeVertexIndex);
 
     return heightmapStorage.element(globalVertexIndex);
-  })();
+  });

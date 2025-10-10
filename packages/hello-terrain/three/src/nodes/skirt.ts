@@ -32,10 +32,6 @@ export const isSkirtVertex = /*@__PURE__*/ Fn(() => {
     .or(vy.equal(int(0)))
     .or(vy.equal(last));
   return isSkirtVertex;
-}).setLayout({
-  name: "isSkirtVertex",
-  type: "bool",
-  inputs: [],
 });
 
 /**

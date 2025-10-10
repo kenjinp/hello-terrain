@@ -1,7 +1,7 @@
 import { varyingProperty } from "three/tsl";
 
 export const vGlobalVertexIndex = /*@__PURE__*/ varyingProperty(
-  "uint",
+  "int",
   "vGlobalVertexIndex"
 );
 

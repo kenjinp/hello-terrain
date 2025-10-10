@@ -14,7 +14,7 @@ import { uHeightmapScale, uSegments } from "./uniforms";
 import { vElevation, vGlobalVertexIndex } from "./varyings";
 
 export const worldPosition = /*@__PURE__*/ Fn(() => {
-  const nodeIndex = instanceIndex;
+  const nodeIndex = int(instanceIndex);
   const worldPosition = tileGeometryPosition(nodeIndex, positionLocal);
   const isLeaf = tileIsLeaf(nodeIndex);
 
@@ -26,11 +26,10 @@ export const worldPosition = /*@__PURE__*/ Fn(() => {
   const edgeVertexCount = uSegments.toVar().add(3);
   const intEdgeVertexCount = int(edgeVertexCount);
   const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
-  const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
+  const globalIndex = nodeIndex.mul(verticesPerNode).add(int(vertexIndex));
   vGlobalVertexIndex.assign(globalIndex);
 
   const height = heightmapStorageProperty
-    .toVar()
     .element(vGlobalVertexIndex)
     .mul(uHeightmapScale.toVar());
   vElevation.assign(height);
@@ -46,8 +45,4 @@ export const worldPosition = /*@__PURE__*/ Fn(() => {
   );
 
   return select(isLeaf, beforeTransform, vec3(0, 0, 0));
-}).setLayout({
-  name: "worldPosition",
-  type: "vec3",
-  inputs: [],
 });

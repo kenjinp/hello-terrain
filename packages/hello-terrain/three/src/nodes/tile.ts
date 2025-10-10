@@ -126,7 +126,7 @@ export const tileVertexWorldPosition = Fn(
 export const tileGeometryPosition = Fn(
   ([nodeIndex, positionLocal]: [
     ShaderNodeObject<ConstNode<number>>,
-    ShaderNodeObject<ConstNode<number>>,
+    ShaderNodeObject<ConstNode<Vector2>>,
   ]) => {
     const nodeVec2 = tileOriginVec2(nodeIndex);
     const nodeX = nodeVec2.x;
@@ -154,14 +154,7 @@ export const tileGeometryPosition = Fn(
 
     return vec3(worldX, worldY, worldZ);
   }
-).setLayout({
-  name: "tileGeometryPosition",
-  type: "vec3",
-  inputs: [
-    { name: "nodeIndex", type: "int", qualifier: "in" },
-    { name: "positionLocal", type: "vec3", qualifier: "in" },
-  ],
-});
+);
 
 export const tileVertexWorldPositionCompute = Fn(
   ([nodeIndex, localUV]: [
