@@ -9,8 +9,8 @@ import { float, int, uniform, vec3 } from "three/tsl";
  * @defaultValue 1
  * @see isSkirtVertex
  */
-export const uSkirtLength = /*@__PURE__*/ uniform(float(1)).setName(
-  "uSkirtLength"
+export const uSkirtHeight = /*@__PURE__*/ uniform(float(1)).setName(
+  "uSkirtHeight"
 );
 
 /**

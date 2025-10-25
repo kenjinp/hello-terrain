@@ -10,7 +10,7 @@ import {
   uRootOrigin,
   uRootSize,
   uSegments,
-  uSkirtLength,
+  uSkirtHeight,
   worldPosition,
 } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
@@ -18,6 +18,7 @@ import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 
 import { useEffect, useMemo, useState } from "react";
+import { max } from "three/src/nodes/TSL.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -138,7 +139,7 @@ const TerrainPlane = () => {
       label: "FBM Amplitude",
     },
     fbmFrequency: {
-      value: 0.0001,
+      value: 0.1,
       min: 0.0,
       max: 10.0,
       step: 0.00001,
@@ -168,8 +169,6 @@ const TerrainPlane = () => {
   });
 
   // const uvMap = useTexture("/assets/uv-12x12.png");
-
-  console.log({ helloTerrainMesh });
 
   // Memoized varyings
   const uniforms = useMemo(() => {
@@ -202,59 +201,6 @@ const TerrainPlane = () => {
     uRootSize.value = terrainGeometryControls.rootSize;
   }, [terrainGeometryControls.rootSize]);
 
-  // Shared varying for global vertex index
-  // const vGlobalVertexIndex = useMemo(() => varying(int()), []);
-
-  // // Memoized nodes
-  // const positionNode = useMemo(() => {
-  //   if (!helloTerrainMesh) {
-  //     return Fn(() => {
-  //       return vec3(0, 0, 0);
-  //     })();
-  //   }
-  //   return Fn(() => {
-  //     const nodeStorage = helloTerrainMesh.tileNode;
-  //     const nodeIndex = instanceIndex;
-  //     const rootSize = uRootSize.toVar();
-  //     const rootOrigin = uRootOrigin.toVar();
-  //     const skirtLength = uSkirtLength.toVar();
-  //     const worldPosition = tileGeometryPosition(
-  //       nodeIndex,
-  //       nodeStorage,
-  //       rootSize,
-  //       rootOrigin,
-  //       positionLocal,
-  //       skirtLength
-  //     );
-  //     const isLeaf = tileIsLeaf(nodeIndex, nodeStorage);
-
-  //     // Compute and pass global vertex index to fragment stage
-  //     const edgeVertexCount = uSegments.toVar().add(3);
-  //     const intEdgeVertexCount = int(edgeVertexCount);
-  //     const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
-  //     const globalIndex = nodeIndex.mul(verticesPerNode).add(vertexIndex);
-  //     vGlobalVertexIndex.assign(globalIndex);
-
-  //     const height = helloTerrainMesh.heightmapNode
-  //       .element(vGlobalVertexIndex)
-  //       .mul(elevationUniforms.uHeightmapScale.toVar());
-  //     varyings.vElevation.assign(height);
-
-  //     const beforeTransform = select(
-  //       isSkirtVertex,
-  //       vec3(worldPosition.x, worldPosition.y, worldPosition.z),
-  //       vec3(worldPosition.x, worldPosition.y.add(height), worldPosition.z)
-  //     );
-
-  //     return select(isLeaf, beforeTransform, vec3(0, 0, 0));
-  //   })();
-  // }, [
-  //   vGlobalVertexIndex,
-  //   varyings.vElevation,
-  //   elevationUniforms.uHeightmapScale,
-  //   helloTerrainMesh,
-  // ]);
-
   const colorNode = useMemo(() => {
     if (!helloTerrainMesh) {
       return Fn(() => {
@@ -272,7 +218,7 @@ const TerrainPlane = () => {
       ).toColor();
 
       // Return the color
-      return height.oneMinus().mix(nodeHashColor, 0.5);
+      return nodeHashColor; //height.oneMinus().mix(nodeHashColor, 0.5);
     })();
   }, [
     helloTerrainMesh,
@@ -284,7 +230,7 @@ const TerrainPlane = () => {
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
     uSegments.value = terrainGeometryControls.segments;
-    uSkirtLength.value = terrainGeometryControls.skirtLength;
+    uSkirtHeight.value = terrainGeometryControls.skirtLength;
     uRootSize.value = terrainGeometryControls.rootSize;
     // Elevation uniforms updated from controls each frame
     elevationUniforms.uFbmIterations.value =
@@ -354,7 +300,11 @@ const TerrainPlane = () => {
   });
 
   const elevationFn = useMemo(() => {
-    return ElevationFn(({ worldPosition }) => {
+    return ElevationFn(({ worldPosition, rootUV }) => {
+      // worldPosition is correct!
+      // rootUV is correct!
+      // Bug: when this is changed, the terrain is no longer rendered properly
+      // that's an issue with the elevationFn set method on the class
       const noiseScale = elevationUniforms.uNoiseScale.toVar();
       const fbm = vec2_fbm(
         vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
@@ -371,7 +321,10 @@ const TerrainPlane = () => {
         uv: vec2(worldPosition.x, worldPosition.z),
       }).add(fbm);
 
-      return noise;
+      // return noise;
+      return max(worldPosition.x, worldPosition.z).mul(
+        elevationUniforms.uHeightmapScale.toVar()
+      );
     });
   }, [elevationUniforms]);
 

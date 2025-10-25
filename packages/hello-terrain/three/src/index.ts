@@ -18,7 +18,7 @@ export {
   uRootOrigin,
   uRootSize,
   uSegments,
-  uSkirtLength,
+  uSkirtHeight,
 } from "./nodes/uniforms";
 export { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 export { TerrainMesh, type TerrainMeshParams } from "./TerrainMesh";

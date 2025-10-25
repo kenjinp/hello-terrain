@@ -5,7 +5,7 @@ import {
   isSkirtFragment,
   isSkirtVertex,
   uSegments,
-  uSkirtLength,
+  uSkirtHeight,
 } from "@hello-terrain/three";
 import {
   Environment,
@@ -79,7 +79,7 @@ const TerrainPlane = () => {
   // Memoized nodes
   const positionNode = useMemo(() => {
     return Fn(() => {
-      const skirtLength = uSkirtLength.toVar();
+      const skirtLength = uSkirtHeight.toVar();
 
       const wp = positionLocal;
       const beforeTransform = select(
@@ -118,7 +118,7 @@ const TerrainPlane = () => {
         vec3(
           afterScale.x,
           afterScale.y,
-          afterScale.z.sub(uSkirtLength.toVar())
+          afterScale.z.sub(uSkirtHeight.toVar())
         ),
         afterScale
       );
@@ -139,7 +139,7 @@ const TerrainPlane = () => {
 
   useFrame(() => {
     uSegments.value = terrainGeometryControls.segments;
-    uSkirtLength.value = terrainGeometryControls.skirtLength;
+    uSkirtHeight.value = terrainGeometryControls.skirtLength;
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uPaintSkirts.value = terrainGeometryControls.paintSkirts;
   });

@@ -16,7 +16,7 @@ import { Fn } from "three/tsl";
 import type { ConstNode, Vector2 } from "three/webgpu";
 import { nodeStorageProperty } from "./properties";
 import { isSkirtVertex } from "./skirt";
-import { uRootOrigin, uRootSize, uSegments, uSkirtLength } from "./uniforms";
+import { uRootOrigin, uRootSize, uSegments, uSkirtHeight } from "./uniforms";
 
 export const tileSize = Fn(
   ([nodeIndex]: [ShaderNodeObject<ConstNode<number>>]) => {
@@ -136,7 +136,7 @@ export const tileGeometryPosition = Fn(
     const half = float(0.5);
     const halfRoot = float(rootSize).mul(half);
     const rootOrigin = uRootOrigin.toVar();
-    const skirtLength = uSkirtLength.toVar();
+    const skirtLength = uSkirtHeight.toVar();
     // Tile center
     const centerX = rootOrigin.x.add(nodeX.add(half).mul(size)).sub(halfRoot);
     const centerZ = rootOrigin.z.add(nodeY.add(half).mul(size)).sub(halfRoot);

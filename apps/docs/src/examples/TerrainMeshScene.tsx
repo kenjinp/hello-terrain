@@ -11,7 +11,7 @@ import {
   uRootOrigin,
   uRootSize,
   uSegments,
-  uSkirtLength,
+  uSkirtHeight,
 } from "@hello-terrain/three";
 import {
   Environment,
@@ -138,7 +138,7 @@ const TerrainPlane = () => {
       const nodeStorage = helloTerrainMesh.nodeStorage.storageNode;
       const worldPosition = tileVertexWorldPosition(nodeStorage);
       const isLeaf = tileIsLeaf(nodeStorage);
-      const skirtLength = uSkirtLength.toVar();
+      const skirtLength = uSkirtHeight.toVar();
 
       const beforeTransform = select(
         isSkirtVertex,
@@ -181,7 +181,7 @@ const TerrainPlane = () => {
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
     uSegments.value = terrainGeometryControls.segments;
-    uSkirtLength.value = terrainGeometryControls.skirtLength;
+    uSkirtHeight.value = terrainGeometryControls.skirtLength;
     uRootSize.value = terrainGeometryControls.rootSize;
     if (helloTerrainMesh) {
       // Keep quadtree config in sync with UI controls so subdivision matches rootSize changes

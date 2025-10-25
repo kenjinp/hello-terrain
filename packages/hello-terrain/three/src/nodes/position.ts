@@ -34,9 +34,28 @@ export const worldPosition = /*@__PURE__*/ Fn(() => {
     .mul(uHeightmapScale.toVar());
   vElevation.assign(height);
 
+  const vx = int(vertexIndex).mod(intEdgeVertexCount);
+  const vy = int(vertexIndex).div(intEdgeVertexCount);
+  const last = intEdgeVertexCount.sub(int(1));
+  const adjX = vx
+    .equal(int(0))
+    .select(int(1), vx.equal(last).select(last.sub(int(1)), vx));
+  const adjY = vy
+    .equal(int(0))
+    .select(int(1), vy.equal(last).select(last.sub(int(1)), vy));
+  const perNodeAdjIndex = adjY.mul(intEdgeVertexCount).add(adjX);
+  const globalAdjIndex = nodeIndex.mul(verticesPerNode).add(perNodeAdjIndex);
+  const skirtEdgeHeight = heightmapStorageProperty
+    .element(globalAdjIndex)
+    .mul(uHeightmapScale.toVar());
+
   const beforeTransform = select(
     isSkirtVertex(),
-    vec3(worldPosition.x, worldPosition.y.add(_forceBind), worldPosition.z),
+    vec3(
+      worldPosition.x,
+      worldPosition.y.add(skirtEdgeHeight).add(_forceBind),
+      worldPosition.z
+    ),
     vec3(
       worldPosition.x,
       worldPosition.y.add(height).add(_forceBind),
