@@ -81,7 +81,7 @@ const TerrainPlane = () => {
 
       const wp = positionLocal;
       const beforeTransform = select(
-        isSkirtVertex,
+        isSkirtVertex(),
         vec3(wp.x, wp.y.sub(float(skirtLength)), wp.z),
         wp
       );
@@ -127,7 +127,7 @@ const TerrainPlane = () => {
   const colorNode = useMemo(() => {
     return Fn(() => {
       const color = select(
-        uniforms.uPaintSkirts.and(isSkirtFragment),
+        uniforms.uPaintSkirts.and(isSkirtFragment()),
         vec3(0, 0, 0),
         texture(uvMap, uv())
       );

@@ -1,6 +1,6 @@
 import { Vector2 as ThreeVector2, Vector3 as ThreeVector3 } from "three";
 import type { Ray as ThreeRay } from "three";
-import { float } from "three/tsl";
+import { float, int, max, min, vec3 } from "three/tsl";
 import {
   InstancedMesh,
   type Material,
@@ -16,6 +16,7 @@ import { height } from "./nodes/height";
 import {
   heightmapStorageProperty,
   nodeStorageProperty,
+  normalmapStorageProperty,
 } from "./nodes/properties";
 import {} from "./nodes/tile";
 import { uRootOrigin, uRootSize, uSegments } from "./nodes/uniforms";
@@ -124,7 +125,7 @@ export class TerrainMesh extends InstancedMesh {
 
     const normalmapStorage = new StorageBuffer(
       "normalmapStorage",
-      new Float32Array(heightmapDimensions * 3),
+      new Float32Array(heightmapDimensions * 3).fill(0),
       3,
       heightmapDimensions
     );
@@ -133,17 +134,27 @@ export class TerrainMesh extends InstancedMesh {
     this.heightmapStorage = heightmapStorage;
     this.normalmapStorage = normalmapStorage;
 
+    normalmapStorageProperty.value = normalmapStorage.storageBufferAttribute;
+
     return { nodeStorage, heightmapStorage, normalmapStorage };
   }
 
   private initializeComputeShaders(): ComputeToBufferMap {
+    // Ensure uniforms reflect current params before building compute nodes
+    this.applyUniforms();
     const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
     const shader = new ComputeToBufferMap(
-      (nodeIndex, globalVertexIndex, localUV, _localCoordinates, texelSize) => {
+      (
+        nodeIndex,
+        globalVertexIndex,
+        localUV,
+        _localCoordinates,
+        _texelSize
+      ) => {
         const h = height(
           nodeIndex,
           localUV,
-          texelSize,
+          _texelSize,
           this.params.elevationFn ?? ElevationFn(() => float(0))
         );
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
@@ -157,6 +168,68 @@ export class TerrainMesh extends InstancedMesh {
     );
     this.heightmapComputeShader = shader;
     return shader;
+  }
+
+  private async runNormalMapCompute(renderer: WebGPURenderer): Promise<void> {
+    const beforeCompute = performance.now();
+    const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
+    const shader = new ComputeToBufferMap(
+      (
+        nodeIndex,
+        globalVertexIndex,
+        localUV,
+        _localCoordinates,
+        _texelSize
+      ) => {
+        // Finite differences on the height buffer to derive normals
+        const iWidth = int(tileEdgeVertexCount);
+        const last = iWidth.sub(int(1));
+
+        const ix = localUV.x.mul(iWidth.toFloat()).floor().toInt();
+        const iy = localUV.y.mul(iWidth.toFloat()).floor().toInt();
+
+        const ixL = max(ix.sub(int(1)), int(0));
+        const ixR = min(ix.add(int(1)), last);
+        const iyD = max(iy.sub(int(1)), int(0));
+        const iyU = min(iy.add(int(1)), last);
+
+        const verticesPerNode = iWidth.mul(iWidth);
+        const base = int(nodeIndex).mul(verticesPerNode);
+        const idxL = base.add(iy.mul(iWidth).add(ixL));
+        const idxR = base.add(iy.mul(iWidth).add(ixR));
+        const idxD = base.add(iyD.mul(iWidth).add(ix));
+        const idxU = base.add(iyU.mul(iWidth).add(ix));
+
+        const hL = this.heightmapStorage.storageNode.element(idxL);
+        const hR = this.heightmapStorage.storageNode.element(idxR);
+        const hD = this.heightmapStorage.storageNode.element(idxD);
+        const hU = this.heightmapStorage.storageNode.element(idxU);
+
+        const dx = hR.sub(hL);
+        const dz = hU.sub(hD);
+        const n = vec3(dx.negate(), float(1), dz.negate()).normalize();
+
+        const baseOut = int(globalVertexIndex).mul(int(3));
+        this.normalmapStorage.storageNode
+          .element(baseOut.add(int(0)))
+          .assign(n.x);
+        this.normalmapStorage.storageNode
+          .element(baseOut.add(int(1)))
+          .assign(n.y);
+        this.normalmapStorage.storageNode
+          .element(baseOut.add(int(2)))
+          .assign(n.z);
+      }
+    );
+    shader.createBinds(
+      tileEdgeVertexCount,
+      3,
+      this.quadtree.getConfig().maxNodes,
+      this.normalmapStorage
+    );
+    await shader.renderBind(renderer, this.normalmapStorage);
+    const afterCompute = performance.now();
+    this.setMetric("normalmapComputeTime", `${afterCompute - beforeCompute}ms`);
   }
 
   private applyUniforms(): void {
@@ -265,6 +338,8 @@ export class TerrainMesh extends InstancedMesh {
 
   set elevationFn(fn: ElevationReturn) {
     this.params.elevationFn = fn;
+    // Re-apply uniforms and rebuild compute shader to avoid stale layouts
+    this.applyUniforms();
     this.heightmapComputeShader = this.initializeComputeShaders();
     this.needsRecompute = true;
   }
@@ -364,6 +439,7 @@ export class TerrainMesh extends InstancedMesh {
         // If recompute is needed or quadtree state changed, run the compute pass
         if (this.shouldRecompute()) {
           await this.runHeightmapCompute(currentRenderer);
+          await this.runNormalMapCompute(currentRenderer);
         } else {
           this.setMetric("hasStateChanged", "false");
         }

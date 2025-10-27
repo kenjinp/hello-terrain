@@ -11,14 +11,15 @@ import {
   uRootSize,
   uSegments,
   uSkirtHeight,
+  vNormal,
   worldPosition,
 } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
+import { uHeightmapScale } from "node_modules/@hello-terrain/three/dist/nodes/uniforms";
 
 import { useEffect, useMemo, useState } from "react";
-import { max } from "three/src/nodes/TSL.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -26,6 +27,7 @@ import {
   hash,
   instanceIndex,
   int,
+  transformNormalToView,
   uniform,
   varying,
   vec2,
@@ -57,6 +59,7 @@ const TerrainPlane = () => {
     "hasStateChanged",
     "lastUpdateHeight",
     "closestLeafIndex",
+    "normalmapComputeTime",
   ] as const);
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
@@ -218,7 +221,8 @@ const TerrainPlane = () => {
       ).toColor();
 
       // Return the color
-      return nodeHashColor; //height.oneMinus().mix(nodeHashColor, 0.5);
+      // return nodeHashColor;
+      return vec3(124, 252, 0).div(255).toColor();
     })();
   }, [
     helloTerrainMesh,
@@ -296,11 +300,15 @@ const TerrainPlane = () => {
         "closestLeafIndex",
         (helloTerrainMesh.metrics.closestLeafIndex ?? "").toString()
       );
+      setMetric(
+        "normalmapComputeTime",
+        (helloTerrainMesh.metrics.normalmapComputeTime ?? "").toString()
+      );
     }
   });
 
   const elevationFn = useMemo(() => {
-    return ElevationFn(({ worldPosition, rootUV }) => {
+    return ElevationFn(({ worldPosition }) => {
       // worldPosition is correct!
       // rootUV is correct!
       // Bug: when this is changed, the terrain is no longer rendered properly
@@ -314,27 +322,31 @@ const TerrainPlane = () => {
         elevationUniforms.uFbmLacunarity.toVar(),
         elevationUniforms.uFbmPersistence.toVar()
       );
+      const scale = uHeightmapScale.toVar();
       const noise = voronoiCells({
-        scale: noiseScale,
+        scale,
         facet: 0,
         seed: 0,
         uv: vec2(worldPosition.x, worldPosition.z),
-      }).add(fbm);
+      }).mul(scale);
 
-      // return noise;
-      return max(worldPosition.x, worldPosition.z).mul(
-        elevationUniforms.uHeightmapScale.toVar()
-      );
+      return fbm;
+      // return max(worldPosition.x, worldPosition.z).mul(
+      //   elevationUniforms.uHeightmapScale.toVar()
+      // );
     });
   }, [elevationUniforms]);
 
+  const normalNode = useMemo(() => {
+    return transformNormalToView(
+      Fn(() => {
+        return vNormal.toVar();
+      })()
+    );
+  }, []);
+
   return (
     <group>
-      {/* <Html>
-        <div className="flex flex-col items-center justify-center border-2 border-white rounded-md p-2 bg-black/50">
-          <span className="text-white text-lg text-shadow-xl">TerrainMesh</span>
-        </div>
-      </Html> */}
       <hello.TerrainMesh
         receiveShadow
         castShadow
@@ -358,6 +370,7 @@ const TerrainPlane = () => {
           wireframe={terrainGeometryControls.wireframe}
           positionNode={worldPosition()}
           colorNode={colorNode}
+          normalNode={normalNode}
         />
       </hello.TerrainMesh>
       <axesHelper scale={terrainGeometryControls.rootSize * 1.1} />

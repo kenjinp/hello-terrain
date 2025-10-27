@@ -7,6 +7,10 @@ const dummyHeightmapStorage = new StorageBufferAttribute(
   new Float32Array(1),
   1
 );
+const dummyNormalmapStorage = new StorageBufferAttribute(
+  new Float32Array(3),
+  3
+);
 export const nodeStorageProperty = storage(
   dummyNodeStorage,
   "i32",
@@ -16,4 +20,9 @@ export const heightmapStorageProperty = storage(
   dummyHeightmapStorage,
   "f32",
   1
+).toReadOnly();
+export const normalmapStorageProperty = storage(
+  dummyNormalmapStorage,
+  "f32",
+  3
 ).toReadOnly();

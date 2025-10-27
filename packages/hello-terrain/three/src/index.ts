@@ -24,3 +24,5 @@ export { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 export { TerrainMesh, type TerrainMeshParams } from "./TerrainMesh";
 export { readHeightVertex, readHeightAtPositionLocal } from "./nodes/height";
 export { worldPosition } from "./nodes/position";
+export { readNormalAtPositionLocal, blendNormalsRNM } from "./nodes/normals";
+export { vNormal } from "./nodes/varyings";

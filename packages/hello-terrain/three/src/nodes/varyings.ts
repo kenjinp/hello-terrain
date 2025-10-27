@@ -6,3 +6,5 @@ export const vGlobalVertexIndex = /*@__PURE__*/ varyingProperty(
 );
 
 export const vElevation = /*@__PURE__*/ varyingProperty("f32", "vElevation");
+
+export const vNormal = /*@__PURE__*/ varyingProperty("vec3", "vNormal");

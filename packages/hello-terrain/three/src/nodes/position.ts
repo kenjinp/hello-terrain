@@ -7,11 +7,12 @@ import {
   vec3,
   vertexIndex,
 } from "three/tsl";
+import { readNormalAtPositionLocal } from "./normals";
 import { heightmapStorageProperty, nodeStorageProperty } from "./properties";
 import { isSkirtVertex } from "./skirt";
 import { tileGeometryPosition, tileIsLeaf } from "./tile";
 import { uHeightmapScale, uSegments } from "./uniforms";
-import { vElevation, vGlobalVertexIndex } from "./varyings";
+import { vElevation, vGlobalVertexIndex, vNormal } from "./varyings";
 
 export const worldPosition = /*@__PURE__*/ Fn(() => {
   const nodeIndex = int(instanceIndex);
@@ -62,6 +63,8 @@ export const worldPosition = /*@__PURE__*/ Fn(() => {
       worldPosition.z
     )
   );
+
+  vNormal.assign(readNormalAtPositionLocal());
 
   return select(isLeaf, beforeTransform, vec3(0, 0, 0));
 });
