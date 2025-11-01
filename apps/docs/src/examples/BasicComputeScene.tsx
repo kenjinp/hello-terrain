@@ -27,6 +27,7 @@ import {
   hash,
   instanceIndex,
   int,
+  max,
   transformNormalToView,
   uniform,
   varying,
@@ -60,6 +61,7 @@ const TerrainPlane = () => {
     "lastUpdateHeight",
     "closestLeafIndex",
     "normalmapComputeTime",
+    "lastUpdateHeightComputeTime",
   ] as const);
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
@@ -222,7 +224,10 @@ const TerrainPlane = () => {
 
       // Return the color
       // return nodeHashColor;
-      return vec3(124, 252, 0).div(255).toColor();
+      // return height.toColor();
+      // return vec3(124, 252, 0).div(255).toColor();
+
+      return vNormal.toColor();
     })();
   }, [
     helloTerrainMesh,
@@ -293,6 +298,10 @@ const TerrainPlane = () => {
         (helloTerrainMesh.metrics.heightmapComputeTime ?? "").toString()
       );
       setMetric(
+        "lastUpdateHeightComputeTime",
+        (helloTerrainMesh.metrics.lastUpdateHeightComputeTime ?? "").toString()
+      );
+      setMetric(
         "lastUpdateHeight",
         (helloTerrainMesh.metrics.lastUpdateHeight ?? "").toString()
       );
@@ -330,19 +339,15 @@ const TerrainPlane = () => {
         uv: vec2(worldPosition.x, worldPosition.z),
       }).mul(scale);
 
-      return fbm;
-      // return max(worldPosition.x, worldPosition.z).mul(
-      //   elevationUniforms.uHeightmapScale.toVar()
-      // );
+      // return fbm;
+      return max(worldPosition.x, worldPosition.z).mul(
+        elevationUniforms.uHeightmapScale.toVar()
+      );
     });
   }, [elevationUniforms]);
 
   const normalNode = useMemo(() => {
-    return transformNormalToView(
-      Fn(() => {
-        return vNormal.toVar();
-      })()
-    );
+    return transformNormalToView(vNormal);
   }, []);
 
   return (

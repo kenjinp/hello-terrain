@@ -74,7 +74,7 @@ export class ComputeToBufferMap {
     return this;
   }
 
-  async renderBind(renderer: WebGPURenderer, bindTarget: StorageBuffer) {
+  renderBind(renderer: WebGPURenderer, bindTarget: StorageBuffer) {
     if (!this.bufferToShader.has(bindTarget)) {
       throw new Error(
         "You are trying to render to a ComputeToBufferMap that this shader doesn't have. Did you forgot to call createBindTo?"

@@ -9,7 +9,6 @@ export const Footer = () => {
         <Link href="https://kenny.wtf" className="underline">
           Kenneth Pirman
         </Link>
-        . All rights reserved
       </div>
       <div>
         <GitInfo />

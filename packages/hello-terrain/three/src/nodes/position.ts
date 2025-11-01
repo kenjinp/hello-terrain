@@ -8,7 +8,11 @@ import {
   vertexIndex,
 } from "three/tsl";
 import { readNormalAtPositionLocal } from "./normals";
-import { heightmapStorageProperty, nodeStorageProperty } from "./properties";
+import {
+  heightmapStorageProperty,
+  nodeStorageProperty,
+  normalmapStorageProperty,
+} from "./properties";
 import { isSkirtVertex } from "./skirt";
 import { tileGeometryPosition, tileIsLeaf } from "./tile";
 import { uHeightmapScale, uSegments } from "./uniforms";
@@ -21,7 +25,11 @@ export const worldPosition = /*@__PURE__*/ Fn(() => {
 
   // Force a zero-effect dependency on nodeStorageProperty so the renderer
   // declares and binds the read-only storage buffer for the vertex stage.
-  const _forceBind = nodeStorageProperty.element(int(0)).toFloat().mul(0);
+  const _forceBind = nodeStorageProperty
+    .element(int(0))
+    .toFloat()
+    .mul(0)
+    .add(normalmapStorageProperty.element(int(0)).toFloat().mul(0));
 
   // Compute and pass global vertex index to fragment stage
   const edgeVertexCount = uSegments.toVar().add(3);

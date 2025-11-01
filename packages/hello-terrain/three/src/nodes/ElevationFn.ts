@@ -39,8 +39,4 @@ export function ElevationFn(callback: ElevationCallback): ElevationReturn {
   return Fn(
     tslFunction as unknown as (args: ProxiedObject<ElevationParams>) => Node
   );
-
-  // return Fn((args: [ProxiedObject<ElevationParams>]) => {
-  //   return tslFunction(args[0] as ElevationParams);
-  // });
 }
