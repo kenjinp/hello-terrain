@@ -14,10 +14,9 @@ import {
   vNormal,
   worldPosition,
 } from "@hello-terrain/three";
-import { OrbitControls } from "@react-three/drei";
+import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
-import { uHeightmapScale } from "node_modules/@hello-terrain/three/dist/nodes/uniforms";
 
 import { useEffect, useMemo, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
@@ -27,7 +26,6 @@ import {
   hash,
   instanceIndex,
   int,
-  max,
   transformNormalToView,
   uniform,
   varying,
@@ -322,7 +320,7 @@ const TerrainPlane = () => {
       // rootUV is correct!
       // Bug: when this is changed, the terrain is no longer rendered properly
       // that's an issue with the elevationFn set method on the class
-      const noiseScale = elevationUniforms.uNoiseScale.toVar();
+      const noiseScale = elevationUniforms.uNoiseScale;
       const fbm = vec2_fbm(
         vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
         int(elevationUniforms.uFbmIterations.toVar()),
@@ -331,18 +329,18 @@ const TerrainPlane = () => {
         elevationUniforms.uFbmLacunarity.toVar(),
         elevationUniforms.uFbmPersistence.toVar()
       );
-      const scale = uHeightmapScale.toVar();
+      const scale = elevationUniforms.uHeightmapScale;
       const noise = voronoiCells({
-        scale,
+        scale: float(1),
         facet: 0,
         seed: 0,
-        uv: vec2(worldPosition.x, worldPosition.z),
+        uv: vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
       }).mul(scale);
 
-      // return fbm;
-      return max(worldPosition.x, worldPosition.z).mul(
-        elevationUniforms.uHeightmapScale.toVar()
-      );
+      return noise;
+      // return max(worldPosition.x, worldPosition.z).mul(
+      //   elevationUniforms.uHeightmapScale.toVar()
+      // );
     });
   }, [elevationUniforms]);
 
@@ -425,8 +423,9 @@ const BasicComputeScene = () => {
       performance={{ min: 0.5 }}
     >
       <color attach="background" args={["#6dd1ed"]} />
-      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
+      <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
+      <fog attach="fog" args={["#6dd1ed", 0, 1024]} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
       <OrbitControls />
       <TerrainPlane />

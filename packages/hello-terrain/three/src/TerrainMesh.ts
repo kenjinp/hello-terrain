@@ -202,57 +202,106 @@ export class TerrainMesh extends InstancedMesh {
         _localCoordinates,
         _texelSize
       ) => {
-        const iWidth = int(tileEdgeVertexCount);
-        const last = iWidth.sub(int(1));
+        const edgeVertexCount = int(tileEdgeVertexCount);
+        const lastVertexIndex = edgeVertexCount.sub(int(1));
 
-        const ix = localUV.x.mul(iWidth.toFloat()).floor().toInt();
-        const iy = localUV.y.mul(iWidth.toFloat()).floor().toInt();
+        const uVertexIndex = localUV.x
+          .mul(edgeVertexCount.toFloat())
+          .floor()
+          .toInt();
+        const vVertexIndex = localUV.y
+          .mul(edgeVertexCount.toFloat())
+          .floor()
+          .toInt();
 
-        const ixL = max(ix.sub(int(1)), int(0));
-        const ixR = min(ix.add(int(1)), last);
-        const iyD = max(iy.sub(int(1)), int(0));
-        const iyU = min(iy.add(int(1)), last);
+        // Neighbor indices including skirt ring for central differences at inner edges
+        const uLeft = max(uVertexIndex.sub(int(1)), int(0));
+        const uRight = min(uVertexIndex.add(int(1)), lastVertexIndex);
+        const vDown = max(vVertexIndex.sub(int(1)), int(0));
+        const vUp = min(vVertexIndex.add(int(1)), lastVertexIndex);
 
-        const verticesPerNode = iWidth.mul(iWidth);
-        const base = int(nodeIndex).mul(verticesPerNode);
-        const idxL = base.add(iy.mul(iWidth).add(ixL));
-        const idxR = base.add(iy.mul(iWidth).add(ixR));
-        const idxD = base.add(iyD.mul(iWidth).add(ix));
-        const idxU = base.add(iyU.mul(iWidth).add(ix));
+        const numVerticesPerNode = edgeVertexCount.mul(edgeVertexCount);
+        const nodeVertexBaseIndex = int(nodeIndex).mul(numVerticesPerNode);
+        const hC = this.heightmapStorage.storageNode.element(
+          nodeVertexBaseIndex.add(
+            vVertexIndex.mul(edgeVertexCount).add(uVertexIndex)
+          )
+        );
+        const hLm = this.heightmapStorage.storageNode.element(
+          nodeVertexBaseIndex.add(vVertexIndex.mul(edgeVertexCount).add(uLeft))
+        );
+        const hRp = this.heightmapStorage.storageNode.element(
+          nodeVertexBaseIndex.add(vVertexIndex.mul(edgeVertexCount).add(uRight))
+        );
+        const hDm = this.heightmapStorage.storageNode.element(
+          nodeVertexBaseIndex.add(vDown.mul(edgeVertexCount).add(uVertexIndex))
+        );
+        const hUp = this.heightmapStorage.storageNode.element(
+          nodeVertexBaseIndex.add(vUp.mul(edgeVertexCount).add(uVertexIndex))
+        );
 
-        const hL = this.heightmapStorage.storageNode.element(idxL);
-        const hR = this.heightmapStorage.storageNode.element(idxR);
-        const hD = this.heightmapStorage.storageNode.element(idxD);
-        const hU = this.heightmapStorage.storageNode.element(idxU);
-        const isActive = nodeStorageProperty
+        const isNodeActive = nodeStorageProperty
           .element(nodeIndex.mul(4).add(3))
           .equal(int(1));
-        const isLeaf = tileIsLeaf(nodeIndex);
+        const isNodeLeaf = tileIsLeaf(nodeIndex);
 
-        // Compute world-space texel size for inner grid and scale finite differences accordingly
-        const level = tileLevel(nodeIndex);
-        const size = this.uComputeRootSize
+        // Compute world-space texel size for inner grid (S = edge - 3)
+        const nodeLevel = tileLevel(nodeIndex);
+        const tileSizeWorld = this.uComputeRootSize
           .toVar()
-          .div(pow(float(2), level.toFloat()));
-        const fInnerSegments = float(tileEdgeVertexCount).sub(float(3));
-        const stepWorld = size.div(fInnerSegments);
+          .div(pow(float(2), nodeLevel.toFloat()));
+        const innerSegments = float(tileEdgeVertexCount).sub(float(3));
+        const stepWorld = tileSizeWorld.div(innerSegments);
+        const invStep = float(1).div(stepWorld);
         const inv2Step = float(0.5).div(stepWorld);
 
-        const dx = hR.sub(hL).mul(inv2Step);
-        const dz = hU.sub(hD).mul(inv2Step);
-        const n = vec3(dx.negate(), float(1), dz.negate()).normalize();
-        const normalOutput = select(isActive.and(isLeaf), n, vec3(0, 0, 0));
+        // Extremes are actual skirt vertices (index 0 or last)
+        const atLeftExtreme = uVertexIndex.equal(int(0));
+        const atRightExtreme = uVertexIndex.equal(lastVertexIndex);
+        const atBottomExtreme = vVertexIndex.equal(int(0));
+        const atTopExtreme = vVertexIndex.equal(lastVertexIndex);
 
-        const baseOut = int(globalVertexIndex).mul(int(3));
+        // One-sided at skirt ring, central elsewhere (inner edges use skirt as neighbor)
+        const dX = select(
+          atLeftExtreme,
+          hRp.sub(hC).mul(invStep),
+          select(
+            atRightExtreme,
+            hC.sub(hLm).mul(invStep),
+            hRp.sub(hLm).mul(inv2Step)
+          )
+        );
+        const dZ = select(
+          atBottomExtreme,
+          hUp.sub(hC).mul(invStep),
+          select(
+            atTopExtreme,
+            hC.sub(hDm).mul(invStep),
+            hUp.sub(hDm).mul(inv2Step)
+          )
+        );
+
+        const computedNormal = vec3(
+          dX.negate(),
+          float(1),
+          dZ.negate()
+        ).normalize();
+        const finalNormal = select(
+          isNodeActive.and(isNodeLeaf),
+          computedNormal,
+          vec3(0, 0, 0)
+        );
+
+        const normalOutputBaseIndex = int(globalVertexIndex).mul(int(3));
         this.normalmapStorage.storageNode
-          .element(baseOut.add(int(0)))
-          .assign(normalOutput.x);
+          .element(normalOutputBaseIndex.add(int(0)))
+          .assign(finalNormal.x);
         this.normalmapStorage.storageNode
-          .element(baseOut.add(int(1)))
-          .assign(normalOutput.y);
+          .element(normalOutputBaseIndex.add(int(1)))
+          .assign(finalNormal.y);
         this.normalmapStorage.storageNode
-          .element(baseOut.add(int(2)))
-          .assign(normalOutput.z);
+          .element(normalOutputBaseIndex.add(int(2)))
+          .assign(finalNormal.z);
       }
     );
     normalShader.createBinds(

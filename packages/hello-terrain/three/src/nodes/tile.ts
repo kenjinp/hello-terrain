@@ -2,8 +2,6 @@ import {
   type ShaderNodeObject,
   float,
   int,
-  max,
-  min,
   positionWorld,
   pow,
   select,
@@ -220,18 +218,17 @@ export const rootUVCompute = Fn(
     const centerX = rootOrigin.x.add(nodeX.add(half).mul(size)).sub(halfRoot);
     const centerZ = rootOrigin.z.add(nodeY.add(half).mul(size)).sub(halfRoot);
 
-    // Reconstruct discrete indices and match TerrainGeometry mapping:
-    // uInner = clamp((ix - 1) / S, 0, 1)
-    // vInner = clamp((iy - 1) / S, 0, 1)
+    // Reconstruct discrete indices and expand skirts outward by one inner step
     const fS = uSegments.toVar().toFloat();
     const fEdge = fS.add(float(3.0));
     const ix = localUV.x.mul(fEdge).floor();
     const iy = localUV.y.mul(fEdge).floor();
-    const uInner = max(min(ix.sub(float(1.0)).div(fS), float(1.0)), float(0.0));
-    const vInner = max(min(iy.sub(float(1.0)).div(fS), float(1.0)), float(0.0));
+    // uExpanded/vExpanded are in [-1/S, 1 + 1/S], so skirt ring samples one step outside
+    const uExpanded = ix.sub(float(1.0)).div(fS);
+    const vExpanded = iy.sub(float(1.0)).div(fS);
 
-    const localX = uInner.sub(half);
-    const localZ = vInner.sub(half);
+    const localX = uExpanded.sub(half);
+    const localZ = vExpanded.sub(half);
 
     // World position of this vertex (skirt shares border XZ)
     const worldX = centerX.add(localX.mul(size));
