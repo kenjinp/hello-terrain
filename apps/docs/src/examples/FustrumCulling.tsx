@@ -274,15 +274,34 @@ const TerrainPlane = () => {
       qConfig.maxLevel = terrainGeometryControls.maxLevel;
       const frustum = new THREE.Frustum();
 
+      // move the newCamera slightly
+
+      const movementSin = Math.sin(performance.now() * 0.001) * 100;
+
+      newCameraRef.current?.position.set(movementSin, 50, movementSin);
+      // newCameraRef.current?.position.y += movementSin;
+      // newCameraRef.current?.position.z += movementSin;
+      newCameraRef.current?.updateMatrixWorld();
+      cameraHelperRef.current?.setColors(
+        new THREE.Color("red"),
+        new THREE.Color("green"),
+        new THREE.Color("blue"),
+        new THREE.Color("yellow"),
+        new THREE.Color("purple")
+      );
+
       const projScreenMatrix = new THREE.Matrix4();
       projScreenMatrix.multiplyMatrices(
-        camera.projectionMatrix,
-        camera.matrixWorldInverse
+        newCameraRef.current?.projectionMatrix ?? new THREE.Matrix4(),
+        newCameraRef.current?.matrixWorldInverse ?? new THREE.Matrix4()
       );
       frustum.setFromProjectionMatrix(projScreenMatrix);
+
+      // cameraHelperRef.current?.camera.copy(newCamera);
+      // cameraHelperRef.current?.update();
       helloTerrainMesh.update(
         gl as unknown as THREE.WebGPURenderer,
-        camera.position,
+        newCameraRef.current?.position ?? new THREE.Vector3(),
         frustum
       );
       setMetric(
@@ -394,11 +413,16 @@ const TerrainPlane = () => {
         </hello.TerrainMesh>
         <axesHelper scale={terrainGeometryControls.rootSize * 1.1} />
       </group>
+      <cameraHelper
+        args={[newCameraRef.current ?? new THREE.Camera()]}
+        ref={cameraHelperRef}
+      />
+      <perspectiveCamera ref={newCameraRef} />
     </>
   );
 };
 
-const BasicComputeScene = () => {
+const FrustumCullingScene = () => {
   return (
     <Canvas
       style={{
@@ -450,4 +474,4 @@ const BasicComputeScene = () => {
   );
 };
 
-export default BasicComputeScene;
+export default FrustumCullingScene;
