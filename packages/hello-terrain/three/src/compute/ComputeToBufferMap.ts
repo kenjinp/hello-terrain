@@ -1,5 +1,6 @@
 import {
   Fn,
+  If,
   type ShaderNodeObject,
   float,
   int,
@@ -11,10 +12,15 @@ import type { StorageBuffer } from "./StorageBuffer";
 
 // A buffer map is an array-like representation of a texture with a width and height times number of nodes
 export class ComputeToBufferMap {
-  private bufferToShader: Map<StorageBuffer, ShaderNodeObject<ComputeNode>>;
+  bufferToShader: Map<StorageBuffer, ShaderNodeObject<ComputeNode>>;
   private computeInstanceCount?: number;
   private workgroupSize?: [number, number, number];
-  private dispatchSize?: [number, number, number];
+  dispatchSize?: [number, number, number];
+
+  private static ceilPowerOfTwo(n: number): number {
+    if (n <= 1) return 1;
+    return 1 << Math.ceil(Math.log2(n));
+  }
 
   constructor(
     private fn: (
@@ -35,27 +41,41 @@ export class ComputeToBufferMap {
     // Use explicit instanceCount (e.g., maxNodes) for Z dimension, not outTo.maxItems
     this.computeInstanceCount = instanceCount;
     this.workgroupSize = [1, 1, 1];
-    this.dispatchSize = [width, width, instanceCount];
+    const dispatchX = ComputeToBufferMap.ceilPowerOfTwo(width);
+    const dispatchY = ComputeToBufferMap.ceilPowerOfTwo(width);
+    const dispatchZ = ComputeToBufferMap.ceilPowerOfTwo(instanceCount);
+    this.dispatchSize = [dispatchX, dispatchY, dispatchZ];
     return Fn(() => {
       const fWidth = float(width);
       const nodeIndex = workgroupId.z;
-      const texelSize = vec2(1, 1).div(fWidth);
-      const localCoordinates = vec2(workgroupId.x, workgroupId.y);
-      const localUVCoords = localCoordinates.div(fWidth);
-      // Compute global vertex index: nodeIndex * (width*width) + y * width + x
       const iWidth = int(width);
-      const verticesPerNode = iWidth.mul(iWidth);
       const ix = int(workgroupId.x);
       const iy = int(workgroupId.y);
-      const globalIndex = int(nodeIndex)
-        .mul(verticesPerNode)
-        .add(iy.mul(iWidth).add(ix));
-      this.fn(
-        nodeIndex,
-        globalIndex,
-        localUVCoords,
-        localCoordinates,
-        texelSize
+      const iInstanceCount = int(instanceCount);
+
+      // Only execute the body when within XY bounds and node index is valid.
+      If(
+        ix
+          .lessThan(iWidth)
+          .and(iy.lessThan(iWidth))
+          .and(int(nodeIndex).lessThan(iInstanceCount)),
+        () => {
+          const texelSize = vec2(1, 1).div(fWidth);
+          const localCoordinates = vec2(workgroupId.x, workgroupId.y);
+          const localUVCoords = localCoordinates.div(fWidth);
+          // Compute global vertex index: nodeIndex * (width*width) + y * width + x
+          const verticesPerNode = iWidth.mul(iWidth);
+          const globalIndex = int(nodeIndex)
+            .mul(verticesPerNode)
+            .add(iy.mul(iWidth).add(ix));
+          this.fn(
+            nodeIndex,
+            globalIndex,
+            localUVCoords,
+            localCoordinates,
+            texelSize
+          );
+        }
       );
     })().computeKernel(this.workgroupSize);
   }

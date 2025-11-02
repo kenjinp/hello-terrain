@@ -18,7 +18,7 @@ import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -48,7 +48,8 @@ const TerrainPlane = () => {
   const [helloTerrainMesh, setHelloTerrainMesh] = useState<TerrainMesh | null>(
     null
   );
-
+  const cameraHelperRef = useRef<THREE.CameraHelper | null>(null);
+  const newCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const setMetric = useMetrics([
     "updatePosition",
     "heightmapComputeTime",
@@ -60,6 +61,7 @@ const TerrainPlane = () => {
     "closestLeafIndex",
     "normalmapComputeTime",
     "lastUpdateHeightComputeTime",
+    "updateTime",
   ] as const);
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
@@ -270,9 +272,37 @@ const TerrainPlane = () => {
       qConfig.minNodeSize = terrainGeometryControls.minNodeSize;
       qConfig.subdivisionFactor = terrainGeometryControls.subdivisionFactor;
       qConfig.maxLevel = terrainGeometryControls.maxLevel;
+      const frustum = new THREE.Frustum();
+
+      // move the newCamera slightly
+
+      const movementSin = Math.sin(performance.now() * 0.001) * 100;
+
+      newCameraRef.current?.position.set(movementSin, 50, movementSin);
+      // newCameraRef.current?.position.y += movementSin;
+      // newCameraRef.current?.position.z += movementSin;
+      newCameraRef.current?.updateMatrixWorld();
+      cameraHelperRef.current?.setColors(
+        new THREE.Color("red"),
+        new THREE.Color("green"),
+        new THREE.Color("blue"),
+        new THREE.Color("yellow"),
+        new THREE.Color("purple")
+      );
+
+      const projScreenMatrix = new THREE.Matrix4();
+      projScreenMatrix.multiplyMatrices(
+        newCameraRef.current?.projectionMatrix ?? new THREE.Matrix4(),
+        newCameraRef.current?.matrixWorldInverse ?? new THREE.Matrix4()
+      );
+      frustum.setFromProjectionMatrix(projScreenMatrix);
+
+      // cameraHelperRef.current?.camera.copy(newCamera);
+      // cameraHelperRef.current?.update();
       helloTerrainMesh.update(
         gl as unknown as THREE.WebGPURenderer,
-        camera.position
+        newCameraRef.current?.position ?? new THREE.Vector3(),
+        frustum
       );
       setMetric(
         "updatePosition",
@@ -310,6 +340,10 @@ const TerrainPlane = () => {
       setMetric(
         "normalmapComputeTime",
         (helloTerrainMesh.metrics.normalmapComputeTime ?? "").toString()
+      );
+      setMetric(
+        "updateTime",
+        (helloTerrainMesh.metrics.updateTime ?? "").toString()
       );
     }
   });
@@ -349,35 +383,42 @@ const TerrainPlane = () => {
   }, []);
 
   return (
-    <group>
-      <hello.TerrainMesh
-        receiveShadow
-        castShadow
-        frustumCulled={false}
-        ref={(ref) => {
-          if (!helloTerrainMesh && ref) {
-            console.log("setting helloTerrainMesh", ref);
-            setHelloTerrainMesh(ref);
-          }
-        }}
-        elevationFn={elevationFn}
-        maxNodes={terrainGeometryControls.maxNodes}
-        rootSize={terrainGeometryControls.rootSize}
-        innerTileSegments={terrainGeometryControls.segments}
-        subdivisionFactor={terrainGeometryControls.subdivisionFactor}
-        minNodeSize={terrainGeometryControls.minNodeSize}
-        maxLevel={terrainGeometryControls.maxLevel}
-      >
-        <meshStandardNodeMaterial
-          name="TerrainMeshMaterial"
-          wireframe={terrainGeometryControls.wireframe}
-          positionNode={worldPosition()}
-          colorNode={colorNode}
-          normalNode={normalNode}
-        />
-      </hello.TerrainMesh>
-      <axesHelper scale={terrainGeometryControls.rootSize * 1.1} />
-    </group>
+    <>
+      <group>
+        <hello.TerrainMesh
+          receiveShadow
+          castShadow
+          frustumCulled={false}
+          ref={(ref) => {
+            if (!helloTerrainMesh && ref) {
+              console.log("setting helloTerrainMesh", ref);
+              setHelloTerrainMesh(ref);
+            }
+          }}
+          elevationFn={elevationFn}
+          maxNodes={terrainGeometryControls.maxNodes}
+          rootSize={terrainGeometryControls.rootSize}
+          innerTileSegments={terrainGeometryControls.segments}
+          subdivisionFactor={terrainGeometryControls.subdivisionFactor}
+          minNodeSize={terrainGeometryControls.minNodeSize}
+          maxLevel={terrainGeometryControls.maxLevel}
+        >
+          <meshStandardNodeMaterial
+            name="TerrainMeshMaterial"
+            wireframe={terrainGeometryControls.wireframe}
+            positionNode={worldPosition()}
+            colorNode={colorNode}
+            normalNode={normalNode}
+          />
+        </hello.TerrainMesh>
+        <axesHelper scale={terrainGeometryControls.rootSize * 1.1} />
+      </group>
+      <cameraHelper
+        args={[newCameraRef.current ?? new THREE.Camera()]}
+        ref={cameraHelperRef}
+      />
+      <perspectiveCamera ref={newCameraRef} />
+    </>
   );
 };
 
@@ -425,7 +466,7 @@ const BasicComputeScene = () => {
       <color attach="background" args={["#6dd1ed"]} />
       <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
-      <fog attach="fog" args={["#6dd1ed", 0, 1024]} />
+      <fog attach="fog" args={["#6dd1ed", 0, 1024 * 2]} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
       <OrbitControls />
       <TerrainPlane />

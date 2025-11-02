@@ -16,6 +16,9 @@ export interface QuadtreeParams {
 }
 
 const tempVector3 = new THREE.Vector3();
+const tempBox3 = new THREE.Box3();
+const tempMin = new THREE.Vector3();
+const tempMax = new THREE.Vector3();
 
 export class Quadtree {
   private nodeCount = 0;
@@ -46,11 +49,11 @@ export class Quadtree {
    * Update the quadtree based on the given position and return the index
    * of the leaf node that best corresponds to the position (closest leaf).
    */
-  update(position: THREE.Vector3): number {
+  update(position: THREE.Vector3, frustum?: THREE.Frustum): number {
     this.reset();
 
     // Start from root node and capture the closest leaf index
-    const closestLeafIndex = this.updateNode(0, position);
+    const closestLeafIndex = this.updateNode(0, position, frustum);
 
     // Update the leaf node index buffer after all updates are complete
     this.nodeView.updateLeafNodeIndices();
@@ -62,19 +65,38 @@ export class Quadtree {
    * Recursively update a node and its children based on distance and size criteria
    * and return the closest leaf node index to the provided position.
    */
-  private updateNode(nodeIndex: number, position: THREE.Vector3): number {
+  private updateNode(
+    nodeIndex: number,
+    position: THREE.Vector3,
+    frustum?: THREE.Frustum
+  ): number {
     const nodeSize =
       this.config.rootSize / (1 << this.nodeView.getLevel(nodeIndex));
 
     // Calculate node center position (matching the shader calculation)
     const nodeX = this.nodeView.getX(nodeIndex);
     const nodeY = this.nodeView.getY(nodeIndex);
-    const worldX =
-      this.config.origin.x +
-      ((nodeX + 0.5) * nodeSize - 0.5 * this.config.rootSize);
-    const worldZ =
-      this.config.origin.z +
-      ((nodeY + 0.5) * nodeSize - 0.5 * this.config.rootSize);
+    const minX =
+      this.config.origin.x + (nodeX * nodeSize - 0.5 * this.config.rootSize);
+    const minZ =
+      this.config.origin.z + (nodeY * nodeSize - 0.5 * this.config.rootSize);
+    const worldX = minX + 0.5 * nodeSize;
+    const worldZ = minZ + 0.5 * nodeSize;
+
+    // Frustum culling in world space using a conservative vertical range
+    if (frustum) {
+      const verticalHalfExtent = this.config.rootSize; // conservative bound
+      const minY = this.config.origin.y - verticalHalfExtent;
+      const maxY = this.config.origin.y + verticalHalfExtent;
+      tempMin.set(minX, minY, minZ);
+      tempMax.set(minX + nodeSize, maxY, minZ + nodeSize);
+      tempBox3.set(tempMin, tempMax);
+      if (!frustum.intersectsBox(tempBox3)) {
+        // Mark node as not active
+        this.nodeView.setLeaf(nodeIndex, false);
+        return -1;
+      }
+    }
 
     tempVector3.set(worldX, this.config.origin.y, worldZ);
 
@@ -100,7 +122,7 @@ export class Quadtree {
       let bestDistSq = Number.POSITIVE_INFINITY;
       for (let i = 0; i < 4; i++) {
         if (children[i] !== -1) {
-          const leafIdx = this.updateNode(children[i], position);
+          const leafIdx = this.updateNode(children[i], position, frustum);
           if (leafIdx !== -1) {
             // Compute center of the returned leaf and track the closest
             const level = this.nodeView.getLevel(leafIdx);

@@ -2,6 +2,7 @@ import { Vector2 as ThreeVector2, Vector3 as ThreeVector3 } from "three";
 import type { Ray as ThreeRay } from "three";
 import { float, int, max, min, pow, select, uniform, vec3 } from "three/tsl";
 import {
+  type Frustum,
   InstancedMesh,
   type Material,
   type NodeMaterial,
@@ -39,6 +40,7 @@ export class TerrainMesh extends InstancedMesh {
   private hasPendingUpdate = false;
   private pendingRenderer: WebGPURenderer | null = null;
   private pendingPosition: Vector3 | null = null;
+  private pendingFrustum: Frustum | null = null;
   // @ts-ignore will be initialized
   private nodeStorage: StorageBuffer;
   // @ts-ignore will be initialized
@@ -578,7 +580,7 @@ export class TerrainMesh extends InstancedMesh {
     return this.params.maxNodes;
   }
 
-  update(renderer: WebGPURenderer, position: Vector3) {
+  update(renderer: WebGPURenderer, position: Vector3, frustum: Frustum) {
     // Always capture the latest call arguments
     this.pendingRenderer = renderer;
     // Reuse a single Vector3 instance to avoid allocations
@@ -590,6 +592,7 @@ export class TerrainMesh extends InstancedMesh {
       position.y,
       position.z
     );
+    this.pendingFrustum = frustum;
 
     // If a compute is already in flight, mark that we have a pending update and exit early
     if (this.isUpdateInFlight) {
@@ -599,6 +602,7 @@ export class TerrainMesh extends InstancedMesh {
 
     this.isUpdateInFlight = true;
 
+    const beforeUpdate = performance.now();
     try {
       do {
         // Consume the latest pending args at the start of each cycle
@@ -608,6 +612,7 @@ export class TerrainMesh extends InstancedMesh {
         }
         const currentRenderer = this.pendingRenderer;
         const currentPosition = this.pendingPosition;
+        const currentFrustum = this.pendingFrustum;
         // Reset the pending flag; if another update() arrives during work, it will set this back to true
         this.hasPendingUpdate = false;
 
@@ -617,7 +622,10 @@ export class TerrainMesh extends InstancedMesh {
           "updatePosition",
           `${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)}, ${currentPosition.z.toFixed(2)}`
         );
-        const closestLeafIndex = this.quadtree.update(currentPosition);
+        const closestLeafIndex = this.quadtree.update(
+          currentPosition,
+          currentFrustum ?? undefined
+        );
         this.setMetric("closestLeafIndex", closestLeafIndex);
 
         // If recompute is needed or quadtree state changed, run the compute pass
@@ -675,6 +683,8 @@ export class TerrainMesh extends InstancedMesh {
         // this.setMetric("lastUpdateHeight", this.lastUpdateHeight);
         // Loop again if another update was queued while we were computing
       } while (this.hasPendingUpdate);
+      const afterUpdate = performance.now();
+      this.setMetric("updateTime", `${afterUpdate - beforeUpdate}ms`);
     } finally {
       this.isUpdateInFlight = false;
     }
