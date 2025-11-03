@@ -55,9 +55,6 @@ export class Quadtree {
     // Start from root node and capture the closest leaf index
     const closestLeafIndex = this.updateNode(0, position, frustum);
 
-    // Update the leaf node index buffer after all updates are complete
-    this.nodeView.updateLeafNodeIndices();
-
     return closestLeafIndex;
   }
 
@@ -293,6 +290,13 @@ export class Quadtree {
 
   getLeafNodeCount(): number {
     return this.nodeView.getLeafNodeCount();
+  }
+
+  /**
+   * Get active leaf node indices for efficient GPU processing
+   */
+  getActiveLeafNodeIndices(): { indices: Uint16Array; count: number } {
+    return this.nodeView.getActiveLeafNodeIndices();
   }
 
   /**

@@ -9,6 +9,7 @@ import {
 } from "three/tsl";
 import { readNormalAtPositionLocal } from "./normals";
 import {
+  activeLeafIndicesStorageProperty,
   heightmapStorageProperty,
   nodeStorageProperty,
   normalmapStorageProperty,
@@ -19,7 +20,9 @@ import { uHeightmapScale, uSegments } from "./uniforms";
 import { vElevation, vGlobalVertexIndex, vNormal } from "./varyings";
 
 export const worldPosition = /*@__PURE__*/ Fn(() => {
-  const nodeIndex = int(instanceIndex);
+  // Use indirection: look up actual node index from active leaf indices
+  const activeIndex = int(instanceIndex);
+  const nodeIndex = int(activeLeafIndicesStorageProperty.element(activeIndex));
   const worldPosition = tileGeometryPosition(nodeIndex, positionLocal);
   const isLeaf = tileIsLeaf(nodeIndex);
 

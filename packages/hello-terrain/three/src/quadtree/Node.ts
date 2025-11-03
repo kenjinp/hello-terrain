@@ -32,6 +32,8 @@ export class NodeView {
   private nodeBuffer: Int32Array;
   private leafNodeMask: Uint8Array;
   private leafNodeCountBuffer: Uint16Array;
+  private activeLeafIndices: Uint16Array;
+  private activeLeafCount = 0;
 
   constructor(
     maxNodeCount: number,
@@ -53,6 +55,7 @@ export class NodeView {
     this.nodeBuffer = nodeBuffer ?? new Int32Array(NODE_STRIDE * maxNodeCount);
     this.leafNodeMask = leafNodeMask ?? new Uint8Array(maxNodeCount);
     this.leafNodeCountBuffer = leafNodeCountBuffer ?? new Uint16Array(1);
+    this.activeLeafIndices = new Uint16Array(maxNodeCount);
 
     this.clear();
   }
@@ -67,6 +70,7 @@ export class NodeView {
     this.neighborsIndicesBuffer.fill(EMPTY_SENTINEL_VALUE);
     this.leafNodeMask.fill(0);
     this.leafNodeCountBuffer[0] = 0;
+    this.activeLeafCount = 0;
   }
 
   /**
@@ -149,6 +153,8 @@ export class NodeView {
     if (leaf && !wasLeaf) {
       this.leafNodeCountBuffer[0]++;
       this.leafNodeMask[index] = 1;
+      this.activeLeafIndices[this.activeLeafCount] = index;
+      this.activeLeafCount++;
       // this is a leaf node, so we need to clear the children
       this.setChildren(index, [
         EMPTY_SENTINEL_VALUE,
@@ -185,16 +191,13 @@ export class NodeView {
   }
 
   /**
-   * Update the leaf node index buffer based on current leaf nodes
+   * Get array of active leaf node indices with count (zero-copy, no allocation)
    */
-  updateLeafNodeIndices(): void {
-    // biome-ignore lint/correctness/noUnusedVariables: <explanation>
-    let leafIndex = 0;
-    for (let i = 0; i < this.maxNodeCount; i++) {
-      if (this.leafNodeMask[i] === 1) {
-        leafIndex++;
-      }
-    }
+  getActiveLeafNodeIndices(): { indices: Uint16Array; count: number } {
+    return {
+      indices: this.activeLeafIndices,
+      count: this.activeLeafCount,
+    };
   }
 
   /**

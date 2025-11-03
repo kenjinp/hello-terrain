@@ -15,6 +15,7 @@ import { TerrainGeometry } from "./geometry/TerrainGeometry";
 import { ElevationFn, type ElevationReturn } from "./nodes/ElevationFn";
 import { height } from "./nodes/height";
 import {
+  activeLeafIndicesStorageProperty,
   heightmapStorageProperty,
   nodeStorageProperty,
   normalmapStorageProperty,
@@ -47,6 +48,8 @@ export class TerrainMesh extends InstancedMesh {
   private heightmapStorage: StorageBuffer;
   // @ts-ignore will be initialized
   private normalmapStorage: StorageBuffer;
+  // @ts-ignore will be initialized
+  private activeLeafIndicesStorage: StorageBuffer;
   // @ts-ignore will be initialized
   private heightmapComputeShader: ComputeToBufferMap;
   // @ts-ignore will be initialized
@@ -157,7 +160,18 @@ export class TerrainMesh extends InstancedMesh {
     this.heightmapStorage = heightmapStorage;
     this.normalmapStorage = normalmapStorage;
 
+    // Create storage buffer for active leaf indices (used for indirection in optimized compute)
+    const activeLeafIndicesStorage = new StorageBuffer(
+      "activeLeafIndicesStorage",
+      new Uint16Array(maxNodes),
+      1,
+      maxNodes
+    );
+    this.activeLeafIndicesStorage = activeLeafIndicesStorage;
+
     normalmapStorageProperty.value = normalmapStorage.storageBufferAttribute;
+    activeLeafIndicesStorageProperty.value =
+      activeLeafIndicesStorage.storageBufferAttribute;
 
     return { nodeStorage, heightmapStorage, normalmapStorage };
   }
@@ -191,6 +205,14 @@ export class TerrainMesh extends InstancedMesh {
       tileEdgeVertexCount,
       1,
       this.quadtree.getConfig().maxNodes,
+      this.heightmapStorage
+    );
+    // Create optimized binds for compute with indirection
+    heightShader.createBinds(
+      tileEdgeVertexCount,
+      1,
+      this.quadtree.getConfig().maxNodes,
+      this.activeLeafIndicesStorage,
       this.heightmapStorage
     );
     this.heightmapComputeShader = heightShader;
@@ -312,6 +334,14 @@ export class TerrainMesh extends InstancedMesh {
       this.quadtree.getConfig().maxNodes,
       this.normalmapStorage
     );
+    // Create optimized binds for compute with indirection
+    normalShader.createBinds(
+      tileEdgeVertexCount,
+      3,
+      this.quadtree.getConfig().maxNodes,
+      this.activeLeafIndicesStorage,
+      this.normalmapStorage
+    );
     this.normalmapComputeShader = normalShader;
 
     return heightShader;
@@ -398,10 +428,20 @@ export class TerrainMesh extends InstancedMesh {
 
   private async runNormalMapCompute(renderer: WebGPURenderer): Promise<void> {
     const beforeCompute = performance.now();
-    await this.normalmapComputeShader.renderBind(
+
+    // Get active leaf count for optimized compute dispatch
+    const activeLeafData = this.quadtree.getActiveLeafNodeIndices();
+    const activeLeafCount = activeLeafData.count;
+
+    // Update the active leaf indices buffer (already updated in runHeightmapCompute, but doing it again for safety)
+    this.activeLeafIndicesStorage.update(activeLeafData.indices);
+
+    await this.normalmapComputeShader.renderBindOptimized(
       renderer,
-      this.normalmapStorage
+      this.normalmapStorage,
+      activeLeafCount
     );
+
     const afterCompute = performance.now();
     this.setMetric("normalmapComputeTime", `${afterCompute - beforeCompute}ms`);
   }
@@ -448,10 +488,25 @@ export class TerrainMesh extends InstancedMesh {
   private async runHeightmapCompute(renderer: WebGPURenderer): Promise<void> {
     const beforeCompute = performance.now();
     this.refreshNodeStorageFromQuadtree();
-    await this.heightmapComputeShader.renderBind(
+
+    // Get active leaf data for optimized compute dispatch
+    const activeLeafData = this.quadtree.getActiveLeafNodeIndices();
+    const activeLeafCount = activeLeafData.count;
+
+    // Update the GPU-side active leaf indices so compute shader can use indirection
+    const nodeViewBuffers = this.quadtree.getNodeView().getBuffers();
+    this.nodeStorage.update(nodeViewBuffers.nodeBuffer);
+
+    // Update the active leaf indices buffer for GPU indirection
+    this.activeLeafIndicesStorage.update(activeLeafData.indices);
+
+    // Render compute using only active leaf nodes
+    await this.heightmapComputeShader.renderBindOptimized(
       renderer,
-      this.heightmapStorage
+      this.heightmapStorage,
+      activeLeafCount
     );
+
     const afterCompute = performance.now();
     this.setMetric("heightmapComputeTime", `${afterCompute - beforeCompute}ms`);
 
@@ -466,6 +521,7 @@ export class TerrainMesh extends InstancedMesh {
       this.quadtree.getLeafNodeCount().toString()
     );
     this.setMetric("nodeCount", this.quadtree.getNodeCount().toString());
+    this.setMetric("activeLeafCount", activeLeafCount.toString());
     this.setMetric("hasStateChanged", "true");
     this.needsRecompute = false;
   }
@@ -635,6 +691,12 @@ export class TerrainMesh extends InstancedMesh {
           // Compute heightmap first so the normal pass samples fresh height data
           this.runHeightmapCompute(currentRenderer);
           this.runNormalMapCompute(currentRenderer);
+
+          // Update instance count to only render active leaf nodes
+          const activeLeafData = this.quadtree.getActiveLeafNodeIndices();
+          this.count = activeLeafData.count;
+          // Update the active leaf indices buffer for vertex shader indirection
+          this.activeLeafIndicesStorage.update(activeLeafData.indices);
         } else {
           this.setMetric("hasStateChanged", "false");
         }
