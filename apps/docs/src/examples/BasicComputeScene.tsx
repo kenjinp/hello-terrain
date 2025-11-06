@@ -18,7 +18,7 @@ import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -48,8 +48,6 @@ const TerrainPlane = () => {
   const [helloTerrainMesh, setHelloTerrainMesh] = useState<TerrainMesh | null>(
     null
   );
-  const cameraHelperRef = useRef<THREE.CameraHelper | null>(null);
-  const newCameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const setMetric = useMetrics([
     "updatePosition",
     "heightmapComputeTime",
@@ -62,6 +60,7 @@ const TerrainPlane = () => {
     "normalmapComputeTime",
     "lastUpdateHeightComputeTime",
     "updateTime",
+    "activeLeafCount",
   ] as const);
 
   const terrainGeometryControls = useControls("TerrainGeometry", {
@@ -100,7 +99,7 @@ const TerrainPlane = () => {
     rootSize: {
       value: SEGMENT_COUNT * 100,
       min: 1,
-      max: 10000,
+      max: 1_024_000,
       step: 1,
       label: "Root Size",
     },
@@ -300,6 +299,10 @@ const TerrainPlane = () => {
       setMetric(
         "nodeCount",
         `${helloTerrainMesh.metrics.leafNodeCount} / ${helloTerrainMesh.metrics.nodeCount}`
+      );
+      setMetric(
+        "activeLeafCount",
+        (helloTerrainMesh.metrics.activeLeafCount ?? "").toString()
       );
       setMetric("hash", (helloTerrainMesh.metrics.hash ?? "").toString());
       setMetric(

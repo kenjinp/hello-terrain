@@ -15,7 +15,6 @@ import type { StorageBuffer } from "./StorageBuffer";
 // A buffer map is an array-like representation of a texture with a width and height times number of nodes
 export class ComputeToBufferMap {
   bufferToShader: Map<StorageBuffer, ShaderNodeObject<ComputeNode>>;
-  bufferToOptimizedShader: Map<StorageBuffer, ShaderNodeObject<ComputeNode>>;
   private computeInstanceCount?: number;
   private workgroupSize?: [number, number, number];
   dispatchSize?: [number, number, number];
@@ -35,10 +34,6 @@ export class ComputeToBufferMap {
     ) => void
   ) {
     this.bufferToShader = new Map<
-      StorageBuffer,
-      ShaderNodeObject<ComputeNode>
-    >();
-    this.bufferToOptimizedShader = new Map<
       StorageBuffer,
       ShaderNodeObject<ComputeNode>
     >();
@@ -109,7 +104,7 @@ export class ComputeToBufferMap {
     ...targets: StorageBuffer[]
   ) {
     for (const target of targets)
-      this.bufferToOptimizedShader.set(
+      this.bufferToShader.set(
         target,
         this.create(
           width,
@@ -149,7 +144,7 @@ export class ComputeToBufferMap {
     bindTarget: StorageBuffer,
     activeInstanceCount: number
   ) {
-    if (!this.bufferToOptimizedShader.has(bindTarget)) {
+    if (!this.bufferToShader.has(bindTarget)) {
       throw new Error(
         "You are trying to render to a ComputeToBufferMap that this shader doesn't have. Did you forget to call createOptimizedBinds?"
       );
@@ -170,7 +165,7 @@ export class ComputeToBufferMap {
 
     renderer.compute(
       // biome-ignore lint/style/noNonNullAssertion: Handled above
-      this.bufferToOptimizedShader.get(bindTarget)!,
+      this.bufferToShader.get(bindTarget)!,
       optimizedDispatchSize
     );
   }

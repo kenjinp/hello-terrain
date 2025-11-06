@@ -100,7 +100,7 @@ const TerrainPlane = () => {
     rootSize: {
       value: SEGMENT_COUNT * 100,
       min: 1,
-      max: 10000,
+      max: 1024_000,
       step: 1,
       label: "Root Size",
     },
@@ -417,7 +417,11 @@ const TerrainPlane = () => {
         args={[newCameraRef.current ?? new THREE.Camera()]}
         ref={cameraHelperRef}
       />
-      <perspectiveCamera ref={newCameraRef} />
+      <perspectiveCamera
+        ref={newCameraRef}
+        args={[undefined, undefined, 1, terrainGeometryControls.rootSize * 2]}
+      />
+      {/* <fog attach="fog" args={["#6dd1ed", 0, 1024 * 2]} /> */}
     </>
   );
 };
@@ -466,7 +470,6 @@ const FrustumCullingScene = () => {
       <color attach="background" args={["#6dd1ed"]} />
       <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
-      <fog attach="fog" args={["#6dd1ed", 0, 1024 * 2]} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
       <OrbitControls />
       <TerrainPlane />
