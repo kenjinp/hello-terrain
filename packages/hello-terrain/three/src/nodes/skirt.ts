@@ -7,7 +7,7 @@ import {
   vertexIndex,
 } from "three/tsl";
 import type { ConstNode, Vector2 } from "three/webgpu";
-import { uSegments } from "./uniforms";
+import type { TerrainUniforms } from "../TerrainUniforms";
 
 /**
  * Returns a node that is true for skirt vertices in the vertex stage.
@@ -19,20 +19,21 @@ import { uSegments } from "./uniforms";
  *
  * @returns A node resolving to a boolean indicating a skirt vertex.
  */
-export const isSkirtVertex = /*@__PURE__*/ Fn(() => {
-  const vIndex = int(vertexIndex);
-  const segments = uSegments.toVar();
-  const segmentEdges = int(segments.add(3));
-  const vx = vIndex.mod(segmentEdges);
-  const vy = vIndex.div(segmentEdges);
-  const last = segmentEdges.sub(int(1));
-  const isSkirtVertex = vx
-    .equal(int(0))
-    .or(vx.equal(last))
-    .or(vy.equal(int(0)))
-    .or(vy.equal(last));
-  return isSkirtVertex;
-});
+export const createIsSkirtVertex = (uniforms: TerrainUniforms) =>
+  Fn(() => {
+    const vIndex = int(vertexIndex);
+    const segments = uniforms.uSegments.toVar();
+    const segmentEdges = int(segments.add(3));
+    const vx = vIndex.mod(segmentEdges);
+    const vy = vIndex.div(segmentEdges);
+    const last = segmentEdges.sub(int(1));
+    const isSkirtVertex = vx
+      .equal(int(0))
+      .or(vx.equal(last))
+      .or(vy.equal(int(0)))
+      .or(vy.equal(last));
+    return isSkirtVertex;
+  });
 
 /**
  * Returns a node that is true for skirt fragments in the fragment stage.
@@ -44,25 +45,26 @@ export const isSkirtVertex = /*@__PURE__*/ Fn(() => {
  *
  * @returns A node resolving to a boolean indicating a skirt fragment.
  */
-export const isSkirtFragment = /*@__PURE__*/ Fn(() => {
-  const ux = uv().x;
-  const uy = uv().y;
-  const segments = uSegments.toVar();
-  const segmentCount = segments.add(2);
-  const segmentStep = float(1).div(segmentCount);
-  const innerX = ux
-    .greaterThan(segmentStep)
-    .and(ux.lessThan(segmentStep.oneMinus()));
-  const innerY = uy
-    .greaterThan(segmentStep)
-    .and(uy.lessThan(segmentStep.oneMinus()));
-  const isSkirtFragment = innerX.and(innerY).not();
-  return isSkirtFragment;
-}).setLayout({
-  name: "isSkirtFragment",
-  type: "bool",
-  inputs: [],
-});
+export const createIsSkirtFragment = (uniforms: TerrainUniforms) =>
+  Fn(() => {
+    const ux = uv().x;
+    const uy = uv().y;
+    const segments = uniforms.uSegments.toVar();
+    const segmentCount = segments.add(2);
+    const segmentStep = float(1).div(segmentCount);
+    const innerX = ux
+      .greaterThan(segmentStep)
+      .and(ux.lessThan(segmentStep.oneMinus()));
+    const innerY = uy
+      .greaterThan(segmentStep)
+      .and(uy.lessThan(segmentStep.oneMinus()));
+    const isSkirtFragment = innerX.and(innerY).not();
+    return isSkirtFragment;
+  }).setLayout({
+    name: "isSkirtFragment",
+    type: "bool",
+    inputs: [],
+  });
 
 /**
  * Returns a node that is true for skirt vertices in the compute shader.
@@ -74,11 +76,11 @@ export const isSkirtFragment = /*@__PURE__*/ Fn(() => {
  *
  * @returns A node resolving to a boolean indicating a skirt fragment.
  */
-export const isSkirtCompute = /*@__PURE__*/ Fn(
-  ([localUV]: [ShaderNodeObject<ConstNode<Vector2>>]) => {
+export const createIsSkirtCompute = (uniforms: TerrainUniforms) =>
+  Fn(([localUV]: [ShaderNodeObject<ConstNode<Vector2>>]) => {
     const ux = localUV.x;
     const uy = localUV.y;
-    const segments = uSegments.toVar();
+    const segments = uniforms.uSegments.toVar();
     const segmentCount = segments.add(2);
     const segmentStep = float(1).div(segmentCount);
     const innerX = ux
@@ -89,15 +91,14 @@ export const isSkirtCompute = /*@__PURE__*/ Fn(
       .and(uy.lessThan(segmentStep.oneMinus()));
     const isSkirtFragment = innerX.and(innerY).not();
     return isSkirtFragment;
-  }
-).setLayout({
-  name: "isSkirtFragment",
-  type: "bool",
-  inputs: [
-    {
-      name: "localUV",
-      type: "vec2",
-      qualifier: "in",
-    },
-  ],
-});
+  }).setLayout({
+    name: "isSkirtFragment",
+    type: "bool",
+    inputs: [
+      {
+        name: "localUV",
+        type: "vec2",
+        qualifier: "in",
+      },
+    ],
+  });

@@ -5,24 +5,32 @@ export {
   type ElevationParams,
   type ElevationReturn,
 } from "./nodes/ElevationFn";
-export { isSkirtFragment, isSkirtVertex } from "./nodes/skirt";
+
+// Export instance-specific uniform and varying classes
+export { TerrainUniforms } from "./TerrainUniforms";
+export { TerrainVaryings } from "./TerrainVaryings";
+
+// Export factory functions for creating instance-specific nodes
 export {
-  rootUV,
-  tileIsLeaf,
-  tileLevel,
-  tileOriginVec2,
-  tileVertexWorldPosition,
-  tileGeometryPosition,
+  createIsSkirtFragment,
+  createIsSkirtVertex,
+  createIsSkirtCompute,
+} from "./nodes/skirt";
+export {
+  createRootUV,
+  createRootUVCompute,
+  createTileIsLeaf,
+  createTileLevel,
+  createTileOriginVec2,
+  createTileVertexWorldPosition,
+  createTileGeometryPosition,
+  createTileVertexWorldPositionCompute,
+  createTileSize,
 } from "./nodes/tile";
-export {
-  uRootOrigin,
-  uRootSize,
-  uSegments,
-  uSkirtHeight,
-} from "./nodes/uniforms";
+export { createHeight, readHeightVertex, readHeightAtPositionLocal } from "./nodes/height";
+export { createWorldPosition } from "./nodes/position";
+export { createReadNormalAtPositionLocal, blendNormalsRNM } from "./nodes/normals";
+
+// Export quadtree and terrain mesh
 export { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 export { TerrainMesh, type TerrainMeshParams } from "./TerrainMesh";
-export { readHeightVertex, readHeightAtPositionLocal } from "./nodes/height";
-export { worldPosition } from "./nodes/position";
-export { readNormalAtPositionLocal, blendNormalsRNM } from "./nodes/normals";
-export { vNormal } from "./nodes/varyings";

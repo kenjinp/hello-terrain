@@ -1,31 +1,20 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { vec2_fbm } from "@/components/Terrain/fmb";
 import { voronoiCells } from "@/components/Terrain/lib/TSLNodes/Voronoi";
 import * as hello from "@hello-terrain/react";
-import {
-  ElevationFn,
-  type TerrainMesh,
-  uRootOrigin,
-  uRootSize,
-  uSegments,
-  uSkirtHeight,
-  vNormal,
-  worldPosition,
-} from "@hello-terrain/three";
+import { ElevationFn, type TerrainMesh } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
   float,
   hash,
   instanceIndex,
-  int,
   transformNormalToView,
   uniform,
   varying,
@@ -201,11 +190,6 @@ const TerrainPlane = () => {
     };
   }, []);
 
-  useEffect(() => {
-    uRootOrigin.value = new THREE.Vector3(0, 0, 0);
-    uRootSize.value = terrainGeometryControls.rootSize;
-  }, [terrainGeometryControls.rootSize]);
-
   const colorNode = useMemo(() => {
     if (!helloTerrainMesh) {
       return Fn(() => {
@@ -227,7 +211,7 @@ const TerrainPlane = () => {
       // return height.toColor();
       // return vec3(124, 252, 0).div(255).toColor();
 
-      return vNormal.toColor();
+      return helloTerrainMesh.varyings.vNormal.toColor();
     })();
   }, [
     helloTerrainMesh,
@@ -238,20 +222,8 @@ const TerrainPlane = () => {
   useFrame(async () => {
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
-    uSegments.value = terrainGeometryControls.segments;
-    uSkirtHeight.value = terrainGeometryControls.skirtLength;
-    uRootSize.value = terrainGeometryControls.rootSize;
+
     // Elevation uniforms updated from controls each frame
-    elevationUniforms.uFbmIterations.value =
-      terrainGeometryControls.fbmIterations;
-    elevationUniforms.uFbmAmplitude.value =
-      terrainGeometryControls.fbmAmplitude;
-    elevationUniforms.uFbmFrequency.value =
-      terrainGeometryControls.fbmFrequency;
-    elevationUniforms.uFbmLacunarity.value =
-      terrainGeometryControls.fbmLacunarity;
-    elevationUniforms.uFbmPersistence.value =
-      terrainGeometryControls.fbmPersistence;
     elevationUniforms.uFbmIterations.value =
       terrainGeometryControls.fbmIterations;
     elevationUniforms.uFbmAmplitude.value =
@@ -265,7 +237,18 @@ const TerrainPlane = () => {
     elevationUniforms.uHeightmapScale.value =
       terrainGeometryControls.heightmapScale;
     elevationUniforms.uNoiseScale.value = terrainGeometryControls.fbmNoiseScale;
+
     if (helloTerrainMesh) {
+      // Update instance-specific uniforms
+      helloTerrainMesh.uniforms.uSegments.value =
+        terrainGeometryControls.segments;
+      helloTerrainMesh.uniforms.setSkirtHeight(
+        terrainGeometryControls.skirtLength
+      );
+      helloTerrainMesh.uniforms.setHeightmapScale(
+        terrainGeometryControls.heightmapScale
+      );
+
       // Keep quadtree config in sync with UI controls so subdivision matches rootSize changes
       const qConfig = helloTerrainMesh.quadtree.getConfig();
       qConfig.rootSize = terrainGeometryControls.rootSize;
@@ -355,21 +338,12 @@ const TerrainPlane = () => {
       // Bug: when this is changed, the terrain is no longer rendered properly
       // that's an issue with the elevationFn set method on the class
       const noiseScale = elevationUniforms.uNoiseScale;
-      const fbm = vec2_fbm(
-        vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
-        int(elevationUniforms.uFbmIterations.toVar()),
-        elevationUniforms.uFbmAmplitude.toVar(),
-        elevationUniforms.uFbmFrequency.toVar(),
-        elevationUniforms.uFbmLacunarity.toVar(),
-        elevationUniforms.uFbmPersistence.toVar()
-      );
-      const scale = elevationUniforms.uHeightmapScale;
       const noise = voronoiCells({
         scale: float(1),
         facet: 0,
         seed: 0,
         uv: vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
-      }).mul(scale);
+      }).mul(elevationUniforms.uHeightmapScale);
 
       return noise;
       // return max(worldPosition.x, worldPosition.z).mul(
@@ -378,9 +352,23 @@ const TerrainPlane = () => {
     });
   }, [elevationUniforms]);
 
+  const positionNode = useMemo(() => {
+    if (!helloTerrainMesh) {
+      return Fn(() => {
+        return vec3(0, 0, 0);
+      })();
+    }
+    return helloTerrainMesh.positionNode();
+  }, [helloTerrainMesh]);
+
   const normalNode = useMemo(() => {
-    return transformNormalToView(vNormal);
-  }, []);
+    if (!helloTerrainMesh) {
+      return Fn(() => {
+        return vec3(0, 1, 0);
+      })();
+    }
+    return transformNormalToView(helloTerrainMesh.varyings.vNormal);
+  }, [helloTerrainMesh]);
 
   return (
     <>
@@ -406,7 +394,7 @@ const TerrainPlane = () => {
           <meshStandardNodeMaterial
             name="TerrainMeshMaterial"
             wireframe={terrainGeometryControls.wireframe}
-            positionNode={worldPosition()}
+            positionNode={positionNode}
             colorNode={colorNode}
             normalNode={normalNode}
           />
