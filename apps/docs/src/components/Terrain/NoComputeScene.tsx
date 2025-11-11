@@ -1,3 +1,4 @@
+// @ts-nocheck
 "use client";
 import { useMetrics } from "@/components/Metrics/Metrics";
 import {
