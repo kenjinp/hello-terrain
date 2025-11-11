@@ -9,14 +9,14 @@ import {
   type Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
-import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
+import { TerrainUniforms } from "./TerrainUniforms";
+import { TerrainVaryings } from "./TerrainVaryings";
 import { ComputeToBufferMap } from "./compute/ComputeToBufferMap";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
-import { TerrainUniforms } from "./TerrainUniforms";
-import { TerrainVaryings } from "./TerrainVaryings";
 import { ElevationFn, type ElevationReturn } from "./nodes/ElevationFn";
 import { createHeight } from "./nodes/height";
+import { createWorldPosition } from "./nodes/position";
 import {
   activeLeafIndicesStorageProperty,
   heightmapStorageProperty,
@@ -24,7 +24,7 @@ import {
   normalmapStorageProperty,
 } from "./nodes/properties";
 import { createTileIsLeaf, createTileLevel } from "./nodes/tile";
-import { createWorldPosition } from "./nodes/position";
+import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
   innerTileSegments: number;
@@ -757,6 +757,7 @@ export class TerrainMesh extends InstancedMesh {
           this.setMetric("hasStateChanged", "false");
         }
 
+        // This is slow
         // // After compute (or if not needed), sample height at the current position
         // const localUV = this.worldToLocalUV(
         //   closestLeafIndex,

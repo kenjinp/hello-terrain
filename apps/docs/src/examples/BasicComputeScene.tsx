@@ -111,7 +111,7 @@ const TerrainPlane = () => {
       label: "Use Texture",
     },
     heightmapScale: {
-      value: SEGMENT_COUNT,
+      value: 1,
       min: 0.0,
       max: 1000.0,
       step: 0.1,
