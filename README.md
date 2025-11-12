@@ -1,6 +1,6 @@
 # Hello Terrain
 
-A modern 3D terrain generation library with comprehensive documentation and interactive examples.
+High performance terrain system for [three.js](https://threejs.org/) and [react-three/fiber](https://r3f.docs.pmnd.rs/getting-started/introduction)
 
 ## `@hello-terrain/three`
 
