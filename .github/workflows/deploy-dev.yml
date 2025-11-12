@@ -68,7 +68,7 @@ jobs:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
         with:
           command: up
-          stack-name: hello-terrain-infrastructure/dev
+          stack-name: hello-terrain/dev
           work-dir: infrastructure
           config-map: |
             aws:region=us-east-1
