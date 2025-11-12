@@ -68,12 +68,12 @@ jobs:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
         with:
           command: up
-          stack-name: hello-terrain-infrastructure/prod
+          stack-name: hello-terrain-infrastructure/dev
           work-dir: infrastructure
           config-map: |
             aws:region=us-east-1
             domain=${{ secrets.DOMAIN || 'hello-terrain.kenny.wtf' }}
-            environment=prod
+            environment=dev
             route53:domainName=${{ secrets.DOMAIN_NAME || 'hello-terrain.kenny.wtf' }}
 
       - name: Deploy status
