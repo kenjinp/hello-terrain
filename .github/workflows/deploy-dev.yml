@@ -72,6 +72,9 @@ jobs:
           # Install infrastructure dependencies
           pnpm install --frozen-lockfile
 
+          # Select Pulumi stack
+          pulumi stack select hello-terrain-infrastructure/dev
+
           # Set Pulumi configuration for dev
           pulumi config set aws:region $PULUMI_AWS_REGION
           pulumi config set domain $DOMAIN
@@ -79,7 +82,7 @@ jobs:
           pulumi config set route53:domainName $DOMAIN_NAME
 
           # Deploy infrastructure and assets
-          pulumi up --yes --stack hello-terrain-infrastructure/dev
+          pulumi up --yes
 
       - name: Deploy status (dev)
         run: |
