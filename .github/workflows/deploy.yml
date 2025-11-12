@@ -80,7 +80,7 @@ jobs:
           pulumi config set route53:domainName $DOMAIN_NAME
 
           # Deploy infrastructure and assets
-          pulumi up --yes
+          pulumi up --yes --stack hello-terrain/dev
 
       - name: Deploy status
         run: |

@@ -42,7 +42,7 @@ fi
 echo "📚 Building docs..."
 # cd apps/docs
 pnpm build
-cd ../..
+cd ../
 
 # Deploy infrastructure
 echo "🏗️  Deploying infrastructure..."
