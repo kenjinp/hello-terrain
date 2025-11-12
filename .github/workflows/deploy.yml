@@ -6,13 +6,13 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: '20'
-  PNPM_VERSION: '9.5.0'
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.5.0"
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -43,14 +43,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        run: pnpm -r --filter './packages/**' build
+
       - name: Build docs
         run: |
           cd apps/docs
-          pnpm build
-
-      - name: Build examples
-        run: |
-          cd apps/examples
           pnpm build
 
       - name: Setup Pulumi
@@ -74,13 +72,13 @@ jobs:
         run: |
           # Install infrastructure dependencies
           pnpm install --frozen-lockfile
-          
+
           # Set Pulumi configuration
           pulumi config set aws:region $PULUMI_AWS_REGION
           pulumi config set domain $DOMAIN
           pulumi config set environment $ENVIRONMENT
           pulumi config set route53:domainName $DOMAIN_NAME
-          
+
           # Deploy infrastructure and assets
           pulumi up --yes
 

@@ -2,17 +2,7 @@
 
 import { useMetrics } from "@/components/Metrics/Metrics";
 import * as hello from "@hello-terrain/react";
-import {
-  type TerrainMesh,
-  isSkirtVertex,
-  rootUV,
-  tileIsLeaf,
-  tileVertexWorldPosition,
-  uRootOrigin,
-  uRootSize,
-  uSegments,
-  uSkirtHeight,
-} from "@hello-terrain/three";
+import { type TerrainMesh, createRootUV } from "@hello-terrain/three";
 import {
   Environment,
   Html,
@@ -25,7 +15,6 @@ import { useEffect, useMemo, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
-  float,
   hash,
   instanceIndex,
   select,
@@ -39,7 +28,7 @@ import * as THREE from "three/webgpu";
 extend(THREE as any);
 
 const TerrainPlane = () => {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const [helloTerrainMesh, setHelloTerrainMesh] = useState<TerrainMesh | null>(
     null
   );
@@ -122,35 +111,15 @@ const TerrainPlane = () => {
     };
   }, []);
 
-  useEffect(() => {
-    uRootOrigin.value = new THREE.Vector3(0, 0, 0);
-    uRootSize.value = terrainGeometryControls.rootSize;
-  }, [terrainGeometryControls.rootSize]);
-
-  // Memoized nodes
+  // Memoized position node from terrain mesh
   const positionNode = useMemo(() => {
     if (!helloTerrainMesh) {
       return Fn(() => {
         return vec3(0, 0, 0);
       })();
     }
-    return Fn(() => {
-      const nodeStorage = helloTerrainMesh.nodeStorage.storageNode;
-      const worldPosition = tileVertexWorldPosition(nodeStorage);
-      const isLeaf = tileIsLeaf(nodeStorage);
-      const skirtLength = uSkirtHeight.toVar();
-
-      const beforeTransform = select(
-        isSkirtVertex,
-        vec3(
-          worldPosition.x,
-          worldPosition.y.sub(float(skirtLength)),
-          worldPosition.z
-        ),
-        worldPosition
-      );
-      return select(isLeaf, beforeTransform, vec3(0, 0, 0));
-    })();
+    // Use the instance-specific position node from the terrain mesh
+    return helloTerrainMesh.positionNode();
   }, [helloTerrainMesh]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the uniform will be updated by the useFrame hook
@@ -160,8 +129,11 @@ const TerrainPlane = () => {
         return vec3(0, 0, 0);
       })();
     }
+    // Create instance-specific rootUV using terrain's uniforms
+    // Uses Three.js built-in positionWorld which is computed from the position returned by positionNode
+    const rootUV = createRootUV(helloTerrainMesh.uniforms);
     return Fn(() => {
-      const worldUv = rootUV;
+      const worldUv = rootUV();
       const textureColor = texture(uvMap, worldUv);
       const indexHashColor = vec3(
         hash(instanceIndex),
@@ -175,22 +147,39 @@ const TerrainPlane = () => {
         select(uniforms.uUseTexture, textureColor, indexHashColor)
       );
     })();
-  }, [helloTerrainMesh]);
+  }, [helloTerrainMesh, uvMap]);
 
   useFrame(() => {
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
-    uSegments.value = terrainGeometryControls.segments;
-    uSkirtHeight.value = terrainGeometryControls.skirtLength;
-    uRootSize.value = terrainGeometryControls.rootSize;
+
     if (helloTerrainMesh) {
+      // Update instance-specific uniforms
+      helloTerrainMesh.uniforms.uSegments.value =
+        terrainGeometryControls.segments;
+      helloTerrainMesh.uniforms.setSkirtHeight(
+        terrainGeometryControls.skirtLength
+      );
+
       // Keep quadtree config in sync with UI controls so subdivision matches rootSize changes
       const qConfig = helloTerrainMesh.quadtree.getConfig();
       qConfig.rootSize = terrainGeometryControls.rootSize;
       qConfig.minNodeSize = terrainGeometryControls.minNodeSize;
       qConfig.subdivisionFactor = terrainGeometryControls.subdivisionFactor;
       qConfig.maxLevel = terrainGeometryControls.maxLevel;
-      helloTerrainMesh.update(camera.position);
+      const frustum = new THREE.Frustum();
+
+      const projScreenMatrix = new THREE.Matrix4();
+      projScreenMatrix.multiplyMatrices(
+        camera.projectionMatrix,
+        camera.matrixWorldInverse
+      );
+      frustum.setFromProjectionMatrix(projScreenMatrix);
+      helloTerrainMesh.update(
+        gl as unknown as THREE.WebGPURenderer,
+        camera.position,
+        frustum
+      );
       setMetric(
         "updatePosition",
         helloTerrainMesh.metrics.updatePosition.toString()

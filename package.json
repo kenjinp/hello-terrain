@@ -14,10 +14,12 @@
     "check": "biome check .",
     "check:fix": "biome check --apply .",
     "type-check": "pnpm -r type-check",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.8.3",
+    "husky": "^9.1.7",
     "typescript": "^5.5.4"
   },
   "packageManager": "pnpm@9.5.0"

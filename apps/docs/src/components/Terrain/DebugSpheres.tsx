@@ -1,8 +1,8 @@
-import { useFrame, useThree } from '@react-three/fiber';
-import type { FC } from 'react';
-import { useCallback, useEffect, useRef } from 'react';
-import * as THREE from 'three/webgpu';
-import type { Quadtree } from './lib/HelloTerrain/Quadtree';
+import type { Quadtree } from "@hello-terrain/three";
+import { useFrame, useThree } from "@react-three/fiber";
+import type { FC } from "react";
+import { useCallback, useEffect, useRef } from "react";
+import * as THREE from "three/webgpu";
 
 export const DebugSpheres: FC<{
   quadtree?: Quadtree;
@@ -53,7 +53,7 @@ export const DebugSpheres: FC<{
         debugSpheresRef.current.push(sphere);
       }
     },
-    [scene],
+    [scene]
   );
 
   useFrame(() => {

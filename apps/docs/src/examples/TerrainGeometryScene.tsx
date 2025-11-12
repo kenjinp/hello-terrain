@@ -1,11 +1,10 @@
 "use client";
 
 import * as hello from "@hello-terrain/react";
+import { TerrainUniforms } from "@hello-terrain/three";
 import {
-  isSkirtFragment,
-  isSkirtVertex,
-  uSegments,
-  uSkirtHeight,
+  createIsSkirtFragment,
+  createIsSkirtVertex,
 } from "@hello-terrain/three";
 import {
   Environment,
@@ -15,7 +14,7 @@ import {
 } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -66,6 +65,15 @@ const TerrainPlane = () => {
 
   const uvMap = useTexture("/assets/uv-12x12.png");
 
+  // Create instance-specific terrain uniforms
+  const [terrainUniforms] = useState(() =>
+    new TerrainUniforms({
+      rootSize: 1,
+      innerTileSegments: terrainGeometryControls.segments,
+      skirtHeight: terrainGeometryControls.skirtLength,
+    })
+  );
+
   // Memoized varyings
   const uniforms = useMemo(() => {
     return {
@@ -74,10 +82,20 @@ const TerrainPlane = () => {
     };
   }, []);
 
+  // Create instance-specific skirt detection functions
+  const isSkirtVertex = useMemo(
+    () => createIsSkirtVertex(terrainUniforms),
+    [terrainUniforms]
+  );
+  const isSkirtFragment = useMemo(
+    () => createIsSkirtFragment(terrainUniforms),
+    [terrainUniforms]
+  );
+
   // Memoized nodes
   const positionNode = useMemo(() => {
     return Fn(() => {
-      const skirtLength = uSkirtHeight.toVar();
+      const skirtLength = terrainUniforms.uSkirtHeight.toVar();
 
       const wp = positionLocal;
       const beforeTransform = select(
@@ -87,7 +105,7 @@ const TerrainPlane = () => {
       );
       return beforeTransform;
     })();
-  }, []);
+  }, [terrainUniforms, isSkirtVertex]);
 
   const positionNodePlane = useMemo(() => {
     return Fn(() => {
@@ -116,13 +134,13 @@ const TerrainPlane = () => {
         vec3(
           afterScale.x,
           afterScale.y,
-          afterScale.z.sub(uSkirtHeight.toVar())
+          afterScale.z.sub(terrainUniforms.uSkirtHeight.toVar())
         ),
         afterScale
       );
       return beforeTransform;
     })();
-  }, [terrainGeometryControls.segments]);
+  }, [terrainGeometryControls.segments, terrainUniforms]);
 
   const colorNode = useMemo(() => {
     return Fn(() => {
@@ -133,11 +151,11 @@ const TerrainPlane = () => {
       );
       return select(uniforms.uWireframe, vec3(1, 0, 0), color);
     })();
-  }, [uvMap, uniforms]);
+  }, [uvMap, uniforms, isSkirtFragment]);
 
   useFrame(() => {
-    uSegments.value = terrainGeometryControls.segments;
-    uSkirtHeight.value = terrainGeometryControls.skirtLength;
+    terrainUniforms.uSegments.value = terrainGeometryControls.segments;
+    terrainUniforms.uSkirtHeight.value = terrainGeometryControls.skirtLength;
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uPaintSkirts.value = terrainGeometryControls.paintSkirts;
   });

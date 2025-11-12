@@ -11,62 +11,73 @@ import {
 
 import { Fn } from "three/tsl";
 import type { Node } from "three/webgpu";
+import type { TerrainUniforms } from "../TerrainUniforms";
 import { ElevationFn, type ElevationReturn } from "./ElevationFn";
 import { nodeStorageProperty } from "./properties";
 import {
-  rootUVCompute,
-  tileIsLeaf,
-  tileLevel,
-  tileOriginVec2,
-  tileSize,
-  tileVertexWorldPositionCompute,
+  createRootUVCompute,
+  createTileIsLeaf,
+  createTileLevel,
+  createTileOriginVec2,
+  createTileSize,
+  createTileVertexWorldPositionCompute,
 } from "./tile";
-import { uRootSize } from "./uniforms";
 
-export const height = (
-  nodeIndex: ShaderNodeObject<Node>,
-  localUV: ShaderNodeObject<Node>,
-  _texelSize: ShaderNodeObject<Node>,
+export const createHeight = (
+  uniforms: TerrainUniforms,
   elevationFn: ElevationReturn = ElevationFn(() => float(0))
-) =>
-  Fn(() => {
-    const isActive = nodeStorageProperty
-      .element(nodeIndex.mul(4).add(3))
-      .equal(int(1));
-    const isLeaf = tileIsLeaf(nodeIndex);
-    const resolveElevation = Fn(() => {
-      const rootUV = rootUVCompute(nodeIndex, localUV);
+) => {
+  const tileIsLeaf = createTileIsLeaf();
+  const rootUVCompute = createRootUVCompute(uniforms);
+  const tileVertexWorldPositionCompute = createTileVertexWorldPositionCompute(uniforms);
+  const tileOriginVec2 = createTileOriginVec2();
+  const tileSize = createTileSize(uniforms);
+  const tileLevel = createTileLevel();
 
-      const worldPosition = tileVertexWorldPositionCompute(
-        nodeIndex,
-        localUV
-      ).setName("worldPositionWithSkirt");
+  return (
+    nodeIndex: ShaderNodeObject<Node>,
+    localUV: ShaderNodeObject<Node>,
+    _texelSize: ShaderNodeObject<Node>
+  ) =>
+    Fn(() => {
+      const isActive = nodeStorageProperty
+        .element(nodeIndex.mul(4).add(3))
+        .equal(int(1));
+      const isLeaf = tileIsLeaf(nodeIndex);
+      const resolveElevation = Fn(() => {
+        const rootUV = rootUVCompute(nodeIndex, localUV);
 
-      const rootSize = uRootSize.toVar();
-      return elevationFn({
-        worldPosition,
-        rootSize,
-        rootUV,
-        tileOriginVec2: tileOriginVec2(nodeIndex),
-        tileSize: tileSize(nodeIndex),
-        tileLevel: tileLevel(nodeIndex),
-        nodeIndex: int(nodeIndex),
-        tileUV: localUV,
+        const worldPosition = tileVertexWorldPositionCompute(
+          nodeIndex,
+          localUV
+        ).setName("worldPositionWithSkirt");
+
+        const rootSize = uniforms.uRootSize.toVar();
+        return elevationFn({
+          worldPosition,
+          rootSize,
+          rootUV,
+          tileOriginVec2: tileOriginVec2(nodeIndex),
+          tileSize: tileSize(nodeIndex),
+          tileLevel: tileLevel(nodeIndex),
+          nodeIndex: int(nodeIndex),
+          tileUV: localUV,
+        });
       });
-    });
 
-    return select(isActive.and(isLeaf), resolveElevation(), float(0));
-  })();
+      return select(isActive.and(isLeaf), resolveElevation(), float(0));
+    })();
+};
 
 export const readHeightVertex = (
   heightmapStorage: ShaderNodeObject<Node>,
-  edgeVertextCount: number
+  edgeVertexCount: number
 ) =>
   Fn(() => {
     const nodeIndex = int(instanceIndex);
-    const intEdgeVertextCount = int(edgeVertextCount);
+    const intEdgeVertexCount = int(edgeVertexCount);
 
-    const verticesPerNode = intEdgeVertextCount.mul(intEdgeVertextCount);
+    const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
     const globalVertexIndex = nodeIndex
       .mul(verticesPerNode)
       .add(int(vertexIndex));
@@ -77,12 +88,12 @@ export const readHeightVertex = (
 // Read height by deriving the per-node vertex index from positionLocal.xz
 export const readHeightAtPositionLocal = (
   heightmapStorage: ShaderNodeObject<Node>,
-  edgeVertextCount: number,
+  edgeVertexCount: number,
   positionLocal: ShaderNodeObject<Node>
 ) =>
   Fn(() => {
     const nodeIndex = int(instanceIndex);
-    const intEdge = int(edgeVertextCount);
+    const intEdge = int(edgeVertexCount);
     const edgeF = intEdge.toFloat();
     const last = intEdge.sub(int(1));
 

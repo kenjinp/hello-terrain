@@ -9,19 +9,21 @@ import {
   type Vector3,
   type WebGPURenderer,
 } from "three/webgpu";
+import { TerrainUniforms } from "./TerrainUniforms";
+import { TerrainVaryings } from "./TerrainVaryings";
 import { ComputeToBufferMap } from "./compute/ComputeToBufferMap";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
 import { ElevationFn, type ElevationReturn } from "./nodes/ElevationFn";
-import { height } from "./nodes/height";
+import { createHeight } from "./nodes/height";
+import { createWorldPosition } from "./nodes/position";
 import {
   activeLeafIndicesStorageProperty,
   heightmapStorageProperty,
   nodeStorageProperty,
   normalmapStorageProperty,
 } from "./nodes/properties";
-import { tileIsLeaf, tileLevel } from "./nodes/tile";
-import { uRootOrigin, uRootSize, uSegments } from "./nodes/uniforms";
+import { createTileIsLeaf, createTileLevel } from "./nodes/tile";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
@@ -36,6 +38,9 @@ export class TerrainMesh extends InstancedMesh {
   metrics: Record<string, string | number | boolean>;
   lastUpdateHeight: number | null = null;
   private needsRecompute = false;
+  // Instance-specific uniforms and varyings
+  public readonly uniforms: TerrainUniforms;
+  public readonly varyings: TerrainVaryings;
   // Debounce/update control
   private isUpdateInFlight = false;
   private hasPendingUpdate = false;
@@ -72,6 +77,9 @@ export class TerrainMesh extends InstancedMesh {
   private lastUpdateHeightView: Float32Array | null = null;
   // @ts-ignore
   private lastUpdateHeightDataView: DataView | null = null;
+  // CPU-side heightmap cache for fast terrain height lookups (previous frame data)
+  private cpuHeightmapCache: Float32Array | null = null;
+  private lastKnownCameraHeight = 0;
   public readonly params: TerrainMeshParams;
   constructor(params: Partial<TerrainMeshParams> = {}) {
     const defaults = {
@@ -97,6 +105,14 @@ export class TerrainMesh extends InstancedMesh {
       ...quadtreeParams,
       origin: this.position.clone(),
     });
+
+    // Initialize instance-specific uniforms and varyings
+    this.uniforms = new TerrainUniforms({
+      rootSize: merged.rootSize,
+      innerTileSegments: merged.innerTileSegments,
+      instanceId: this.uuid,
+    });
+    this.varyings = new TerrainVaryings(this.uuid);
 
     this.lastHash = 0;
     this.metrics = {
@@ -180,10 +196,16 @@ export class TerrainMesh extends InstancedMesh {
     // Ensure uniforms reflect current params before building compute nodes
     this.applyUniforms();
     // Create local compute uniform for root size (decoupled from shared global uniforms)
+    // Sanitize UUID for WGSL compliance (replace hyphens with underscores)
+    const sanitizedUuid = this.uuid.replace(/-/g, "_");
     this.uComputeRootSize = uniform(this.params.rootSize).setName(
-      "uComputeRootSize"
+      `uComputeRootSize_${sanitizedUuid}`
     );
     const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
+    const heightFn = createHeight(
+      this.uniforms,
+      this.params.elevationFn ?? ElevationFn(() => float(0))
+    );
     const heightShader = new ComputeToBufferMap(
       (
         nodeIndex,
@@ -192,12 +214,7 @@ export class TerrainMesh extends InstancedMesh {
         _localCoordinates,
         _texelSize
       ) => {
-        const h = height(
-          nodeIndex,
-          localUV,
-          _texelSize,
-          this.params.elevationFn ?? ElevationFn(() => float(0))
-        );
+        const h = heightFn(nodeIndex, localUV, _texelSize);
         this.heightmapStorage.storageNode.element(globalVertexIndex).assign(h);
       }
     );
@@ -218,6 +235,9 @@ export class TerrainMesh extends InstancedMesh {
     this.heightmapComputeShader = heightShader;
 
     // Normalmap compute shader (finite differences on heightmap)
+    const tileIsLeaf = createTileIsLeaf();
+    const tileLevel = createTileLevel();
+
     const normalShader = new ComputeToBufferMap(
       (
         nodeIndex,
@@ -447,9 +467,11 @@ export class TerrainMesh extends InstancedMesh {
   }
 
   private applyUniforms(): void {
-    uRootOrigin.value = this.position;
-    uRootSize.value = this.params.rootSize;
-    uSegments.value = this.params.innerTileSegments;
+    this.uniforms.update(
+      this.position,
+      this.params.rootSize,
+      this.params.innerTileSegments
+    );
     // Keep compute-local uniform in sync if initialized
     if (this.uComputeRootSize) {
       this.uComputeRootSize.value = this.params.rootSize;
@@ -506,6 +528,15 @@ export class TerrainMesh extends InstancedMesh {
       this.heightmapStorage,
       activeLeafCount
     );
+
+    // Copy heightmap to CPU cache for fast terrain-aware subdivision next frame
+    // This is a direct typed array copy - very fast (<0.01ms for typical sizes)
+    const heightmapArray = this.heightmapStorage.storageBufferAttribute
+      .array as Float32Array;
+    if (!this.cpuHeightmapCache) {
+      this.cpuHeightmapCache = new Float32Array(heightmapArray.length);
+    }
+    this.cpuHeightmapCache.set(heightmapArray);
 
     const afterCompute = performance.now();
     this.setMetric("heightmapComputeTime", `${afterCompute - beforeCompute}ms`);
@@ -674,13 +705,38 @@ export class TerrainMesh extends InstancedMesh {
 
         // Update uniforms and quadtree using the latest position
         this.applyUniforms();
-        this.setMetric(
-          "updatePosition",
-          `${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)}, ${currentPosition.z.toFixed(2)}`
-        );
-        const closestLeafIndex = this.quadtree.update(
+
+        // TERRAIN-AWARE SUBDIVISION:
+        // Do initial quadtree update to get closest leaf node using current position
+        let closestLeafIndex = this.quadtree.update(
           currentPosition,
           currentFrustum ?? undefined
+        );
+
+        // Look up terrain height at this position using cached data from previous frame
+        // This is extremely fast (<0.1ms) and allows quadtree to subdivide relative to terrain surface
+        const terrainHeight = this.getTerrainHeightAt(
+          currentPosition as unknown as ThreeVector3,
+          closestLeafIndex
+        );
+
+        // Create adjusted position with terrain height instead of raw camera Y
+        // This ensures quadtree subdivides based on distance to terrain surface, not origin
+        const adjustedPosition = new ThreeVector3(
+          currentPosition.x,
+          terrainHeight,
+          currentPosition.z
+        );
+
+        // Do final quadtree update with terrain-adjusted position
+        closestLeafIndex = this.quadtree.update(
+          adjustedPosition as unknown as Vector3,
+          currentFrustum ?? undefined
+        );
+
+        this.setMetric(
+          "updatePosition",
+          `${currentPosition.x.toFixed(2)}, ${terrainHeight.toFixed(2)}, ${currentPosition.z.toFixed(2)}`
         );
         this.setMetric("closestLeafIndex", closestLeafIndex);
 
@@ -701,6 +757,7 @@ export class TerrainMesh extends InstancedMesh {
           this.setMetric("hasStateChanged", "false");
         }
 
+        // This is slow
         // // After compute (or if not needed), sample height at the current position
         // const localUV = this.worldToLocalUV(
         //   closestLeafIndex,
@@ -762,6 +819,22 @@ export class TerrainMesh extends InstancedMesh {
 
   get tileNode() {
     return this.nodeStorage.storageNode;
+  }
+
+  /**
+   * Get the position node for this terrain mesh.
+   * Use this in your material's positionNode to apply terrain vertex transformations.
+   *
+   * @example
+   * ```ts
+   * const terrain = new TerrainMesh({ ... });
+   * const material = new MeshStandardNodeMaterial();
+   * material.positionNode = terrain.positionNode;
+   * terrain.setMaterial(material);
+   * ```
+   */
+  get positionNode() {
+    return createWorldPosition(this.uniforms, this.varyings);
   }
 
   setMetric(key: string, value: string | number | boolean) {
@@ -955,6 +1028,61 @@ export class TerrainMesh extends InstancedMesh {
       (1 - tx) * ty * h01 +
       tx * ty * h11
     );
+  }
+
+  /**
+   * Fast terrain height lookup at world position using cached heightmap from previous frame.
+   * This has ~1 frame latency but is extremely fast (<0.1ms) for use in quadtree subdivision.
+   * Falls back to lastKnownCameraHeight if cache isn't available yet.
+   *
+   * @param worldPos World XZ position to sample
+   * @param closestLeafIndex Index of closest leaf node (from quadtree.update)
+   * @returns Terrain height at the given position, or last known height if cache unavailable
+   */
+  private getTerrainHeightAt(
+    worldPos: ThreeVector3,
+    closestLeafIndex: number
+  ): number {
+    // If no cache yet or invalid leaf index, return last known height (first frame uses 0)
+    if (!this.cpuHeightmapCache || closestLeafIndex === -1) {
+      return this.lastKnownCameraHeight;
+    }
+
+    // Convert world position to local UV within the closest node
+    const localUV = this.worldToLocalUV(closestLeafIndex, worldPos);
+
+    // Sample from CPU cache using bilinear interpolation
+    const N = this.tileEdgeVertexCount;
+    const u = localUV.x;
+    const v = localUV.y;
+    const x = u * (N - 1);
+    const y = v * (N - 1);
+    const x0 = Math.floor(x);
+    const y0 = Math.floor(y);
+    const x1 = Math.min(x0 + 1, N - 1);
+    const y1 = Math.min(y0 + 1, N - 1);
+    const tx = x - x0;
+    const ty = y - y0;
+
+    const perNode = N * N;
+    const base = closestLeafIndex * perNode;
+    const idx = (ix: number, iy: number) => base + iy * N + ix;
+
+    const h00 = this.cpuHeightmapCache[idx(x0, y0)] || 0;
+    const h10 = this.cpuHeightmapCache[idx(x1, y0)] || 0;
+    const h01 = this.cpuHeightmapCache[idx(x0, y1)] || 0;
+    const h11 = this.cpuHeightmapCache[idx(x1, y1)] || 0;
+
+    const height =
+      ((1 - tx) * (1 - ty) * h00 +
+        tx * (1 - ty) * h10 +
+        (1 - tx) * ty * h01 +
+        tx * ty * h11) *
+      (this.uniforms.uHeightmapScale.value as number);
+
+    // Store for next frame if cache fails
+    this.lastKnownCameraHeight = height;
+    return height;
   }
 
   destroy() {

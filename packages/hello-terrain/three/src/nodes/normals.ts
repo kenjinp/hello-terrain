@@ -1,8 +1,8 @@
 import type { ShaderNodeObject } from "three/tsl";
 import { Fn, dot, int, vec3, vec4 } from "three/tsl";
 import type { ConstNode, Vector3 } from "three/webgpu";
+import type { TerrainVaryings } from "../TerrainVaryings";
 import { normalmapStorageProperty } from "./properties";
-import { vGlobalVertexIndex } from "./varyings";
 
 // reoriented normal mapping
 export const blendNormalsRNM = Fn(
@@ -23,13 +23,14 @@ export const blendNormalsRNM = Fn(
   }
 );
 
-export const readNormalAtPositionLocal = /*@__PURE__*/ Fn(() => {
-  const globalIndex = vGlobalVertexIndex.toVar();
+export const createReadNormalAtPositionLocal = (varyings: TerrainVaryings) =>
+  Fn(() => {
+    const globalIndex = varyings.vGlobalVertexIndex.toVar();
 
-  const base = globalIndex.mul(int(3));
-  const nx = normalmapStorageProperty.element(base.add(int(0)));
-  const ny = normalmapStorageProperty.element(base.add(int(1)));
-  const nz = normalmapStorageProperty.element(base.add(int(2)));
+    const base = globalIndex.mul(int(3));
+    const nx = normalmapStorageProperty.element(base.add(int(0)));
+    const ny = normalmapStorageProperty.element(base.add(int(1)));
+    const nz = normalmapStorageProperty.element(base.add(int(2)));
 
-  return vec3(nx, ny, nz).normalize();
-});
+    return vec3(nx, ny, nz).normalize();
+  });
