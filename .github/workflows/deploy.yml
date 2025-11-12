@@ -51,9 +51,6 @@ jobs:
           cd apps/docs
           pnpm build
 
-      - name: Setup Pulumi
-        uses: pulumi/setup-pulumi@v2
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -61,29 +58,23 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
-      - name: Deploy infrastructure and assets
+      - name: Install infrastructure dependencies
         working-directory: infrastructure
+        run: pnpm install --frozen-lockfile
+
+      - name: Deploy infrastructure and assets
+        uses: pulumi/actions@v6
         env:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
-          DOMAIN: ${{ secrets.DOMAIN || 'hello-terrain.kenny.wtf' }}
-          DOMAIN_NAME: ${{ secrets.DOMAIN_NAME || 'hello-terrain.kenny.wtf' }}
-          ENVIRONMENT: prod
-          PULUMI_AWS_REGION: us-east-1
-        run: |
-          # Install infrastructure dependencies
-          pnpm install --frozen-lockfile
-
-          # Select Pulumi stack
-          pulumi stack select hello-terrain-infrastructure/prod
-
-          # Set Pulumi configuration
-          pulumi config set aws:region $PULUMI_AWS_REGION
-          pulumi config set domain $DOMAIN
-          pulumi config set environment $ENVIRONMENT
-          pulumi config set route53:domainName $DOMAIN_NAME
-
-          # Deploy infrastructure and assets
-          pulumi up --yes
+        with:
+          command: up
+          stack-name: hello-terrain-infrastructure/prod
+          work-dir: infrastructure
+          config-map: |
+            aws:region=us-east-1
+            domain=${{ secrets.DOMAIN || 'hello-terrain.kenny.wtf' }}
+            environment=prod
+            route53:domainName=${{ secrets.DOMAIN_NAME || 'hello-terrain.kenny.wtf' }}
 
       - name: Deploy status
         run: |
