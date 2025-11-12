@@ -50,12 +50,6 @@ jobs:
         run: |
           cd apps/docs
           pnpm build
-
-      - name: Build examples
-        run: |
-          cd apps/examples
-          pnpm build
-
       - name: Setup Pulumi
         uses: pulumi/setup-pulumi@v2
 
