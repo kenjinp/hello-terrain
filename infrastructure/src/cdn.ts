@@ -106,8 +106,8 @@ export function createCdn(
         },
         {
           errorCode: 404,
-          responseCode: 404,
-          responsePagePath: "/404.html",
+          responseCode: 200,
+          responsePagePath: "/index.html",
           errorCachingMinTtl: 0,
         },
       ],
