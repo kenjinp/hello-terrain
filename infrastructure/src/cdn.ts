@@ -7,6 +7,7 @@ export interface CdnResources {
   mainOai: aws.cloudfront.OriginAccessIdentity;
   cachePolicy: aws.cloudfront.CachePolicy;
   headersPolicy: aws.cloudfront.ResponseHeadersPolicy;
+  urlRewriteFunction: aws.cloudfront.Function;
   distribution: aws.cloudfront.Distribution;
 }
 
@@ -61,6 +62,32 @@ export function createCdn(
     },
   });
 
+  // Create CloudFront Function to rewrite URLs for Next.js static export
+  const urlRewriteFunction = new aws.cloudfront.Function(
+    "url-rewrite-function",
+    {
+      name: `hello-terrain-url-rewrite-${environment}`,
+      runtime: "cloudfront-js-2.0",
+      comment: `URL rewrite function for Next.js static export - ${environment}`,
+      code: `function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+
+          // Check if URI is missing a file extension and doesn't end with /
+          if (!uri.includes('.') && !uri.endsWith('/')) {
+            request.uri = uri + '.html';
+          }
+          // If URI ends with /, append index.html
+          else if (uri.endsWith('/')) {
+            request.uri = uri + 'index.html';
+          }
+
+          return request;
+      }`,
+      publish: true,
+    }
+  );
+
   // Create CloudFront distribution
   const distribution = new aws.cloudfront.Distribution(
     "hello-terrain-distribution",
@@ -92,6 +119,12 @@ export function createCdn(
         cachePolicyId: cachePolicy.id,
         viewerProtocolPolicy: "redirect-to-https",
         compress: true,
+        functionAssociations: [
+          {
+            eventType: "viewer-request",
+            functionArn: urlRewriteFunction.arn,
+          },
+        ],
       },
 
       orderedCacheBehaviors: [],
@@ -136,6 +169,7 @@ export function createCdn(
     mainOai,
     cachePolicy,
     headersPolicy,
+    urlRewriteFunction,
     distribution,
   };
 }
