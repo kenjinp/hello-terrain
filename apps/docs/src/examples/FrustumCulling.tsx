@@ -13,8 +13,6 @@ import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPU
 import {
   Fn,
   float,
-  hash,
-  instanceIndex,
   transformNormalToView,
   uniform,
   varying,
@@ -112,7 +110,7 @@ const TerrainPlane = () => {
       label: "Use Texture",
     },
     heightmapScale: {
-      value: 1,
+      value: 10,
       min: 0.0,
       max: 1000.0,
       step: 0.1,
@@ -162,9 +160,6 @@ const TerrainPlane = () => {
     },
   });
 
-  // const uvMap = useTexture("/assets/uv-12x12.png");
-
-  // Memoized varyings
   const uniforms = useMemo(() => {
     return {
       uWireframe: uniform(false).setName("uWireframe"),
@@ -197,14 +192,14 @@ const TerrainPlane = () => {
       })();
     }
     return Fn(() => {
-      const height = varyings.vElevation
-        .remap(0, elevationUniforms.uHeightmapScale.toVar(), 0, 1)
-        .toColor();
-      const nodeHashColor = vec3(
-        hash(instanceIndex),
-        hash(instanceIndex.add(1)),
-        hash(instanceIndex.add(2))
-      ).toColor();
+      // const height = varyings.vElevation
+      //   .remap(0, elevationUniforms.uHeightmapScale.toVar(), 0, 1)
+      //   .toColor();
+      // const nodeHashColor = vec3(
+      //   hash(instanceIndex),
+      //   hash(instanceIndex.add(1)),
+      //   hash(instanceIndex.add(2))
+      // ).toColor();
 
       // Return the color
       // return nodeHashColor;

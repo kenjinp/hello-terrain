@@ -111,7 +111,7 @@ const TerrainPlane = () => {
       label: "Use Texture",
     },
     heightmapScale: {
-      value: 1,
+      value: 10,
       min: 0.0,
       max: 1000.0,
       step: 0.1,
@@ -433,7 +433,7 @@ const BasicComputeScene = () => {
       <color attach="background" args={["#6dd1ed"]} />
       <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
-      <fog attach="fog" args={["#6dd1ed", 0, 1024 * 2]} />
+      {/* <fog attach="fog" args={["#6dd1ed", 0, 1024 * 2]} /> */}
       <directionalLight intensity={1} position={[1, 1, 1]} />
       <OrbitControls />
       <TerrainPlane />
