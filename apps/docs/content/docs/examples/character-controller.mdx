@@ -1,0 +1,40 @@
+---
+title: Character Controller
+description: Third-person character controller that walks on procedural terrain
+---
+
+import Scene from "@/examples/CharacterController"
+
+<Scene />
+
+
+
+This example demonstrates a third-person character controller that walks on procedural terrain using the library's performant height testing API.
+
+## Key Features
+
+- **Capsule Character**: A capsule geometry represents the character, properly grounded on the terrain surface
+- **Third-Person Camera**: Smooth camera following with configurable distance and height
+- **WASD/Arrow Controls**: Standard movement controls for navigating the terrain
+- **Performant Height Testing**: Uses `queryHeightAtPosition()` for fast terrain height lookups
+
+## Performant Height Testing
+
+The character controller uses `TerrainMesh.queryHeightAtPosition(position)` to query the terrain height. This method:
+
+1. Finds the leaf quadtree node containing the position
+2. Converts world position to local UV coordinates within that node
+3. Performs bilinear interpolation on the CPU-cached heightmap
+
+This approach is extremely fast (typically &lt;0.1ms) because:
+- It samples from a CPU-side cache of the heightmap
+- No GPU readback is required per-frame
+- The cache is automatically updated when terrain tiles change
+
+```typescript
+// Example usage in your character controller
+const terrainHeight = terrainMesh.queryHeightAtPosition(characterPosition);
+if (terrainHeight !== null) {
+  characterPosition.y = terrainHeight;
+}
+```

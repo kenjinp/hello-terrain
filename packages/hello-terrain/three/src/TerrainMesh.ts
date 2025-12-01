@@ -1,5 +1,5 @@
-import { Vector2 as ThreeVector2, Vector3 as ThreeVector3 } from "three";
 import type { Ray as ThreeRay } from "three";
+import { Vector2 as ThreeVector2, Vector3 as ThreeVector3 } from "three";
 import { float, int, max, min, pow, select, uniform, vec3 } from "three/tsl";
 import {
   type Frustum,
@@ -30,6 +30,13 @@ export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
   innerTileSegments: number;
   material?: NodeMaterial;
   elevationFn?: ElevationReturn;
+  /**
+   * Minimum position change (in world units) required to trigger an update.
+   * If the camera moves less than this distance from the last update position,
+   * the update is skipped. Set to 0 to update on every frame.
+   * @default 0.01
+   */
+  epsilon?: number;
 }
 
 export class TerrainMesh extends InstancedMesh {
@@ -37,6 +44,12 @@ export class TerrainMesh extends InstancedMesh {
   lastHash: number;
   metrics: Record<string, string | number | boolean>;
   lastUpdateHeight: number | null = null;
+  /**
+   * Indicates whether valid heightmap data is available for CPU queries.
+   * This becomes true after the first successful GPU readback completes.
+   * Use this to check if queryHeightAtPosition will return meaningful values.
+   */
+  public hasValidHeightData = false;
   private needsRecompute = false;
   // Instance-specific uniforms and varyings
   public readonly uniforms: TerrainUniforms;
@@ -80,6 +93,7 @@ export class TerrainMesh extends InstancedMesh {
   // CPU-side heightmap cache for fast terrain height lookups (previous frame data)
   private cpuHeightmapCache: Float32Array | null = null;
   private lastKnownCameraHeight = 0;
+  private lastUpdatePosition: ThreeVector3 | null = null;
   public readonly params: TerrainMeshParams;
   constructor(params: Partial<TerrainMeshParams> = {}) {
     const defaults = {
@@ -101,6 +115,8 @@ export class TerrainMesh extends InstancedMesh {
     // material may be set later by consumers; pass through if present
     super(geometry, material as unknown as Material, quadtreeParams.maxNodes);
     this.params = merged;
+    this.params.epsilon =
+      params.epsilon ?? this.params.minNodeSize / this.params.innerTileSegments;
     this.quadtree = new Quadtree({
       ...quadtreeParams,
       origin: this.position.clone(),
@@ -529,14 +545,37 @@ export class TerrainMesh extends InstancedMesh {
       activeLeafCount
     );
 
-    // Copy heightmap to CPU cache for fast terrain-aware subdivision next frame
-    // This is a direct typed array copy - very fast (<0.01ms for typical sizes)
-    const heightmapArray = this.heightmapStorage.storageBufferAttribute
-      .array as Float32Array;
-    if (!this.cpuHeightmapCache) {
-      this.cpuHeightmapCache = new Float32Array(heightmapArray.length);
+    // Read back heightmap from GPU to CPU for height queries
+    // This enables queryHeightAtPosition to return actual terrain heights
+    try {
+      const heightArrayBuffer: ArrayBuffer = await (
+        renderer as unknown as {
+          getArrayBufferAsync: (attr: unknown) => Promise<ArrayBuffer>;
+        }
+      ).getArrayBufferAsync(this.heightmapStorage.storageBufferAttribute);
+
+      const heightmapArray = new Float32Array(heightArrayBuffer);
+      if (!this.cpuHeightmapCache) {
+        this.cpuHeightmapCache = new Float32Array(heightmapArray.length);
+      }
+      this.cpuHeightmapCache.set(heightmapArray);
+
+      // Also update the storageBufferAttribute array for sampleHeightFromBuffer
+      const storageArray = this.heightmapStorage.storageBufferAttribute
+        .array as Float32Array;
+      storageArray.set(heightmapArray);
+
+      // Mark that valid height data is now available for queries
+      this.hasValidHeightData = true;
+    } catch {
+      // Fallback: use existing CPU array (may be stale/zeros on first frames)
+      const heightmapArray = this.heightmapStorage.storageBufferAttribute
+        .array as Float32Array;
+      if (!this.cpuHeightmapCache) {
+        this.cpuHeightmapCache = new Float32Array(heightmapArray.length);
+      }
+      this.cpuHeightmapCache.set(heightmapArray);
     }
-    this.cpuHeightmapCache.set(heightmapArray);
 
     const afterCompute = performance.now();
     this.setMetric("heightmapComputeTime", `${afterCompute - beforeCompute}ms`);
@@ -667,7 +706,33 @@ export class TerrainMesh extends InstancedMesh {
     return this.params.maxNodes;
   }
 
+  set epsilon(value: number) {
+    this.params.epsilon = value;
+  }
+
+  get epsilon() {
+    return this.params.epsilon ?? 0.01;
+  }
+
   update(renderer: WebGPURenderer, position: Vector3, frustum: Frustum) {
+    // Check if position change is below epsilon threshold - skip update if so
+    const epsilon = this.params.epsilon ?? 0.0;
+    if (epsilon > 0 && this.lastUpdatePosition) {
+      // Use Three.js Vector3 method .distanceToSquared
+      if (
+        position.distanceToSquared(this.lastUpdatePosition) <
+        epsilon * epsilon
+      ) {
+        return;
+      }
+    }
+
+    // Store the position for next frame's epsilon check
+    if (!this.lastUpdatePosition) {
+      this.lastUpdatePosition = new ThreeVector3();
+    }
+    this.lastUpdatePosition.set(position.x, position.y, position.z);
+
     // Always capture the latest call arguments
     this.pendingRenderer = renderer;
     // Reuse a single Vector3 instance to avoid allocations
@@ -722,15 +787,10 @@ export class TerrainMesh extends InstancedMesh {
 
         // Create adjusted position with terrain height instead of raw camera Y
         // This ensures quadtree subdivides based on distance to terrain surface, not origin
-        const adjustedPosition = new ThreeVector3(
-          currentPosition.x,
-          terrainHeight,
-          currentPosition.z
-        );
-
+        this.pendingPosition.y -= terrainHeight;
         // Do final quadtree update with terrain-adjusted position
         closestLeafIndex = this.quadtree.update(
-          adjustedPosition as unknown as Vector3,
+          this.pendingPosition,
           currentFrustum ?? undefined
         );
 
@@ -745,6 +805,8 @@ export class TerrainMesh extends InstancedMesh {
           // Ensure the GPU-side node buffer reflects the latest quadtree state
           this.refreshNodeStorageFromQuadtree();
           // Compute heightmap first so the normal pass samples fresh height data
+          // Note: We don't await here - the GPU compute runs asynchronously
+          // The CPU readback populates the cache for queryHeightAtPosition
           this.runHeightmapCompute(currentRenderer);
           this.runNormalMapCompute(currentRenderer);
 
@@ -815,6 +877,179 @@ export class TerrainMesh extends InstancedMesh {
 
   get normalMapNode() {
     return this.normalmapStorage.storageNode;
+  }
+
+  /**
+   * Extract a heightfield grid suitable for physics collision (e.g., Rapier HeightfieldCollider).
+   * Samples the terrain at a regular grid of world positions using the CPU heightmap cache.
+   *
+   * @param resolution Number of samples along each axis (e.g., 64 creates a 64x64 grid)
+   * @param size World-space size of the heightfield (defaults to rootSize)
+   * @param centerX World-space X center of the heightfield (defaults to terrain origin)
+   * @param centerZ World-space Z center of the heightfield (defaults to terrain origin)
+   * @returns Float32Array of heights in row-major order (z * resolution + x), or null if data not ready
+   *
+   * @example
+   * ```ts
+   * const heights = terrain.getHeightfieldGrid(64, 200);
+   * if (heights) {
+   *   <HeightfieldCollider args={[63, 63, heights, { x: 200, y: 1, z: 200 }]} />
+   * }
+   * ```
+   */
+  getHeightfieldGrid(
+    resolution: number,
+    size?: number,
+    centerX?: number,
+    centerZ?: number
+  ): Float32Array | null {
+    if (!this.hasValidHeightData || !this.cpuHeightmapCache) {
+      return null;
+    }
+
+    const fieldSize = size ?? this.params.rootSize;
+    const cx = centerX ?? this.position.x;
+    const cz = centerZ ?? this.position.z;
+    const halfSize = fieldSize / 2;
+    const step = fieldSize / (resolution - 1);
+
+    const heights = new Float32Array(resolution * resolution);
+    const samplePos = new ThreeVector3();
+
+    for (let z = 0; z < resolution; z++) {
+      for (let x = 0; x < resolution; x++) {
+        const worldX = cx - halfSize + x * step;
+        const worldZ = cz - halfSize + z * step;
+        samplePos.set(worldX, 0, worldZ);
+
+        const height = this.queryHeightAtPosition(samplePos);
+        // Row-major order for Rapier
+        heights[z * resolution + x] = height ?? 0;
+      }
+    }
+
+    return heights;
+  }
+
+  /**
+   * Get the raw height data for a specific tile node.
+   * Returns the inner heights (excluding skirt vertices) as a Float32Array.
+   *
+   * @param nodeIndex Index of the node in the quadtree
+   * @returns Object with heights array, grid size, and world bounds, or null if invalid
+   *
+   * @example
+   * ```ts
+   * const tileData = terrain.getTileHeightData(0);
+   * if (tileData) {
+   *   console.log(`Tile has ${tileData.gridSize}x${tileData.gridSize} heights`);
+   *   console.log(`World bounds: ${tileData.minX}, ${tileData.minZ} to ${tileData.maxX}, ${tileData.maxZ}`);
+   * }
+   * ```
+   */
+  getTileHeightData(nodeIndex: number): {
+    heights: Float32Array;
+    gridSize: number;
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    nodeSize: number;
+  } | null {
+    if (!this.cpuHeightmapCache) {
+      return null;
+    }
+
+    const nodeView = this.quadtree.getNodeView();
+    const nodeCount = this.quadtree.getNodeCount();
+    if (nodeIndex < 0 || nodeIndex >= nodeCount) {
+      return null;
+    }
+
+    // Check if this is a leaf node (active for rendering)
+    if (!nodeView.getLeaf(nodeIndex)) {
+      return null;
+    }
+
+    const N = this.tileEdgeVertexCount;
+    const S = this.params.innerTileSegments;
+    const gridSize = S + 1; // Inner grid is S+1 x S+1
+
+    // Extract inner heights (skip skirt vertices at index 0 and N-1)
+    const heights = new Float32Array(gridSize * gridSize);
+    const perNode = N * N;
+    const base = nodeIndex * perNode;
+
+    for (let iy = 0; iy < gridSize; iy++) {
+      for (let ix = 0; ix < gridSize; ix++) {
+        // Inner vertices start at index 1
+        const srcIdx = base + (iy + 1) * N + (ix + 1);
+        const dstIdx = iy * gridSize + ix;
+        heights[dstIdx] = this.cpuHeightmapCache[srcIdx] ?? 0;
+      }
+    }
+
+    // Get node properties from NodeView
+    const level = nodeView.getLevel(nodeIndex);
+    const nodeX = nodeView.getX(nodeIndex);
+    const nodeZ = nodeView.getY(nodeIndex); // Y in quadtree is Z in world
+    const nodeSize = this.params.rootSize / (1 << level);
+    const halfSize = nodeSize / 2;
+
+    return {
+      heights,
+      gridSize,
+      minX: nodeX - halfSize,
+      maxX: nodeX + halfSize,
+      minZ: nodeZ - halfSize,
+      maxZ: nodeZ + halfSize,
+      nodeSize,
+    };
+  }
+
+  /**
+   * Get height data for all active leaf nodes.
+   * Useful for creating multiple physics colliders for LOD terrain.
+   *
+   * @returns Array of tile height data for all active leaf nodes, or empty array if data not ready
+   */
+  getAllLeafHeightData(): Array<{
+    nodeIndex: number;
+    heights: Float32Array;
+    gridSize: number;
+    minX: number;
+    maxX: number;
+    minZ: number;
+    maxZ: number;
+    nodeSize: number;
+  }> {
+    if (!this.hasValidHeightData || !this.cpuHeightmapCache) {
+      return [];
+    }
+
+    const result: Array<{
+      nodeIndex: number;
+      heights: Float32Array;
+      gridSize: number;
+      minX: number;
+      maxX: number;
+      minZ: number;
+      maxZ: number;
+      nodeSize: number;
+    }> = [];
+
+    // Use getActiveLeafNodeIndices for efficient iteration over only active leaves
+    const { indices, count } = this.quadtree.getActiveLeafNodeIndices();
+
+    for (let i = 0; i < count; i++) {
+      const nodeIndex = indices[i];
+      const tileData = this.getTileHeightData(nodeIndex);
+      if (tileData) {
+        result.push({ nodeIndex, ...tileData });
+      }
+    }
+
+    return result;
   }
 
   get tileNode() {
@@ -995,19 +1230,43 @@ export class TerrainMesh extends InstancedMesh {
     );
   }
 
-  // Bilinearly sample the heightmap buffer for a node at local UV. Assumes per-node packed N*N floats.
+  /**
+   * Bilinearly sample the heightmap buffer for a node at local UV.
+   *
+   * The heightmap is stored with tileEdgeVertexCount (S+3) vertices per axis:
+   * - Index 0: skirt vertex (outside tile, left/bottom edge)
+   * - Indices 1 to S+1: inner vertices (logical tile, S+1 = innerTileSegments+1 vertices)
+   * - Index S+2: skirt vertex (outside tile, right/top edge)
+   *
+   * UV [0,1] from worldToLocalUV represents the logical tile bounds,
+   * which corresponds to inner vertex indices [1, S+1].
+   *
+   * NOTE: This method applies uniforms.uHeightmapScale to match the vertex shader
+   * behavior in position.ts, which also multiplies stored heights by this scale.
+   *
+   * @param nodeIndex Index of the node to sample from
+   * @param u Local U coordinate [0,1] within the tile
+   * @param v Local V coordinate [0,1] within the tile
+   * @returns Interpolated height at the given UV position (scaled by uHeightmapScale)
+   */
   private sampleHeightFromBuffer(
     nodeIndex: number,
     u: number,
     v: number
   ): number {
-    const N = this.tileEdgeVertexCount;
-    const x = u * (N - 1);
-    const y = v * (N - 1);
+    const N = this.tileEdgeVertexCount; // = innerTileSegments + 3
+    const S = this.params.innerTileSegments;
+
+    // Map UV [0,1] to inner vertex indices [1, S+1]
+    // UV=0 → index 1 (first inner vertex)
+    // UV=1 → index S+1 (last inner vertex)
+    const x = 1 + u * S;
+    const y = 1 + v * S;
+
     const x0 = Math.floor(x);
     const y0 = Math.floor(y);
-    const x1 = Math.min(x0 + 1, N - 1);
-    const y1 = Math.min(y0 + 1, N - 1);
+    const x1 = Math.min(x0 + 1, S + 1); // Clamp to last inner vertex
+    const y1 = Math.min(y0 + 1, S + 1);
     const tx = x - x0;
     const ty = y - y0;
 
@@ -1017,23 +1276,29 @@ export class TerrainMesh extends InstancedMesh {
 
     const arr = this.heightmapStorage.storageBufferAttribute
       .array as Float32Array;
-    const h00 = arr[idx(x0, y0)];
-    const h10 = arr[idx(x1, y0)];
-    const h01 = arr[idx(x0, y1)];
-    const h11 = arr[idx(x1, y1)];
+    const h00 = arr[idx(x0, y0)] ?? 0;
+    const h10 = arr[idx(x1, y0)] ?? 0;
+    const h01 = arr[idx(x0, y1)] ?? 0;
+    const h11 = arr[idx(x1, y1)] ?? 0;
 
-    return (
+    const rawHeight =
       (1 - tx) * (1 - ty) * h00 +
       tx * (1 - ty) * h10 +
       (1 - tx) * ty * h01 +
-      tx * ty * h11
-    );
+      tx * ty * h11;
+
+    // Apply the same heightmapScale that the vertex shader uses
+    // This ensures CPU height queries match the rendered terrain
+    const scale = this.uniforms.uHeightmapScale.value as number;
+    return rawHeight * scale;
   }
 
   /**
    * Fast terrain height lookup at world position using cached heightmap from previous frame.
    * This has ~1 frame latency but is extremely fast (<0.1ms) for use in quadtree subdivision.
    * Falls back to lastKnownCameraHeight if cache isn't available yet.
+   *
+   * NOTE: The height is scaled by uniforms.uHeightmapScale to match the rendered terrain.
    *
    * @param worldPos World XZ position to sample
    * @param closestLeafIndex Index of closest leaf node (from quadtree.update)
@@ -1052,15 +1317,19 @@ export class TerrainMesh extends InstancedMesh {
     const localUV = this.worldToLocalUV(closestLeafIndex, worldPos);
 
     // Sample from CPU cache using bilinear interpolation
+    // Map UV [0,1] to inner vertex indices [1, S+1]
     const N = this.tileEdgeVertexCount;
+    const S = this.params.innerTileSegments;
+
     const u = localUV.x;
     const v = localUV.y;
-    const x = u * (N - 1);
-    const y = v * (N - 1);
+    const x = 1 + u * S;
+    const y = 1 + v * S;
+
     const x0 = Math.floor(x);
     const y0 = Math.floor(y);
-    const x1 = Math.min(x0 + 1, N - 1);
-    const y1 = Math.min(y0 + 1, N - 1);
+    const x1 = Math.min(x0 + 1, S + 1);
+    const y1 = Math.min(y0 + 1, S + 1);
     const tx = x - x0;
     const ty = y - y0;
 
@@ -1073,12 +1342,16 @@ export class TerrainMesh extends InstancedMesh {
     const h01 = this.cpuHeightmapCache[idx(x0, y1)] || 0;
     const h11 = this.cpuHeightmapCache[idx(x1, y1)] || 0;
 
-    const height =
-      ((1 - tx) * (1 - ty) * h00 +
-        tx * (1 - ty) * h10 +
-        (1 - tx) * ty * h01 +
-        tx * ty * h11) *
-      (this.uniforms.uHeightmapScale.value as number);
+    const rawHeight =
+      (1 - tx) * (1 - ty) * h00 +
+      tx * (1 - ty) * h10 +
+      (1 - tx) * ty * h01 +
+      tx * ty * h11;
+
+    // Apply the same heightmapScale that the vertex shader uses
+    // This ensures CPU height queries match the rendered terrain
+    const scale = this.uniforms.uHeightmapScale.value as number;
+    const height = rawHeight * scale;
 
     // Store for next frame if cache fails
     this.lastKnownCameraHeight = height;

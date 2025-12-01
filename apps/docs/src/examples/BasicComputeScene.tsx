@@ -111,7 +111,7 @@ const TerrainPlane = () => {
       label: "Use Texture",
     },
     heightmapScale: {
-      value: 10,
+      value: 8,
       min: 0.0,
       max: 1000.0,
       step: 0.1,
@@ -206,11 +206,11 @@ const TerrainPlane = () => {
       ).toColor();
 
       // Return the color
-      // return nodeHashColor;
+      return nodeHashColor;
       // return height.toColor();
       // return vec3(124, 252, 0).div(255).toColor();
 
-      return helloTerrainMesh.varyings.vNormal.toColor();
+      // return helloTerrainMesh.varyings.vNormal.toColor();
     })();
   }, [
     helloTerrainMesh,

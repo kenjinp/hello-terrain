@@ -1,0 +1,104 @@
+---
+title: Heightmap Collision Test
+description: Physics-based collision testing with terrain using Rapier and performant height queries
+---
+
+import Scene from "@/examples/HeightmapCollisionTest"
+
+<Scene />
+
+This example demonstrates how to implement physics-based collision detection between objects and procedural terrain using the library's performant height query API.
+
+## Key Features
+
+- **Rapier Physics**: Uses `@react-three/rapier` for rigid body simulation
+- **Terrain Collision**: Objects collide with the procedural terrain surface
+- **Draggable Spawn Point**: Interactive gizmo to position where objects spawn
+- **Bulk Spawning**: Spawn up to 100 objects at once to test performance
+
+## Performant Terrain Collision
+
+The collision detection uses `TerrainMesh.queryHeightAtPosition()` which provides:
+
+- **~0.01ms per query** - Extremely fast CPU-cached lookups
+- **Bilinear interpolation** - Smooth height values between vertices
+- **Automatic tile handling** - Works seamlessly across LOD boundaries
+
+```typescript
+// Query terrain height at any world position
+const terrainHeight = terrainMesh.queryHeightAtPosition(objectPosition);
+
+if (terrainHeight !== null) {
+  const objectBottom = objectPosition.y - objectRadius;
+  
+  // Check if object penetrates terrain
+  if (objectBottom < terrainHeight) {
+    // Resolve collision by pushing object up
+    const penetration = terrainHeight - objectBottom;
+    rigidBody.setTranslation({
+      x: pos.x,
+      y: pos.y + penetration,
+      z: pos.z
+    });
+    
+    // Bounce/dampen velocity
+    const vel = rigidBody.linvel();
+    rigidBody.setLinvel({
+      x: vel.x * 0.8,
+      y: -vel.y * 0.3,  // Bounce
+      z: vel.z * 0.8
+    });
+  }
+}
+```
+
+## Implementation Details
+
+### Custom Terrain Collider
+
+Since Rapier's heightfield collider requires a fixed-size grid, we use a custom collision approach that queries the terrain height per-frame for each physics object:
+
+```typescript
+const PhysicsSphere = ({ terrainMesh }) => {
+  const rigidBodyRef = useRef<RapierRigidBody>(null);
+
+  useFrame(() => {
+    if (!rigidBodyRef.current || !terrainMesh) return;
+
+    const pos = rigidBodyRef.current.translation();
+    const terrainHeight = terrainMesh.queryHeightAtPosition(
+      new THREE.Vector3(pos.x, pos.y, pos.z)
+    );
+
+    if (terrainHeight !== null) {
+      const sphereRadius = 0.5;
+      const bottomY = pos.y - sphereRadius;
+
+      if (bottomY < terrainHeight) {
+        // Handle collision response
+      }
+    }
+  });
+
+  return (
+    <RigidBody ref={rigidBodyRef} colliders="ball">
+      <mesh>
+        <sphereGeometry args={[0.5]} />
+      </mesh>
+    </RigidBody>
+  );
+};
+```
+
+### Performance Considerations
+
+- **Batch Queries**: The height query is O(n) where n is the number of quadtree nodes, but typically resolves in &lt;0.1ms
+- **CPU Cache**: Height data is cached on CPU after GPU readback, avoiding GPU sync overhead
+- **LOD Aware**: Queries automatically use the appropriate LOD tile for the position
+
+## Controls
+
+- **Spawn Point**: Drag the green octahedron gizmo to move the spawn location
+- **Physics Panel**: Use the Leva controls to spawn spheres, cubes, or clear all objects
+- **Terrain Panel**: Adjust terrain parameters like height scale and detail level
+

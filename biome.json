@@ -50,7 +50,8 @@
       "**/*.jsx",
       "**/*.ts",
       "**/*.tsx",
-      "**/*.json"
+      "**/*.json",
+      "**/*.mdx"
     ],
     "ignore": [
       "node_modules",
