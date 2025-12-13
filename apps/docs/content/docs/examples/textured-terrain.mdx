@@ -1,0 +1,50 @@
+---
+title: Textured Terrain
+description: Multi-texture terrain rendering with height-based blending
+---
+
+import Scene from "@/examples/TexturedTerrainScene"
+
+<Scene />
+
+## Overview
+
+This example demonstrates the 32-texture terrain system with height-based blending. The terrain uses:
+
+- **Grass** texture for low elevations (0-50m)
+- **Slate** texture for mid elevations (50-200m)
+- **Rock** texture for high elevations (200-400m)
+- **Snow** texture for peaks (400m+)
+
+## Features
+
+### Texture Array System
+
+The system uses WebGPU's `DataArrayTexture` to efficiently store up to 32 texture sets in a single sampler. Each texture set contains:
+
+- **Albedo + Height** (RGB + A)
+- **Normal + Roughness** (RGB + A)
+
+### Per-Vertex Control Data
+
+Control data is stored per-vertex in a packed 32-bit format:
+- Base texture ID (5 bits, 0-31)
+- Overlay texture ID (5 bits, 0-31)
+- Blend factor (8 bits, 0-255)
+- UV scale (4 bits, 0-15)
+- Flags (hole, auto-shader, navigation)
+
+### Height-Based Blending
+
+Textures blend naturally using height values from their alpha channels. Higher areas of one texture will blend over lower areas of another, creating realistic transitions.
+
+## Memory Efficiency
+
+Compared to traditional splatmaps:
+- **Splatmaps**: 32 bytes per vertex (1 byte per texture)
+- **Control maps**: 4 bytes per vertex (packed format)
+- **Savings**: ~93% VRAM reduction
+
+## LOD-Aware Precision
+
+The per-node storage pattern ensures higher detail nodes (closer to camera) get more texture control vertices, while distant nodes use less memory.

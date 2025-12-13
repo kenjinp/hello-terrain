@@ -12,24 +12,35 @@ import {
 import { TerrainUniforms } from "./TerrainUniforms";
 import { TerrainVaryings } from "./TerrainVaryings";
 import { ComputeToBufferMap } from "./compute/ComputeToBufferMap";
+import { ControlDataPacker } from "./compute/ControlStorage";
 import { StorageBuffer } from "./compute/StorageBuffer";
 import { TerrainGeometry } from "./geometry/TerrainGeometry";
+import type { ControlReturn } from "./nodes/ControlFn";
 import { ElevationFn, type ElevationReturn } from "./nodes/ElevationFn";
+import { createControl } from "./nodes/control";
 import { createHeight } from "./nodes/height";
 import { createWorldPosition } from "./nodes/position";
 import {
   activeLeafIndicesStorageProperty,
+  controlmapStorageProperty,
   heightmapStorageProperty,
   nodeStorageProperty,
   normalmapStorageProperty,
 } from "./nodes/properties";
 import { createTileIsLeaf, createTileLevel } from "./nodes/tile";
 import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
+import type { TerrainTextureArray } from "./texture/TerrainTextureArray";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
   innerTileSegments: number;
   material?: NodeMaterial;
   elevationFn?: ElevationReturn;
+  /**
+   * TSL function that computes control map data (texture IDs, blend, etc.)
+   * in a compute shader. Receives height and normal data as inputs.
+   * If not provided, control map uses defaultTextureId with no blending.
+   */
+  controlFn?: ControlReturn;
   /**
    * Minimum position change (in world units) required to trigger an update.
    * If the camera moves less than this distance from the last update position,
@@ -37,6 +48,15 @@ export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
    * @default 0.01
    */
   epsilon?: number;
+  /**
+   * Default texture ID to use for control map initialization
+   * @default 0
+   */
+  defaultTextureId?: number;
+  /**
+   * Texture array for multi-texture terrain rendering
+   */
+  textureArray?: TerrainTextureArray;
 }
 
 export class TerrainMesh extends InstancedMesh {
@@ -69,9 +89,13 @@ export class TerrainMesh extends InstancedMesh {
   // @ts-ignore will be initialized
   private activeLeafIndicesStorage: StorageBuffer;
   // @ts-ignore will be initialized
+  private controlmapStorage: StorageBuffer;
+  // @ts-ignore will be initialized
   private heightmapComputeShader: ComputeToBufferMap;
   // @ts-ignore will be initialized
   private normalmapComputeShader: ComputeToBufferMap;
+  // @ts-ignore will be initialized
+  private controlmapComputeShader: ComputeToBufferMap;
   // Readback pipeline: single-float buffer and uniforms to sample height on GPU
   // @ts-ignore will be initialized
   private lastUpdateHeightStorage: StorageBuffer;
@@ -95,6 +119,7 @@ export class TerrainMesh extends InstancedMesh {
   private lastKnownCameraHeight = 0;
   private lastUpdatePosition: ThreeVector3 | null = null;
   public readonly params: TerrainMeshParams;
+  public textureArray?: TerrainTextureArray;
   constructor(params: Partial<TerrainMeshParams> = {}) {
     const defaults = {
       innerTileSegments: 13, // 16 total vertices per tile
@@ -129,6 +154,9 @@ export class TerrainMesh extends InstancedMesh {
       instanceId: this.uuid,
     });
     this.varyings = new TerrainVaryings(this.uuid);
+
+    // Set texture array if provided
+    this.textureArray = params.textureArray;
 
     this.lastHash = 0;
     this.metrics = {
@@ -204,6 +232,21 @@ export class TerrainMesh extends InstancedMesh {
     normalmapStorageProperty.value = normalmapStorage.storageBufferAttribute;
     activeLeafIndicesStorageProperty.value =
       activeLeafIndicesStorage.storageBufferAttribute;
+
+    // Initialize control map storage with default texture
+    const defaultPacked = ControlDataPacker.pack({
+      baseTextureId: this.params.defaultTextureId ?? 0,
+      overlayTextureId: 0,
+      blend: 0,
+    });
+    const controlmapStorage = new StorageBuffer(
+      "controlmapStorage",
+      new Uint32Array(heightmapDimensions).fill(defaultPacked),
+      1,
+      heightmapDimensions
+    );
+    this.controlmapStorage = controlmapStorage;
+    controlmapStorageProperty.value = controlmapStorage.storageBufferAttribute;
 
     return { nodeStorage, heightmapStorage, normalmapStorage };
   }
@@ -380,6 +423,52 @@ export class TerrainMesh extends InstancedMesh {
     );
     this.normalmapComputeShader = normalShader;
 
+    // Control map compute shader (runs after height and normal to access their data)
+    // Only create if a controlFn is provided
+    if (this.params.controlFn) {
+      const controlFn = createControl(
+        this.uniforms,
+        this.params.controlFn,
+        this.heightmapStorage,
+        this.normalmapStorage,
+        tileEdgeVertexCount
+      );
+      const controlShader = new ComputeToBufferMap(
+        (
+          nodeIndex,
+          globalVertexIndex,
+          localUV,
+          _localCoordinates,
+          _texelSize
+        ) => {
+          const controlData = controlFn(
+            nodeIndex,
+            globalVertexIndex,
+            localUV,
+            _texelSize
+          );
+          this.controlmapStorage.storageNode
+            .element(globalVertexIndex)
+            .assign(controlData);
+        }
+      );
+      controlShader.createBinds(
+        tileEdgeVertexCount,
+        1,
+        this.quadtree.getConfig().maxNodes,
+        this.controlmapStorage
+      );
+      // Create optimized binds for compute with indirection
+      controlShader.createBinds(
+        tileEdgeVertexCount,
+        1,
+        this.quadtree.getConfig().maxNodes,
+        this.activeLeafIndicesStorage,
+        this.controlmapStorage
+      );
+      this.controlmapComputeShader = controlShader;
+    }
+
     return heightShader;
   }
 
@@ -480,6 +569,32 @@ export class TerrainMesh extends InstancedMesh {
 
     const afterCompute = performance.now();
     this.setMetric("normalmapComputeTime", `${afterCompute - beforeCompute}ms`);
+  }
+
+  private async runControlMapCompute(renderer: WebGPURenderer): Promise<void> {
+    // Only run if a controlFn is provided
+    if (!this.controlmapComputeShader) return;
+
+    const beforeCompute = performance.now();
+
+    // Get active leaf count for optimized compute dispatch
+    const activeLeafData = this.quadtree.getActiveLeafNodeIndices();
+    const activeLeafCount = activeLeafData.count;
+
+    // Update the active leaf indices buffer
+    this.activeLeafIndicesStorage.update(activeLeafData.indices);
+
+    await this.controlmapComputeShader.renderBindOptimized(
+      renderer,
+      this.controlmapStorage,
+      activeLeafCount
+    );
+
+    const afterCompute = performance.now();
+    this.setMetric(
+      "controlmapComputeTime",
+      `${afterCompute - beforeCompute}ms`
+    );
   }
 
   private applyUniforms(): void {
@@ -660,6 +775,26 @@ export class TerrainMesh extends InstancedMesh {
     return this.params.elevationFn ?? ElevationFn(() => float(0));
   }
 
+  set controlFn(fn: ControlReturn | undefined) {
+    this.params.controlFn = fn;
+    // Re-apply uniforms and fully refresh GPU bindings
+    this.applyUniforms();
+    // Recreate storages so storage properties are in sync
+    const storages = this.initializeStorage();
+    this.nodeStorage = storages.nodeStorage;
+    this.heightmapStorage = storages.heightmapStorage;
+    this.normalmapStorage = storages.normalmapStorage;
+    // Rebuild compute shaders that write into the refreshed storages
+    this.heightmapComputeShader = this.initializeComputeShaders();
+    // Recreate readback compute to match any layout changes
+    this.initializeReadbackCompute();
+    this.needsRecompute = true;
+  }
+
+  get controlFn() {
+    return this.params.controlFn;
+  }
+
   set maxLevel(level: number) {
     this.params.maxLevel = level;
     this.updateQuadtreeConfig();
@@ -809,6 +944,8 @@ export class TerrainMesh extends InstancedMesh {
           // The CPU readback populates the cache for queryHeightAtPosition
           this.runHeightmapCompute(currentRenderer);
           this.runNormalMapCompute(currentRenderer);
+          // Control map runs after height and normal to access their computed data
+          this.runControlMapCompute(currentRenderer);
 
           // Update instance count to only render active leaf nodes
           const activeLeafData = this.quadtree.getActiveLeafNodeIndices();

@@ -12,6 +12,7 @@ import type { TerrainVaryings } from "../TerrainVaryings";
 import { createReadNormalAtPositionLocal } from "./normals";
 import {
   activeLeafIndicesStorageProperty,
+  controlmapStorageProperty,
   heightmapStorageProperty,
   nodeStorageProperty,
   normalmapStorageProperty,
@@ -42,7 +43,8 @@ export const createWorldPosition = (
       .element(int(0))
       .toFloat()
       .mul(0)
-      .add(normalmapStorageProperty.element(int(0)).toFloat().mul(0));
+      .add(normalmapStorageProperty.element(int(0)).toFloat().mul(0))
+      .add(controlmapStorageProperty.element(int(0)).toFloat().mul(0));
 
     // Compute and pass global vertex index to fragment stage
     const edgeVertexCount = uniforms.uSegments.toVar().add(3);

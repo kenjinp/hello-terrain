@@ -15,6 +15,10 @@ const dummyActiveLeafIndicesStorage = new StorageBufferAttribute(
   new Uint16Array(1),
   1
 );
+const dummyControlmapStorage = new StorageBufferAttribute(
+  new Uint32Array(1),
+  1
+);
 export const nodeStorageProperty = storage(
   dummyNodeStorage,
   "i32",
@@ -32,6 +36,11 @@ export const normalmapStorageProperty = storage(
 ).toReadOnly();
 export const activeLeafIndicesStorageProperty = storage(
   dummyActiveLeafIndicesStorage,
+  "u32",
+  1
+).toReadOnly();
+export const controlmapStorageProperty = storage(
+  dummyControlmapStorage,
   "u32",
   1
 ).toReadOnly();

@@ -4,7 +4,7 @@ import { useMetrics } from "@/components/Metrics/Metrics";
 import { voronoiCells } from "@/components/Terrain/lib/TSLNodes/Voronoi";
 import * as hello from "@hello-terrain/react";
 import { ElevationFn, type TerrainMesh } from "@hello-terrain/three";
-import { Environment, OrbitControls } from "@react-three/drei";
+import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 
@@ -218,7 +218,8 @@ const TerrainPlane = () => {
     elevationUniforms.uHeightmapScale,
   ]);
 
-  useFrame(async () => {
+  useFrame(async (state) => {
+    const clock = state.clock;
     uniforms.uWireframe.value = terrainGeometryControls.wireframe;
     uniforms.uUseTexture.value = terrainGeometryControls.useTexture;
 
@@ -237,7 +238,7 @@ const TerrainPlane = () => {
       terrainGeometryControls.heightmapScale;
     elevationUniforms.uNoiseScale.value = terrainGeometryControls.fbmNoiseScale;
 
-    if (helloTerrainMesh) {
+    if (helloTerrainMesh && clock.elapsedTime) {
       // Update instance-specific uniforms
       helloTerrainMesh.uniforms.uSegments.value =
         terrainGeometryControls.segments;
@@ -431,7 +432,7 @@ const BasicComputeScene = () => {
       performance={{ min: 0.5 }}
     >
       <color attach="background" args={["#6dd1ed"]} />
-      <Environment preset="park" background={false} environmentIntensity={1} />
+      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
       <ambientLight intensity={0.15} />
       {/* <fog attach="fog" args={["#6dd1ed", 0, 1024 * 2]} /> */}
       <directionalLight intensity={1} position={[1, 1, 1]} />
