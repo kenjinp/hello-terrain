@@ -1,17 +1,17 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
-export {
-  ElevationFn,
-  type ElevationCallback,
-  type ElevationParams,
-  type ElevationReturn,
-} from "./nodes/ElevationFn";
+export { createControl } from "./nodes/control";
 export {
   ControlFn,
   type ControlCallback,
   type ControlParams,
   type ControlReturn,
 } from "./nodes/ControlFn";
-export { createControl } from "./nodes/control";
+export {
+  ElevationFn,
+  type ElevationCallback,
+  type ElevationParams,
+  type ElevationReturn,
+} from "./nodes/ElevationFn";
 
 // Export instance-specific uniform and varying classes
 export { TerrainUniforms } from "./TerrainUniforms";
@@ -19,31 +19,31 @@ export { TerrainVaryings } from "./TerrainVaryings";
 
 // Export factory functions for creating instance-specific nodes
 export {
+  createHeight,
+  readHeightAtPositionLocal,
+  readHeightVertex,
+} from "./nodes/height";
+export {
+  blendNormalsRNM,
+  createReadNormalAtPositionLocal,
+} from "./nodes/normals";
+export { createWorldPosition } from "./nodes/position";
+export {
+  createIsSkirtCompute,
   createIsSkirtFragment,
   createIsSkirtVertex,
-  createIsSkirtCompute,
 } from "./nodes/skirt";
 export {
   createRootUV,
   createRootUVCompute,
+  createTileGeometryPosition,
   createTileIsLeaf,
   createTileLevel,
   createTileOriginVec2,
-  createTileVertexWorldPosition,
-  createTileGeometryPosition,
-  createTileVertexWorldPositionCompute,
   createTileSize,
+  createTileVertexWorldPosition,
+  createTileVertexWorldPositionCompute,
 } from "./nodes/tile";
-export {
-  createHeight,
-  readHeightVertex,
-  readHeightAtPositionLocal,
-} from "./nodes/height";
-export { createWorldPosition } from "./nodes/position";
-export {
-  createReadNormalAtPositionLocal,
-  blendNormalsRNM,
-} from "./nodes/normals";
 
 // Export quadtree and terrain mesh
 export { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
@@ -51,22 +51,39 @@ export { TerrainMesh, type TerrainMeshParams } from "./TerrainMesh";
 
 // Export texture system
 export {
-  TerrainTextureArray,
-  type TextureSetOptions,
-} from "./texture/TerrainTextureArray";
-export {
   ControlDataPacker,
   type ControlData,
 } from "./compute/ControlStorage";
 export { createReadControlAtVertex } from "./nodes/controlData";
 export {
-  sampleTextureArray,
+  TRIPLANAR_DEBUG_OFF,
+  TRIPLANAR_DEBUG_TINTED,
+  TRIPLANAR_DEBUG_WEIGHTS,
+  createTerrainColorNode,
+  createTerrainColorNodeTriplanar,
+  createTerrainColorNodeTriplanarDebug,
+  createTerrainColorNodeTriplanarNoTile,
+  createTerrainNormalNode,
+  createTerrainNormalNodeTriplanar,
+  createTerrainRoughnessNode,
+  createTerrainRoughnessNodeTriplanar,
+  type TerrainTextureMaterialParams,
+  type TerrainTextureMaterialTriplanarDebugParams,
+  type TerrainTextureMaterialTriplanarNoTileParams,
+  type TerrainTextureMaterialTriplanarParams,
+} from "./nodes/terrainTextureMaterial";
+export {
   heightBlend,
+  sampleTextureArray,
+  sampleTextureArrayNoTile,
+  sampleTextureArrayTriplanar,
+  sampleTextureArrayTriplanarDebug,
+  sampleTextureArrayTriplanarNoTile,
+  sampleTextureArrayTriplanarSimple,
   slopeBlend,
+  triplanarDebugWeights,
 } from "./nodes/textureArraySampling";
 export {
-  createTerrainColorNode,
-  createTerrainNormalNode,
-  createTerrainRoughnessNode,
-  type TerrainTextureMaterialParams,
-} from "./nodes/terrainTextureMaterial";
+  TerrainTextureArray,
+  type TextureSetOptions,
+} from "./texture/TerrainTextureArray";

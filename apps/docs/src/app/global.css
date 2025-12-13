@@ -1,3 +1,23 @@
 @import 'tailwindcss';
 @import 'fumadocs-ui/css/neutral.css';
 @import 'fumadocs-ui/css/preset.css';
+
+/* Example pages: remove top padding and adjust layout */
+.example-layout-container {
+  /* Pull the canvas up to remove top padding from parent */
+  margin-top: calc(-1 * var(--fd-nav-height, 0px) - 1rem);
+}
+
+/* TOC positioning for example pages - target the nd-toc element */
+:has(.example-layout-container) #nd-toc {
+  /* Push the TOC down to start at the article content level */
+  margin-top: 90vh;
+  /* Make it sticky so it fixes to top when scrolling past */
+  position: sticky;
+  top: var(--fd-nav-height, 3.5rem);
+}
+
+/* Remove padding from the article content container when example layout is present */
+:has(.example-layout-container) > article {
+  padding-top: 0;
+}

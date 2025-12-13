@@ -1,23 +1,27 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
+import { TerrainOrbitControls } from "@/components/Terrain/TerrainOrbitControls";
 import * as hello from "@hello-terrain/react";
 import {
   ControlFn,
   ElevationFn,
+  TRIPLANAR_DEBUG_OFF,
+  TRIPLANAR_DEBUG_TINTED,
+  TRIPLANAR_DEBUG_WEIGHTS,
   type TerrainMesh,
   TerrainTextureArray,
-  createTerrainColorNode,
+  createTerrainColorNodeTriplanarNoTile,
 } from "@hello-terrain/three";
-import { OrbitControls, useTexture } from "@react-three/drei";
+import { useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
+  clamp,
   float,
-  min,
   select,
   texture,
   uint,
@@ -151,12 +155,28 @@ const TerrainPlane = () => {
   });
 
   const textureControls = useControls("Textures", {
+    debugMode: {
+      value: TRIPLANAR_DEBUG_OFF,
+      options: {
+        Off: TRIPLANAR_DEBUG_OFF,
+        Weights: TRIPLANAR_DEBUG_WEIGHTS,
+        Tinted: TRIPLANAR_DEBUG_TINTED,
+      },
+      label: "Debug Mode",
+    },
     textureScale: {
       value: 50,
       min: 1,
       max: 200,
       step: 1,
       label: "Texture Scale",
+    },
+    triplanarSharpness: {
+      value: 2,
+      min: 1,
+      max: 20,
+      step: 0.5,
+      label: "Triplanar Sharpness",
     },
     heightBlendSharpness: {
       value: 4,
@@ -165,26 +185,40 @@ const TerrainPlane = () => {
       step: 0.5,
       label: "Blend Sharpness",
     },
-    zone1Max: {
-      value: 500,
-      min: 0,
-      max: 2000,
-      step: 50,
-      label: "Grass → Slate (m)",
+    variationScale: {
+      value: 0.01,
+      min: 0.001,
+      max: 1,
+      step: 0.001,
+      label: "Anti-Tile Scale",
     },
-    zone2Max: {
-      value: 1500,
+    slopeThreshold: {
+      value: 60,
+      min: 20,
+      max: 85,
+      step: 1,
+      label: "Rock Slope (°)",
+    },
+    slopeBlendRange: {
+      value: 10,
+      min: 1,
+      max: 30,
+      step: 1,
+      label: "Slope Blend (°)",
+    },
+    snowAltitude: {
+      value: 2500,
       min: 500,
-      max: 3000,
-      step: 50,
-      label: "Slate → Rock (m)",
-    },
-    zone3Max: {
-      value: 2800,
-      min: 1500,
       max: 4000,
       step: 50,
-      label: "Rock → Snow (m)",
+      label: "Snow Altitude (m)",
+    },
+    snowBlendRange: {
+      value: 300,
+      min: 50,
+      max: 1000,
+      step: 50,
+      label: "Snow Blend (m)",
     },
   });
 
@@ -274,96 +308,113 @@ const TerrainPlane = () => {
     });
   }, [heightmapTexture]);
 
-  // Control function that determines textures based on height
-  // This runs in the compute shader after height/normal computation
+  // Create uniforms for control function parameters (persisted across renders)
+  // This avoids recreating the controlFn which causes heavy shader recompilation
+  // biome-ignore lint/correctness/useExhaustiveDependencies: uniforms created once, values updated in useFrame
+  const controlUniforms = useMemo(() => {
+    // Convert initial slope threshold from degrees to cos(angle)
+    const slopeThresholdCos = Math.cos(
+      (textureControls.slopeThreshold * Math.PI) / 180
+    );
+    const slopeBlendCos = Math.cos(
+      ((textureControls.slopeThreshold - textureControls.slopeBlendRange) *
+        Math.PI) /
+        180
+    );
+
+    return {
+      slopeThresholdCos: uniform(slopeThresholdCos),
+      slopeBlendCos: uniform(slopeBlendCos),
+      snowAltitude: uniform(textureControls.snowAltitude),
+      snowBlendRange: uniform(textureControls.snowBlendRange),
+      heightScale: uniform(terrainGeometryControls.heightmapScale),
+    };
+  }, []);
+
+  // Control function that determines textures based on slope and altitude
+  // Uses uniforms for dynamic values to avoid shader recompilation
   const controlFn = useMemo(() => {
-    // Get zone thresholds from controls
-    const z1 = textureControls.zone1Max;
-    const z2 = textureControls.zone2Max;
-    const z3 = textureControls.zone3Max;
+    return ControlFn(({ height, normal }) => {
+      // Scale height to world units (meters)
+      const scaledHeight = height.mul(controlUniforms.heightScale);
 
-    return ControlFn(({ height }) => {
-      // Height thresholds from controls (in meters after scaling)
-      // Note: height here is the raw computed height from the heightmap
-      // The heightmapScale is applied in the vertex shader, so we need to
-      // account for it here. Since elevationFn returns 0-1 and scale is 3861,
-      // the height values here are 0-1 range, we multiply by scale.
-      const scaledHeight = height.mul(
-        float(terrainGeometryControls.heightmapScale)
-      );
-
-      // Zone thresholds as shader floats
-      const zone1Max = float(z1);
-      const zone2Max = float(z2);
-      const zone3Max = float(z3);
-
-      // Texture IDs as uint
+      // Texture IDs
       const grassId = uint(TEXTURE_IDS.grass);
       const rockId = uint(TEXTURE_IDS.rock);
-      const slateId = uint(TEXTURE_IDS.slate);
       const snowId = uint(TEXTURE_IDS.snow);
 
-      // Determine base and overlay textures based on height zones
-      // Zone 1: < zone1Max - grass to slate
-      // Zone 2: zone1Max to zone2Max - slate to rock
-      // Zone 3: zone2Max to zone3Max - rock to snow
-      // Zone 4: > zone3Max - pure snow
+      // Calculate slope from normal.y
+      // normal.y = 1 for flat ground, 0 for vertical surfaces
+      // Steeper slopes have lower normal.y values
+      const normalY = normal.y;
 
-      const inZone1 = scaledHeight.lessThan(zone1Max);
-      const inZone2 = scaledHeight
-        .greaterThanEqual(zone1Max)
-        .and(scaledHeight.lessThan(zone2Max));
-      const inZone3 = scaledHeight
-        .greaterThanEqual(zone2Max)
-        .and(scaledHeight.lessThan(zone3Max));
-      // Zone 4 is everything else (>= zone3Max)
-
-      // Select base texture
-      const baseTexture = select(
-        inZone1,
-        grassId,
-        select(inZone2, slateId, select(inZone3, rockId, snowId))
+      // Slope blend: 0 = flat (grass), 1 = steep (rock)
+      // When normal.y < slopeThresholdCos, it's steep (rock)
+      // Blend smoothly between slopeBlendCos and slopeThresholdCos
+      const slopeRange = controlUniforms.slopeBlendCos.sub(
+        controlUniforms.slopeThresholdCos
+      );
+      const slopeBlendFactor = clamp(
+        controlUniforms.slopeBlendCos.sub(normalY).div(slopeRange),
+        0,
+        1
       );
 
-      // Select overlay texture
+      // Snow blend: 0 = below snow line, 1 = above snow line
+      // Blend smoothly over snowBlendRange
+      const snowStart = controlUniforms.snowAltitude.sub(
+        controlUniforms.snowBlendRange
+      );
+      const snowBlendFactor = clamp(
+        scaledHeight.sub(snowStart).div(controlUniforms.snowBlendRange),
+        0,
+        1
+      );
+
+      // Determine textures based on slope and altitude:
+      // Priority: Snow > Rock > Grass
+      // - If steep slope: rock (even above snow line, cliffs don't hold snow)
+      // - If above snow altitude (not steep): snow
+      // - Otherwise: grass
+
+      // For steep slopes, always use rock (cliffs don't hold snow well)
+      const isSteep = normalY.lessThan(controlUniforms.slopeThresholdCos);
+      const isSnowZone = scaledHeight.greaterThan(snowStart);
+
+      // Base texture selection:
+      // - Steep slopes: rock
+      // - Snow zone (not steep): grass transitioning to snow
+      // - Low altitude (not steep): grass
+      const baseTexture = select(isSteep, rockId, grassId);
+
+      // Overlay texture selection:
+      // - Steep slopes: rock (no blend needed)
+      // - Snow zone: snow (blending from grass to snow)
+      // - Low altitude: grass with slight rock blend on moderate slopes
       const overlayTexture = select(
-        inZone1,
-        slateId,
-        select(inZone2, rockId, select(inZone3, snowId, snowId))
+        isSteep,
+        rockId,
+        select(isSnowZone, snowId, rockId)
       );
 
-      // Calculate blend factor (0-255) within each zone
-      // Zone widths for blend calculation
-      const zone1Width = zone1Max;
-      const zone2Width = zone2Max.sub(zone1Max);
-      const zone3Width = zone3Max.sub(zone2Max);
-
-      const blend1 = min(scaledHeight.div(zone1Width), float(1)).mul(
-        float(255)
+      // Calculate blend factor (0-255)
+      // For steep areas: blend based on slope (grass → rock)
+      // For snow zone (non-steep): blend based on altitude (grass → snow)
+      const rawBlend = select(
+        isSteep,
+        slopeBlendFactor, // Steep: blend grass to rock
+        select(
+          isSnowZone,
+          snowBlendFactor, // Snow zone: blend to snow
+          slopeBlendFactor // Low altitude: slight slope-based rock blend
+        )
       );
-      const blend2 = min(
-        scaledHeight.sub(zone1Max).div(zone2Width),
-        float(1)
-      ).mul(float(255));
-      const blend3 = min(
-        scaledHeight.sub(zone2Max).div(zone3Width),
-        float(1)
-      ).mul(float(255));
+      const blendFactor = rawBlend.mul(float(255));
 
-      const blendFactor = select(
-        inZone1,
-        blend1,
-        select(inZone2, blend2, select(inZone3, blend3, float(0)))
-      );
-
-      // UV scale (0 = 1x, stored as value - 1 in bits 13-10)
+      // UV scale (0 = 1x)
       const uvScale = uint(0);
 
-      // Pack control data into uint32:
-      // Bits 31-27: Base Texture ID (0-31)
-      // Bits 26-22: Overlay Texture ID (0-31)
-      // Bits 21-14: Blend Factor (0-255)
-      // Bits 13-10: UV Scale (0-15)
+      // Pack control data into uint32
       const packed = baseTexture
         .shiftLeft(uint(27))
         .bitOr(overlayTexture.shiftLeft(uint(22)))
@@ -372,15 +423,9 @@ const TerrainPlane = () => {
 
       return packed;
     });
-  }, [
-    terrainGeometryControls.heightmapScale,
-    textureControls.zone1Max,
-    textureControls.zone2Max,
-    textureControls.zone3Max,
-  ]);
+  }, [controlUniforms]);
 
-  // Update terrain's controlFn when it changes
-  // R3F's extend doesn't always detect function prop changes properly
+  // Set controlFn once when terrain is ready (not on every parameter change)
   useEffect(() => {
     if (terrain && controlFn) {
       terrain.controlFn = controlFn;
@@ -403,6 +448,9 @@ const TerrainPlane = () => {
     () => ({
       textureScale: uniform(textureControls.textureScale),
       heightBlendSharpness: uniform(textureControls.heightBlendSharpness),
+      triplanarSharpness: uniform(textureControls.triplanarSharpness),
+      debugMode: uniform(textureControls.debugMode),
+      variationScale: uniform(textureControls.variationScale),
     }),
     []
   );
@@ -414,13 +462,20 @@ const TerrainPlane = () => {
       })();
     }
 
-    return createTerrainColorNode({
+    // Use triplanar + stochastic tiling node for reduced texture repetition
+    return createTerrainColorNodeTriplanarNoTile({
       varyings: terrain.varyings,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       textureScale: textureUniforms.textureScale as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       heightBlendSharpness: textureUniforms.heightBlendSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      triplanarSharpness: textureUniforms.triplanarSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      debugMode: textureUniforms.debugMode as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      variationScale: textureUniforms.variationScale as any,
     });
   }, [terrain, textureArray, textureUniforms]);
 
@@ -443,6 +498,26 @@ const TerrainPlane = () => {
     textureUniforms.textureScale.value = textureControls.textureScale;
     textureUniforms.heightBlendSharpness.value =
       textureControls.heightBlendSharpness;
+    textureUniforms.triplanarSharpness.value =
+      textureControls.triplanarSharpness;
+    textureUniforms.debugMode.value = textureControls.debugMode;
+    textureUniforms.variationScale.value = textureControls.variationScale;
+
+    // Update control function uniforms (slope/altitude thresholds)
+    // Convert slope angles from degrees to cos(angle) for GPU comparison
+    const slopeThresholdCos = Math.cos(
+      (textureControls.slopeThreshold * Math.PI) / 180
+    );
+    const slopeBlendCos = Math.cos(
+      ((textureControls.slopeThreshold - textureControls.slopeBlendRange) *
+        Math.PI) /
+        180
+    );
+    controlUniforms.slopeThresholdCos.value = slopeThresholdCos;
+    controlUniforms.slopeBlendCos.value = slopeBlendCos;
+    controlUniforms.snowAltitude.value = textureControls.snowAltitude;
+    controlUniforms.snowBlendRange.value = textureControls.snowBlendRange;
+    controlUniforms.heightScale.value = terrainGeometryControls.heightmapScale;
 
     const renderer = gl as unknown as THREE.WebGPURenderer;
     const frustum = new THREE.Frustum();
@@ -491,6 +566,14 @@ const TerrainPlane = () => {
         />
       </hello.TerrainMesh>
 
+      {/* Terrain-aware orbit controls that prevent camera from going below terrain */}
+      <TerrainOrbitControls
+        terrainMesh={terrain}
+        target={[0, 50, 0]}
+        minHeightAboveTerrain={10}
+        heightAdjustmentSpeed={0.5}
+      />
+
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
     </>
@@ -499,8 +582,15 @@ const TerrainPlane = () => {
 
 export default function TexturedTerrainScene() {
   return (
-    <div style={{ width: "100vw", height: "100vh" }}>
+    <div className="relative w-full h-full">
       <Canvas
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+        }}
         camera={{
           position: [300, 500, 500],
           fov: 75,
@@ -517,7 +607,6 @@ export default function TexturedTerrainScene() {
       >
         <color attach="background" args={["#87CEEB"]} />
         <TerrainPlane />
-        <OrbitControls makeDefault />
       </Canvas>
     </div>
   );
