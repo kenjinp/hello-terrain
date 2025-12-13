@@ -67,6 +67,7 @@ export {
   createTerrainNormalNodeTriplanar,
   createTerrainRoughnessNode,
   createTerrainRoughnessNodeTriplanar,
+  createTerrainRoughnessNodeTriplanarNoTile,
   type TerrainTextureMaterialParams,
   type TerrainTextureMaterialTriplanarDebugParams,
   type TerrainTextureMaterialTriplanarNoTileParams,
@@ -87,3 +88,6 @@ export {
   TerrainTextureArray,
   type TextureSetOptions,
 } from "./texture/TerrainTextureArray";
+
+// Export storage properties for advanced shader customization
+export { controlmapStorageProperty } from "./nodes/properties";

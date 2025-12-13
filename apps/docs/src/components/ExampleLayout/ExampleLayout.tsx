@@ -62,7 +62,7 @@ export function ExampleLayout({
         <button
           type="button"
           onClick={toggleFullscreen}
-          className="absolute top-4 right-4 z-10 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white transition-colors backdrop-blur-sm"
+          className="absolute top-8 right-8 z-10 p-2 rounded-lg bg-black/50 hover:bg-black/70 text-white transition-colors backdrop-blur-sm"
           aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
         >
           {isFullscreen ? (
@@ -141,4 +141,3 @@ export function ExampleLayout({
     </div>
   );
 }
-

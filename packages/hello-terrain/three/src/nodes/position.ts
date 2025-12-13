@@ -1,5 +1,6 @@
 import {
   Fn,
+  float,
   instanceIndex,
   int,
   positionLocal,
@@ -27,14 +28,19 @@ export const createWorldPosition = (
   const tileIsLeaf = createTileIsLeaf();
   const isSkirtVertex = createIsSkirtVertex(uniforms);
   const tileGeometryPosition = createTileGeometryPosition(uniforms);
-  const readNormalAtPositionLocal = createReadNormalAtPositionLocal(varyings);
 
   return Fn(() => {
     // Use indirection: look up actual node index from active leaf indices
     const activeIndex = int(instanceIndex);
-    const nodeIndex = int(activeLeafIndicesStorageProperty.element(activeIndex));
+    const nodeIndex = int(
+      activeLeafIndicesStorageProperty.element(activeIndex)
+    );
     const skirtVertex = isSkirtVertex();
-    const worldPos = tileGeometryPosition(nodeIndex, positionLocal, skirtVertex);
+    const worldPos = tileGeometryPosition(
+      nodeIndex,
+      positionLocal,
+      skirtVertex
+    );
     const isLeaf = tileIsLeaf(nodeIndex);
 
     // Force a zero-effect dependency on nodeStorageProperty so the renderer
@@ -80,14 +86,35 @@ export const createWorldPosition = (
         worldPos.y.add(skirtEdgeHeight).add(_forceBind),
         worldPos.z
       ),
-      vec3(
-        worldPos.x,
-        worldPos.y.add(height).add(_forceBind),
-        worldPos.z
-      )
+      vec3(worldPos.x, worldPos.y.add(height).add(_forceBind), worldPos.z)
     );
 
+    // Read normal from normalmap storage using the computed global index
+    // (can't use varyings.vGlobalVertexIndex here as varyings are write-only in vertex stage)
+    const readNormalAtPositionLocal =
+      createReadNormalAtPositionLocal(globalIndex);
     varyings.vNormal.assign(readNormalAtPositionLocal());
+
+    // Read control map data and pass as varyings for smooth interpolation across triangles
+    // Reading in vertex shader and interpolating in fragment shader creates smooth transitions
+    const controlPacked = controlmapStorageProperty.element(globalIndex);
+    const controlPackedInt = controlPacked.toUint();
+    const controlBaseId = controlPackedInt
+      .shiftRight(int(27))
+      .bitAnd(int(0x1f))
+      .toFloat();
+    const controlOverlayId = controlPackedInt
+      .shiftRight(int(22))
+      .bitAnd(int(0x1f))
+      .toFloat();
+    const controlBlend = controlPackedInt
+      .shiftRight(int(14))
+      .bitAnd(int(0xff))
+      .toFloat()
+      .div(float(255.0));
+    varyings.vControlBaseId.assign(controlBaseId);
+    varyings.vControlOverlayId.assign(controlOverlayId);
+    varyings.vControlBlend.assign(controlBlend);
 
     return select(isLeaf, beforeTransform, vec3(0, 0, 0));
   });

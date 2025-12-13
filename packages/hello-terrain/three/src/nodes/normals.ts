@@ -1,7 +1,6 @@
 import type { ShaderNodeObject } from "three/tsl";
 import { Fn, dot, int, vec3, vec4 } from "three/tsl";
-import type { ConstNode, Vector3 } from "three/webgpu";
-import type { TerrainVaryings } from "../TerrainVaryings";
+import type { ConstNode, Node, Vector3 } from "three/webgpu";
 import { normalmapStorageProperty } from "./properties";
 
 // reoriented normal mapping
@@ -23,9 +22,18 @@ export const blendNormalsRNM = Fn(
   }
 );
 
-export const createReadNormalAtPositionLocal = (varyings: TerrainVaryings) =>
+/**
+ * Creates a function to read the normal at a vertex position from the normalmap storage.
+ *
+ * @param globalVertexIndexNode - The computed global vertex index (nodeIndex * verticesPerNode + vertexIndex).
+ *                                This must be passed explicitly because varyings cannot be read
+ *                                in the same shader stage they are written.
+ */
+export const createReadNormalAtPositionLocal = (
+  globalVertexIndexNode: ShaderNodeObject<Node>
+) =>
   Fn(() => {
-    const globalIndex = varyings.vGlobalVertexIndex.toVar();
+    const globalIndex = globalVertexIndexNode.toVar();
 
     const base = globalIndex.mul(int(3));
     const nx = normalmapStorageProperty.element(base.add(int(0)));

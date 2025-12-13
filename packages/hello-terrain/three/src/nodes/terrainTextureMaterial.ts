@@ -9,6 +9,7 @@ import {
   mix,
   positionWorld,
   select,
+  smoothstep,
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
@@ -792,6 +793,12 @@ export interface TerrainTextureMaterialTriplanarNoTileParams
    * Default: 0.01. Typical range: 0.001 - 0.1
    */
   variationScale?: number | UniformValue;
+  /**
+   * Width of the transition blend zone between different textures (0-1).
+   * Higher values create smoother transitions.
+   * Default: 0.3. Typical range: 0.1 - 0.5
+   */
+  transitionBlendWidth?: number | UniformValue;
 }
 
 /**
@@ -836,6 +843,7 @@ export const createTerrainColorNodeTriplanarNoTile = (
     triplanarSharpness = 2,
     debugMode,
     variationScale = 0.01,
+    transitionBlendWidth = 0.3,
   } = params;
 
   // Create texture uniforms outside the Fn
@@ -854,21 +862,22 @@ export const createTerrainColorNodeTriplanarNoTile = (
       : triplanarSharpness;
   const variationScaleNode =
     typeof variationScale === "number" ? float(variationScale) : variationScale;
+  const transitionBlendWidthNode =
+    typeof transitionBlendWidth === "number"
+      ? float(transitionBlendWidth)
+      : transitionBlendWidth;
 
   return Fn(() => {
-    // Read and decode control data
+    // Read control data from varyings (interpolated by GPU across triangles)
+    // This creates smooth transitions between vertices with different control values
+    const interpolatedBaseId = varyings.vControlBaseId;
+    const interpolatedOverlayId = varyings.vControlOverlayId;
+    const interpolatedBlend = varyings.vControlBlend;
+
+    // For UV scale and hole, we still need to read from storage (they don't need interpolation)
     const globalVertexIndex = varyings.vGlobalVertexIndex;
     const packed = controlmapStorageProperty.element(globalVertexIndex);
     const packedInt = packed.toUint();
-
-    const baseId = packedInt.shiftRight(int(27)).bitAnd(int(0x1f)).toVar();
-    const overlayId = packedInt.shiftRight(int(22)).bitAnd(int(0x1f)).toVar();
-    const blend = packedInt
-      .shiftRight(int(14))
-      .bitAnd(int(0xff))
-      .toFloat()
-      .div(255.0)
-      .toVar();
     const uvScale = packedInt
       .shiftRight(int(10))
       .bitAnd(int(0x0f))
@@ -891,43 +900,130 @@ export const createTerrainColorNodeTriplanarNoTile = (
     // Apply UV scale to texture scale
     const scaledTextureScale = textureScaleNode.div(uvScale);
 
-    // Compute all three possible outputs:
+    // === TEXTURE ID TRANSITION BLENDING ===
+    // When texture IDs are interpolated between vertices, we get fractional values.
+    // Sample both floor and ceil texture IDs and blend between them for smooth transitions.
 
-    // 1. Triplanar + stochastic sampling (main rendering mode)
-    const baseSampleNoTile = sampleTextureArrayTriplanarNoTile(
+    // Get floor and ceil texture IDs for base texture
+    const baseIdFloor = interpolatedBaseId.floor().toInt();
+    const baseIdCeil = interpolatedBaseId.ceil().toInt();
+    const baseIdFract = interpolatedBaseId.sub(interpolatedBaseId.floor());
+
+    // Get floor and ceil texture IDs for overlay texture
+    const overlayIdFloor = interpolatedOverlayId.floor().toInt();
+    const overlayIdCeil = interpolatedOverlayId.ceil().toInt();
+    const overlayIdFract = interpolatedOverlayId.sub(
+      interpolatedOverlayId.floor()
+    );
+
+    // Calculate transition blend factors with adjustable width
+    // transitionBlendWidth controls how smooth the transition is
+    const baseTransitionBlend = smoothstep(
+      float(0.5).sub(transitionBlendWidthNode),
+      float(0.5).add(transitionBlendWidthNode),
+      baseIdFract
+    );
+    const overlayTransitionBlend = smoothstep(
+      float(0.5).sub(transitionBlendWidthNode),
+      float(0.5).add(transitionBlendWidthNode),
+      overlayIdFract
+    );
+
+    // The blend factor from the control map, with smoothstep for smoother interpolation
+    const controlBlend = smoothstep(float(0), float(1), interpolatedBlend);
+
+    // Sample all needed textures for base (floor and ceil IDs)
+    const baseFloorSample = sampleTextureArrayTriplanarNoTile(
       albedoHeightTexture,
       worldPos,
       geometricNormal,
-      baseId,
+      baseIdFloor,
       scaledTextureScale,
       triplanarSharpnessNode,
       variationScaleNode
     );
-    const overlaySampleNoTile = sampleTextureArrayTriplanarNoTile(
+    const baseCeilSample = sampleTextureArrayTriplanarNoTile(
       albedoHeightTexture,
       worldPos,
       geometricNormal,
-      overlayId,
+      baseIdCeil,
       scaledTextureScale,
       triplanarSharpnessNode,
       variationScaleNode
     );
+
+    // Sample all needed textures for overlay (floor and ceil IDs)
+    const overlayFloorSample = sampleTextureArrayTriplanarNoTile(
+      albedoHeightTexture,
+      worldPos,
+      geometricNormal,
+      overlayIdFloor,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+    const overlayCeilSample = sampleTextureArrayTriplanarNoTile(
+      albedoHeightTexture,
+      worldPos,
+      geometricNormal,
+      overlayIdCeil,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+
+    // Blend between floor and ceil samples for both base and overlay
+    // Use height-based blending so texture heights influence the transition
+    const blendedBaseColor = heightBlend(
+      baseFloorSample.rgb,
+      baseCeilSample.rgb,
+      baseFloorSample.a,
+      baseCeilSample.a,
+      baseTransitionBlend,
+      heightBlendSharpnessNode
+    );
+    // Blend heights for use in final base-to-overlay blend
+    const blendedBaseHeight = mix(
+      baseFloorSample.a,
+      baseCeilSample.a,
+      baseTransitionBlend
+    );
+
+    const blendedOverlayColor = heightBlend(
+      overlayFloorSample.rgb,
+      overlayCeilSample.rgb,
+      overlayFloorSample.a,
+      overlayCeilSample.a,
+      overlayTransitionBlend,
+      heightBlendSharpnessNode
+    );
+    const blendedOverlayHeight = mix(
+      overlayFloorSample.a,
+      overlayCeilSample.a,
+      overlayTransitionBlend
+    );
+
+    // Final color: blend between base and overlay using height-based blending
     const noTileColor = heightBlend(
-      baseSampleNoTile.rgb,
-      overlaySampleNoTile.rgb,
-      baseSampleNoTile.a,
-      overlaySampleNoTile.a,
-      blend,
+      blendedBaseColor,
+      blendedOverlayColor,
+      blendedBaseHeight,
+      blendedOverlayHeight,
+      controlBlend,
       heightBlendSharpnessNode
     );
 
-    // 2. Debug weights (pure RGB)
+    // For debug modes, use simple rounded IDs
+    const baseId = interpolatedBaseId.round().toInt();
+    const overlayId = interpolatedOverlayId.round().toInt();
+
+    // Debug weights (pure RGB)
     const weightsColor = triplanarDebugWeights(
       geometricNormal,
       triplanarSharpnessNode
     ).rgb;
 
-    // 3. Debug tinted (textures with color tints)
+    // Debug tinted (textures with color tints)
     const baseSampleTinted = sampleTextureArrayTriplanarDebug(
       albedoHeightTexture,
       worldPos,
@@ -949,7 +1045,7 @@ export const createTerrainColorNodeTriplanarNoTile = (
       overlaySampleTinted.rgb,
       baseSampleTinted.a,
       overlaySampleTinted.a,
-      blend,
+      controlBlend,
       heightBlendSharpnessNode
     );
 
@@ -967,5 +1063,172 @@ export const createTerrainColorNodeTriplanarNoTile = (
 
     // Handle holes (set alpha to 0 to discard)
     return vec4(finalColor, select(hole, float(0), float(1)));
+  })();
+};
+
+/**
+ * Create a roughness node using triplanar texture sampling with stochastic tiling
+ * Samples roughness values from texture arrays using triplanar projection with anti-tiling.
+ *
+ * @example
+ * ```ts
+ * const roughnessNode = createTerrainRoughnessNodeTriplanarNoTile({
+ *   varyings: terrain.varyings,
+ *   textureArray: myTextureArray,
+ *   textureScale: 10,
+ *   triplanarSharpness: 2,
+ *   variationScale: 0.01,
+ * });
+ * material.roughnessNode = roughnessNode;
+ * ```
+ */
+export const createTerrainRoughnessNodeTriplanarNoTile = (
+  params: Omit<
+    TerrainTextureMaterialTriplanarNoTileParams,
+    "heightBlendSharpness" | "debugMode"
+  >
+): ShaderNodeObject<Node> => {
+  const {
+    varyings,
+    textureArray,
+    textureScale = 10,
+    triplanarSharpness = 2,
+    variationScale = 0.01,
+    transitionBlendWidth = 0.3,
+  } = params;
+
+  // Create texture uniform outside the Fn
+  const normalRoughnessTexture = textureArray.normalRoughnessArray;
+
+  // Convert to shader nodes - support both numbers and uniforms
+  const textureScaleNode =
+    typeof textureScale === "number" ? float(textureScale) : textureScale;
+  const triplanarSharpnessNode =
+    typeof triplanarSharpness === "number"
+      ? float(triplanarSharpness)
+      : triplanarSharpness;
+  const variationScaleNode =
+    typeof variationScale === "number" ? float(variationScale) : variationScale;
+  const transitionBlendWidthNode =
+    typeof transitionBlendWidth === "number"
+      ? float(transitionBlendWidth)
+      : transitionBlendWidth;
+
+  return Fn(() => {
+    // Read control data from varyings (interpolated by GPU across triangles)
+    const interpolatedBaseId = varyings.vControlBaseId;
+    const interpolatedOverlayId = varyings.vControlOverlayId;
+    const interpolatedBlend = varyings.vControlBlend;
+
+    // For UV scale, we still need to read from storage
+    const globalVertexIndex = varyings.vGlobalVertexIndex;
+    const packed = controlmapStorageProperty.element(globalVertexIndex);
+    const packedInt = packed.toUint();
+    const uvScale = packedInt
+      .shiftRight(int(10))
+      .bitAnd(int(0x0f))
+      .toFloat()
+      .add(1.0)
+      .toVar();
+
+    const worldPos = positionWorld;
+
+    // Compute geometric normal from screen-space derivatives of world position
+    const dPdx = dFdx(worldPos);
+    const dPdy = dFdy(worldPos);
+    const geometricNormal = cross(dPdy, dPdx).normalize();
+
+    // Apply UV scale to texture scale
+    const scaledTextureScale = textureScaleNode.div(uvScale);
+
+    // === TEXTURE ID TRANSITION BLENDING ===
+    // Get floor and ceil texture IDs for base texture
+    const baseIdFloor = interpolatedBaseId.floor().toInt();
+    const baseIdCeil = interpolatedBaseId.ceil().toInt();
+    const baseIdFract = interpolatedBaseId.sub(interpolatedBaseId.floor());
+
+    // Get floor and ceil texture IDs for overlay texture
+    const overlayIdFloor = interpolatedOverlayId.floor().toInt();
+    const overlayIdCeil = interpolatedOverlayId.ceil().toInt();
+    const overlayIdFract = interpolatedOverlayId.sub(
+      interpolatedOverlayId.floor()
+    );
+
+    // Calculate transition blend factors with adjustable width
+    const baseTransitionBlend = smoothstep(
+      float(0.5).sub(transitionBlendWidthNode),
+      float(0.5).add(transitionBlendWidthNode),
+      baseIdFract
+    );
+    const overlayTransitionBlend = smoothstep(
+      float(0.5).sub(transitionBlendWidthNode),
+      float(0.5).add(transitionBlendWidthNode),
+      overlayIdFract
+    );
+
+    // The blend factor from the control map
+    const controlBlend = smoothstep(float(0), float(1), interpolatedBlend);
+
+    // Sample all needed textures for base (floor and ceil IDs)
+    const baseFloorSample = sampleTextureArrayTriplanarNoTile(
+      normalRoughnessTexture,
+      worldPos,
+      geometricNormal,
+      baseIdFloor,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+    const baseCeilSample = sampleTextureArrayTriplanarNoTile(
+      normalRoughnessTexture,
+      worldPos,
+      geometricNormal,
+      baseIdCeil,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+
+    // Sample all needed textures for overlay (floor and ceil IDs)
+    const overlayFloorSample = sampleTextureArrayTriplanarNoTile(
+      normalRoughnessTexture,
+      worldPos,
+      geometricNormal,
+      overlayIdFloor,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+    const overlayCeilSample = sampleTextureArrayTriplanarNoTile(
+      normalRoughnessTexture,
+      worldPos,
+      geometricNormal,
+      overlayIdCeil,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+
+    // Blend between floor and ceil samples for roughness (alpha channel)
+    // Use smoothstep-based blending for smooth transitions
+    const blendedBaseRoughness = mix(
+      baseFloorSample.a,
+      baseCeilSample.a,
+      baseTransitionBlend
+    );
+    const blendedOverlayRoughness = mix(
+      overlayFloorSample.a,
+      overlayCeilSample.a,
+      overlayTransitionBlend
+    );
+
+    // Final roughness: blend between base and overlay
+    const blendedRoughness = mix(
+      blendedBaseRoughness,
+      blendedOverlayRoughness,
+      controlBlend
+    );
+
+    return blendedRoughness;
   })();
 };

@@ -110,6 +110,8 @@ export class TerrainMesh extends InstancedMesh {
   // Local compute uniform to avoid relying on shared global uniforms in compute pipelines
   // @ts-ignore will be initialized
   private uComputeRootSize: ReturnType<typeof uniform>;
+  // @ts-ignore will be initialized
+  private uComputeHeightmapScale: ReturnType<typeof uniform>;
   // Cached views to avoid per-frame allocations on readback
   private lastUpdateHeightView: Float32Array | null = null;
   // @ts-ignore
@@ -260,6 +262,9 @@ export class TerrainMesh extends InstancedMesh {
     this.uComputeRootSize = uniform(this.params.rootSize).setName(
       `uComputeRootSize_${sanitizedUuid}`
     );
+    this.uComputeHeightmapScale = uniform(
+      this.uniforms.uHeightmapScale.value as number
+    ).setName(`uComputeHeightmapScale_${sanitizedUuid}`);
     const tileEdgeVertexCount = this.params.innerTileSegments + 1 + 2;
     const heightFn = createHeight(
       this.uniforms,
@@ -325,23 +330,41 @@ export class TerrainMesh extends InstancedMesh {
 
         const numVerticesPerNode = edgeVertexCount.mul(edgeVertexCount);
         const nodeVertexBaseIndex = int(nodeIndex).mul(numVerticesPerNode);
-        const hC = this.heightmapStorage.storageNode.element(
-          nodeVertexBaseIndex.add(
-            vVertexIndex.mul(edgeVertexCount).add(uVertexIndex)
+        // Read raw heights (0-1 range) and scale by heightmap scale to get world-space heights
+        const heightScale = this.uComputeHeightmapScale.toVar();
+        const hC = this.heightmapStorage.storageNode
+          .element(
+            nodeVertexBaseIndex.add(
+              vVertexIndex.mul(edgeVertexCount).add(uVertexIndex)
+            )
           )
-        );
-        const hLm = this.heightmapStorage.storageNode.element(
-          nodeVertexBaseIndex.add(vVertexIndex.mul(edgeVertexCount).add(uLeft))
-        );
-        const hRp = this.heightmapStorage.storageNode.element(
-          nodeVertexBaseIndex.add(vVertexIndex.mul(edgeVertexCount).add(uRight))
-        );
-        const hDm = this.heightmapStorage.storageNode.element(
-          nodeVertexBaseIndex.add(vDown.mul(edgeVertexCount).add(uVertexIndex))
-        );
-        const hUp = this.heightmapStorage.storageNode.element(
-          nodeVertexBaseIndex.add(vUp.mul(edgeVertexCount).add(uVertexIndex))
-        );
+          .mul(heightScale);
+        const hLm = this.heightmapStorage.storageNode
+          .element(
+            nodeVertexBaseIndex.add(
+              vVertexIndex.mul(edgeVertexCount).add(uLeft)
+            )
+          )
+          .mul(heightScale);
+        const hRp = this.heightmapStorage.storageNode
+          .element(
+            nodeVertexBaseIndex.add(
+              vVertexIndex.mul(edgeVertexCount).add(uRight)
+            )
+          )
+          .mul(heightScale);
+        const hDm = this.heightmapStorage.storageNode
+          .element(
+            nodeVertexBaseIndex.add(
+              vDown.mul(edgeVertexCount).add(uVertexIndex)
+            )
+          )
+          .mul(heightScale);
+        const hUp = this.heightmapStorage.storageNode
+          .element(
+            nodeVertexBaseIndex.add(vUp.mul(edgeVertexCount).add(uVertexIndex))
+          )
+          .mul(heightScale);
 
         const isNodeActive = nodeStorageProperty
           .element(nodeIndex.mul(4).add(3))
@@ -603,9 +626,13 @@ export class TerrainMesh extends InstancedMesh {
       this.params.rootSize,
       this.params.innerTileSegments
     );
-    // Keep compute-local uniform in sync if initialized
+    // Keep compute-local uniforms in sync if initialized
     if (this.uComputeRootSize) {
       this.uComputeRootSize.value = this.params.rootSize;
+    }
+    if (this.uComputeHeightmapScale) {
+      this.uComputeHeightmapScale.value = this.uniforms.uHeightmapScale
+        .value as number;
     }
   }
 

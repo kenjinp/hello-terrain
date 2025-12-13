@@ -1,19 +1,19 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { TerrainOrbitControls } from "@/components/Terrain/TerrainOrbitControls";
 import * as hello from "@hello-terrain/react";
 import {
   ControlFn,
   ElevationFn,
-  TRIPLANAR_DEBUG_OFF,
   TRIPLANAR_DEBUG_TINTED,
   TRIPLANAR_DEBUG_WEIGHTS,
   type TerrainMesh,
   TerrainTextureArray,
+  controlmapStorageProperty,
   createTerrainColorNodeTriplanarNoTile,
+  createTerrainRoughnessNodeTriplanarNoTile,
 } from "@hello-terrain/three";
-import { useTexture } from "@react-three/drei";
+import { OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useState } from "react";
@@ -21,9 +21,20 @@ import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPU
 import {
   Fn,
   clamp,
+  cross,
+  dFdx,
+  dFdy,
   float,
+  fract,
+  instanceIndex,
+  int,
+  normalize,
+  positionWorld,
   select,
+  sin,
+  smoothstep,
   texture,
+  transformNormalToView,
   uint,
   uniform,
   vec2,
@@ -87,6 +98,15 @@ const TEXTURE_IDS = {
   slate: 2,
   snow: 3,
 } as const;
+
+// Control map debug modes (extend triplanar debug modes)
+const CONTROL_DEBUG_OFF = 0; // Normal rendering
+const CONTROL_DEBUG_BASE_TEXTURE = 10; // Visualize base texture ID
+const CONTROL_DEBUG_OVERLAY_TEXTURE = 11; // Visualize overlay texture ID
+const CONTROL_DEBUG_BLEND = 12; // Visualize blend factor
+const CONTROL_DEBUG_SLOPE = 13; // Visualize slope (normal.y from varyings)
+const CONTROL_DEBUG_ELEVATION = 14; // Visualize elevation
+const CONTROL_DEBUG_GEOMETRIC_NORMAL = 15; // Visualize normal computed from screen-space derivatives
 
 const TerrainPlane = () => {
   const { camera, gl } = useThree();
@@ -156,11 +176,17 @@ const TerrainPlane = () => {
 
   const textureControls = useControls("Textures", {
     debugMode: {
-      value: TRIPLANAR_DEBUG_OFF,
+      value: CONTROL_DEBUG_OFF,
       options: {
-        Off: TRIPLANAR_DEBUG_OFF,
-        Weights: TRIPLANAR_DEBUG_WEIGHTS,
-        Tinted: TRIPLANAR_DEBUG_TINTED,
+        Off: CONTROL_DEBUG_OFF,
+        "Triplanar Weights": TRIPLANAR_DEBUG_WEIGHTS,
+        "Triplanar Tinted": TRIPLANAR_DEBUG_TINTED,
+        "Control: Base Texture": CONTROL_DEBUG_BASE_TEXTURE,
+        "Control: Overlay Texture": CONTROL_DEBUG_OVERLAY_TEXTURE,
+        "Control: Blend Factor": CONTROL_DEBUG_BLEND,
+        "Control: Slope (vNormal)": CONTROL_DEBUG_SLOPE,
+        "Control: Elevation": CONTROL_DEBUG_ELEVATION,
+        "Control: Geometric Normal": CONTROL_DEBUG_GEOMETRIC_NORMAL,
       },
       label: "Debug Mode",
     },
@@ -192,6 +218,13 @@ const TerrainPlane = () => {
       step: 0.001,
       label: "Anti-Tile Scale",
     },
+    transitionBlendWidth: {
+      value: 0.3,
+      min: 0.05,
+      max: 0.5,
+      step: 0.01,
+      label: "Transition Blend",
+    },
     slopeThreshold: {
       value: 60,
       min: 20,
@@ -219,6 +252,24 @@ const TerrainPlane = () => {
       max: 1000,
       step: 50,
       label: "Snow Blend (m)",
+    },
+    snowSteepnessThreshold: {
+      value: 45,
+      min: 20,
+      max: 75,
+      step: 1,
+      label: "Snow Max Slope (°)",
+    },
+  });
+
+  const debugControls = useControls("Debug", {
+    wireframe: {
+      value: false,
+      label: "Wireframe",
+    },
+    showTiles: {
+      value: false,
+      label: "Show Tiles",
     },
   });
 
@@ -321,12 +372,16 @@ const TerrainPlane = () => {
         Math.PI) /
         180
     );
+    const snowSteepnessThresholdCos = Math.cos(
+      (textureControls.snowSteepnessThreshold * Math.PI) / 180
+    );
 
     return {
       slopeThresholdCos: uniform(slopeThresholdCos),
       slopeBlendCos: uniform(slopeBlendCos),
       snowAltitude: uniform(textureControls.snowAltitude),
       snowBlendRange: uniform(textureControls.snowBlendRange),
+      snowSteepnessThresholdCos: uniform(snowSteepnessThresholdCos),
       heightScale: uniform(terrainGeometryControls.heightmapScale),
     };
   }, []);
@@ -348,68 +403,80 @@ const TerrainPlane = () => {
       // Steeper slopes have lower normal.y values
       const normalY = normal.y;
 
+      // Compute smooth blend factors using smoothstep for better interpolation
       // Slope blend: 0 = flat (grass), 1 = steep (rock)
-      // When normal.y < slopeThresholdCos, it's steep (rock)
-      // Blend smoothly between slopeBlendCos and slopeThresholdCos
+      // Use smoothstep for smooth S-curve interpolation
       const slopeRange = controlUniforms.slopeBlendCos.sub(
         controlUniforms.slopeThresholdCos
       );
-      const slopeBlendFactor = clamp(
+      const slopeT = clamp(
         controlUniforms.slopeBlendCos.sub(normalY).div(slopeRange),
         0,
         1
       );
+      const slopeBlendFactor = smoothstep(float(0), float(1), slopeT);
 
       // Snow blend: 0 = below snow line, 1 = above snow line
-      // Blend smoothly over snowBlendRange
+      // Blend smoothly over snowBlendRange with smoothstep
       const snowStart = controlUniforms.snowAltitude.sub(
         controlUniforms.snowBlendRange
       );
-      const snowBlendFactor = clamp(
+      const snowT = clamp(
         scaledHeight.sub(snowStart).div(controlUniforms.snowBlendRange),
         0,
         1
       );
+      const snowBlendFactor = smoothstep(float(0), float(1), snowT);
 
-      // Determine textures based on slope and altitude:
-      // Priority: Snow > Rock > Grass
-      // - If steep slope: rock (even above snow line, cliffs don't hold snow)
-      // - If above snow altitude (not steep): snow
-      // - Otherwise: grass
+      // Reduce snow on steep slopes (cliffs don't hold snow well)
+      // Use a gentler threshold for snow reduction
+      const snowSlopeThreshold = controlUniforms.slopeThresholdCos.mul(
+        float(0.6)
+      );
+      const snowSlopeRange =
+        controlUniforms.slopeBlendCos.sub(snowSlopeThreshold);
+      const snowSlopeT = clamp(
+        controlUniforms.slopeBlendCos.sub(normalY).div(snowSlopeRange),
+        0,
+        1
+      );
+      const snowSlopeReduction = smoothstep(float(0), float(1), snowSlopeT);
+      const adjustedSnowBlend = snowBlendFactor.mul(
+        float(1).sub(snowSlopeReduction)
+      );
 
-      // For steep slopes, always use rock (cliffs don't hold snow well)
-      const isSteep = normalY.lessThan(controlUniforms.slopeThresholdCos);
-      const isSnowZone = scaledHeight.greaterThan(snowStart);
+      // Determine which textures to blend based on conditions
+      // Priority: Snow (at altitude) > Rock (steep) > Grass (flat, low)
+      // Use smooth interpolation to avoid hard edges
 
-      // Base texture selection:
-      // - Steep slopes: rock
-      // - Snow zone (not steep): grass transitioning to snow
-      // - Low altitude (not steep): grass
+      // Check if we're in a snow zone (significant snow contribution)
+      const snowThreshold = float(0.15);
+      const inSnowZone = adjustedSnowBlend.greaterThan(snowThreshold);
+
+      // Check if slope is too steep for snow (independent threshold)
+      const tooSteepForSnow = normalY.lessThan(
+        controlUniforms.snowSteepnessThresholdCos
+      );
+
+      // Check if we're on a steep slope (for base texture selection)
+      const steepThreshold = float(0.3);
+      const isSteep = slopeBlendFactor.greaterThan(steepThreshold);
+
+      // Base texture: rock if steep, grass if not steep (at all elevations)
       const baseTexture = select(isSteep, rockId, grassId);
 
-      // Overlay texture selection:
-      // - Steep slopes: rock (no blend needed)
-      // - Snow zone: snow (blending from grass to snow)
-      // - Low altitude: grass with slight rock blend on moderate slopes
-      const overlayTexture = select(
-        isSteep,
-        rockId,
-        select(isSnowZone, snowId, rockId)
+      // Overlay texture: snow if in snow zone AND not too steep, otherwise same as base
+      const canHaveSnow = inSnowZone.and(tooSteepForSnow.not());
+      const overlayTexture = select(canHaveSnow, snowId, baseTexture);
+
+      // Blend factor: only blend when snow is present and not too steep, otherwise no blend (0)
+      const rawBlend = select(
+        canHaveSnow,
+        adjustedSnowBlend, // Snow zone and not too steep: blend based on snow amount
+        float(0) // No snow or too steep: no blending (base texture only)
       );
 
-      // Calculate blend factor (0-255)
-      // For steep areas: blend based on slope (grass → rock)
-      // For snow zone (non-steep): blend based on altitude (grass → snow)
-      const rawBlend = select(
-        isSteep,
-        slopeBlendFactor, // Steep: blend grass to rock
-        select(
-          isSnowZone,
-          snowBlendFactor, // Snow zone: blend to snow
-          slopeBlendFactor // Low altitude: slight slope-based rock blend
-        )
-      );
-      const blendFactor = rawBlend.mul(float(255));
+      const blendFactor = clamp(rawBlend, 0, 1).mul(float(255));
 
       // UV scale (0 = 1x)
       const uvScale = uint(0);
@@ -451,6 +518,8 @@ const TerrainPlane = () => {
       triplanarSharpness: uniform(textureControls.triplanarSharpness),
       debugMode: uniform(textureControls.debugMode),
       variationScale: uniform(textureControls.variationScale),
+      transitionBlendWidth: uniform(textureControls.transitionBlendWidth),
+      showTiles: uniform(0), // Initialized to 0, updated in useFrame
     }),
     []
   );
@@ -462,8 +531,8 @@ const TerrainPlane = () => {
       })();
     }
 
-    // Use triplanar + stochastic tiling node for reduced texture repetition
-    return createTerrainColorNodeTriplanarNoTile({
+    // Create the normal terrain color node (handles triplanar debug modes 0-2)
+    const terrainColorNode = createTerrainColorNodeTriplanarNoTile({
       varyings: terrain.varyings,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
@@ -476,7 +545,167 @@ const TerrainPlane = () => {
       debugMode: textureUniforms.debugMode as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       variationScale: textureUniforms.variationScale as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
     });
+
+    return Fn(() => {
+      // Tile visualization: generate random color based on instance index
+      const showTiles = textureUniforms.showTiles.equal(float(1));
+
+      // Hash function to generate pseudo-random color from instance index
+      const nodeIdx = float(instanceIndex);
+      const hash1 = fract(
+        sin(nodeIdx.mul(float(12.9898))).mul(float(43758.5453))
+      );
+      const hash2 = fract(
+        sin(nodeIdx.mul(float(78.233))).mul(float(43758.5453))
+      );
+      const hash3 = fract(
+        sin(nodeIdx.mul(float(37.719))).mul(float(43758.5453))
+      );
+      const tileColor = vec3(hash1, hash2, hash3);
+
+      // Read control data from storage
+      const globalVertexIndex = terrain.varyings.vGlobalVertexIndex;
+      const packed = controlmapStorageProperty.element(globalVertexIndex);
+      const packedInt = packed.toUint();
+
+      // Decode control data
+      const baseId = packedInt.shiftRight(int(27)).bitAnd(int(0x1f));
+      const overlayId = packedInt.shiftRight(int(22)).bitAnd(int(0x1f));
+      const blend = packedInt
+        .shiftRight(int(14))
+        .bitAnd(int(0xff))
+        .toFloat()
+        .div(255.0);
+
+      // Define colors for each texture ID (matching TEXTURE_IDS)
+      // grass=0 (green), rock=1 (brown), slate=2 (gray), snow=3 (white)
+      const grassColor = vec3(0.2, 0.8, 0.2);
+      const rockColor = vec3(0.6, 0.4, 0.2);
+      const slateColor = vec3(0.5, 0.5, 0.55);
+      const snowColor = vec3(0.95, 0.95, 1.0);
+
+      // Map texture ID to color (simple lookup using select chain)
+      const baseColor = select(
+        baseId.equal(int(0)),
+        grassColor,
+        select(
+          baseId.equal(int(1)),
+          rockColor,
+          select(baseId.equal(int(2)), slateColor, snowColor)
+        )
+      );
+
+      const overlayColor = select(
+        overlayId.equal(int(0)),
+        grassColor,
+        select(
+          overlayId.equal(int(1)),
+          rockColor,
+          select(overlayId.equal(int(2)), slateColor, snowColor)
+        )
+      );
+
+      // Blend factor as grayscale
+      const blendColor = vec3(blend, blend, blend);
+
+      // Slope visualization (normal.y from varyings: 1=flat/green, 0=vertical/red)
+      const normalY = terrain.varyings.vNormal.y;
+      const slopeColor = vec3(
+        float(1).sub(normalY), // Red for steep
+        normalY, // Green for flat
+        float(0)
+      );
+
+      // Elevation visualization (vElevation grayscale, normalized to 0-1 range)
+      // Assuming max height around 8000m for Everest heightmap
+      const elevationNormalized = terrain.varyings.vElevation.div(float(8000));
+      const elevationColor = vec3(
+        elevationNormalized,
+        elevationNormalized,
+        elevationNormalized
+      );
+
+      // Geometric normal from screen-space derivatives of world position
+      // This computes the actual surface normal at render time, independent of normalmap storage
+      const worldPos = positionWorld;
+      const dpdx = dFdx(worldPos);
+      const dpdy = dFdy(worldPos);
+      // Cross product order: cross(dpdx, dpdy) gives normal pointing "out" of surface
+      const geometricNormal = normalize(cross(dpdx, dpdy));
+      // Visualize: Y component (1=flat/green, 0=vertical/red)
+      const geomNormalY = geometricNormal.y;
+      const geometricNormalColor = vec3(
+        float(1).sub(geomNormalY), // Red for steep
+        geomNormalY, // Green for flat
+        float(0)
+      );
+
+      // Select debug output based on mode
+      // Modes 10-15 are control map debug modes
+      const isControlBaseDebug = textureUniforms.debugMode.equal(
+        float(CONTROL_DEBUG_BASE_TEXTURE)
+      );
+      const isControlOverlayDebug = textureUniforms.debugMode.equal(
+        float(CONTROL_DEBUG_OVERLAY_TEXTURE)
+      );
+      const isControlBlendDebug = textureUniforms.debugMode.equal(
+        float(CONTROL_DEBUG_BLEND)
+      );
+      const isControlSlopeDebug = textureUniforms.debugMode.equal(
+        float(CONTROL_DEBUG_SLOPE)
+      );
+      const isControlElevationDebug = textureUniforms.debugMode.equal(
+        float(CONTROL_DEBUG_ELEVATION)
+      );
+      const isControlGeometricNormalDebug = textureUniforms.debugMode.equal(
+        float(CONTROL_DEBUG_GEOMETRIC_NORMAL)
+      );
+      const isControlDebug = isControlBaseDebug
+        .or(isControlOverlayDebug)
+        .or(isControlBlendDebug)
+        .or(isControlSlopeDebug)
+        .or(isControlElevationDebug)
+        .or(isControlGeometricNormalDebug);
+
+      // Select control debug color
+      const controlDebugColor = select(
+        isControlBaseDebug,
+        baseColor,
+        select(
+          isControlOverlayDebug,
+          overlayColor,
+          select(
+            isControlBlendDebug,
+            blendColor,
+            select(
+              isControlSlopeDebug,
+              slopeColor,
+              select(
+                isControlElevationDebug,
+                elevationColor,
+                geometricNormalColor
+              )
+            )
+          )
+        )
+      );
+
+      // Final output: prioritize tile visualization, then control debug, then terrain color
+      const finalColor = select(
+        showTiles,
+        vec4(tileColor, float(1)),
+        select(
+          isControlDebug,
+          vec4(controlDebugColor, float(1)),
+          terrainColorNode
+        )
+      );
+
+      return finalColor;
+    })();
   }, [terrain, textureArray, textureUniforms]);
 
   const normalNode = useMemo(() => {
@@ -485,8 +714,31 @@ const TerrainPlane = () => {
         return vec3(0, 1, 0);
       })();
     }
-    return terrain.varyings.vNormal;
+    // Transform object-space normals to view space for correct lighting
+    // meshStandardNodeMaterial expects view-space normals for its PBR calculations
+    return transformNormalToView(terrain.varyings.vNormal);
   }, [terrain]);
+
+  const roughnessNode = useMemo(() => {
+    if (!terrain || !textureArray) {
+      return Fn(() => {
+        return float(0.5);
+      })();
+    }
+
+    return createTerrainRoughnessNodeTriplanarNoTile({
+      varyings: terrain.varyings,
+      textureArray,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      textureScale: textureUniforms.textureScale as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      triplanarSharpness: textureUniforms.triplanarSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      variationScale: textureUniforms.variationScale as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
+    });
+  }, [terrain, textureArray, textureUniforms]);
 
   useFrame(() => {
     if (!terrain) return;
@@ -502,6 +754,9 @@ const TerrainPlane = () => {
       textureControls.triplanarSharpness;
     textureUniforms.debugMode.value = textureControls.debugMode;
     textureUniforms.variationScale.value = textureControls.variationScale;
+    textureUniforms.transitionBlendWidth.value =
+      textureControls.transitionBlendWidth;
+    textureUniforms.showTiles.value = debugControls.showTiles ? 1 : 0;
 
     // Update control function uniforms (slope/altitude thresholds)
     // Convert slope angles from degrees to cos(angle) for GPU comparison
@@ -513,10 +768,14 @@ const TerrainPlane = () => {
         Math.PI) /
         180
     );
+    const snowSteepnessThresholdCos = Math.cos(
+      (textureControls.snowSteepnessThreshold * Math.PI) / 180
+    );
     controlUniforms.slopeThresholdCos.value = slopeThresholdCos;
     controlUniforms.slopeBlendCos.value = slopeBlendCos;
     controlUniforms.snowAltitude.value = textureControls.snowAltitude;
     controlUniforms.snowBlendRange.value = textureControls.snowBlendRange;
+    controlUniforms.snowSteepnessThresholdCos.value = snowSteepnessThresholdCos;
     controlUniforms.heightScale.value = terrainGeometryControls.heightmapScale;
 
     const renderer = gl as unknown as THREE.WebGPURenderer;
@@ -563,19 +822,17 @@ const TerrainPlane = () => {
           positionNode={positionNode}
           colorNode={colorNode}
           normalNode={normalNode}
+          roughnessNode={roughnessNode}
+          wireframe={debugControls.wireframe}
         />
       </hello.TerrainMesh>
 
       {/* Terrain-aware orbit controls that prevent camera from going below terrain */}
-      <TerrainOrbitControls
-        terrainMesh={terrain}
-        target={[0, 50, 0]}
-        minHeightAboveTerrain={10}
-        heightAdjustmentSpeed={0.5}
-      />
+      <OrbitControls />
 
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
+      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
     </>
   );
 };
