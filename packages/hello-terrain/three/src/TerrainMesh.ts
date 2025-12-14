@@ -163,6 +163,8 @@ export class TerrainMesh extends InstancedMesh {
   private cpuHeightmapCache: Float32Array | null = null;
   private lastKnownCameraHeight = 0;
   private lastUpdatePosition: ThreeVector3 | null = null;
+  // Reusable vector for terrain-aware LOD position adjustment
+  private _adjustedPositionForLOD = new ThreeVector3();
   public readonly params: TerrainMeshParams;
   public textureArray?: TerrainTextureArray;
   constructor(params: Partial<TerrainMeshParams> = {}) {
@@ -196,9 +198,16 @@ export class TerrainMesh extends InstancedMesh {
     const geometry = new TerrainGeometry(merged.innerTileSegments, true);
     // material may be set later by consumers; pass through if present
     super(geometry, material as unknown as Material, quadtreeParams.maxNodes);
+    // @ts-ignore
     this.params = merged;
     this.params.epsilon =
       params.epsilon ?? this.params.minNodeSize / this.params.innerTileSegments;
+
+    // Disable Three.js's built-in frustum culling on the mesh.
+    // The geometry's bounding sphere doesn't account for GPU vertex displacement
+    // from the heightmap, so Three.js would incorrectly cull the terrain.
+    // We use our own quadtree-based frustum culling instead (this.params.frustumCulling).
+    (this as InstancedMesh).frustumCulled = false;
     this.quadtree = new Quadtree(
       {
         ...quadtreeParams,
@@ -380,11 +389,22 @@ export class TerrainMesh extends InstancedMesh {
           .floor()
           .toInt();
 
-        // Neighbor indices including skirt ring for central differences at inner edges
-        const uLeft = max(uVertexIndex.sub(int(1)), int(0));
-        const uRight = min(uVertexIndex.add(int(1)), lastVertexIndex);
-        const vDown = max(vVertexIndex.sub(int(1)), int(0));
-        const vUp = min(vVertexIndex.add(int(1)), lastVertexIndex);
+        // IMPORTANT: normals/control should not be influenced by skirt vertices.
+        // The skirt ring exists to hide cracks and is vertically displaced in the
+        // render path, so using skirt heights as finite-difference neighbors can
+        // create incorrect normals at tile borders.
+        //
+        // We clamp sampling to the inner ring [1, last-1] and use one-sided
+        // differences on that inner border.
+        const innerMin = int(1);
+        const innerMax = lastVertexIndex.sub(int(1));
+        const uCenter = max(min(uVertexIndex, innerMax), innerMin);
+        const vCenter = max(min(vVertexIndex, innerMax), innerMin);
+
+        const uLeft = max(uCenter.sub(int(1)), innerMin);
+        const uRight = min(uCenter.add(int(1)), innerMax);
+        const vDown = max(vCenter.sub(int(1)), innerMin);
+        const vUp = min(vCenter.add(int(1)), innerMax);
 
         const numVerticesPerNode = edgeVertexCount.mul(edgeVertexCount);
         const nodeVertexBaseIndex = int(nodeIndex).mul(numVerticesPerNode);
@@ -392,35 +412,27 @@ export class TerrainMesh extends InstancedMesh {
         const heightScale = this.uComputeHeightmapScale.toVar();
         const hC = this.heightmapStorage.storageNode
           .element(
-            nodeVertexBaseIndex.add(
-              vVertexIndex.mul(edgeVertexCount).add(uVertexIndex)
-            )
+            nodeVertexBaseIndex.add(vCenter.mul(edgeVertexCount).add(uCenter))
           )
           .mul(heightScale);
         const hLm = this.heightmapStorage.storageNode
           .element(
-            nodeVertexBaseIndex.add(
-              vVertexIndex.mul(edgeVertexCount).add(uLeft)
-            )
+            nodeVertexBaseIndex.add(vCenter.mul(edgeVertexCount).add(uLeft))
           )
           .mul(heightScale);
         const hRp = this.heightmapStorage.storageNode
           .element(
-            nodeVertexBaseIndex.add(
-              vVertexIndex.mul(edgeVertexCount).add(uRight)
-            )
+            nodeVertexBaseIndex.add(vCenter.mul(edgeVertexCount).add(uRight))
           )
           .mul(heightScale);
         const hDm = this.heightmapStorage.storageNode
           .element(
-            nodeVertexBaseIndex.add(
-              vDown.mul(edgeVertexCount).add(uVertexIndex)
-            )
+            nodeVertexBaseIndex.add(vDown.mul(edgeVertexCount).add(uCenter))
           )
           .mul(heightScale);
         const hUp = this.heightmapStorage.storageNode
           .element(
-            nodeVertexBaseIndex.add(vUp.mul(edgeVertexCount).add(uVertexIndex))
+            nodeVertexBaseIndex.add(vUp.mul(edgeVertexCount).add(uCenter))
           )
           .mul(heightScale);
 
@@ -439,27 +451,27 @@ export class TerrainMesh extends InstancedMesh {
         const invStep = float(1).div(stepWorld);
         const inv2Step = float(0.5).div(stepWorld);
 
-        // Extremes are actual skirt vertices (index 0 or last)
-        const atLeftExtreme = uVertexIndex.equal(int(0));
-        const atRightExtreme = uVertexIndex.equal(lastVertexIndex);
-        const atBottomExtreme = vVertexIndex.equal(int(0));
-        const atTopExtreme = vVertexIndex.equal(lastVertexIndex);
+        // Inner border of the tile (index 1 or last-1). Skirt vertices clamp to this.
+        const atLeftInnerEdge = uCenter.equal(innerMin);
+        const atRightInnerEdge = uCenter.equal(innerMax);
+        const atBottomInnerEdge = vCenter.equal(innerMin);
+        const atTopInnerEdge = vCenter.equal(innerMax);
 
-        // One-sided at skirt ring, central elsewhere (inner edges use skirt as neighbor)
+        // One-sided on inner border, central in the interior.
         const dX = select(
-          atLeftExtreme,
+          atLeftInnerEdge,
           hRp.sub(hC).mul(invStep),
           select(
-            atRightExtreme,
+            atRightInnerEdge,
             hC.sub(hLm).mul(invStep),
             hRp.sub(hLm).mul(inv2Step)
           )
         );
         const dZ = select(
-          atBottomExtreme,
+          atBottomInnerEdge,
           hUp.sub(hC).mul(invStep),
           select(
-            atTopExtreme,
+            atTopInnerEdge,
             hC.sub(hDm).mul(invStep),
             hUp.sub(hDm).mul(inv2Step)
           )
@@ -1038,31 +1050,35 @@ export class TerrainMesh extends InstancedMesh {
           : undefined;
 
         // TERRAIN-AWARE SUBDIVISION:
-        // Do initial quadtree update to get closest leaf node using current position
-        let closestLeafIndex = this.quadtree.update(
-          currentPosition,
-          useFrustum
+        // Sample terrain height at camera XZ BEFORE quadtree.update() resets the structure.
+        // This uses the previous frame's stable quadtree to get a reliable height.
+        const terrainHeight = this.sampleTerrainHeightStable(
+          currentPosition as unknown as ThreeVector3
         );
 
-        // Look up terrain height at this position using cached data from previous frame
-        // This is extremely fast (<0.1ms) and allows quadtree to subdivide relative to terrain surface
-        const terrainHeight = this.getTerrainHeightAt(
-          currentPosition as unknown as ThreeVector3,
-          closestLeafIndex
+        // Calculate height above terrain surface
+        const heightAboveTerrain = currentPosition.y - terrainHeight;
+
+        // Create adjusted position for LOD calculation:
+        // Y = origin.y + heightAboveTerrain
+        // This makes subdivision based on distance from terrain surface, not world origin.
+        // Standing on a 500m mountain peak with camera at 502m gives heightAboveTerrain=2,
+        // so you get maximum subdivision just like standing on flat ground at height 2.
+        const adjustedPosition = this._adjustedPositionForLOD;
+        adjustedPosition.set(
+          currentPosition.x,
+          this.position.y + heightAboveTerrain,
+          currentPosition.z
         );
 
-        // Create adjusted position with terrain height instead of raw camera Y
-        // This ensures quadtree subdivides based on distance to terrain surface, not origin
-        this.pendingPosition.y -= terrainHeight;
-        // Do final quadtree update with terrain-adjusted position
-        closestLeafIndex = this.quadtree.update(
-          this.pendingPosition,
+        const closestLeafIndex = this.quadtree.update(
+          adjustedPosition,
           useFrustum
         );
 
         this.setMetric(
           "updatePosition",
-          `${currentPosition.x.toFixed(2)}, ${terrainHeight.toFixed(2)}, ${currentPosition.z.toFixed(2)}`
+          `${currentPosition.x.toFixed(2)}, ${currentPosition.y.toFixed(2)}, ${currentPosition.z.toFixed(2)}`
         );
         this.setMetric("closestLeafIndex", closestLeafIndex);
 
@@ -1562,27 +1578,34 @@ export class TerrainMesh extends InstancedMesh {
   }
 
   /**
-   * Fast terrain height lookup at world position using cached heightmap from previous frame.
-   * This has ~1 frame latency but is extremely fast (<0.1ms) for use in quadtree subdivision.
-   * Falls back to lastKnownCameraHeight if cache isn't available yet.
+   * Sample terrain height at a world position using the CURRENT quadtree structure.
    *
-   * NOTE: The height is scaled by uniforms.uHeightmapScale to match the rendered terrain.
+   * IMPORTANT: Must be called BEFORE quadtree.update() to use the previous frame's
+   * stable structure. The quadtree.update() method calls reset() internally which
+   * rebuilds node indices, making the cpuHeightmapCache indices invalid.
    *
-   * @param worldPos World XZ position to sample
-   * @param closestLeafIndex Index of closest leaf node (from quadtree.update)
-   * @returns Terrain height at the given position, or last known height if cache unavailable
+   * This method finds the leaf containing the position in the current (pre-reset)
+   * quadtree and samples height from the matching cpuHeightmapCache entry.
+   *
+   * @param worldPos World position to sample (only XZ used for lookup, Y ignored)
+   * @returns Terrain height at the given position, or lastKnownCameraHeight if unavailable
    */
-  private getTerrainHeightAt(
-    worldPos: ThreeVector3,
-    closestLeafIndex: number
-  ): number {
-    // If no cache yet or invalid leaf index, return last known height (first frame uses 0)
-    if (!this.cpuHeightmapCache || closestLeafIndex === -1) {
+  private sampleTerrainHeightStable(worldPos: ThreeVector3): number {
+    // No cache yet (first frame) or no valid height data
+    if (!this.cpuHeightmapCache || !this.hasValidHeightData) {
       return this.lastKnownCameraHeight;
     }
 
-    // Convert world position to local UV within the closest node
-    const localUV = this.worldToLocalUV(closestLeafIndex, worldPos);
+    // Find which leaf contains this position in the CURRENT (pre-reset) quadtree.
+    // This works because we're called BEFORE quadtree.update() which resets everything.
+    const leafIndex = this.findLeafNodeIndexAt(worldPos);
+    if (leafIndex === null) {
+      // Position is outside all leaves (e.g., frustum culled or outside terrain bounds)
+      return this.lastKnownCameraHeight;
+    }
+
+    // Get local UV within this leaf
+    const localUV = this.worldToLocalUV(leafIndex, worldPos);
 
     // Sample from CPU cache using bilinear interpolation
     // Map UV [0,1] to inner vertex indices [1, S+1]
@@ -1602,7 +1625,7 @@ export class TerrainMesh extends InstancedMesh {
     const ty = y - y0;
 
     const perNode = N * N;
-    const base = closestLeafIndex * perNode;
+    const base = leafIndex * perNode;
     const idx = (ix: number, iy: number) => base + iy * N + ix;
 
     const h00 = this.cpuHeightmapCache[idx(x0, y0)] || 0;
@@ -1617,11 +1640,10 @@ export class TerrainMesh extends InstancedMesh {
       tx * ty * h11;
 
     // Apply the same heightmapScale that the vertex shader uses
-    // This ensures CPU height queries match the rendered terrain
     const scale = this.uniforms.uHeightmapScale.value as number;
     const height = rawHeight * scale;
 
-    // Store for next frame if cache fails
+    // Update stable fallback for next frame if this fails
     this.lastKnownCameraHeight = height;
     return height;
   }

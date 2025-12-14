@@ -270,9 +270,14 @@ export class Quadtree {
     const worldX = minX + 0.5 * nodeSize;
     const worldZ = minZ + 0.5 * nodeSize;
 
-    // Frustum culling in world space using a conservative vertical range
+    // Frustum culling in world space.
+    // IMPORTANT: terrain can extend far above/below origin.y, so a fixed vertical
+    // bound around origin can incorrectly cull high-elevation tiles (leading to
+    // reduced subdivision on mountain peaks). We expand the vertical range by
+    // the camera/position altitude as a conservative, stable bound.
     if (frustum) {
-      const verticalHalfExtent = this.config.rootSize; // conservative bound
+      const altitude = Math.abs(position.y - this.config.origin.y);
+      const verticalHalfExtent = this.config.rootSize + altitude;
       const minY = this.config.origin.y - verticalHalfExtent;
       const maxY = this.config.origin.y + verticalHalfExtent;
       tempMin.set(minX, minY, minZ);
@@ -285,9 +290,12 @@ export class Quadtree {
       }
     }
 
+    // LOD distance: use full 3D distance.
+    // The caller (TerrainMesh) adjusts position.y to be origin.y + heightAboveTerrain,
+    // so this effectively measures distance from the terrain surface.
+    // Standing on a 500m mountain with camera at 502m passes adjustedY = origin.y + 2,
+    // giving the same subdivision as standing on flat ground at height 2.
     tempVector3.set(worldX, this.config.origin.y, worldZ);
-
-    // Calculate 3D distance using Vector3's built-in method
     const distance = position.distanceTo(tempVector3);
 
     const shouldSubdivide = this.shouldSubdivide(
