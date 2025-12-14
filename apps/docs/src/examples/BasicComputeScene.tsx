@@ -238,7 +238,7 @@ const TerrainPlane = () => {
       terrainGeometryControls.heightmapScale;
     elevationUniforms.uNoiseScale.value = terrainGeometryControls.fbmNoiseScale;
 
-    if (helloTerrainMesh && clock.elapsedTime) {
+    if (helloTerrainMesh && clock.elapsedTime !== undefined) {
       // Update instance-specific uniforms
       helloTerrainMesh.uniforms.uSegments.value =
         terrainGeometryControls.segments;
@@ -253,8 +253,9 @@ const TerrainPlane = () => {
       const qConfig = helloTerrainMesh.quadtree.getConfig();
       qConfig.rootSize = terrainGeometryControls.rootSize;
       qConfig.minNodeSize = terrainGeometryControls.minNodeSize;
-      qConfig.subdivisionFactor = terrainGeometryControls.subdivisionFactor;
       qConfig.maxLevel = terrainGeometryControls.maxLevel;
+      helloTerrainMesh.subdivisionFactor =
+        terrainGeometryControls.subdivisionFactor;
       const frustum = new THREE.Frustum();
 
       const projScreenMatrix = new THREE.Matrix4();

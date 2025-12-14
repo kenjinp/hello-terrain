@@ -69,12 +69,19 @@ export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
    */
   frustumCulling?: boolean;
   /**
+   * Simple distance-based subdivision factor.
+   * Subdivides when: distance < nodeSize * subdivisionFactor
+   * For more control, use `subdivisionStrategy` instead.
+   * @default 2
+   */
+  subdivisionFactor?: number;
+  /**
    * Subdivision strategy function that determines when to subdivide tiles.
    * Use the built-in strategies or provide your own:
    * - `distanceBasedSubdivision(factor)` - Original behavior, subdivide when close
    * - `screenSpaceSubdivision(options)` - Subdivide based on screen-space triangle size
    *
-   * @default distanceBasedSubdivision(2)
+   * If not provided, uses `distanceBasedSubdivision(subdivisionFactor)`.
    *
    * @example
    * ```ts
@@ -167,8 +174,8 @@ export class TerrainMesh extends InstancedMesh {
       minNodeSize: 1,
       maxNodes: 1000,
       frustumCulling: true,
-      subdivisionStrategy: distanceBasedSubdivision(2),
-    } satisfies Omit<TerrainMeshParams, "material">;
+      subdivisionFactor: 2,
+    } satisfies Omit<TerrainMeshParams, "material" | "subdivisionStrategy">;
     const merged: TerrainMeshParams = {
       ...defaults,
       ...params,
@@ -178,8 +185,14 @@ export class TerrainMesh extends InstancedMesh {
       innerTileSegments,
       material,
       subdivisionStrategy,
+      subdivisionFactor,
       ...quadtreeParams
     } = merged;
+
+    // Use explicit strategy if provided, otherwise create from subdivisionFactor
+    const effectiveStrategy =
+      subdivisionStrategy ?? distanceBasedSubdivision(subdivisionFactor ?? 2);
+
     const geometry = new TerrainGeometry(merged.innerTileSegments, true);
     // material may be set later by consumers; pass through if present
     super(geometry, material as unknown as Material, quadtreeParams.maxNodes);
@@ -191,7 +204,7 @@ export class TerrainMesh extends InstancedMesh {
         ...quadtreeParams,
         origin: this.position.clone(),
       },
-      subdivisionStrategy
+      effectiveStrategy
     );
 
     // Initialize instance-specific uniforms and varyings
@@ -685,6 +698,8 @@ export class TerrainMesh extends InstancedMesh {
     const {
       innerTileSegments: _s,
       material: _m,
+      subdivisionStrategy: _ss,
+      subdivisionFactor: _sf,
       ...quadtreeParams
     } = this.params;
     this.quadtree.setConfig({
@@ -904,6 +919,27 @@ export class TerrainMesh extends InstancedMesh {
    */
   get subdivisionStrategy(): SubdivisionStrategy {
     return this.params.subdivisionStrategy ?? distanceBasedSubdivision(2);
+  }
+
+  /**
+   * Set the subdivision factor (simple distance-based LOD).
+   * This is a convenience setter that creates a distanceBasedSubdivision strategy.
+   * For more control, use `subdivisionStrategy` directly.
+   */
+  set subdivisionFactor(factor: number) {
+    this.params.subdivisionFactor = factor;
+    // Only update strategy if not using a custom strategy
+    if (!this.params.subdivisionStrategy) {
+      this.quadtree.setSubdivisionStrategy(distanceBasedSubdivision(factor));
+      this.needsRecompute = true;
+    }
+  }
+
+  /**
+   * Get the current subdivision factor
+   */
+  get subdivisionFactor(): number {
+    return this.params.subdivisionFactor ?? 2;
   }
 
   set maxNodes(count: number) {

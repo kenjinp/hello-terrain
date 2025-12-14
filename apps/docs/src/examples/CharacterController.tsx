@@ -357,8 +357,9 @@ const TerrainWithCharacter = () => {
       const qConfig = helloTerrainMesh.quadtree.getConfig();
       qConfig.rootSize = terrainGeometryControls.rootSize;
       qConfig.minNodeSize = terrainGeometryControls.minNodeSize;
-      qConfig.subdivisionFactor = terrainGeometryControls.subdivisionFactor;
       qConfig.maxLevel = terrainGeometryControls.maxLevel;
+      helloTerrainMesh.subdivisionFactor =
+        terrainGeometryControls.subdivisionFactor;
 
       const frustum = new THREE.Frustum();
       const projScreenMatrix = new THREE.Matrix4();
