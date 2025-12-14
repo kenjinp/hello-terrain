@@ -5,13 +5,18 @@ import * as hello from "@hello-terrain/react";
 import {
   ControlFn,
   ElevationFn,
+  type ScreenSpaceInfo,
+  type SubdivisionStrategy,
   TRIPLANAR_DEBUG_TINTED,
   TRIPLANAR_DEBUG_WEIGHTS,
   type TerrainMesh,
   TerrainTextureArray,
+  computeScreenSpaceInfo,
   controlmapStorageProperty,
   createTerrainColorNodeTriplanarNoTile,
   createTerrainRoughnessNodeTriplanarNoTile,
+  distanceBasedSubdivision,
+  screenSpaceSubdivision,
 } from "@hello-terrain/three";
 import { Environment, OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
@@ -151,12 +156,26 @@ const TerrainPlane = () => {
       step: 64,
       label: "Root Size",
     },
+    subdivisionMode: {
+      value: "screenSpace" as "distance" | "screenSpace",
+      options: ["distance", "screenSpace"],
+      label: "LOD Mode",
+    },
     subdivisionFactor: {
       value: 2,
       min: 0.1,
       max: 3,
       step: 0.1,
-      label: "Subdivision Factor",
+      label: "Distance Factor",
+      render: (get) => get("TerrainGeometry.subdivisionMode") === "distance",
+    },
+    targetTrianglePixels: {
+      value: 6,
+      min: 2,
+      max: 24,
+      step: 1,
+      label: "Target Triangle (px)",
+      render: (get) => get("TerrainGeometry.subdivisionMode") === "screenSpace",
     },
     minNodeSize: {
       value: SEGMENT_COUNT,
@@ -288,6 +307,26 @@ const TerrainPlane = () => {
   });
 
   const updateFrameCounter = useRef(0);
+
+  // Screen-space info ref - updated each frame for LOD calculations
+  const screenSpaceInfoRef = useRef<ScreenSpaceInfo | null>(null);
+
+  // Create subdivision strategy based on selected mode
+  const subdivisionStrategy: SubdivisionStrategy = useMemo(() => {
+    if (terrainGeometryControls.subdivisionMode === "screenSpace") {
+      return screenSpaceSubdivision({
+        targetTrianglePixels: terrainGeometryControls.targetTrianglePixels,
+        tileSegments: terrainGeometryControls.segments,
+        getScreenSpaceInfo: () => screenSpaceInfoRef.current,
+      });
+    }
+    return distanceBasedSubdivision(terrainGeometryControls.subdivisionFactor);
+  }, [
+    terrainGeometryControls.subdivisionMode,
+    terrainGeometryControls.subdivisionFactor,
+    terrainGeometryControls.targetTrianglePixels,
+    terrainGeometryControls.segments,
+  ]);
 
   // Load heightmap texture
   const heightmapTexture = useTexture("/assets/heightmaps/everest_h.png");
@@ -810,6 +849,18 @@ const TerrainPlane = () => {
     );
     frustum.setFromProjectionMatrix(projScreenMatrix);
 
+    // Update screen-space info for LOD calculations
+    // PerspectiveCamera.fov is in degrees, convert to radians
+    if ("fov" in camera) {
+      const fovRadians =
+        ((camera as THREE.PerspectiveCamera).fov * Math.PI) / 180;
+      const screenHeight = gl.domElement.height;
+      screenSpaceInfoRef.current = computeScreenSpaceInfo(
+        fovRadians,
+        screenHeight
+      );
+    }
+
     terrain.update(renderer, camera.position, frustum);
 
     for (const [key, value] of Object.entries(terrain.metrics)) {
@@ -839,7 +890,7 @@ const TerrainPlane = () => {
         frustumCulling={debugControls.frustumCulling}
         maxLevel={terrainGeometryControls.maxLevel}
         rootSize={terrainGeometryControls.rootSize}
-        subdivisionFactor={terrainGeometryControls.subdivisionFactor}
+        subdivisionStrategy={subdivisionStrategy}
         minNodeSize={terrainGeometryControls.minNodeSize}
       >
         <meshStandardNodeMaterial

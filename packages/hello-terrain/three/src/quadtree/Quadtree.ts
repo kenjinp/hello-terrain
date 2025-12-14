@@ -11,8 +11,166 @@ export interface QuadtreeParams {
   rootSize: number;
   minNodeSize: number;
   origin: THREE.Vector3;
-  subdivisionFactor: number;
   maxNodes: number;
+}
+
+/**
+ * Context passed to subdivision strategy functions.
+ * Contains all information needed to make subdivision decisions.
+ */
+export interface SubdivisionContext {
+  /** Current node's quadtree level (0 = root) */
+  level: number;
+  /** Distance from camera/position to node center in world units */
+  distance: number;
+  /** World-space size of the node (edge length) */
+  nodeSize: number;
+  /** Minimum allowed node size from config */
+  minNodeSize: number;
+  /** Root terrain size from config */
+  rootSize: number;
+}
+
+/**
+ * Function type for subdivision strategies.
+ * Returns true if the node should be subdivided, false otherwise.
+ */
+export type SubdivisionStrategy = (context: SubdivisionContext) => boolean;
+
+// ============================================================================
+// Built-in Subdivision Strategies
+// ============================================================================
+
+/**
+ * Distance-based subdivision strategy (original behavior).
+ * Subdivides when: distance < nodeSize * factor
+ *
+ * @param factor Multiplier for subdivision threshold (default: 2)
+ * @returns SubdivisionStrategy function
+ *
+ * @example
+ * ```ts
+ * const terrain = new TerrainMesh({
+ *   subdivisionStrategy: distanceBasedSubdivision(2.5)
+ * });
+ * ```
+ */
+export function distanceBasedSubdivision(factor = 2): SubdivisionStrategy {
+  return (ctx: SubdivisionContext) => {
+    if (ctx.nodeSize <= ctx.minNodeSize) {
+      return false;
+    }
+    return ctx.distance < ctx.nodeSize * factor;
+  };
+}
+
+/**
+ * Screen-space subdivision strategy.
+ * Subdivides based on projected triangle size in pixels.
+ * Ensures triangles don't exceed a target pixel size on screen.
+ *
+ * @param options Configuration for screen-space subdivision
+ * @returns SubdivisionStrategy function
+ *
+ * @example
+ * ```ts
+ * const strategy = screenSpaceSubdivision({
+ *   targetTrianglePixels: 6,
+ *   tileSegments: 13,
+ *   getScreenSpaceInfo: () => ({
+ *     projectionFactor: screenHeight / (2 * Math.tan(camera.fov * Math.PI / 360)),
+ *     screenHeight: window.innerHeight
+ *   })
+ * });
+ * ```
+ */
+export function screenSpaceSubdivision(options: {
+  /**
+   * Target triangle size in screen pixels.
+   * Subdivide when triangles would be larger than this.
+   * Recommended: 4-8 pixels
+   * @default 6
+   */
+  targetTrianglePixels?: number;
+  /**
+   * Number of segments per tile edge.
+   * Should match TerrainMesh.innerTileSegments.
+   * @default 13
+   */
+  tileSegments?: number;
+  /**
+   * Function that returns current screen-space projection info.
+   * Called each time subdivision is evaluated.
+   */
+  getScreenSpaceInfo: () => ScreenSpaceInfo | null;
+}): SubdivisionStrategy {
+  const targetTrianglePixels = options.targetTrianglePixels ?? 6;
+  const tileSegments = options.tileSegments ?? 13;
+
+  return (ctx: SubdivisionContext) => {
+    // Don't subdivide if node is too small
+    if (ctx.nodeSize <= ctx.minNodeSize) {
+      return false;
+    }
+
+    const screenInfo = options.getScreenSpaceInfo();
+    if (!screenInfo) {
+      // Fallback to simple distance-based if no screen info available
+      return ctx.distance < ctx.nodeSize * 2;
+    }
+
+    // Calculate screen-space size of the tile
+    // screenSize = (worldSize / distance) * projectionFactor
+    const safeDistance = Math.max(ctx.distance, 0.001); // Prevent division by zero
+    const tileScreenSize =
+      (ctx.nodeSize / safeDistance) * screenInfo.projectionFactor;
+
+    // Calculate the screen-space size of each triangle
+    // triangleSize = tileScreenSize / tileSegments
+    const triangleScreenSize = tileScreenSize / tileSegments;
+
+    // Subdivide if triangles are larger than the target
+    return triangleScreenSize > targetTrianglePixels;
+  };
+}
+
+/**
+ * Screen-space projection info for LOD calculations.
+ * Computed from camera properties each frame.
+ */
+export interface ScreenSpaceInfo {
+  /**
+   * Projection factor: screenHeight / (2 * tan(fovY / 2))
+   * This converts world-space size to screen-space pixels at distance 1.
+   */
+  projectionFactor: number;
+  /**
+   * Screen height in pixels (for reference/debugging)
+   */
+  screenHeight: number;
+}
+
+/**
+ * Compute screen-space info from camera parameters.
+ * Helper function to create ScreenSpaceInfo from typical Three.js camera values.
+ *
+ * @param fovY Vertical field of view in radians
+ * @param screenHeight Screen height in pixels
+ * @returns ScreenSpaceInfo for use with screenSpaceSubdivision
+ *
+ * @example
+ * ```ts
+ * // In your render loop:
+ * const fovRadians = camera.fov * Math.PI / 180;
+ * const screenInfo = computeScreenSpaceInfo(fovRadians, renderer.domElement.height);
+ * ```
+ */
+export function computeScreenSpaceInfo(
+  fovY: number,
+  screenHeight: number
+): ScreenSpaceInfo {
+  const projectionFactor = screenHeight / (2 * Math.tan(fovY / 2));
+  return { projectionFactor, screenHeight };
 }
 
 const tempVector3 = new THREE.Vector3();
@@ -25,15 +183,47 @@ export class Quadtree {
   private deepestLevel = 0;
   private config: QuadtreeParams;
   private nodeView: NodeView;
+  private subdivisionStrategy: SubdivisionStrategy;
 
   // Pre-allocated buffers to avoid object creation
   private tempChildIndices: ChildIndices = [-1, -1, -1, -1];
   private tempNeighborIndices: NeighborIndices = [-1, -1, -1, -1];
 
-  constructor(config: QuadtreeParams, nodeView?: NodeView) {
+  /**
+   * Create a new Quadtree.
+   *
+   * @param config Quadtree configuration parameters
+   * @param subdivisionStrategy Strategy function for subdivision decisions.
+   *        Defaults to distanceBasedSubdivision(2).
+   * @param nodeView Optional pre-allocated NodeView for buffer reuse
+   */
+  constructor(
+    config: QuadtreeParams,
+    subdivisionStrategy?: SubdivisionStrategy,
+    nodeView?: NodeView
+  ) {
     this.config = config;
+    this.subdivisionStrategy =
+      subdivisionStrategy ?? distanceBasedSubdivision(2);
     this.nodeView = nodeView ?? new NodeView(config.maxNodes);
     this.initialize();
+  }
+
+  /**
+   * Set the subdivision strategy.
+   * Use this to change LOD behavior at runtime.
+   *
+   * @param strategy The subdivision strategy function
+   */
+  setSubdivisionStrategy(strategy: SubdivisionStrategy): void {
+    this.subdivisionStrategy = strategy;
+  }
+
+  /**
+   * Get the current subdivision strategy
+   */
+  getSubdivisionStrategy(): SubdivisionStrategy {
+    return this.subdivisionStrategy;
   }
 
   private initialize(): void {
@@ -153,20 +343,21 @@ export class Quadtree {
   }
 
   /**
-   * Determine if a node should be subdivided based on distance and size criteria
+   * Determine if a node should be subdivided using the configured strategy
    */
   private shouldSubdivide(
-    _level: number, // Unused parameter
+    level: number,
     distance: number,
     nodeSize: number
   ): boolean {
-    // Don't subdivide if node is too small
-    if (nodeSize <= this.config.minNodeSize) {
-      return false;
-    }
-
-    // Use nodeSize directly as the threshold, multiplied by subdivision factor
-    return distance < nodeSize * this.config.subdivisionFactor;
+    const context: SubdivisionContext = {
+      level,
+      distance,
+      nodeSize,
+      minNodeSize: this.config.minNodeSize,
+      rootSize: this.config.rootSize,
+    };
+    return this.subdivisionStrategy(context);
   }
 
   /**

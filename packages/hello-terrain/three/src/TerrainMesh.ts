@@ -28,7 +28,12 @@ import {
   normalmapStorageProperty,
 } from "./nodes/properties";
 import { createTileIsLeaf, createTileLevel } from "./nodes/tile";
-import { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
+import {
+  Quadtree,
+  type QuadtreeParams,
+  type SubdivisionStrategy,
+  distanceBasedSubdivision,
+} from "./quadtree/Quadtree";
 import type { TerrainTextureArray } from "./texture/TerrainTextureArray";
 
 export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
@@ -63,6 +68,31 @@ export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
    * @default true
    */
   frustumCulling?: boolean;
+  /**
+   * Subdivision strategy function that determines when to subdivide tiles.
+   * Use the built-in strategies or provide your own:
+   * - `distanceBasedSubdivision(factor)` - Original behavior, subdivide when close
+   * - `screenSpaceSubdivision(options)` - Subdivide based on screen-space triangle size
+   *
+   * @default distanceBasedSubdivision(2)
+   *
+   * @example
+   * ```ts
+   * import { screenSpaceSubdivision, computeScreenSpaceInfo } from '@hello-terrain/three';
+   *
+   * const terrain = new TerrainMesh({
+   *   subdivisionStrategy: screenSpaceSubdivision({
+   *     targetTrianglePixels: 6,
+   *     tileSegments: 13,
+   *     getScreenSpaceInfo: () => computeScreenSpaceInfo(
+   *       camera.fov * Math.PI / 180,
+   *       renderer.domElement.height
+   *     )
+   *   })
+   * });
+   * ```
+   */
+  subdivisionStrategy?: SubdivisionStrategy;
 }
 
 export class TerrainMesh extends InstancedMesh {
@@ -135,26 +165,34 @@ export class TerrainMesh extends InstancedMesh {
       maxLevel: 10,
       rootSize: 100,
       minNodeSize: 1,
-      subdivisionFactor: 2,
       maxNodes: 1000,
       frustumCulling: true,
+      subdivisionStrategy: distanceBasedSubdivision(2),
     } satisfies Omit<TerrainMeshParams, "material">;
     const merged: TerrainMeshParams = {
       ...defaults,
       ...params,
     } as TerrainMeshParams;
 
-    const { innerTileSegments, material, ...quadtreeParams } = merged;
+    const {
+      innerTileSegments,
+      material,
+      subdivisionStrategy,
+      ...quadtreeParams
+    } = merged;
     const geometry = new TerrainGeometry(merged.innerTileSegments, true);
     // material may be set later by consumers; pass through if present
     super(geometry, material as unknown as Material, quadtreeParams.maxNodes);
     this.params = merged;
     this.params.epsilon =
       params.epsilon ?? this.params.minNodeSize / this.params.innerTileSegments;
-    this.quadtree = new Quadtree({
-      ...quadtreeParams,
-      origin: this.position.clone(),
-    });
+    this.quadtree = new Quadtree(
+      {
+        ...quadtreeParams,
+        origin: this.position.clone(),
+      },
+      subdivisionStrategy
+    );
 
     // Initialize instance-specific uniforms and varyings
     this.uniforms = new TerrainUniforms({
@@ -850,14 +888,22 @@ export class TerrainMesh extends InstancedMesh {
     return this.params.minNodeSize;
   }
 
-  set subdivisionFactor(factor: number) {
-    this.params.subdivisionFactor = factor;
-    this.updateQuadtreeConfig();
+  /**
+   * Set the subdivision strategy.
+   * Use built-in strategies like `distanceBasedSubdivision()` or `screenSpaceSubdivision()`,
+   * or provide your own custom strategy function.
+   */
+  set subdivisionStrategy(strategy: SubdivisionStrategy) {
+    this.params.subdivisionStrategy = strategy;
+    this.quadtree.setSubdivisionStrategy(strategy);
     this.needsRecompute = true;
   }
 
-  get subdivisionFactor() {
-    return this.params.subdivisionFactor;
+  /**
+   * Get the current subdivision strategy
+   */
+  get subdivisionStrategy(): SubdivisionStrategy {
+    return this.params.subdivisionStrategy ?? distanceBasedSubdivision(2);
   }
 
   set maxNodes(count: number) {

@@ -46,7 +46,18 @@ export {
 } from "./nodes/tile";
 
 // Export quadtree and terrain mesh
-export { Quadtree, type QuadtreeParams } from "./quadtree/Quadtree";
+export {
+  Quadtree,
+  computeScreenSpaceInfo,
+  // Built-in subdivision strategies
+  distanceBasedSubdivision,
+  screenSpaceSubdivision,
+  type QuadtreeParams,
+  type ScreenSpaceInfo,
+  // Subdivision strategy types and helpers
+  type SubdivisionContext,
+  type SubdivisionStrategy,
+} from "./quadtree/Quadtree";
 export { TerrainMesh, type TerrainMeshParams } from "./TerrainMesh";
 
 // Export texture system
