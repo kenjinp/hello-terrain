@@ -36,7 +36,7 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 import { v4 as uuidv4 } from "uuid";
-import { Skybox } from "./Skybox";
+import { Skybox } from "../Skybox";
 import { vec2_fbm, warp_fbm } from "./fmb";
 import { HelloTerrain, useHelloTerrain } from "./lib/HelloTerrain/HelloTerrain";
 import { blendNormalsRNM } from "./lib/TSLNodes/Normals";

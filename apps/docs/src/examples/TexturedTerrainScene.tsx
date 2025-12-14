@@ -1,6 +1,7 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
+import { Skybox } from "@/components/Skybox";
 import * as hello from "@hello-terrain/react";
 import {
   ControlFn,
@@ -102,6 +103,7 @@ const TEXTURE_IDS = {
   rock: 1,
   slate: 2,
   snow: 3,
+  mud: 4,
 } as const;
 
 // Control map debug modes (extend triplanar debug modes)
@@ -286,6 +288,20 @@ const TerrainPlane = () => {
       step: 1,
       label: "Snow Max Slope (°)",
     },
+    mudAltitude: {
+      value: 800,
+      min: 0,
+      max: 2000,
+      step: 50,
+      label: "Mud/Grass Transition (m)",
+    },
+    mudBlendRange: {
+      value: 200,
+      min: 50,
+      max: 500,
+      step: 25,
+      label: "Mud Blend Range (m)",
+    },
   });
 
   const debugControls = useControls("Debug", {
@@ -367,15 +383,16 @@ const TerrainPlane = () => {
       // Load all texture sets (resize to 512x512)
       const basePath = "/assets/terrain-textures";
       const textureResolution = 512;
-      const [grass, rock, slate, snow] = await Promise.all([
+      const [grass, rock, slate, snow, mud] = await Promise.all([
         loadTextureSet(`${basePath}/grass/grass`, textureResolution),
         loadTextureSet(`${basePath}/rock/rock`, textureResolution),
         loadTextureSet(`${basePath}/slate/slate`, textureResolution),
         loadTextureSet(`${basePath}/snow/snow`, textureResolution),
+        loadTextureSet(`${basePath}/mud/mud`, textureResolution),
       ]);
 
       // Add textures to array in order matching TEXTURE_IDS
-      // grass = 0, rock = 1, slate = 2, snow = 3
+      // grass = 0, rock = 1, slate = 2, snow = 3, mud = 4
       texArray.addTextureSet(
         grass.albedo,
         grass.normal,
@@ -400,6 +417,7 @@ const TerrainPlane = () => {
         snow.height,
         snow.roughness
       );
+      texArray.addTextureSet(mud.albedo, mud.normal, mud.height, mud.roughness);
 
       setTextureArray(texArray);
     };
@@ -450,6 +468,8 @@ const TerrainPlane = () => {
       snowBlendRange: uniform(textureControls.snowBlendRange),
       snowSteepnessThresholdCos: uniform(snowSteepnessThresholdCos),
       heightScale: uniform(terrainGeometryControls.heightmapScale),
+      mudAltitude: uniform(textureControls.mudAltitude),
+      mudBlendRange: uniform(textureControls.mudBlendRange),
     };
   }, []);
 
@@ -464,6 +484,7 @@ const TerrainPlane = () => {
       const grassId = uint(TEXTURE_IDS.grass);
       const rockId = uint(TEXTURE_IDS.rock);
       const snowId = uint(TEXTURE_IDS.snow);
+      const mudId = uint(TEXTURE_IDS.mud);
 
       // Calculate slope from normal.y
       // normal.y = 1 for flat ground, 0 for vertical surfaces
@@ -495,6 +516,12 @@ const TerrainPlane = () => {
       );
       const snowBlendFactor = smoothstep(float(0), float(1), snowT);
 
+      // Mud/Grass blend: 0 = lowlands (mud), 1 = higher (grass)
+      // Mud is the base in lowlands, grass fades in as altitude increases
+      const mudEnd = controlUniforms.mudAltitude;
+      const mudT = clamp(scaledHeight.div(mudEnd), 0, 1);
+      const grassBlendFactor = smoothstep(float(0), float(1), mudT);
+
       // Reduce snow on steep slopes (cliffs don't hold snow well)
       // Use a gentler threshold for snow reduction
       const snowSlopeThreshold = controlUniforms.slopeThresholdCos.mul(
@@ -513,7 +540,7 @@ const TerrainPlane = () => {
       );
 
       // Determine which textures to blend based on conditions
-      // Priority: Snow (at altitude) > Rock (steep) > Grass (flat, low)
+      // Priority: Snow (at altitude) > Rock (steep) > Grass (mid) > Mud (lowlands)
       // Use smooth interpolation to avoid hard edges
 
       // Check if we're in a snow zone (significant snow contribution)
@@ -529,18 +556,40 @@ const TerrainPlane = () => {
       const steepThreshold = float(0.3);
       const isSteep = slopeBlendFactor.greaterThan(steepThreshold);
 
-      // Base texture: rock if steep, grass if not steep (at all elevations)
-      const baseTexture = select(isSteep, rockId, grassId);
+      // Check if we're in the lowlands (mud zone)
+      const grassThreshold = float(0.5);
+      const inLowlands = grassBlendFactor.lessThan(grassThreshold);
 
-      // Overlay texture: snow if in snow zone AND not too steep, otherwise same as base
+      // Base texture logic:
+      // - Steep slopes: rock (regardless of altitude)
+      // - Lowlands (not steep): mud as base
+      // - Higher ground (not steep): grass as base
+      const flatBaseTexture = select(inLowlands, mudId, grassId);
+      const baseTexture = select(isSteep, rockId, flatBaseTexture);
+
+      // Overlay texture logic:
+      // - Snow zone (not too steep): snow overlay
+      // - Lowlands (not steep, not snow): grass overlay on mud
+      // - Otherwise: same as base (no overlay)
       const canHaveSnow = inSnowZone.and(tooSteepForSnow.not());
-      const overlayTexture = select(canHaveSnow, snowId, baseTexture);
+      const wantsGrassOverlay = inLowlands
+        .and(isSteep.not())
+        .and(canHaveSnow.not());
 
-      // Blend factor: only blend when snow is present and not too steep, otherwise no blend (0)
+      const overlayTexture = select(
+        canHaveSnow,
+        snowId,
+        select(wantsGrassOverlay, grassId, baseTexture)
+      );
+
+      // Blend factor logic:
+      // - Snow zone: use snow blend factor
+      // - Lowlands with grass overlay: use grass blend factor
+      // - Otherwise: no blend (0)
       const rawBlend = select(
         canHaveSnow,
-        adjustedSnowBlend, // Snow zone and not too steep: blend based on snow amount
-        float(0) // No snow or too steep: no blending (base texture only)
+        adjustedSnowBlend,
+        select(wantsGrassOverlay, grassBlendFactor, float(0))
       );
 
       const blendFactor = clamp(rawBlend, 0, 1).mul(float(255));
@@ -648,11 +697,12 @@ const TerrainPlane = () => {
         .div(255.0);
 
       // Define colors for each texture ID (matching TEXTURE_IDS)
-      // grass=0 (green), rock=1 (brown), slate=2 (gray), snow=3 (white)
+      // grass=0 (green), rock=1 (brown), slate=2 (gray), snow=3 (white), mud=4 (dark brown)
       const grassColor = vec3(0.2, 0.8, 0.2);
       const rockColor = vec3(0.6, 0.4, 0.2);
       const slateColor = vec3(0.5, 0.5, 0.55);
       const snowColor = vec3(0.95, 0.95, 1.0);
+      const mudColor = vec3(0.35, 0.25, 0.15);
 
       // Map texture ID to color (simple lookup using select chain)
       const baseColor = select(
@@ -661,7 +711,11 @@ const TerrainPlane = () => {
         select(
           baseId.equal(int(1)),
           rockColor,
-          select(baseId.equal(int(2)), slateColor, snowColor)
+          select(
+            baseId.equal(int(2)),
+            slateColor,
+            select(baseId.equal(int(3)), snowColor, mudColor)
+          )
         )
       );
 
@@ -671,7 +725,11 @@ const TerrainPlane = () => {
         select(
           overlayId.equal(int(1)),
           rockColor,
-          select(overlayId.equal(int(2)), slateColor, snowColor)
+          select(
+            overlayId.equal(int(2)),
+            slateColor,
+            select(overlayId.equal(int(3)), snowColor, mudColor)
+          )
         )
       );
 
@@ -844,6 +902,8 @@ const TerrainPlane = () => {
     controlUniforms.snowBlendRange.value = textureControls.snowBlendRange;
     controlUniforms.snowSteepnessThresholdCos.value = snowSteepnessThresholdCos;
     controlUniforms.heightScale.value = terrainGeometryControls.heightmapScale;
+    controlUniforms.mudAltitude.value = textureControls.mudAltitude;
+    controlUniforms.mudBlendRange.value = textureControls.mudBlendRange;
 
     // Throttle quadtree/compute updates (expensive) to every N frames
     updateFrameCounter.current++;
@@ -920,6 +980,7 @@ const TerrainPlane = () => {
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
       <Environment preset="park" background={false} environmentIntensity={1} />
+      <Skybox size={terrainGeometryControls.rootSize * 2} />
     </>
   );
 };

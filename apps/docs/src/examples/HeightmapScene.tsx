@@ -1,7 +1,7 @@
 "use client";
 
 import { useMetrics } from "@/components/Metrics/Metrics";
-import { Skybox } from "@/components/Terrain/Skybox";
+import { Skybox } from "@/components/Skybox";
 import { TerrainOrbitControls } from "@/components/Terrain/TerrainOrbitControls";
 import * as hello from "@hello-terrain/react";
 import { ElevationFn, type TerrainMesh } from "@hello-terrain/three";
