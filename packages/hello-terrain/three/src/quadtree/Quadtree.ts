@@ -29,6 +29,11 @@ export interface SubdivisionContext {
   minNodeSize: number;
   /** Root terrain size from config */
   rootSize: number;
+  /**
+   * Whether this node position was subdivided in the previous frame.
+   * Use this for hysteresis to prevent oscillation at LOD boundaries.
+   */
+  wasSubdividedPreviously: boolean;
 }
 
 /**
@@ -42,30 +47,41 @@ export type SubdivisionStrategy = (context: SubdivisionContext) => boolean;
 // ============================================================================
 
 /**
- * Distance-based subdivision strategy (original behavior).
+ * Distance-based subdivision strategy with hysteresis to prevent LOD flickering.
  * Subdivides when: distance < nodeSize * factor
+ * Uses hysteresis to prevent oscillation at threshold boundaries.
  *
  * @param factor Multiplier for subdivision threshold (default: 2)
+ * @param hysteresis Hysteresis factor to prevent flickering (default: 0.15 = 15%)
+ *        When a node was subdivided previously, it requires 15% more distance to collapse.
  * @returns SubdivisionStrategy function
  *
  * @example
  * ```ts
  * const terrain = new TerrainMesh({
- *   subdivisionStrategy: distanceBasedSubdivision(2.5)
+ *   subdivisionStrategy: distanceBasedSubdivision(2.5, 0.2) // 20% hysteresis
  * });
  * ```
  */
-export function distanceBasedSubdivision(factor = 2): SubdivisionStrategy {
+export function distanceBasedSubdivision(
+  factor = 2,
+  hysteresis = 0.15
+): SubdivisionStrategy {
   return (ctx: SubdivisionContext) => {
     if (ctx.nodeSize <= ctx.minNodeSize) {
       return false;
     }
-    return ctx.distance < ctx.nodeSize * factor;
+    // Apply hysteresis: if previously subdivided, use a larger threshold to collapse
+    // This creates a "dead zone" that prevents oscillation
+    const effectiveFactor = ctx.wasSubdividedPreviously
+      ? factor * (1 + hysteresis) // Harder to collapse (need more distance)
+      : factor; // Normal threshold to subdivide
+    return ctx.distance < ctx.nodeSize * effectiveFactor;
   };
 }
 
 /**
- * Screen-space subdivision strategy.
+ * Screen-space subdivision strategy with hysteresis to prevent LOD flickering.
  * Subdivides based on projected triangle size in pixels.
  * Ensures triangles don't exceed a target pixel size on screen.
  *
@@ -77,6 +93,7 @@ export function distanceBasedSubdivision(factor = 2): SubdivisionStrategy {
  * const strategy = screenSpaceSubdivision({
  *   targetTrianglePixels: 6,
  *   tileSegments: 13,
+ *   hysteresis: 0.15,
  *   getScreenSpaceInfo: () => ({
  *     projectionFactor: screenHeight / (2 * Math.tan(camera.fov * Math.PI / 360)),
  *     screenHeight: window.innerHeight
@@ -99,6 +116,13 @@ export function screenSpaceSubdivision(options: {
    */
   tileSegments?: number;
   /**
+   * Hysteresis factor to prevent LOD flickering (default: 0.15 = 15%)
+   * When a node was subdivided previously, triangles need to be 15% smaller
+   * before collapsing back.
+   * @default 0.15
+   */
+  hysteresis?: number;
+  /**
    * Function that returns current screen-space projection info.
    * Called each time subdivision is evaluated.
    */
@@ -106,6 +130,7 @@ export function screenSpaceSubdivision(options: {
 }): SubdivisionStrategy {
   const targetTrianglePixels = options.targetTrianglePixels ?? 6;
   const tileSegments = options.tileSegments ?? 13;
+  const hysteresis = options.hysteresis ?? 0.15;
 
   return (ctx: SubdivisionContext) => {
     // Don't subdivide if node is too small
@@ -116,7 +141,10 @@ export function screenSpaceSubdivision(options: {
     const screenInfo = options.getScreenSpaceInfo();
     if (!screenInfo) {
       // Fallback to simple distance-based if no screen info available
-      return ctx.distance < ctx.nodeSize * 2;
+      const effectiveFactor = ctx.wasSubdividedPreviously
+        ? 2 * (1 + hysteresis)
+        : 2;
+      return ctx.distance < ctx.nodeSize * effectiveFactor;
     }
 
     // Calculate screen-space size of the tile
@@ -129,8 +157,13 @@ export function screenSpaceSubdivision(options: {
     // triangleSize = tileScreenSize / tileSegments
     const triangleScreenSize = tileScreenSize / tileSegments;
 
+    // Apply hysteresis: if previously subdivided, use a larger target (harder to collapse)
+    const effectiveTarget = ctx.wasSubdividedPreviously
+      ? targetTrianglePixels * (1 - hysteresis) // Triangles must be smaller to collapse
+      : targetTrianglePixels; // Normal threshold to subdivide
+
     // Subdivide if triangles are larger than the target
-    return triangleScreenSize > targetTrianglePixels;
+    return triangleScreenSize > effectiveTarget;
   };
 }
 
@@ -189,6 +222,11 @@ export class Quadtree {
   private tempChildIndices: ChildIndices = [-1, -1, -1, -1];
   private tempNeighborIndices: NeighborIndices = [-1, -1, -1, -1];
 
+  // Hysteresis: track which node positions were subdivided in the previous frame
+  // Key format: "level,x,y" -> was subdivided (not a leaf)
+  private previouslySubdivided: Set<string> = new Set();
+  private currentlySubdivided: Set<string> = new Set();
+
   /**
    * Create a new Quadtree.
    *
@@ -240,6 +278,13 @@ export class Quadtree {
    * of the leaf node that best corresponds to the position (closest leaf).
    */
   update(position: THREE.Vector3, frustum?: THREE.Frustum): number {
+    // Swap subdivision tracking sets for hysteresis
+    // previouslySubdivided now contains last frame's state
+    const temp = this.previouslySubdivided;
+    this.previouslySubdivided = this.currentlySubdivided;
+    this.currentlySubdivided = temp;
+    this.currentlySubdivided.clear();
+
     this.reset();
 
     // Start from root node and capture the closest leaf index
@@ -257,8 +302,8 @@ export class Quadtree {
     position: THREE.Vector3,
     frustum?: THREE.Frustum
   ): number {
-    const nodeSize =
-      this.config.rootSize / (1 << this.nodeView.getLevel(nodeIndex));
+    const level = this.nodeView.getLevel(nodeIndex);
+    const nodeSize = this.config.rootSize / (1 << level);
 
     // Calculate node center position (matching the shader calculation)
     const nodeX = this.nodeView.getX(nodeIndex);
@@ -269,6 +314,9 @@ export class Quadtree {
       this.config.origin.z + (nodeY * nodeSize - 0.5 * this.config.rootSize);
     const worldX = minX + 0.5 * nodeSize;
     const worldZ = minZ + 0.5 * nodeSize;
+
+    // Create key for hysteresis tracking
+    const nodeKey = `${level},${nodeX},${nodeY}`;
 
     // Frustum culling in world space.
     // IMPORTANT: terrain can extend far above/below origin.y, so a fixed vertical
@@ -298,16 +346,20 @@ export class Quadtree {
     tempVector3.set(worldX, this.config.origin.y, worldZ);
     const distance = position.distanceTo(tempVector3);
 
+    // Check if this node position was subdivided in the previous frame (for hysteresis)
+    const wasSubdividedPreviously = this.previouslySubdivided.has(nodeKey);
+
     const shouldSubdivide = this.shouldSubdivide(
-      this.nodeView.getLevel(nodeIndex),
+      level,
       distance,
-      nodeSize
+      nodeSize,
+      wasSubdividedPreviously
     );
 
-    if (
-      shouldSubdivide &&
-      this.nodeView.getLevel(nodeIndex) < this.config.maxLevel
-    ) {
+    if (shouldSubdivide && level < this.config.maxLevel) {
+      // Track that this node is subdivided this frame
+      this.currentlySubdivided.add(nodeKey);
+
       // Subdivide this node
       this.subdivideNode(nodeIndex);
 
@@ -320,8 +372,8 @@ export class Quadtree {
           const leafIdx = this.updateNode(children[i], position, frustum);
           if (leafIdx !== -1) {
             // Compute center of the returned leaf and track the closest
-            const level = this.nodeView.getLevel(leafIdx);
-            const size = this.config.rootSize / (1 << level);
+            const leafLevel = this.nodeView.getLevel(leafIdx);
+            const size = this.config.rootSize / (1 << leafLevel);
             const x = this.nodeView.getX(leafIdx);
             const y = this.nodeView.getY(leafIdx);
             const cx =
@@ -356,7 +408,8 @@ export class Quadtree {
   private shouldSubdivide(
     level: number,
     distance: number,
-    nodeSize: number
+    nodeSize: number,
+    wasSubdividedPreviously: boolean
   ): boolean {
     const context: SubdivisionContext = {
       level,
@@ -364,6 +417,7 @@ export class Quadtree {
       nodeSize,
       minNodeSize: this.config.minNodeSize,
       rootSize: this.config.rootSize,
+      wasSubdividedPreviously,
     };
     return this.subdivisionStrategy(context);
   }

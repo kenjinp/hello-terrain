@@ -177,6 +177,13 @@ const TerrainPlane = () => {
       label: "Target Triangle (px)",
       render: (get) => get("TerrainGeometry.subdivisionMode") === "screenSpace",
     },
+    hysteresis: {
+      value: 0.15,
+      min: 0,
+      max: 0.5,
+      step: 0.01,
+      label: "LOD Hysteresis",
+    },
     minNodeSize: {
       value: SEGMENT_COUNT,
       min: 1,
@@ -317,15 +324,20 @@ const TerrainPlane = () => {
       return screenSpaceSubdivision({
         targetTrianglePixels: terrainGeometryControls.targetTrianglePixels,
         tileSegments: terrainGeometryControls.segments,
+        hysteresis: terrainGeometryControls.hysteresis,
         getScreenSpaceInfo: () => screenSpaceInfoRef.current,
       });
     }
-    return distanceBasedSubdivision(terrainGeometryControls.subdivisionFactor);
+    return distanceBasedSubdivision(
+      terrainGeometryControls.subdivisionFactor,
+      terrainGeometryControls.hysteresis
+    );
   }, [
     terrainGeometryControls.subdivisionMode,
     terrainGeometryControls.subdivisionFactor,
     terrainGeometryControls.targetTrianglePixels,
     terrainGeometryControls.segments,
+    terrainGeometryControls.hysteresis,
   ]);
 
   // Load heightmap texture
