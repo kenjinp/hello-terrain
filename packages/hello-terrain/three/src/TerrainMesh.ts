@@ -57,6 +57,12 @@ export interface TerrainMeshParams extends Omit<QuadtreeParams, "origin"> {
    * Texture array for multi-texture terrain rendering
    */
   textureArray?: TerrainTextureArray;
+  /**
+   * Whether quadtree updates should use frustum culling.
+   * When disabled, LOD selection and active tiles are determined only by distance/size rules.
+   * @default true
+   */
+  frustumCulling?: boolean;
 }
 
 export class TerrainMesh extends InstancedMesh {
@@ -131,6 +137,7 @@ export class TerrainMesh extends InstancedMesh {
       minNodeSize: 1,
       subdivisionFactor: 2,
       maxNodes: 1000,
+      frustumCulling: true,
     } satisfies Omit<TerrainMeshParams, "material">;
     const merged: TerrainMeshParams = {
       ...defaults,
@@ -876,6 +883,17 @@ export class TerrainMesh extends InstancedMesh {
     return this.params.epsilon ?? 0.01;
   }
 
+  set frustumCulling(enabled: boolean) {
+    this.params.frustumCulling = enabled;
+    // Ensure the next update isn't skipped due to epsilon and that GPU buffers can refresh.
+    this.lastUpdatePosition = null;
+    this.needsRecompute = true;
+  }
+
+  get frustumCulling() {
+    return this.params.frustumCulling ?? true;
+  }
+
   update(renderer: WebGPURenderer, position: Vector3, frustum: Frustum) {
     // Check if position change is below epsilon threshold - skip update if so
     const epsilon = this.params.epsilon ?? 0.0;
@@ -933,11 +951,15 @@ export class TerrainMesh extends InstancedMesh {
         // Update uniforms and quadtree using the latest position
         this.applyUniforms();
 
+        const useFrustum = this.frustumCulling
+          ? (currentFrustum ?? undefined)
+          : undefined;
+
         // TERRAIN-AWARE SUBDIVISION:
         // Do initial quadtree update to get closest leaf node using current position
         let closestLeafIndex = this.quadtree.update(
           currentPosition,
-          currentFrustum ?? undefined
+          useFrustum
         );
 
         // Look up terrain height at this position using cached data from previous frame
@@ -953,7 +975,7 @@ export class TerrainMesh extends InstancedMesh {
         // Do final quadtree update with terrain-adjusted position
         closestLeafIndex = this.quadtree.update(
           this.pendingPosition,
-          currentFrustum ?? undefined
+          useFrustum
         );
 
         this.setMetric(

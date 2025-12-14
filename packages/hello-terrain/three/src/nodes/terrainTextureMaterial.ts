@@ -892,10 +892,10 @@ export const createTerrainColorNodeTriplanarNoTile = (
 
     const worldPos = positionWorld;
 
-    // Compute geometric normal from screen-space derivatives of world position
-    const dPdx = dFdx(worldPos);
-    const dPdy = dFdy(worldPos);
-    const geometricNormal = cross(dPdy, dPdx).normalize();
+    // Use the smooth normal varying for triplanar weighting.
+    // Using screen-space derivatives here yields faceted (per-triangle) normals and
+    // visible seams along triangle edges.
+    const geometricNormal = varyings.vNormal.normalize();
 
     // Apply UV scale to texture scale
     const scaledTextureScale = textureScaleNode.div(uvScale);
@@ -1133,10 +1133,8 @@ export const createTerrainRoughnessNodeTriplanarNoTile = (
 
     const worldPos = positionWorld;
 
-    // Compute geometric normal from screen-space derivatives of world position
-    const dPdx = dFdx(worldPos);
-    const dPdy = dFdy(worldPos);
-    const geometricNormal = cross(dPdy, dPdx).normalize();
+    // Use the smooth normal varying for triplanar weighting to avoid per-triangle seams.
+    const geometricNormal = varyings.vNormal.normalize();
 
     // Apply UV scale to texture scale
     const scaledTextureScale = textureScaleNode.div(uvScale);

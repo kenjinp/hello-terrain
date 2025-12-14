@@ -13,10 +13,10 @@ import {
   createTerrainColorNodeTriplanarNoTile,
   createTerrainRoughnessNodeTriplanarNoTile,
 } from "@hello-terrain/three";
-import { OrbitControls, useTexture } from "@react-three/drei";
+import { Environment, OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -271,7 +271,23 @@ const TerrainPlane = () => {
       value: false,
       label: "Show Tiles",
     },
+    frustumCulling: {
+      value: true,
+      label: "Frustum Culling",
+    },
   });
+
+  const performanceControls = useControls("Performance", {
+    updateEveryNFrames: {
+      value: 1,
+      min: 1,
+      max: 60,
+      step: 1,
+      label: "Update every N frames",
+    },
+  });
+
+  const updateFrameCounter = useRef(0);
 
   // Load heightmap texture
   const heightmapTexture = useTexture("/assets/heightmaps/everest_h.png");
@@ -778,6 +794,13 @@ const TerrainPlane = () => {
     controlUniforms.snowSteepnessThresholdCos.value = snowSteepnessThresholdCos;
     controlUniforms.heightScale.value = terrainGeometryControls.heightmapScale;
 
+    // Throttle quadtree/compute updates (expensive) to every N frames
+    updateFrameCounter.current++;
+    const n = performanceControls.updateEveryNFrames;
+    if (n > 1 && updateFrameCounter.current % n !== 0) {
+      return;
+    }
+
     const renderer = gl as unknown as THREE.WebGPURenderer;
     const frustum = new THREE.Frustum();
     const projScreenMatrix = new THREE.Matrix4();
@@ -813,6 +836,7 @@ const TerrainPlane = () => {
         innerTileSegments={terrainGeometryControls.segments}
         elevationFn={elevationFn}
         controlFn={controlFn}
+        frustumCulling={debugControls.frustumCulling}
         maxLevel={terrainGeometryControls.maxLevel}
         rootSize={terrainGeometryControls.rootSize}
         subdivisionFactor={terrainGeometryControls.subdivisionFactor}
@@ -832,7 +856,7 @@ const TerrainPlane = () => {
 
       <ambientLight intensity={0.5} />
       <directionalLight position={[10, 10, 5]} intensity={1} />
-      {/* <Environment preset="park" background={false} environmentIntensity={1} /> */}
+      <Environment preset="park" background={false} environmentIntensity={1} />
     </>
   );
 };
