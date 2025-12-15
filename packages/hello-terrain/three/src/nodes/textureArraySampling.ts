@@ -58,8 +58,11 @@ export const sampleTextureArrayNoTile = Fn(
     ShaderNodeObject<Node>,
   ]) => {
     // Sample variation pattern using procedural noise at low frequency
-    // This determines which "virtual pattern" to use at each location
-    const k = mx_noise_float(uv.mul(variationScale));
+    // This determines which "virtual pattern" to use at each location.
+    // Add layer-dependent offset so different textures get different patterns,
+    // which breaks up height blending tiling between base and overlay textures.
+    const layerOffset = layerIndex.toFloat().mul(0.37);
+    const k = mx_noise_float(uv.mul(variationScale).add(layerOffset));
 
     // Compute index into virtual patterns (8 patterns total)
     const index = k.mul(8.0);
@@ -68,8 +71,8 @@ export const sampleTextureArrayNoTile = Fn(
 
     // Hash-based offsets for two adjacent virtual patterns
     // Using sin with different frequencies creates pseudo-random but deterministic offsets
-    const offa = sin(vec2(3.0, 7.0).mul(i));
-    const offb = sin(vec2(3.0, 7.0).mul(i.add(1.0)));
+    const offa = sin(vec2(3.0, 7.0).mul(i.add(layerOffset)));
+    const offb = sin(vec2(3.0, 7.0).mul(i.add(1.0).add(layerOffset)));
 
     // Sample texture at two offset positions
     // Note: Using standard sampling - mipmap level is computed from offset UVs
@@ -352,41 +355,64 @@ export const sampleTextureArrayTriplanarNoTile = Fn(
 );
 
 /**
- * Height-based blending for natural texture transitions
+ * Height-based blend mask for texture transitions
  *
- * Uses height values from texture alpha channels to create more natural
- * transitions between base and overlay textures. Higher areas of one texture
- * will blend over lower areas of another.
+ * Creates a blend mask based on height values from two textures,
+ * with anti-aliasing to prevent speckle/noise artifacts. Use this to
+ * create natural-looking transitions where higher texture areas blend
+ * over lower areas.
  *
- * @param baseColor RGB color of base texture
- * @param overlayColor RGB color of overlay texture
+ * Used by terrain material channels (color/normal/roughness) to ensure
+ * consistent blending across all channels.
+ *
  * @param baseHeight Height value from base texture (0-1)
  * @param overlayHeight Height value from overlay texture (0-1)
  * @param blendFactor Overall blend amount (0=base, 1=overlay)
  * @param sharpness Controls transition sharpness (higher = sharper)
+ * @param minWidth Minimum transition width for anti-aliasing (0-1)
+ * @returns Blend mask (0-1) used to mix base/overlay
  */
-export const heightBlend = Fn(
+export const heightBlendMask = Fn(
   ([
-    baseColor,
-    overlayColor,
     baseHeight,
     overlayHeight,
     blendFactor,
     sharpness,
+    minWidth,
   ]: ShaderNodeObject<Node>[]) => {
-    const depth = float(0.2);
-    const baseBlendHeight = baseHeight.add(
-      float(1).sub(blendFactor).mul(depth)
+    // Height-based blending: blend factor controls overall mix, heights create organic edges.
+    //
+    // Strategy: Mix between linear blend and height-winner blend.
+    // - At transition edges (blend ~0.5), heights have more influence
+    // - At extremes (blend ~0 or ~1), control blend dominates
+
+    // Height comparison: who would win in pure height-based mode
+    const heightDiff = overlayHeight.sub(baseHeight);
+    // Convert to 0-1: 0.5 = equal, >0.5 = overlay wins, <0.5 = base wins
+    const heightWinner = heightDiff.mul(sharpness).add(float(0.5));
+    const heightWinnerClamped = heightWinner.clamp(0, 1);
+
+    // Blend between linear and height-based using minWidth to control the mix.
+    // minWidth=0 → pure height-based at edges
+    // minWidth=1 → pure linear (heights ignored)
+    // Default minWidth ~0.3 → 70% height influence at transition
+    const heightInfluence = float(1).sub(minWidth);
+
+    // At the edges (blend ~0.5), use height to decide winner.
+    // At extremes (blend ~0 or ~1), use the control blend.
+    // Weight by how close we are to the transition zone (0.5)
+    const distFromEdge = blendFactor.sub(float(0.5)).abs().mul(float(2)); // 0 at center, 1 at edges
+    const edgeFactor = float(1).sub(distFromEdge).clamp(0, 1); // 1 at center, 0 at edges
+
+    // Mix: at transition center, use height; at extremes, use linear blend
+    const heightContribution = heightWinnerClamped
+      .mul(edgeFactor)
+      .mul(heightInfluence);
+    const linearContribution = blendFactor.mul(
+      float(1).sub(edgeFactor.mul(heightInfluence))
     );
-    const overlayBlendHeight = overlayHeight.add(blendFactor.mul(depth));
 
-    const blendMask = overlayBlendHeight
-      .sub(baseBlendHeight)
-      .mul(sharpness)
-      .add(float(0.5))
-      .clamp(0, 1);
-
-    return mix(baseColor, overlayColor, blendMask);
+    return heightContribution.add(linearContribution).clamp(0, 1);
   }
 );
 
@@ -413,5 +439,198 @@ export const slopeBlend = Fn(
     const slope = float(1).sub(normal.y);
     const slopeFactor = slope.sub(threshold).div(blend).clamp(0, 1);
     return mix(baseColor, slopeColor, slopeFactor);
+  }
+);
+
+/**
+ * Noise-based edge blending for organic texture transitions
+ *
+ * Uses procedural noise to create irregular, natural-looking edges between
+ * texture regions instead of linear interpolation. This technique is inspired
+ * by three-landscape's edgeBlend function.
+ *
+ * The noise modulates the blend threshold, creating organic boundaries that
+ * follow the noise pattern rather than perfectly following the blend weight.
+ *
+ * @param weight Blend weight from control map (0-1)
+ * @param blur Controls the softness of the transition (higher = softer edges)
+ * @param amplitude How much the noise affects the blend (higher = more irregular edges)
+ * @param wavelength Scale of the noise pattern (higher = larger noise features)
+ * @param accuracy Multiplier for the weight value (controls blend sharpness)
+ * @param uv UV coordinates for noise sampling (typically world position XZ)
+ * @returns Modified blend factor (0-1)
+ */
+export const noiseEdgeBlend = Fn(
+  ([weight, blur, amplitude, wavelength, accuracy, uv]: [
+    ShaderNodeObject<Node>,
+    ShaderNodeObject<Node>,
+    ShaderNodeObject<Node>,
+    ShaderNodeObject<Node>,
+    ShaderNodeObject<Node>,
+    ShaderNodeObject<Node>,
+  ]) => {
+    // Sample procedural noise at the UV coordinates scaled by wavelength.
+    // mx_noise_float is typically in [0, 1]; remap to [-1, 1] so noise can
+    // push edges in both directions (matching the three-landscape intent).
+    const k = mx_noise_float(uv.mul(wavelength)).mul(2.0).sub(1.0);
+
+    // Apply noise to the blend weight and use smoothstep for smooth transition
+    // The 1.5 center point allows the noise to push the blend in either direction
+    return smoothstep(
+      float(1.5).sub(blur),
+      float(1.5).add(blur),
+      // three-landscape's edgeBlend expects v roughly in [0, 3], with 1.5 as the midpoint.
+      // Our control blend is [0, 1], so scale by 3 so 0.5 maps to 1.5 (the transition center).
+      weight
+        .mul(3.0)
+        .mul(accuracy)
+        .add(k.mul(amplitude))
+    );
+  }
+);
+
+/**
+ * Convert RGB color to HSV color space
+ *
+ * @param rgb RGB color (vec3 with components in 0-1 range)
+ * @returns HSV color (vec3: H in 0-1, S in 0-1, V in 0-1)
+ */
+export const rgbToHsv = Fn(([rgb]: [ShaderNodeObject<Node>]) => {
+  const r = rgb.x;
+  const g = rgb.y;
+  const b = rgb.z;
+
+  const maxC = r.max(g).max(b);
+  const minC = r.min(g).min(b);
+  const delta = maxC.sub(minC);
+
+  // Value is the maximum component
+  const v = maxC;
+
+  // Saturation is 0 when max is 0, otherwise delta/max
+  const s = maxC.equal(float(0)).select(float(0), delta.div(maxC));
+
+  // Hue calculation (0-1 range, wrapping)
+  // When delta is 0, hue is undefined (we use 0)
+  const hueR = g.sub(b).div(delta).add(float(6)).mod(float(6)); // Red is max
+  const hueG = b.sub(r).div(delta).add(float(2)); // Green is max
+  const hueB = r.sub(g).div(delta).add(float(4)); // Blue is max
+
+  // Select hue based on which component is max
+  const h = delta
+    .equal(float(0))
+    .select(
+      float(0),
+      maxC.equal(r).select(hueR, maxC.equal(g).select(hueG, hueB)).div(float(6))
+    );
+
+  return vec3(h, s, v);
+});
+
+/**
+ * Convert HSV color to RGB color space
+ *
+ * @param hsv HSV color (vec3: H in 0-1, S in 0-1, V in 0-1)
+ * @returns RGB color (vec3 with components in 0-1 range)
+ */
+export const hsvToRgb = Fn(([hsv]: [ShaderNodeObject<Node>]) => {
+  const h = hsv.x.mul(float(6)); // Scale H to 0-6 range
+  const s = hsv.y;
+  const v = hsv.z;
+
+  const i = floor(h);
+  const f = fract(h);
+
+  const p = v.mul(float(1).sub(s));
+  const q = v.mul(float(1).sub(s.mul(f)));
+  const t = v.mul(float(1).sub(s.mul(float(1).sub(f))));
+
+  // Use modular arithmetic to select the correct RGB values
+  const iMod = i.mod(float(6));
+
+  // Select RGB based on hue sector
+  const r = iMod
+    .lessThan(float(1))
+    .select(
+      v,
+      iMod
+        .lessThan(float(2))
+        .select(
+          q,
+          iMod
+            .lessThan(float(3))
+            .select(
+              p,
+              iMod
+                .lessThan(float(4))
+                .select(p, iMod.lessThan(float(5)).select(t, v))
+            )
+        )
+    );
+
+  const g = iMod
+    .lessThan(float(1))
+    .select(
+      t,
+      iMod
+        .lessThan(float(2))
+        .select(
+          v,
+          iMod
+            .lessThan(float(3))
+            .select(
+              v,
+              iMod
+                .lessThan(float(4))
+                .select(q, iMod.lessThan(float(5)).select(p, p))
+            )
+        )
+    );
+
+  const b = iMod
+    .lessThan(float(1))
+    .select(
+      p,
+      iMod
+        .lessThan(float(2))
+        .select(
+          p,
+          iMod
+            .lessThan(float(3))
+            .select(
+              t,
+              iMod
+                .lessThan(float(4))
+                .select(v, iMod.lessThan(float(5)).select(v, q))
+            )
+        )
+    );
+
+  return vec3(r, g, b);
+});
+
+/**
+ * Adjust the saturation of an RGB color
+ *
+ * Converts to HSV, multiplies the saturation component, and converts back.
+ * This allows for desaturating (multiplier < 1) or oversaturating (multiplier > 1)
+ * colors for better visual harmony across different terrain textures.
+ *
+ * @param color RGB color (vec3)
+ * @param saturationMultiplier Saturation multiplier (1.0 = unchanged, 0.0 = grayscale, 2.0 = double saturation)
+ * @returns Adjusted RGB color (vec3)
+ */
+export const adjustSaturation = Fn(
+  ([color, saturationMultiplier]: [
+    ShaderNodeObject<Node>,
+    ShaderNodeObject<Node>,
+  ]) => {
+    const hsv = rgbToHsv(color);
+    const adjustedHsv = vec3(
+      hsv.x,
+      hsv.y.mul(saturationMultiplier).clamp(0, 1),
+      hsv.z
+    );
+    return hsvToRgb(adjustedHsv);
   }
 );

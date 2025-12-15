@@ -357,6 +357,16 @@ export class Quadtree {
     );
 
     if (shouldSubdivide && level < this.config.maxLevel) {
+      // If we are out of capacity, do NOT attempt subdivision.
+      // Attempting to subdivide when maxNodes is reached can leave the parent
+      // deactivated with no active children, causing nothing to render.
+      //
+      // Instead, keep this node as a leaf and gracefully cap detail.
+      if (this.nodeCount + 4 > this.config.maxNodes) {
+        this.nodeView.setLeaf(nodeIndex, true);
+        return nodeIndex;
+      }
+
       // Track that this node is subdivided this frame
       this.currentlySubdivided.add(nodeKey);
 

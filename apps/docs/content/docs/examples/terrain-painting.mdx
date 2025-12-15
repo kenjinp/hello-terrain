@@ -1,0 +1,110 @@
+---
+title: Terrain Painting
+description: Interactive texture and heightmap painting with real-time brush preview
+---
+
+import Scene from "@/examples/TerrainPaintingScene"
+
+<ExampleLayout title="Terrain Painting" description="Interactive texture and heightmap painting with real-time brush preview">
+  <Scene />
+</ExampleLayout>
+
+## Overview
+
+This example demonstrates an interactive terrain painting system with real-time brush preview. The brush preview is rendered directly in the terrain shader using a composable TSL node that wraps the standard terrain color output.
+
+## Features
+
+### Brush Preview System
+
+The painting system uses a composable shader node (`createPaintableTerrainColorNode`) that:
+
+1. Takes the base terrain color node as input
+2. Calculates distance from each fragment to the brush center
+3. Applies gaussian falloff based on brush softness
+4. Blends the preview texture over the terrain within the brush radius
+5. Adds a subtle ring outline at the brush edge
+
+### Paint Modes
+
+- **Base Texture** - Paint the primary terrain texture layer
+- **Overlay Texture** - Paint the secondary overlay layer
+- **Blend** - Adjust the blend factor between base and overlay
+- **Raise/Lower Terrain** - Modify the heightmap elevation
+
+### Brush Settings
+
+- **Radius** - Size of the brush in world units (5-200m)
+- **Softness** - Edge falloff (0 = hard edge, 1 = soft gaussian)
+- **Strength** - Paint opacity/intensity (0-100%)
+
+## Controls
+
+| Control | Action |
+|---------|--------|
+| Left-click + Drag | Paint on terrain |
+| Right-click + Drag | Rotate camera |
+| Scroll | Zoom camera |
+| Middle-click + Drag | Zoom camera |
+| `[` / `]` | Decrease / Increase brush size |
+
+## Technical Implementation
+
+### Composable Color Node
+
+The brush preview is implemented as a wrapper around the terrain color node:
+
+```typescript
+const colorNode = createPaintableTerrainColorNode({
+  baseColorNode: createTerrainColorNodeTriplanarNoTile({...}),
+  textureArray,
+  brushUniforms,
+  textureScale: 50,
+});
+```
+
+### Brush Uniforms
+
+Brush state is managed via GPU uniforms for real-time updates:
+
+```typescript
+const brushUniforms = createBrushPreviewUniforms();
+
+// Update each frame
+brushUniforms.brushPosition.value.set(worldX, worldZ);
+brushUniforms.brushRadius.value = 50;
+brushUniforms.brushSoftness.value = 0.5;
+brushUniforms.brushActive.value = 1;
+```
+
+### Falloff Calculation
+
+The brush uses a blend between hard and soft edges:
+
+```typescript
+// In TSL shader
+const hardEdge = float(1).sub(smoothstep(0.9, 1.0, normalizedDist));
+const softEdge = exp(normalizedDist * normalizedDist * -3);
+const falloff = mix(hardEdge, softEdge, brushSoftness);
+```
+
+## Reusable Components
+
+The painting system includes several reusable UI components:
+
+- `PaintingToolbar` - Main container panel
+- `BrushSettings` - Radius, softness, strength sliders
+- `TexturePalette` - Texture selection grid
+- `PaintModeSelector` - Mode toggle buttons
+- `usePaintingState` - State management hook
+
+Import them from `@/components/Painting`:
+
+```typescript
+import {
+  PaintingToolbar,
+  usePaintingState,
+  createBrushPreviewUniforms,
+  createPaintableTerrainColorNode,
+} from "@/components/Painting";
+```

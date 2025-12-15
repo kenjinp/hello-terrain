@@ -988,6 +988,15 @@ export class TerrainMesh extends InstancedMesh {
     return this.params.frustumCulling ?? true;
   }
 
+  /**
+   * Force the terrain to recompute heightmap, normalmap, and controlmap
+   * on the next update. Useful when external textures (like a paint texture)
+   * have been modified and need to be re-sampled by the compute shaders.
+   */
+  invalidate(): void {
+    this.needsRecompute = true;
+  }
+
   update(renderer: WebGPURenderer, position: Vector3, frustum: Frustum) {
     // Check if position change is below epsilon threshold - skip update if so
     const epsilon = this.params.epsilon ?? 0.0;

@@ -47,10 +47,10 @@ export {
 
 // Export quadtree and terrain mesh
 export {
-  Quadtree,
   computeScreenSpaceInfo,
   // Built-in subdivision strategies
   distanceBasedSubdivision,
+  Quadtree,
   screenSpaceSubdivision,
   type QuadtreeParams,
   type ScreenSpaceInfo,
@@ -67,25 +67,25 @@ export {
 } from "./compute/ControlStorage";
 export { createReadControlAtVertex } from "./nodes/controlData";
 export {
+  createTerrainColorNode,
+  createTerrainNormalNode,
+  createTerrainRoughnessNode,
   TRIPLANAR_DEBUG_OFF,
   TRIPLANAR_DEBUG_TINTED,
   TRIPLANAR_DEBUG_WEIGHTS,
-  createTerrainColorNode,
-  createTerrainColorNodeTriplanar,
-  createTerrainColorNodeTriplanarDebug,
-  createTerrainColorNodeTriplanarNoTile,
-  createTerrainNormalNode,
-  createTerrainNormalNodeTriplanar,
-  createTerrainRoughnessNode,
-  createTerrainRoughnessNodeTriplanar,
-  createTerrainRoughnessNodeTriplanarNoTile,
+  type BlendMode,
+  type TerrainTextureMaterialEnhancedParams,
   type TerrainTextureMaterialParams,
   type TerrainTextureMaterialTriplanarDebugParams,
   type TerrainTextureMaterialTriplanarNoTileParams,
   type TerrainTextureMaterialTriplanarParams,
 } from "./nodes/terrainTextureMaterial";
 export {
-  heightBlend,
+  adjustSaturation,
+  heightBlendMask,
+  hsvToRgb,
+  noiseEdgeBlend,
+  rgbToHsv,
   sampleTextureArray,
   sampleTextureArrayNoTile,
   sampleTextureArrayTriplanar,

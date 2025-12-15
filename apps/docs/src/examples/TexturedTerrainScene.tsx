@@ -14,15 +14,22 @@ import {
   TerrainTextureArray,
   computeScreenSpaceInfo,
   controlmapStorageProperty,
-  createTerrainColorNodeTriplanarNoTile,
-  createTerrainRoughnessNodeTriplanarNoTile,
+  createTerrainColorNode,
+  createTerrainRoughnessNode,
   distanceBasedSubdivision,
   screenSpaceSubdivision,
 } from "@hello-terrain/three";
-import { Environment, OrbitControls, useTexture } from "@react-three/drei";
-import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
+import { Environment, OrbitControls, Sky } from "@react-three/drei";
+import {
+  Canvas,
+  extend,
+  useFrame,
+  useLoader,
+  useThree,
+} from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   Fn,
@@ -34,6 +41,7 @@ import {
   fract,
   instanceIndex,
   int,
+  mx_noise_float,
   normalize,
   positionWorld,
   select,
@@ -121,6 +129,7 @@ const TerrainPlane = () => {
   const [textureArray, setTextureArray] = useState<TerrainTextureArray | null>(
     null
   );
+  const sunRef = useRef<THREE.DirectionalLight>(null);
 
   const setMetric = useMetrics([
     "updatePosition",
@@ -152,9 +161,9 @@ const TerrainPlane = () => {
       label: "Max Level",
     },
     rootSize: {
-      value: 1024 * 17.3,
+      value: 1024 * 5,
       min: 256,
-      max: 1024 * 17.3,
+      max: 1024 * 5,
       step: 64,
       label: "Root Size",
     },
@@ -194,7 +203,7 @@ const TerrainPlane = () => {
       label: "Min Node Size",
     },
     heightmapScale: {
-      value: 3861,
+      value: 500,
       min: 0.0,
       max: 5000,
       step: 1,
@@ -219,7 +228,7 @@ const TerrainPlane = () => {
       label: "Debug Mode",
     },
     textureScale: {
-      value: 50,
+      value: 10,
       min: 1,
       max: 200,
       step: 1,
@@ -237,10 +246,17 @@ const TerrainPlane = () => {
       min: 1,
       max: 20,
       step: 0.5,
-      label: "Blend Sharpness",
+      label: "Height Blend Sharpness",
+    },
+    heightBlendMinWidth: {
+      value: 0.3,
+      min: 0.01,
+      max: 1,
+      step: 0.01,
+      label: "Height Blend Smoothness",
     },
     variationScale: {
-      value: 0.01,
+      value: 0.4,
       min: 0.001,
       max: 1,
       step: 0.001,
@@ -288,19 +304,78 @@ const TerrainPlane = () => {
       step: 1,
       label: "Snow Max Slope (°)",
     },
-    mudAltitude: {
-      value: 800,
+    grassMinAltitude: {
+      value: 0,
       min: 0,
-      max: 2000,
-      step: 50,
-      label: "Mud/Grass Transition (m)",
+      max: 100,
+      step: 1,
+      label: "Grass Min Altitude (m)",
     },
-    mudBlendRange: {
-      value: 200,
-      min: 50,
+    grassFullAltitude: {
+      value: 100,
+      min: 10,
       max: 500,
-      step: 25,
-      label: "Mud Blend Range (m)",
+      step: 10,
+      label: "Grass Full Blend (m)",
+    },
+    rockNoiseScale: {
+      value: 0.01,
+      min: 0.001,
+      max: 0.1,
+      step: 0.001,
+      label: "Rock Noise Scale",
+    },
+    rockNoiseStrength: {
+      value: 0.3,
+      min: 0,
+      max: 1,
+      step: 0.05,
+      label: "Rock Noise Strength",
+    },
+    // Enhanced blending controls (from three-landscape)
+    blendMode: {
+      value: "height" as "linear" | "height" | "noise",
+      options: ["linear", "height", "noise"],
+      label: "Blend Mode",
+    },
+    noiseBlur: {
+      value: 0.5,
+      min: 0.1,
+      max: 2.0,
+      step: 0.1,
+      label: "Noise Blur",
+      render: (get) => get("Textures.blendMode") === "noise",
+    },
+    noiseAmplitude: {
+      value: 1.25,
+      min: 0.1,
+      max: 3.0,
+      step: 0.1,
+      label: "Noise Amplitude",
+      render: (get) => get("Textures.blendMode") === "noise",
+    },
+    noiseWavelength: {
+      value: 16384, // 1024 * 16
+      min: 1024,
+      max: 131072, // 1024 * 128
+      step: 1024,
+      label: "Noise Wavelength",
+      render: (get) => get("Textures.blendMode") === "noise",
+    },
+    noiseAccuracy: {
+      value: 1.25,
+      min: 0.5,
+      max: 3.0,
+      step: 0.1,
+      label: "Noise Accuracy",
+      render: (get) => get("Textures.blendMode") === "noise",
+    },
+    saturation: {
+      value: 1.0,
+      min: 0.0,
+      max: 2.0,
+      step: 0.1,
+      label: "Saturation",
     },
   });
 
@@ -329,6 +404,79 @@ const TerrainPlane = () => {
     },
   });
 
+  const shadowControls = useControls("Shadows", {
+    enabled: {
+      value: true,
+      label: "Enable Shadows",
+    },
+    shadowMapSize: {
+      value: 4096,
+      options: [1024, 2048, 4096, 8192],
+      label: "Shadow Map Size",
+    },
+    shadowBias: {
+      value: -0.0001,
+      min: -0.01,
+      max: 0.01,
+      step: 0.0001,
+      label: "Shadow Bias",
+    },
+    normalBias: {
+      value: 0.5,
+      min: 0,
+      max: 5,
+      step: 0.1,
+      label: "Normal Bias",
+    },
+    shadowRadius: {
+      value: 2,
+      min: 0,
+      max: 10,
+      step: 0.5,
+      label: "Shadow Blur",
+    },
+  });
+
+  const sunControls = useControls("Sun", {
+    azimuth: {
+      value: 0.25,
+      min: 0,
+      max: 1,
+      step: 0.01,
+      label: "Azimuth",
+    },
+    elevation: {
+      value: 0.15,
+      min: 0.01,
+      max: 0.5,
+      step: 0.01,
+      label: "Elevation",
+    },
+    intensity: {
+      value: 3,
+      min: 0.5,
+      max: 10,
+      step: 0.1,
+      label: "Intensity",
+    },
+  });
+
+  // Calculate sun position from azimuth/elevation
+  const sunPosition = useMemo(() => {
+    const phi = (0.5 - sunControls.elevation) * Math.PI;
+    const theta = sunControls.azimuth * Math.PI * 2;
+    const distance = terrainGeometryControls.rootSize;
+    return new THREE.Vector3(
+      distance * Math.sin(phi) * Math.cos(theta),
+      distance * Math.cos(phi),
+      distance * Math.sin(phi) * Math.sin(theta)
+    );
+  }, [
+    sunControls.azimuth,
+    sunControls.elevation,
+    terrainGeometryControls.rootSize,
+  ]);
+
   const updateFrameCounter = useRef(0);
 
   // Screen-space info ref - updated each frame for LOD calculations
@@ -356,8 +504,11 @@ const TerrainPlane = () => {
     terrainGeometryControls.hysteresis,
   ]);
 
-  // Load heightmap texture
-  const heightmapTexture = useTexture("/assets/heightmaps/everest_h.png");
+  // Load heightmap texture (EXR for 16-bit precision, eliminates terracing)
+  const heightmapTexture = useLoader(
+    EXRLoader,
+    "/assets/heightmaps/olympia.exr"
+  );
 
   // Configure heightmap texture for proper bilinear interpolation
   useEffect(() => {
@@ -374,15 +525,15 @@ const TerrainPlane = () => {
   useEffect(() => {
     const loadTextures = async () => {
       // Create texture array
+      const textureResolution = 1024;
       const texArray = new TerrainTextureArray({
-        resolution: 512,
+        resolution: textureResolution,
         maxTextures: 32,
         generateMipmaps: true,
       });
 
       // Load all texture sets (resize to 512x512)
       const basePath = "/assets/terrain-textures";
-      const textureResolution = 512;
       const [grass, rock, slate, snow, mud] = await Promise.all([
         loadTextureSet(`${basePath}/grass/grass`, textureResolution),
         loadTextureSet(`${basePath}/rock/rock`, textureResolution),
@@ -468,15 +619,23 @@ const TerrainPlane = () => {
       snowBlendRange: uniform(textureControls.snowBlendRange),
       snowSteepnessThresholdCos: uniform(snowSteepnessThresholdCos),
       heightScale: uniform(terrainGeometryControls.heightmapScale),
-      mudAltitude: uniform(textureControls.mudAltitude),
-      mudBlendRange: uniform(textureControls.mudBlendRange),
+      grassMinAltitude: uniform(textureControls.grassMinAltitude),
+      grassFullAltitude: uniform(textureControls.grassFullAltitude),
+      rockNoiseScale: uniform(textureControls.rockNoiseScale),
+      rockNoiseStrength: uniform(textureControls.rockNoiseStrength),
     };
   }, []);
 
   // Control function that determines textures based on slope and altitude
   // Uses uniforms for dynamic values to avoid shader recompilation
+  //
+  // Logic:
+  // - Mud is the default BASE texture everywhere
+  // - Rock replaces mud as BASE on steep slopes (with noise-smoothed transitions)
+  // - Grass is an OVERLAY that appears above grassMinAltitude, reduced on steep slopes
+  // - Snow is an OVERLAY at high altitudes, reduced on steep slopes
   const controlFn = useMemo(() => {
-    return ControlFn(({ height, normal }) => {
+    return ControlFn(({ height, normal, worldPosition }) => {
       // Scale height to world units (meters)
       const scaledHeight = height.mul(controlUniforms.heightScale);
 
@@ -488,111 +647,139 @@ const TerrainPlane = () => {
 
       // Calculate slope from normal.y
       // normal.y = 1 for flat ground, 0 for vertical surfaces
-      // Steeper slopes have lower normal.y values
       const normalY = normal.y;
 
-      // Compute smooth blend factors using smoothstep for better interpolation
-      // Slope blend: 0 = flat (grass), 1 = steep (rock)
-      // Use smoothstep for smooth S-curve interpolation
-      const slopeRange = controlUniforms.slopeBlendCos.sub(
-        controlUniforms.slopeThresholdCos
+      // ========================================
+      // ROCK TRANSITION (with noise for smooth edges)
+      // ========================================
+      // Sample noise based on world position for organic rock transitions
+      const noiseUv = worldPosition.xz.mul(controlUniforms.rockNoiseScale);
+      const rockNoise = mx_noise_float(noiseUv).mul(2.0).sub(1.0); // Remap to [-1, 1]
+
+      // Add noise to the slope threshold for organic rock boundaries
+      const noisyThreshold = controlUniforms.slopeThresholdCos.add(
+        rockNoise.mul(controlUniforms.rockNoiseStrength)
       );
+
+      // Smooth slope blend factor with noise-adjusted threshold
+      const slopeRange = controlUniforms.slopeBlendCos.sub(noisyThreshold);
       const slopeT = clamp(
-        controlUniforms.slopeBlendCos.sub(normalY).div(slopeRange),
+        controlUniforms.slopeBlendCos
+          .sub(normalY)
+          .div(slopeRange.abs().add(float(0.01))),
         0,
         1
       );
-      const slopeBlendFactor = smoothstep(float(0), float(1), slopeT);
+      const rockBlendFactor = smoothstep(float(0), float(1), slopeT);
 
-      // Snow blend: 0 = below snow line, 1 = above snow line
-      // Blend smoothly over snowBlendRange with smoothstep
+      // Also add height-based noise variation for rock (rock appears more at varied heights)
+      const heightNoise = mx_noise_float(
+        vec2(worldPosition.x, worldPosition.z)
+          .mul(0.005)
+          .add(scaledHeight.mul(0.001))
+      );
+      const heightAdjustedRock = rockBlendFactor.mul(
+        float(0.7).add(heightNoise.mul(0.3))
+      );
+
+      // ========================================
+      // GRASS OVERLAY
+      // ========================================
+      // Grass appears above grassMinAltitude, reaching full blend at grassFullAltitude
+      // Reduced on steep slopes (where rock shows)
+      const grassAltitudeRange = controlUniforms.grassFullAltitude.sub(
+        controlUniforms.grassMinAltitude
+      );
+      const grassAltitudeT = clamp(
+        scaledHeight
+          .sub(controlUniforms.grassMinAltitude)
+          .div(grassAltitudeRange.add(float(0.01))),
+        0,
+        1
+      );
+      // Use linear ramp instead of smoothstep to preserve more grass at lower elevations
+      const grassAltitudeBlend = grassAltitudeT;
+
+      // Grass is reduced on steep slopes - use a gentler reduction
+      // Only significantly reduce grass when rock is dominant (rockBlendFactor > 0.5)
+      const grassSlopeReduction = float(1).sub(
+        rockBlendFactor.mul(float(0.8)).clamp(0, 1)
+      );
+
+      // Final grass blend: altitude * slope reduction (no variation penalty)
+      const grassBlendFactor = grassAltitudeBlend.mul(grassSlopeReduction);
+
+      // ========================================
+      // SNOW OVERLAY
+      // ========================================
+      // Snow starts appearing at snowAltitude - snowBlendRange
       const snowStart = controlUniforms.snowAltitude.sub(
         controlUniforms.snowBlendRange
       );
       const snowT = clamp(
-        scaledHeight.sub(snowStart).div(controlUniforms.snowBlendRange),
+        scaledHeight
+          .sub(snowStart)
+          .div(controlUniforms.snowBlendRange.add(float(0.01))),
         0,
         1
       );
-      const snowBlendFactor = smoothstep(float(0), float(1), snowT);
+      const snowAltitudeBlend = smoothstep(float(0), float(1), snowT);
 
-      // Mud/Grass blend: 0 = lowlands (mud), 1 = higher (grass)
-      // Mud is the base in lowlands, grass fades in as altitude increases
-      const mudEnd = controlUniforms.mudAltitude;
-      const mudT = clamp(scaledHeight.div(mudEnd), 0, 1);
-      const grassBlendFactor = smoothstep(float(0), float(1), mudT);
-
-      // Reduce snow on steep slopes (cliffs don't hold snow well)
-      // Use a gentler threshold for snow reduction
-      const snowSlopeThreshold = controlUniforms.slopeThresholdCos.mul(
-        float(0.6)
-      );
-      const snowSlopeRange =
-        controlUniforms.slopeBlendCos.sub(snowSlopeThreshold);
+      // Reduce snow on steep slopes (cliffs don't hold snow)
       const snowSlopeT = clamp(
-        controlUniforms.slopeBlendCos.sub(normalY).div(snowSlopeRange),
+        controlUniforms.snowSteepnessThresholdCos.sub(normalY).div(float(0.2)),
         0,
         1
       );
       const snowSlopeReduction = smoothstep(float(0), float(1), snowSlopeT);
-      const adjustedSnowBlend = snowBlendFactor.mul(
+      const snowBlendFactor = snowAltitudeBlend.mul(
         float(1).sub(snowSlopeReduction)
       );
 
-      // Determine which textures to blend based on conditions
-      // Priority: Snow (at altitude) > Rock (steep) > Grass (mid) > Mud (lowlands)
-      // Use smooth interpolation to avoid hard edges
-
-      // Check if we're in a snow zone (significant snow contribution)
-      const snowThreshold = float(0.15);
-      const inSnowZone = adjustedSnowBlend.greaterThan(snowThreshold);
-
-      // Check if slope is too steep for snow (independent threshold)
-      const tooSteepForSnow = normalY.lessThan(
-        controlUniforms.snowSteepnessThresholdCos
+      // ========================================
+      // BASE TEXTURE SELECTION
+      // ========================================
+      // Mud is the default base
+      // Rock replaces mud on steep slopes (smooth transition)
+      // Use the rock blend factor to smoothly interpolate texture IDs
+      // When rockBlendFactor > 0.5, use rock; otherwise mud
+      // But we encode as continuous IDs for smooth fragment interpolation
+      const rockThreshold = float(0.5);
+      const baseTexture = select(
+        heightAdjustedRock.greaterThan(rockThreshold),
+        rockId,
+        mudId
       );
 
-      // Check if we're on a steep slope (for base texture selection)
-      const steepThreshold = float(0.3);
-      const isSteep = slopeBlendFactor.greaterThan(steepThreshold);
+      // ========================================
+      // OVERLAY TEXTURE & BLEND SELECTION
+      // ========================================
+      // Priority: Snow (highest) > Grass > None
+      // Snow takes over at high altitudes
+      // Grass is the default overlay where there's no snow
 
-      // Check if we're in the lowlands (mud zone)
-      const grassThreshold = float(0.5);
-      const inLowlands = grassBlendFactor.lessThan(grassThreshold);
+      const snowSignificant = snowBlendFactor.greaterThan(float(0.1));
+      const grassSignificant = grassBlendFactor.greaterThan(float(0.05));
 
-      // Base texture logic:
-      // - Steep slopes: rock (regardless of altitude)
-      // - Lowlands (not steep): mud as base
-      // - Higher ground (not steep): grass as base
-      const flatBaseTexture = select(inLowlands, mudId, grassId);
-      const baseTexture = select(isSteep, rockId, flatBaseTexture);
-
-      // Overlay texture logic:
-      // - Snow zone (not too steep): snow overlay
-      // - Lowlands (not steep, not snow): grass overlay on mud
-      // - Otherwise: same as base (no overlay)
-      const canHaveSnow = inSnowZone.and(tooSteepForSnow.not());
-      const wantsGrassOverlay = inLowlands
-        .and(isSteep.not())
-        .and(canHaveSnow.not());
-
+      // If snow is significant, use snow as overlay
+      // Else if grass is significant, use grass as overlay
+      // Else no overlay (use base texture)
       const overlayTexture = select(
-        canHaveSnow,
+        snowSignificant,
         snowId,
-        select(wantsGrassOverlay, grassId, baseTexture)
+        select(grassSignificant, grassId, baseTexture)
       );
 
-      // Blend factor logic:
-      // - Snow zone: use snow blend factor
-      // - Lowlands with grass overlay: use grass blend factor
-      // - Otherwise: no blend (0)
-      const rawBlend = select(
-        canHaveSnow,
-        adjustedSnowBlend,
-        select(wantsGrassOverlay, grassBlendFactor, float(0))
+      // Blend factor for overlay
+      // Use snow blend when in snow zone, otherwise grass blend
+      const overlayBlend = select(
+        snowSignificant,
+        snowBlendFactor,
+        select(grassSignificant, grassBlendFactor, float(0))
       );
 
-      const blendFactor = clamp(rawBlend, 0, 1).mul(float(255));
+      // Clamp and scale to 0-255 for packing
+      const blendFactor = clamp(overlayBlend, 0, 1).mul(float(255));
 
       // UV scale (0 = 1x)
       const uvScale = uint(0);
@@ -631,11 +818,19 @@ const TerrainPlane = () => {
     () => ({
       textureScale: uniform(textureControls.textureScale),
       heightBlendSharpness: uniform(textureControls.heightBlendSharpness),
+      heightBlendMinWidth: uniform(textureControls.heightBlendMinWidth),
       triplanarSharpness: uniform(textureControls.triplanarSharpness),
       debugMode: uniform(textureControls.debugMode),
       variationScale: uniform(textureControls.variationScale),
       transitionBlendWidth: uniform(textureControls.transitionBlendWidth),
       showTiles: uniform(0), // Initialized to 0, updated in useFrame
+      // Enhanced blending uniforms (from three-landscape)
+      blendMode: uniform(1), // 0=linear, 1=height, 2=noise
+      noiseBlur: uniform(textureControls.noiseBlur),
+      noiseAmplitude: uniform(textureControls.noiseAmplitude),
+      noiseWavelength: uniform(textureControls.noiseWavelength),
+      noiseAccuracy: uniform(textureControls.noiseAccuracy),
+      saturation: uniform(textureControls.saturation),
     }),
     []
   );
@@ -647,14 +842,17 @@ const TerrainPlane = () => {
       })();
     }
 
-    // Create the normal terrain color node (handles triplanar debug modes 0-2)
-    const terrainColorNode = createTerrainColorNodeTriplanarNoTile({
+    // Create the enhanced terrain color node with noise-based edge blending
+    // and saturation control from three-landscape
+    const terrainColorNode = createTerrainColorNode({
       varyings: terrain.varyings,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       textureScale: textureUniforms.textureScale as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       heightBlendSharpness: textureUniforms.heightBlendSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      heightBlendMinWidth: textureUniforms.heightBlendMinWidth as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       triplanarSharpness: textureUniforms.triplanarSharpness as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
@@ -663,6 +861,19 @@ const TerrainPlane = () => {
       variationScale: textureUniforms.variationScale as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
+      // Enhanced blending parameters from three-landscape
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      blendMode: textureUniforms.blendMode as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseBlur: textureUniforms.noiseBlur as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseAmplitude: textureUniforms.noiseAmplitude as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseWavelength: textureUniforms.noiseWavelength as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseAccuracy: textureUniforms.noiseAccuracy as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      saturation: textureUniforms.saturation as any,
     });
 
     return Fn(() => {
@@ -851,21 +1062,58 @@ const TerrainPlane = () => {
       })();
     }
 
-    return createTerrainRoughnessNodeTriplanarNoTile({
+    return createTerrainRoughnessNode({
       varyings: terrain.varyings,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       textureScale: textureUniforms.textureScale as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      heightBlendSharpness: textureUniforms.heightBlendSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      heightBlendMinWidth: textureUniforms.heightBlendMinWidth as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       triplanarSharpness: textureUniforms.triplanarSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      debugMode: textureUniforms.debugMode as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       variationScale: textureUniforms.variationScale as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      blendMode: textureUniforms.blendMode as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseBlur: textureUniforms.noiseBlur as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseAmplitude: textureUniforms.noiseAmplitude as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseWavelength: textureUniforms.noiseWavelength as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseAccuracy: textureUniforms.noiseAccuracy as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      saturation: textureUniforms.saturation as any,
     });
   }, [terrain, textureArray, textureUniforms]);
 
   useFrame(() => {
+    // Update sun position and shadow camera
+    if (sunRef.current) {
+      sunRef.current.position.copy(sunPosition);
+      sunRef.current.intensity = sunControls.intensity;
+
+      // Configure shadow camera to cover the terrain
+      const halfSize = terrainGeometryControls.rootSize * 0.6;
+      sunRef.current.shadow.camera.left = -halfSize;
+      sunRef.current.shadow.camera.right = halfSize;
+      sunRef.current.shadow.camera.top = halfSize;
+      sunRef.current.shadow.camera.bottom = -halfSize;
+      sunRef.current.shadow.camera.near = 0.5;
+      sunRef.current.shadow.camera.far = terrainGeometryControls.rootSize * 2.5;
+      sunRef.current.shadow.bias = shadowControls.shadowBias;
+      sunRef.current.shadow.normalBias = shadowControls.normalBias;
+      sunRef.current.shadow.radius = shadowControls.shadowRadius;
+      sunRef.current.shadow.camera.updateProjectionMatrix();
+    }
+
     if (!terrain) return;
 
     // Update heightmap scale from controls
@@ -875,6 +1123,8 @@ const TerrainPlane = () => {
     textureUniforms.textureScale.value = textureControls.textureScale;
     textureUniforms.heightBlendSharpness.value =
       textureControls.heightBlendSharpness;
+    textureUniforms.heightBlendMinWidth.value =
+      textureControls.heightBlendMinWidth;
     textureUniforms.triplanarSharpness.value =
       textureControls.triplanarSharpness;
     textureUniforms.debugMode.value = textureControls.debugMode;
@@ -882,6 +1132,20 @@ const TerrainPlane = () => {
     textureUniforms.transitionBlendWidth.value =
       textureControls.transitionBlendWidth;
     textureUniforms.showTiles.value = debugControls.showTiles ? 1 : 0;
+
+    // Update enhanced blending uniforms (from three-landscape)
+    const blendModeValue =
+      textureControls.blendMode === "linear"
+        ? 0
+        : textureControls.blendMode === "height"
+          ? 1
+          : 2;
+    textureUniforms.blendMode.value = blendModeValue;
+    textureUniforms.noiseBlur.value = textureControls.noiseBlur;
+    textureUniforms.noiseAmplitude.value = textureControls.noiseAmplitude;
+    textureUniforms.noiseWavelength.value = textureControls.noiseWavelength;
+    textureUniforms.noiseAccuracy.value = textureControls.noiseAccuracy;
+    textureUniforms.saturation.value = textureControls.saturation;
 
     // Update control function uniforms (slope/altitude thresholds)
     // Convert slope angles from degrees to cos(angle) for GPU comparison
@@ -902,8 +1166,10 @@ const TerrainPlane = () => {
     controlUniforms.snowBlendRange.value = textureControls.snowBlendRange;
     controlUniforms.snowSteepnessThresholdCos.value = snowSteepnessThresholdCos;
     controlUniforms.heightScale.value = terrainGeometryControls.heightmapScale;
-    controlUniforms.mudAltitude.value = textureControls.mudAltitude;
-    controlUniforms.mudBlendRange.value = textureControls.mudBlendRange;
+    controlUniforms.grassMinAltitude.value = textureControls.grassMinAltitude;
+    controlUniforms.grassFullAltitude.value = textureControls.grassFullAltitude;
+    controlUniforms.rockNoiseScale.value = textureControls.rockNoiseScale;
+    controlUniforms.rockNoiseStrength.value = textureControls.rockNoiseStrength;
 
     // Throttle quadtree/compute updates (expensive) to every N frames
     updateFrameCounter.current++;
@@ -954,8 +1220,26 @@ const TerrainPlane = () => {
 
   return (
     <>
+      {/* Sun light with shadows */}
+      <directionalLight
+        ref={sunRef}
+        intensity={sunControls.intensity}
+        position={sunPosition}
+        castShadow={shadowControls.enabled}
+        shadow-mapSize-width={shadowControls.shadowMapSize}
+        shadow-mapSize-height={shadowControls.shadowMapSize}
+      />
+
+      {/* Ambient fill light */}
+      <ambientLight intensity={0.25} color="#f5e6d3" />
+
+      {/* Hemisphere light for sky/ground bounce */}
+      <hemisphereLight intensity={0.3} color="#87ceeb" groundColor="#d4a574" />
+
       <hello.TerrainMesh
         ref={setTerrain}
+        receiveShadow={shadowControls.enabled}
+        castShadow={shadowControls.enabled}
         innerTileSegments={terrainGeometryControls.segments}
         elevationFn={elevationFn}
         controlFn={controlFn}
@@ -977,9 +1261,22 @@ const TerrainPlane = () => {
       {/* Terrain-aware orbit controls that prevent camera from going below terrain */}
       <OrbitControls />
 
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 10, 5]} intensity={1} />
-      <Environment preset="park" background={false} environmentIntensity={1} />
+      <Sky
+        distance={450000}
+        sunPosition={sunPosition}
+        inclination={0.48}
+        azimuth={0.25}
+        rayleigh={0.2}
+        turbidity={12}
+        mieCoefficient={0.005}
+        mieDirectionalG={0.8}
+      />
+
+      <Environment
+        preset="park"
+        background={false}
+        environmentIntensity={0.5}
+      />
       <Skybox size={terrainGeometryControls.rootSize * 2} />
     </>
   );
@@ -996,6 +1293,7 @@ export default function TexturedTerrainScene() {
           width: "100%",
           height: "100%",
         }}
+        shadows="soft"
         camera={{
           position: [300, 500, 500],
           fov: 75,
@@ -1006,11 +1304,13 @@ export default function TexturedTerrainScene() {
           const renderer = new THREE.WebGPURenderer(
             props as WebGPURendererParameters
           );
+          renderer.shadowMap.enabled = true;
           await renderer.init();
           return renderer;
         }}
       >
-        <color attach="background" args={["#87CEEB"]} />
+        <color attach="background" args={["#e8d5b5"]} />
+        <fog attach="fog" args={["#d4c4a8", 100, 1024 * 30]} />
         <TerrainPlane />
       </Canvas>
     </div>

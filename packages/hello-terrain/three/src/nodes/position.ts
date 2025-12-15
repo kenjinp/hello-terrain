@@ -101,12 +101,10 @@ export const createWorldPosition = (
     const controlPackedInt = controlPacked.toUint();
     const controlBaseId = controlPackedInt
       .shiftRight(int(27))
-      .bitAnd(int(0x1f))
-      .toFloat();
+      .bitAnd(int(0x1f));
     const controlOverlayId = controlPackedInt
       .shiftRight(int(22))
-      .bitAnd(int(0x1f))
-      .toFloat();
+      .bitAnd(int(0x1f));
     const controlBlend = controlPackedInt
       .shiftRight(int(14))
       .bitAnd(int(0xff))
