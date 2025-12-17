@@ -512,6 +512,70 @@ export const createTerrainRoughnessNode = (
 };
 
 /**
+ * Create terrain ambient occlusion node that is *aligned* with
+ * `createTerrainColorNode`.
+ *
+ * Uses the same sampling strategy (triplanar + stochastic), texture-id
+ * interpolation, and blend masks as the color/roughness nodes to keep
+ * AO transitions visually in lockstep.
+ */
+export const createTerrainAoNode = (
+  params: TerrainTextureMaterialEnhancedParams
+): ShaderNodeObject<Node> => {
+  const { textureArray } = params;
+  const ctx = getBlendContext(params);
+  const aoTexture = textureArray.aoArray;
+
+  return Fn(() => {
+    // Sample AO from the R channel of the AO texture array
+    const baseFloorAo = sampleTextureArrayTriplanarNoTile(
+      aoTexture,
+      ctx.worldPos,
+      ctx.geometricNormal,
+      ctx.baseIdFloor,
+      ctx.scaledTextureScale,
+      ctx.triplanarSharpnessNode,
+      ctx.variationScaleNode
+    ).r;
+    const baseCeilAo = sampleTextureArrayTriplanarNoTile(
+      aoTexture,
+      ctx.worldPos,
+      ctx.geometricNormal,
+      ctx.baseIdCeil,
+      ctx.scaledTextureScale,
+      ctx.triplanarSharpnessNode,
+      ctx.variationScaleNode
+    ).r;
+    const overlayFloorAo = sampleTextureArrayTriplanarNoTile(
+      aoTexture,
+      ctx.worldPos,
+      ctx.geometricNormal,
+      ctx.overlayIdFloor,
+      ctx.scaledTextureScale,
+      ctx.triplanarSharpnessNode,
+      ctx.variationScaleNode
+    ).r;
+    const overlayCeilAo = sampleTextureArrayTriplanarNoTile(
+      aoTexture,
+      ctx.worldPos,
+      ctx.geometricNormal,
+      ctx.overlayIdCeil,
+      ctx.scaledTextureScale,
+      ctx.triplanarSharpnessNode,
+      ctx.variationScaleNode
+    ).r;
+
+    const blendedBaseAo = mix(baseFloorAo, baseCeilAo, ctx.baseTransitionMask);
+    const blendedOverlayAo = mix(
+      overlayFloorAo,
+      overlayCeilAo,
+      ctx.overlayTransitionMask
+    );
+    return mix(blendedBaseAo, blendedOverlayAo, ctx.finalMask);
+  })();
+};
+
+/**
  * Debug mode values for triplanar visualization uniform:
  * - 0 = off (normal rendering)
  * - 1 = weights (pure RGB showing axis blend weights)

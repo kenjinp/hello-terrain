@@ -67,6 +67,7 @@ export {
 } from "./compute/ControlStorage";
 export { createReadControlAtVertex } from "./nodes/controlData";
 export {
+  createTerrainAoNode,
   createTerrainColorNode,
   createTerrainNormalNode,
   createTerrainRoughnessNode,

@@ -14,6 +14,7 @@ import {
   TerrainTextureArray,
   computeScreenSpaceInfo,
   controlmapStorageProperty,
+  createTerrainAoNode,
   createTerrainColorNode,
   createTerrainRoughnessNode,
   distanceBasedSubdivision,
@@ -93,16 +94,17 @@ async function loadImageData(
 }
 
 /**
- * Load a texture set (albedo, normal, height, roughness)
+ * Load a texture set (albedo, normal, height, roughness, ao)
  */
 async function loadTextureSet(basePath: string, targetSize: number) {
-  const [albedo, normal, height, roughness] = await Promise.all([
+  const [albedo, normal, height, roughness, ao] = await Promise.all([
     loadImageData(`${basePath}-color.png`, targetSize),
     loadImageData(`${basePath}-normal.png`, targetSize),
     loadImageData(`${basePath}-height.png`, targetSize),
     loadImageData(`${basePath}-rough.png`, targetSize),
+    loadImageData(`${basePath}-ao.png`, targetSize),
   ]);
-  return { albedo, normal, height, roughness };
+  return { albedo, normal, height, roughness, ao };
 }
 
 // Texture IDs (constants used in both CPU loading and GPU compute)
@@ -548,27 +550,37 @@ const TerrainPlane = () => {
         grass.albedo,
         grass.normal,
         grass.height,
-        grass.roughness
+        grass.roughness,
+        grass.ao
       );
       texArray.addTextureSet(
         rock.albedo,
         rock.normal,
         rock.height,
-        rock.roughness
+        rock.roughness,
+        rock.ao
       );
       texArray.addTextureSet(
         slate.albedo,
         slate.normal,
         slate.height,
-        slate.roughness
+        slate.roughness,
+        slate.ao
       );
       texArray.addTextureSet(
         snow.albedo,
         snow.normal,
         snow.height,
-        snow.roughness
+        snow.roughness,
+        snow.ao
       );
-      texArray.addTextureSet(mud.albedo, mud.normal, mud.height, mud.roughness);
+      texArray.addTextureSet(
+        mud.albedo,
+        mud.normal,
+        mud.height,
+        mud.roughness,
+        mud.ao
+      );
 
       setTextureArray(texArray);
     };
@@ -1094,6 +1106,45 @@ const TerrainPlane = () => {
     });
   }, [terrain, textureArray, textureUniforms]);
 
+  const aoNode = useMemo(() => {
+    if (!terrain || !textureArray) {
+      return Fn(() => {
+        return float(1.0); // Default: no occlusion
+      })();
+    }
+
+    return createTerrainAoNode({
+      varyings: terrain.varyings,
+      textureArray,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      textureScale: textureUniforms.textureScale as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      heightBlendSharpness: textureUniforms.heightBlendSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      heightBlendMinWidth: textureUniforms.heightBlendMinWidth as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      triplanarSharpness: textureUniforms.triplanarSharpness as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      debugMode: textureUniforms.debugMode as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      variationScale: textureUniforms.variationScale as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      blendMode: textureUniforms.blendMode as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseBlur: textureUniforms.noiseBlur as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseAmplitude: textureUniforms.noiseAmplitude as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseWavelength: textureUniforms.noiseWavelength as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      noiseAccuracy: textureUniforms.noiseAccuracy as any,
+      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
+      saturation: textureUniforms.saturation as any,
+    });
+  }, [terrain, textureArray, textureUniforms]);
+
   useFrame(() => {
     // Update sun position and shadow camera
     if (sunRef.current) {
@@ -1254,6 +1305,7 @@ const TerrainPlane = () => {
           colorNode={colorNode}
           normalNode={normalNode}
           roughnessNode={roughnessNode}
+          aoNode={aoNode}
           wireframe={debugControls.wireframe}
         />
       </hello.TerrainMesh>
