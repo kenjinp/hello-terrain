@@ -389,32 +389,28 @@ export class TerrainMesh extends InstancedMesh {
           .floor()
           .toInt();
 
-        // IMPORTANT: normals/control should not be influenced by skirt vertices.
-        // The skirt ring exists to hide cracks and is vertically displaced in the
-        // render path, so using skirt heights as finite-difference neighbors can
-        // create incorrect normals at tile borders.
+        // Normal computation uses the skirt vertices (indices 0 and last) as neighbors
+        // for central differences. The skirt heights in storage are valid because they
+        // sample world positions one step outside the tile boundary (see createRootUVCompute).
+        // The vertical displacement of skirts only happens at render time, not in storage.
         //
-        // We clamp sampling to the inner ring [1, last-1] and use one-sided
-        // differences on that inner border.
+        // We clamp the center vertex to the inner ring [1, last-1] but allow neighbors
+        // to extend into the skirt ring [0, last] for proper central differences.
         const innerMin = int(1);
         const innerMax = lastVertexIndex.sub(int(1));
         const uCenter = max(min(uVertexIndex, innerMax), innerMin);
         const vCenter = max(min(vVertexIndex, innerMax), innerMin);
 
-        const uLeft = max(uCenter.sub(int(1)), innerMin);
-        const uRight = min(uCenter.add(int(1)), innerMax);
-        const vDown = max(vCenter.sub(int(1)), innerMin);
-        const vUp = min(vCenter.add(int(1)), innerMax);
+        // Neighbors can use skirt vertices (0 and last) for proper central differences
+        const uLeft = uCenter.sub(int(1));
+        const uRight = uCenter.add(int(1));
+        const vDown = vCenter.sub(int(1));
+        const vUp = vCenter.add(int(1));
 
         const numVerticesPerNode = edgeVertexCount.mul(edgeVertexCount);
         const nodeVertexBaseIndex = int(nodeIndex).mul(numVerticesPerNode);
         // Read raw heights (0-1 range) and scale by heightmap scale to get world-space heights
         const heightScale = this.uComputeHeightmapScale.toVar();
-        const hC = this.heightmapStorage.storageNode
-          .element(
-            nodeVertexBaseIndex.add(vCenter.mul(edgeVertexCount).add(uCenter))
-          )
-          .mul(heightScale);
         const hLm = this.heightmapStorage.storageNode
           .element(
             nodeVertexBaseIndex.add(vCenter.mul(edgeVertexCount).add(uLeft))
@@ -448,34 +444,12 @@ export class TerrainMesh extends InstancedMesh {
           .div(pow(float(2), nodeLevel.toFloat()));
         const innerSegments = float(tileEdgeVertexCount).sub(float(3));
         const stepWorld = tileSizeWorld.div(innerSegments);
-        const invStep = float(1).div(stepWorld);
         const inv2Step = float(0.5).div(stepWorld);
 
-        // Inner border of the tile (index 1 or last-1). Skirt vertices clamp to this.
-        const atLeftInnerEdge = uCenter.equal(innerMin);
-        const atRightInnerEdge = uCenter.equal(innerMax);
-        const atBottomInnerEdge = vCenter.equal(innerMin);
-        const atTopInnerEdge = vCenter.equal(innerMax);
-
-        // One-sided on inner border, central in the interior.
-        const dX = select(
-          atLeftInnerEdge,
-          hRp.sub(hC).mul(invStep),
-          select(
-            atRightInnerEdge,
-            hC.sub(hLm).mul(invStep),
-            hRp.sub(hLm).mul(inv2Step)
-          )
-        );
-        const dZ = select(
-          atBottomInnerEdge,
-          hUp.sub(hC).mul(invStep),
-          select(
-            atTopInnerEdge,
-            hC.sub(hDm).mul(invStep),
-            hUp.sub(hDm).mul(inv2Step)
-          )
-        );
+        // Always use central differences: (h_right - h_left) / (2 * step)
+        // Skirt heights contain valid neighbor data sampled from correct world positions
+        const dX = hRp.sub(hLm).mul(inv2Step);
+        const dZ = hUp.sub(hDm).mul(inv2Step);
 
         const computedNormal = vec3(
           dX.negate(),

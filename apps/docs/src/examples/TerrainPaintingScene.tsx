@@ -485,6 +485,7 @@ const TerrainPlane = ({
 
     const baseColorNode = createTerrainColorNode({
       varyings: terrain.varyings,
+      uniforms: terrain.uniforms,
       textureArray,
       textureScale: textureUniforms.textureScale,
       heightBlendSharpness: textureUniforms.heightBlendSharpness,
@@ -530,6 +531,7 @@ const TerrainPlane = ({
     }
     return createTerrainRoughnessNode({
       varyings: terrain.varyings,
+      uniforms: terrain.uniforms,
       textureArray,
       textureScale: textureUniforms.textureScale,
       heightBlendSharpness: textureUniforms.heightBlendSharpness,
