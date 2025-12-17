@@ -370,6 +370,7 @@ export const sampleTextureArrayTriplanarNoTile = Fn(
  * @param blendFactor Overall blend amount (0=base, 1=overlay)
  * @param sharpness Controls transition sharpness (higher = sharper)
  * @param minWidth Minimum transition width for anti-aliasing (0-1)
+ * @param transitionWidth Width of the transition zone where height blending applies (0-1)
  * @returns Blend mask (0-1) used to mix base/overlay
  */
 export const heightBlendMask = Fn(
@@ -379,12 +380,16 @@ export const heightBlendMask = Fn(
     blendFactor,
     sharpness,
     minWidth,
+    transitionWidth,
   ]: ShaderNodeObject<Node>[]) => {
     // Height-based blending: blend factor controls overall mix, heights create organic edges.
     //
     // Strategy: Mix between linear blend and height-winner blend.
-    // - At transition edges (blend ~0.5), heights have more influence
+    // - Within the transition zone, heights have more influence
     // - At extremes (blend ~0 or ~1), control blend dominates
+    //
+    // The transitionWidth parameter expands the zone where height blending occurs,
+    // creating smoother transitions even when control map boundaries are sharp.
 
     // Height comparison: who would win in pure height-based mode
     const heightDiff = overlayHeight.sub(baseHeight);
@@ -398,13 +403,27 @@ export const heightBlendMask = Fn(
     // Default minWidth ~0.3 → 70% height influence at transition
     const heightInfluence = float(1).sub(minWidth);
 
-    // At the edges (blend ~0.5), use height to decide winner.
-    // At extremes (blend ~0 or ~1), use the control blend.
-    // Weight by how close we are to the transition zone (0.5)
-    const distFromEdge = blendFactor.sub(float(0.5)).abs().mul(float(2)); // 0 at center, 1 at edges
-    const edgeFactor = float(1).sub(distFromEdge).clamp(0, 1); // 1 at center, 0 at edges
+    // Calculate the distance from blend center (0.5)
+    // distFromCenter: 0 at blend=0.5, 0.5 at blend=0 or 1
+    const distFromCenter = blendFactor.sub(float(0.5)).abs();
 
-    // Mix: at transition center, use height; at extremes, use linear blend
+    // Use transitionWidth to expand the zone where height blending occurs.
+    // With transitionWidth=0.3:
+    //   - blend 0.0 to 0.15: mostly base with some height influence
+    //   - blend 0.15 to 0.85: full height influence zone
+    //   - blend 0.85 to 1.0: mostly overlay with some height influence
+    // The smoothstep creates a soft falloff at the boundaries.
+    const halfWidth = transitionWidth.mul(float(0.5));
+    const innerEdge = float(0.5).sub(halfWidth); // Where full height influence starts
+    const outerEdge = float(0.5); // Where height influence fades to zero
+
+    // edgeFactor: 1 within the expanded transition zone, fading to 0 at extremes
+    // Uses smoothstep for a gradual falloff instead of a hard cutoff
+    const edgeFactor = float(1).sub(
+      smoothstep(innerEdge, outerEdge, distFromCenter)
+    );
+
+    // Mix: within transition zone, use height; at extremes, use linear blend
     const heightContribution = heightWinnerClamped
       .mul(edgeFactor)
       .mul(heightInfluence);

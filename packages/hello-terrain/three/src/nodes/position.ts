@@ -5,6 +5,7 @@ import {
   int,
   positionLocal,
   select,
+  vec2,
   vec3,
   vertexIndex,
 } from "three/tsl";
@@ -95,24 +96,30 @@ export const createWorldPosition = (
       createReadNormalAtPositionLocal(globalIndex);
     varyings.vNormal.assign(readNormalAtPositionLocal());
 
-    // Read control map data and pass as varyings for smooth interpolation across triangles
-    // Reading in vertex shader and interpolating in fragment shader creates smooth transitions
-    const controlPacked = controlmapStorageProperty.element(globalIndex);
-    const controlPackedInt = controlPacked.toUint();
-    const controlBaseId = controlPackedInt
-      .shiftRight(int(27))
-      .bitAnd(int(0x1f));
-    const controlOverlayId = controlPackedInt
-      .shiftRight(int(22))
-      .bitAnd(int(0x1f));
-    const controlBlend = controlPackedInt
-      .shiftRight(int(14))
-      .bitAnd(int(0xff))
-      .toFloat()
-      .div(float(255.0));
-    varyings.vControlBaseId.assign(controlBaseId);
-    varyings.vControlOverlayId.assign(controlOverlayId);
-    varyings.vControlBlend.assign(controlBlend);
+    // Pass node metadata for 4-vertex control map sampling in fragment shader
+    // These allow the fragment shader to calculate neighboring vertex indices
+    // from world position without crossing node boundaries (skirt provides overlap)
+    // Control data is read directly from storage in the fragment shader.
+    const nodeOffset = nodeIndex.mul(int(4));
+    const nodeX = nodeStorageProperty.element(nodeOffset.add(int(1))).toFloat();
+    const nodeZ = nodeStorageProperty.element(nodeOffset.add(int(2))).toFloat();
+    const rootSize = uniforms.uRootSize.toVar();
+    const nodeLevel = nodeStorageProperty.element(nodeOffset).toInt();
+    const nodeSize = float(rootSize).div(float(2).pow(nodeLevel.toFloat()));
+    const half = float(0.5);
+    const halfRoot = float(rootSize).mul(half);
+    const rootOrigin = uniforms.uRootOrigin.toVar();
+    // Compute tile center in world space (same calculation as createTileGeometryPosition)
+    const nodeCenterX = rootOrigin.x
+      .add(nodeX.add(half).mul(nodeSize))
+      .sub(halfRoot);
+    const nodeCenterZ = rootOrigin.z
+      .add(nodeZ.add(half).mul(nodeSize))
+      .sub(halfRoot);
+
+    varyings.vNodeIndex.assign(nodeIndex);
+    varyings.vNodeOrigin.assign(vec2(nodeCenterX, nodeCenterZ));
+    varyings.vNodeSize.assign(nodeSize);
 
     return select(isLeaf, beforeTransform, vec3(0, 0, 0));
   });

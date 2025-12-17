@@ -265,11 +265,11 @@ const TerrainPlane = () => {
       label: "Anti-Tile Scale",
     },
     transitionBlendWidth: {
-      value: 0.3,
-      min: 0.05,
-      max: 0.5,
+      value: 0.7,
+      min: 0.1,
+      max: 0.95,
       step: 0.01,
-      label: "Transition Blend",
+      label: "Transition Blend Width",
     },
     slopeThreshold: {
       value: 60,
@@ -858,6 +858,7 @@ const TerrainPlane = () => {
     // and saturation control from three-landscape
     const terrainColorNode = createTerrainColorNode({
       varyings: terrain.varyings,
+      uniforms: terrain.uniforms,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       textureScale: textureUniforms.textureScale as any,
@@ -1076,6 +1077,7 @@ const TerrainPlane = () => {
 
     return createTerrainRoughnessNode({
       varyings: terrain.varyings,
+      uniforms: terrain.uniforms,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       textureScale: textureUniforms.textureScale as any,
@@ -1115,6 +1117,7 @@ const TerrainPlane = () => {
 
     return createTerrainAoNode({
       varyings: terrain.varyings,
+      uniforms: terrain.uniforms,
       textureArray,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       textureScale: textureUniforms.textureScale as any,

@@ -2,21 +2,23 @@ import type { ShaderNodeObject } from "three/tsl";
 import {
   Fn,
   float,
+  floor,
+  fract,
   int,
   mix,
   positionWorld,
+  pow,
   select,
-  smoothstep,
   vec4,
 } from "three/tsl";
 import type { Node } from "three/webgpu";
+import type { TerrainUniforms } from "../TerrainUniforms";
 import type { TerrainVaryings } from "../TerrainVaryings";
 import type { TerrainTextureArray } from "../texture/TerrainTextureArray";
 import { controlmapStorageProperty } from "./properties";
 import {
   adjustSaturation,
   heightBlendMask,
-  noiseEdgeBlend,
   sampleTextureArrayTriplanarDebug,
   sampleTextureArrayTriplanarNoTile,
   triplanarDebugWeights,
@@ -103,11 +105,33 @@ function _idFor(obj: unknown): string {
 // Cache contexts per (varyings, textureArray, param-node identities)
 const _blendContextCache = new WeakMap<object, Map<string, BlendContext>>();
 
+/**
+ * Decode control data from packed uint32
+ */
+function decodeControl(packed: ShaderNodeObject<Node>) {
+  const packedInt = packed.toUint();
+  const baseId = packedInt.shiftRight(int(27)).bitAnd(int(0x1f));
+  const overlayId = packedInt.shiftRight(int(22)).bitAnd(int(0x1f));
+  const blend = packedInt
+    .shiftRight(int(14))
+    .bitAnd(int(0xff))
+    .toFloat()
+    .div(float(255.0));
+  const uvScaleVal = packedInt
+    .shiftRight(int(10))
+    .bitAnd(int(0x0f))
+    .toFloat()
+    .add(1.0);
+  const hole = packedInt.shiftRight(int(3)).bitAnd(int(0x01)).equal(int(1));
+  return { baseId, overlayId, blend, uvScaleVal, hole };
+}
+
 function getBlendContext(
   params: TerrainTextureMaterialEnhancedParams
 ): BlendContext {
   const {
     varyings,
+    uniforms,
     textureArray,
     textureScale = 10,
     heightBlendSharpness = 4,
@@ -160,6 +184,7 @@ function getBlendContext(
   const cacheRoot = varyings as unknown as object;
   const cacheKey = [
     _idFor(textureArray),
+    _idFor(uniforms),
     _idFor(textureScaleNode as unknown as object),
     _idFor(heightBlendSharpnessNode as unknown as object),
     _idFor(triplanarSharpnessNode as unknown as object),
@@ -183,152 +208,250 @@ function getBlendContext(
 
   const albedoHeightTexture = textureArray.albedoHeightArray;
 
-  // Common control decoding
-  const globalVertexIndex = varyings.vGlobalVertexIndex;
-  const packed = controlmapStorageProperty.element(globalVertexIndex);
-  const packedInt = packed.toUint();
-
-  const uvScale = packedInt
-    .shiftRight(int(10))
-    .bitAnd(int(0x0f))
-    .toFloat()
-    .add(1.0)
-    .toVar();
-
-  const hole = packedInt
-    .shiftRight(int(3))
-    .bitAnd(int(0x01))
-    .equal(int(1))
-    .toVar();
-
   const worldPos = positionWorld;
   const geometricNormal = varyings.vNormal.normalize();
+
+  // ============================================================
+  // 4-VERTEX CONTROL MAP SAMPLING
+  // ============================================================
+  // Instead of using flat int varyings (which cause hard edges between
+  // base textures), we sample control data from the 4 surrounding vertices
+  // based on world position. The skirt vertices already contain data
+  // from neighboring tiles, so no cross-node lookup is needed.
+
+  // Get node metadata from varyings
+  const nodeIndex = varyings.vNodeIndex;
+  const nodeOrigin = varyings.vNodeOrigin;
+  const nodeCenterX = nodeOrigin.x;
+  const nodeCenterZ = nodeOrigin.y;
+  const nodeSize = varyings.vNodeSize;
+
+  // Calculate edge vertex count (segments + 3 for skirt)
+  const segments = uniforms.uSegments.toVar();
+  const edgeVertexCount = segments.add(int(3));
+  const edgeVertexCountInt = int(edgeVertexCount);
+  const verticesPerNode = edgeVertexCountInt.mul(edgeVertexCountInt);
+
+  // Calculate local position within node [-0.5, 0.5] -> [0, 1]
+  const localX = worldPos.x.sub(nodeCenterX).div(nodeSize).add(float(0.5));
+  const localZ = worldPos.z.sub(nodeCenterZ).div(nodeSize).add(float(0.5));
+
+  // Map to vertex grid coordinates
+  // Inner vertices (1 to edgeVertexCount-2) span [0, 1] in local coords
+  // gridX = localX * segments + 1 (offset by 1 for skirt)
+  const segmentsFloat = segments.toFloat();
+  const gridX = localX.mul(segmentsFloat).add(float(1.0));
+  const gridZ = localZ.mul(segmentsFloat).add(float(1.0));
+
+  // Floor to get the 4 surrounding vertex indices
+  const ix0 = int(floor(gridX))
+    .max(int(0))
+    .min(edgeVertexCountInt.sub(int(2)));
+  const iz0 = int(floor(gridZ))
+    .max(int(0))
+    .min(edgeVertexCountInt.sub(int(2)));
+  const ix1 = ix0.add(int(1));
+  const iz1 = iz0.add(int(1));
+
+  // Compute global indices for 4 surrounding vertices
+  const baseGlobalIndex = int(nodeIndex).mul(verticesPerNode);
+  const idx00 = baseGlobalIndex.add(iz0.mul(edgeVertexCountInt).add(ix0));
+  const idx10 = baseGlobalIndex.add(iz0.mul(edgeVertexCountInt).add(ix1));
+  const idx01 = baseGlobalIndex.add(iz1.mul(edgeVertexCountInt).add(ix0));
+  const idx11 = baseGlobalIndex.add(iz1.mul(edgeVertexCountInt).add(ix1));
+
+  // Sample control data from all 4 vertices
+  const control00 = controlmapStorageProperty.element(idx00);
+  const control10 = controlmapStorageProperty.element(idx10);
+  const control01 = controlmapStorageProperty.element(idx01);
+  const control11 = controlmapStorageProperty.element(idx11);
+
+  // Decode control data for each vertex
+  const decoded00 = decodeControl(control00);
+  const decoded10 = decodeControl(control10);
+  const decoded01 = decodeControl(control01);
+  const decoded11 = decodeControl(control11);
+
+  // Bilinear interpolation weights
+  const fx = fract(gridX).toVar();
+  const fz = fract(gridZ).toVar();
+
+  // Use control data from vertex 00 for uvScale and hole (they should be consistent)
+  const uvScale = decoded00.uvScaleVal.toVar();
+  const hole = decoded00.hole.toVar();
+
   const scaledTextureScale = textureScaleNode.div(uvScale).toVar();
 
-  // Texture IDs are discrete: keep them flat (int varyings) to avoid interpolating
-  // through unrelated indices (which creates visible "bands").
-  const baseIdFloor = varyings.vControlBaseId.toVar();
+  // ============================================================
+  // SAMPLE MATERIALS FOR ALL 4 VERTICES
+  // ============================================================
+  // For each vertex, sample base and overlay textures and blend them
+
+  // Helper to sample and blend base+overlay for a single vertex's control data
+  const sampleVertexMaterial = (
+    baseId: ShaderNodeObject<Node>,
+    overlayId: ShaderNodeObject<Node>,
+    blend: ShaderNodeObject<Node>
+  ) => {
+    const baseSample = sampleTextureArrayTriplanarNoTile(
+      albedoHeightTexture,
+      worldPos,
+      geometricNormal,
+      baseId,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+    const overlaySample = sampleTextureArrayTriplanarNoTile(
+      albedoHeightTexture,
+      worldPos,
+      geometricNormal,
+      overlayId,
+      scaledTextureScale,
+      triplanarSharpnessNode,
+      variationScaleNode
+    );
+
+    // Height-blend between base and overlay for this vertex
+    const baseHeight = baseSample.a;
+    const overlayHeight = overlaySample.a;
+
+    const blendMask = select(
+      blendModeNode.lessThan(float(0.5)), // linear mode
+      blend,
+      heightBlendMask(
+        baseHeight,
+        overlayHeight,
+        blend,
+        heightBlendSharpnessNode,
+        heightBlendMinWidthNode,
+        transitionBlendWidthNode
+      )
+    );
+
+    // Return blended RGBA (color + height for 4-way blending)
+    return vec4(
+      mix(baseSample.rgb, overlaySample.rgb, blendMask),
+      mix(baseHeight, overlayHeight, blendMask)
+    );
+  };
+
+  // Sample materials for all 4 vertices
+  const mat00 = sampleVertexMaterial(
+    decoded00.baseId,
+    decoded00.overlayId,
+    decoded00.blend
+  ).toVar();
+  const mat10 = sampleVertexMaterial(
+    decoded10.baseId,
+    decoded10.overlayId,
+    decoded10.blend
+  ).toVar();
+  const mat01 = sampleVertexMaterial(
+    decoded01.baseId,
+    decoded01.overlayId,
+    decoded01.blend
+  ).toVar();
+  const mat11 = sampleVertexMaterial(
+    decoded11.baseId,
+    decoded11.overlayId,
+    decoded11.blend
+  ).toVar();
+
+  // ============================================================
+  // HEIGHT-ADJUSTED BILINEAR BLENDING (Terrain3D style)
+  // ============================================================
+  // Adjust bilinear weights by texture height to create natural transitions
+  // Higher textures get more weight, creating organic blending at edges
+
+  // Base bilinear weights
+  const w00Base = float(1).sub(fx).mul(float(1).sub(fz));
+  const w10Base = fx.mul(float(1).sub(fz));
+  const w01Base = float(1).sub(fx).mul(fz);
+  const w11Base = fx.mul(fz);
+
+  // Height values (add small epsilon to prevent division issues)
+  const h00 = mat00.a.add(float(0.001));
+  const h10 = mat10.a.add(float(0.001));
+  const h01 = mat01.a.add(float(0.001));
+  const h11 = mat11.a.add(float(0.001));
+
+  // Height-adjusted weights (Terrain3D formula: w^(1/(h*sharpness)))
+  // Higher sharpness = more influence from height differences
+  const heightSharpness = heightBlendSharpnessNode;
+  const w00 = pow(
+    w00Base.max(float(0.001)),
+    float(1).div(h00.mul(heightSharpness))
+  ).toVar();
+  const w10 = pow(
+    w10Base.max(float(0.001)),
+    float(1).div(h10.mul(heightSharpness))
+  ).toVar();
+  const w01 = pow(
+    w01Base.max(float(0.001)),
+    float(1).div(h01.mul(heightSharpness))
+  ).toVar();
+  const w11 = pow(
+    w11Base.max(float(0.001)),
+    float(1).div(h11.mul(heightSharpness))
+  ).toVar();
+
+  // Normalize weights
+  const totalWeight = w00.add(w10).add(w01).add(w11);
+
+  // Final blended color (weighted average of 4 vertex materials)
+  const blendedColor = mat00.rgb
+    .mul(w00)
+    .add(mat10.rgb.mul(w10))
+    .add(mat01.rgb.mul(w01))
+    .add(mat11.rgb.mul(w11))
+    .div(totalWeight)
+    .toVar();
+
+  // Final blended height
+  const blendedHeight = h00
+    .mul(w00)
+    .add(h10.mul(w10))
+    .add(h01.mul(w01))
+    .add(h11.mul(w11))
+    .div(totalWeight)
+    .toVar();
+
+  // ============================================================
+  // BUILD BLEND CONTEXT
+  // ============================================================
+  // For compatibility with existing node functions, we populate the context
+  // with the 4-vertex blended results. The "floor" and "ceil" now represent
+  // the same blended result (no separate floor/ceil interpolation needed).
+
+  const baseFloorAlbedoHeight = vec4(blendedColor, blendedHeight).toVar();
+  const baseCeilAlbedoHeight = baseFloorAlbedoHeight;
+  const overlayFloorAlbedoHeight = baseFloorAlbedoHeight;
+  const overlayCeilAlbedoHeight = baseFloorAlbedoHeight;
+
+  const baseFloorHeight = blendedHeight;
+  const baseCeilHeight = blendedHeight;
+  const overlayFloorHeight = blendedHeight;
+  const overlayCeilHeight = blendedHeight;
+  const blendedBaseHeight = blendedHeight;
+  const blendedOverlayHeight = blendedHeight;
+
+  // For 4-vertex blending, these masks are not used (blending already done)
+  const baseTransitionMask = float(0).toVar();
+  const overlayTransitionMask = float(0).toVar();
+  const finalMask = float(0).toVar();
+
+  // Keep for noise mode detection (though less relevant with 4-vertex blending)
+  const isLinearMode = blendModeNode.lessThan(float(0.5)).toVar();
+  const controlBlend = float(0).toVar(); // Not used in 4-vertex mode
+
+  // Use vertex 00's base ID for debug visualization
+  const baseIdFloor = decoded00.baseId.toVar();
   const baseIdCeil = baseIdFloor;
-  const overlayIdFloor = varyings.vControlOverlayId.toVar();
+  const overlayIdFloor = decoded00.overlayId.toVar();
   const overlayIdCeil = overlayIdFloor;
   const baseTransitionBlend = float(0).toVar();
   const overlayTransitionBlend = float(0).toVar();
-
-  // Blend factor remains interpolated for smooth transitions.
-  const interpolatedBlend = varyings.vControlBlend;
-
-  const controlBlendRaw = smoothstep(
-    float(0),
-    float(1),
-    interpolatedBlend
-  ).toVar();
-
-  // Blend-mode selection
-  const isLinearMode = blendModeNode.lessThan(float(0.5)).toVar();
-  const isNoiseMode = blendModeNode.greaterThan(float(1.5)).toVar();
-
-  const noiseUv = worldPos.xz.div(scaledTextureScale);
-  const noiseBlendFactor = noiseEdgeBlend(
-    controlBlendRaw,
-    noiseBlurNode,
-    noiseAmplitudeNode,
-    noiseWavelengthNode,
-    noiseAccuracyNode,
-    noiseUv
-  ).toVar();
-
-  const controlBlend = select(
-    isNoiseMode,
-    noiseBlendFactor,
-    controlBlendRaw
-  ).toVar();
-
-  // Albedo samples (stochastic) + height samples (stable).
-  //
-  // IMPORTANT:
-  // - `sampleTextureArrayTriplanarNoTile` intentionally injects high-frequency variation
-  //   to break tiling. That looks great for *albedo*, but it makes height masks speckly.
-  // - For height-based blending we want a stable, low-noise height signal, so we read
-  //   height from the non-stochastic triplanar sampler and use that for all blend masks.
-  const baseFloorAlbedoHeight = sampleTextureArrayTriplanarNoTile(
-    albedoHeightTexture,
-    worldPos,
-    geometricNormal,
-    baseIdFloor,
-    scaledTextureScale,
-    triplanarSharpnessNode,
-    variationScaleNode
-  ).toVar();
-
-  const baseCeilAlbedoHeight = sampleTextureArrayTriplanarNoTile(
-    albedoHeightTexture,
-    worldPos,
-    geometricNormal,
-    baseIdCeil,
-    scaledTextureScale,
-    triplanarSharpnessNode,
-    variationScaleNode
-  ).toVar();
-
-  const overlayFloorAlbedoHeight = sampleTextureArrayTriplanarNoTile(
-    albedoHeightTexture,
-    worldPos,
-    geometricNormal,
-    overlayIdFloor,
-    scaledTextureScale,
-    triplanarSharpnessNode,
-    variationScaleNode
-  ).toVar();
-
-  const overlayCeilAlbedoHeight = sampleTextureArrayTriplanarNoTile(
-    albedoHeightTexture,
-    worldPos,
-    geometricNormal,
-    overlayIdCeil,
-    scaledTextureScale,
-    triplanarSharpnessNode,
-    variationScaleNode
-  ).toVar();
-
-  // Extract heights from the stochastic samples (same anti-tiling as colors).
-  // This ensures the height-based blend mask follows the same pattern as the
-  // color textures, preventing visible tiling in the blend transitions.
-  const baseFloorHeight = baseFloorAlbedoHeight.a.toVar();
-  const baseCeilHeight = baseCeilAlbedoHeight.a.toVar();
-  const overlayFloorHeight = overlayFloorAlbedoHeight.a.toVar();
-  const overlayCeilHeight = overlayCeilAlbedoHeight.a.toVar();
-
-  // Use linear blending for floor-to-ceil transitions.
-  // Height blending between floor/ceil doesn't work well because they sample
-  // from different texture layers (e.g., grass vs rock) with unrelated height
-  // patterns, causing stripe artifacts. Linear interpolation is appropriate
-  // here since this blends between adjacent texture indices.
-  const baseTransitionMask = baseTransitionBlend.toVar();
-  const overlayTransitionMask = overlayTransitionBlend.toVar();
-
-  const blendedBaseHeight = mix(
-    baseFloorHeight,
-    baseCeilHeight,
-    baseTransitionBlend
-  ).toVar();
-  const blendedOverlayHeight = mix(
-    overlayFloorHeight,
-    overlayCeilHeight,
-    overlayTransitionBlend
-  ).toVar();
-
-  // Only use height blending for the final base-to-overlay blend
-  const finalMask = select(
-    isLinearMode,
-    controlBlend,
-    heightBlendMask(
-      blendedBaseHeight,
-      blendedOverlayHeight,
-      controlBlend,
-      heightBlendSharpnessNode,
-      heightBlendMinWidthNode
-    )
-  ).toVar();
 
   const ctx: BlendContext = {
     uvScale,
@@ -368,6 +491,8 @@ function getBlendContext(
 export interface TerrainTextureMaterialParams {
   /** TerrainMesh varyings for vertex data access */
   varyings: TerrainVaryings;
+  /** TerrainMesh uniforms for shader configuration (required for 4-vertex blending) */
+  uniforms: TerrainUniforms;
   /** Texture array containing all terrain textures */
   textureArray: TerrainTextureArray;
   /** World-space scale for texture UVs (higher = more tiling). Can be a number or uniform for reactive updates. */
