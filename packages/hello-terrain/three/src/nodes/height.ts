@@ -1,5 +1,5 @@
 import {
-  type ShaderNodeObject,
+  Fn,
   float,
   instanceIndex,
   int,
@@ -8,8 +8,6 @@ import {
   select,
   vertexIndex,
 } from "three/tsl";
-
-import { Fn } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TerrainUniforms } from "../TerrainUniforms";
 import { ElevationFn, type ElevationReturn } from "./ElevationFn";
@@ -34,11 +32,7 @@ export const createHeight = (
   const tileSize = createTileSize(uniforms);
   const tileLevel = createTileLevel();
 
-  return (
-    nodeIndex: ShaderNodeObject<Node>,
-    localUV: ShaderNodeObject<Node>,
-    _texelSize: ShaderNodeObject<Node>
-  ) =>
+  return (nodeIndex: Node, localUV: Node, _texelSize: Node) =>
     Fn(() => {
       const isActive = nodeStorageProperty
         .element(nodeIndex.mul(4).add(3))
@@ -69,10 +63,7 @@ export const createHeight = (
     })();
 };
 
-export const readHeightVertex = (
-  heightmapStorage: ShaderNodeObject<Node>,
-  edgeVertexCount: number
-) =>
+export const readHeightVertex = (heightmapStorage: Node, edgeVertexCount: number) =>
   Fn(() => {
     const nodeIndex = int(instanceIndex);
     const intEdgeVertexCount = int(edgeVertexCount);
@@ -87,9 +78,9 @@ export const readHeightVertex = (
   });
 // Read height by deriving the per-node vertex index from positionLocal.xz
 export const readHeightAtPositionLocal = (
-  heightmapStorage: ShaderNodeObject<Node>,
+  heightmapStorage: Node,
   edgeVertexCount: number,
-  positionLocal: ShaderNodeObject<Node>
+  positionLocal: Node
 ) =>
   Fn(() => {
     const nodeIndex = int(instanceIndex);

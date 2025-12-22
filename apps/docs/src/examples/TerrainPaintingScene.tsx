@@ -15,8 +15,7 @@ import {
   ElevationFn,
   type TerrainMesh,
   TerrainTextureArray,
-  createTerrainColorNode,
-  createTerrainRoughnessNode,
+  createTerrainMaterialNodes,
   distanceBasedSubdivision,
 } from "@hello-terrain/three";
 import { Environment, OrbitControls, useTexture } from "@react-three/drei";
@@ -458,12 +457,6 @@ const TerrainPlane = ({
       debugMode: uniform(0),
       variationScale: uniform(0.01),
       transitionBlendWidth: uniform(0.3),
-      // Enhanced blending parameters (using defaults)
-      blendMode: uniform(1), // height-based blending
-      noiseBlur: uniform(0.5),
-      noiseAmplitude: uniform(1.25),
-      noiseWavelength: uniform(16384),
-      noiseAccuracy: uniform(1.25),
       saturation: uniform(1.0),
     }),
     []
@@ -477,13 +470,13 @@ const TerrainPlane = ({
     return terrain.positionNode();
   }, [terrain]);
 
-  // Color node with brush preview
-  const colorNode = useMemo(() => {
+  // Create ALL material nodes in a single call to share texture sampling
+  const materialNodes = useMemo(() => {
     if (!terrain || !textureArray) {
-      return Fn(() => vec4(0.5, 0.5, 0.5, 1))();
+      return null;
     }
 
-    const baseColorNode = createTerrainColorNode({
+    return createTerrainMaterialNodes({
       varyings: terrain.varyings,
       uniforms: terrain.uniforms,
       textureArray,
@@ -493,16 +486,18 @@ const TerrainPlane = ({
       debugMode: textureUniforms.debugMode,
       variationScale: textureUniforms.variationScale,
       transitionBlendWidth: textureUniforms.transitionBlendWidth,
-      blendMode: textureUniforms.blendMode,
-      noiseBlur: textureUniforms.noiseBlur,
-      noiseAmplitude: textureUniforms.noiseAmplitude,
-      noiseWavelength: textureUniforms.noiseWavelength,
-      noiseAccuracy: textureUniforms.noiseAccuracy,
       saturation: textureUniforms.saturation,
     });
+  }, [terrain, textureArray, textureUniforms]);
+
+  // Color node with brush preview - uses shared material nodes
+  const colorNode = useMemo(() => {
+    if (!terrain || !textureArray || !materialNodes) {
+      return Fn(() => vec4(0.5, 0.5, 0.5, 1))();
+    }
 
     return createPaintableTerrainColorNode({
-      baseColorNode,
+      baseColorNode: materialNodes.colorNode,
       textureArray,
       brushUniforms,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
@@ -514,7 +509,7 @@ const TerrainPlane = ({
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       normalNode: terrain.varyings.vNormal as any,
     });
-  }, [terrain, textureArray, textureUniforms, brushUniforms]);
+  }, [terrain, textureArray, materialNodes, textureUniforms, brushUniforms]);
 
   // Normal node
   const normalNode = useMemo(() => {
@@ -524,29 +519,13 @@ const TerrainPlane = ({
     return transformNormalToView(terrain.varyings.vNormal);
   }, [terrain]);
 
-  // Roughness node
+  // Roughness node - use shared material nodes
   const roughnessNode = useMemo(() => {
-    if (!terrain || !textureArray) {
+    if (!materialNodes) {
       return Fn(() => float(0.5))();
     }
-    return createTerrainRoughnessNode({
-      varyings: terrain.varyings,
-      uniforms: terrain.uniforms,
-      textureArray,
-      textureScale: textureUniforms.textureScale,
-      heightBlendSharpness: textureUniforms.heightBlendSharpness,
-      triplanarSharpness: textureUniforms.triplanarSharpness,
-      debugMode: textureUniforms.debugMode,
-      variationScale: textureUniforms.variationScale,
-      transitionBlendWidth: textureUniforms.transitionBlendWidth,
-      blendMode: textureUniforms.blendMode,
-      noiseBlur: textureUniforms.noiseBlur,
-      noiseAmplitude: textureUniforms.noiseAmplitude,
-      noiseWavelength: textureUniforms.noiseWavelength,
-      noiseAccuracy: textureUniforms.noiseAccuracy,
-      saturation: textureUniforms.saturation,
-    });
-  }, [terrain, textureArray, textureUniforms]);
+    return materialNodes.roughnessNode;
+  }, [materialNodes]);
 
   // Handle painting - draw to paint texture or height texture (DataTexture)
   const handlePaint = useCallback(

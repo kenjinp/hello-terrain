@@ -1,6 +1,5 @@
 import {
   Fn,
-  type ShaderNodeObject,
   instanceIndex,
   textureStore,
   vec2,
@@ -8,16 +7,16 @@ import {
 import type { ComputeNode, Node, Texture, WebGPURenderer } from "three/webgpu";
 
 export class ComputeToTexture {
-  private textureToShader: Map<Texture, ShaderNodeObject<ComputeNode>>;
+  private textureToShader: Map<Texture, ComputeNode>;
 
   constructor(
     private fn: (
-      pixelPos: ShaderNodeObject<Node>,
-      uvPos: ShaderNodeObject<Node>,
-      texelSize: ShaderNodeObject<Node>
+      pixelPos: Node,
+      uvPos: Node,
+      texelSize: Node
     ) => Node
   ) {
-    this.textureToShader = new Map<Texture, ShaderNodeObject<ComputeNode>>();
+    this.textureToShader = new Map<Texture, ComputeNode>();
   }
 
   private create(outTo: Texture, width: number, height: number) {

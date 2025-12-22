@@ -1,7 +1,6 @@
 import {
   Fn,
   If,
-  type ShaderNodeObject,
   float,
   int,
   storage,
@@ -14,7 +13,7 @@ import type { StorageBuffer } from "./StorageBuffer";
 
 // A buffer map is an array-like representation of a texture with a width and height times number of nodes
 export class ComputeToBufferMap {
-  bufferToShader: Map<StorageBuffer, ShaderNodeObject<ComputeNode>>;
+  bufferToShader: Map<StorageBuffer, ComputeNode>;
   private computeInstanceCount?: number;
   private workgroupSize?: [number, number, number];
   dispatchSize?: [number, number, number];
@@ -26,17 +25,14 @@ export class ComputeToBufferMap {
 
   constructor(
     private fn: (
-      nodeIndex: ShaderNodeObject<Node>,
-      globalVertexIndex: ShaderNodeObject<Node>,
-      uv: ShaderNodeObject<Node>,
-      localCoordinates: ShaderNodeObject<Node>,
-      texelSize: ShaderNodeObject<Node>
+      nodeIndex: Node,
+      globalVertexIndex: Node,
+      uv: Node,
+      localCoordinates: Node,
+      texelSize: Node
     ) => void
   ) {
-    this.bufferToShader = new Map<
-      StorageBuffer,
-      ShaderNodeObject<ComputeNode>
-    >();
+    this.bufferToShader = new Map<StorageBuffer, ComputeNode>();
   }
 
   private create(

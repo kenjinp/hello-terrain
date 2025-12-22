@@ -67,34 +67,22 @@ export {
 } from "./compute/ControlStorage";
 export { createReadControlAtVertex } from "./nodes/controlData";
 export {
-  createTerrainAoNode,
-  createTerrainColorNode,
-  createTerrainNormalNode,
-  createTerrainRoughnessNode,
+  createTerrainMaterialNodes,
   TRIPLANAR_DEBUG_OFF,
   TRIPLANAR_DEBUG_TINTED,
   TRIPLANAR_DEBUG_WEIGHTS,
-  type BlendMode,
+  type TerrainMaterialNodes,
   type TerrainTextureMaterialEnhancedParams,
   type TerrainTextureMaterialParams,
-  type TerrainTextureMaterialTriplanarDebugParams,
   type TerrainTextureMaterialTriplanarNoTileParams,
   type TerrainTextureMaterialTriplanarParams,
 } from "./nodes/terrainTextureMaterial";
 export {
   adjustSaturation,
+  createTerrainSamplerFunctions,
   heightBlendMask,
-  hsvToRgb,
-  noiseEdgeBlend,
-  rgbToHsv,
-  sampleTextureArray,
-  sampleTextureArrayNoTile,
-  sampleTextureArrayTriplanar,
-  sampleTextureArrayTriplanarDebug,
-  sampleTextureArrayTriplanarNoTile,
-  sampleTextureArrayTriplanarSimple,
+  sampleTriplanarNoTile,
   slopeBlend,
-  triplanarDebugWeights,
 } from "./nodes/textureArraySampling";
 export {
   TerrainTextureArray,

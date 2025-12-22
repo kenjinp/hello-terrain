@@ -1,5 +1,5 @@
 import type { TerrainTextureArray } from "@hello-terrain/three";
-import { sampleTextureArrayTriplanarNoTile } from "@hello-terrain/three";
+import { sampleTriplanarNoTile } from "@hello-terrain/three";
 import type { ShaderNodeObject } from "three/tsl";
 import {
   Fn,
@@ -147,6 +147,7 @@ export const createPaintableTerrainColorNode = (
     typeof variationScale === "number" ? float(variationScale) : variationScale;
 
   const albedoHeightTexture = textureArray.albedoHeightArray;
+  const noiseTexture = textureArray.noiseTexture;
 
   return Fn(() => {
     // Get world position for distance calculation
@@ -171,8 +172,9 @@ export const createPaintableTerrainColorNode = (
     // Use a simple up-facing normal for preview (flat ground assumption)
     const previewNormal = params.normalNode ?? vec2(0, 1).toVec3().normalize();
 
-    const previewSample = sampleTextureArrayTriplanarNoTile(
+    const previewSample = sampleTriplanarNoTile(
       albedoHeightTexture,
+      noiseTexture,
       positionWorld,
       previewNormal,
       brushUniforms.previewTextureId,

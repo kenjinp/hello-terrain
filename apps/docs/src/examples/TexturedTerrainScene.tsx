@@ -14,9 +14,7 @@ import {
   TerrainTextureArray,
   computeScreenSpaceInfo,
   controlmapStorageProperty,
-  createTerrainAoNode,
-  createTerrainColorNode,
-  createTerrainRoughnessNode,
+  createTerrainMaterialNodes,
   distanceBasedSubdivision,
   screenSpaceSubdivision,
 } from "@hello-terrain/three";
@@ -333,44 +331,6 @@ const TerrainPlane = () => {
       max: 1,
       step: 0.05,
       label: "Rock Noise Strength",
-    },
-    // Enhanced blending controls (from three-landscape)
-    blendMode: {
-      value: "height" as "linear" | "height" | "noise",
-      options: ["linear", "height", "noise"],
-      label: "Blend Mode",
-    },
-    noiseBlur: {
-      value: 0.5,
-      min: 0.1,
-      max: 2.0,
-      step: 0.1,
-      label: "Noise Blur",
-      render: (get) => get("Textures.blendMode") === "noise",
-    },
-    noiseAmplitude: {
-      value: 1.25,
-      min: 0.1,
-      max: 3.0,
-      step: 0.1,
-      label: "Noise Amplitude",
-      render: (get) => get("Textures.blendMode") === "noise",
-    },
-    noiseWavelength: {
-      value: 16384, // 1024 * 16
-      min: 1024,
-      max: 131072, // 1024 * 128
-      step: 1024,
-      label: "Noise Wavelength",
-      render: (get) => get("Textures.blendMode") === "noise",
-    },
-    noiseAccuracy: {
-      value: 1.25,
-      min: 0.5,
-      max: 3.0,
-      step: 0.1,
-      label: "Noise Accuracy",
-      render: (get) => get("Textures.blendMode") === "noise",
     },
     saturation: {
       value: 1.0,
@@ -836,27 +796,19 @@ const TerrainPlane = () => {
       variationScale: uniform(textureControls.variationScale),
       transitionBlendWidth: uniform(textureControls.transitionBlendWidth),
       showTiles: uniform(0), // Initialized to 0, updated in useFrame
-      // Enhanced blending uniforms (from three-landscape)
-      blendMode: uniform(1), // 0=linear, 1=height, 2=noise
-      noiseBlur: uniform(textureControls.noiseBlur),
-      noiseAmplitude: uniform(textureControls.noiseAmplitude),
-      noiseWavelength: uniform(textureControls.noiseWavelength),
-      noiseAccuracy: uniform(textureControls.noiseAccuracy),
       saturation: uniform(textureControls.saturation),
     }),
     []
   );
 
-  const colorNode = useMemo(() => {
+  // Create ALL material nodes in a single call to share texture sampling
+  const materialNodes = useMemo(() => {
     if (!terrain || !textureArray) {
-      return Fn(() => {
-        return vec4(0.5, 0.5, 0.5, 1);
-      })();
+      return null;
     }
 
-    // Create the enhanced terrain color node with noise-based edge blending
-    // and saturation control from three-landscape
-    const terrainColorNode = createTerrainColorNode({
+    // Create all terrain material nodes with shared sampling
+    return createTerrainMaterialNodes({
       varyings: terrain.varyings,
       uniforms: terrain.uniforms,
       textureArray,
@@ -874,20 +826,21 @@ const TerrainPlane = () => {
       variationScale: textureUniforms.variationScale as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
-      // Enhanced blending parameters from three-landscape
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      blendMode: textureUniforms.blendMode as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseBlur: textureUniforms.noiseBlur as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseAmplitude: textureUniforms.noiseAmplitude as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseWavelength: textureUniforms.noiseWavelength as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseAccuracy: textureUniforms.noiseAccuracy as any,
       // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
       saturation: textureUniforms.saturation as any,
     });
+  }, [terrain, textureArray, textureUniforms]);
+
+  // Wrap terrain color node with debug visualization logic
+  const colorNode = useMemo(() => {
+    if (!terrain || !materialNodes) {
+      return Fn(() => {
+        return vec4(0.5, 0.5, 0.5, 1);
+      })();
+    }
+
+    // Use the shared terrain color node from materialNodes
+    const terrainColorNode = materialNodes.colorNode;
 
     return Fn(() => {
       // Tile visualization: generate random color based on instance index
@@ -943,7 +896,7 @@ const TerrainPlane = () => {
         )
       );
 
-      const overlayColor = select(
+      const overlayColorDebug = select(
         overlayId.equal(int(0)),
         grassColor,
         select(
@@ -1025,7 +978,7 @@ const TerrainPlane = () => {
         baseColor,
         select(
           isControlOverlayDebug,
-          overlayColor,
+          overlayColorDebug,
           select(
             isControlBlendDebug,
             blendColor,
@@ -1055,8 +1008,9 @@ const TerrainPlane = () => {
 
       return finalColor;
     })();
-  }, [terrain, textureArray, textureUniforms]);
+  }, [terrain, materialNodes, textureUniforms]);
 
+  // Normal node - use terrain geometric normals transformed to view space
   const normalNode = useMemo(() => {
     if (!terrain) {
       return Fn(() => {
@@ -1068,85 +1022,25 @@ const TerrainPlane = () => {
     return transformNormalToView(terrain.varyings.vNormal);
   }, [terrain]);
 
+  // Roughness node - use shared material nodes
   const roughnessNode = useMemo(() => {
-    if (!terrain || !textureArray) {
+    if (!materialNodes) {
       return Fn(() => {
         return float(0.5);
       })();
     }
+    return materialNodes.roughnessNode;
+  }, [materialNodes]);
 
-    return createTerrainRoughnessNode({
-      varyings: terrain.varyings,
-      uniforms: terrain.uniforms,
-      textureArray,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      textureScale: textureUniforms.textureScale as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      heightBlendSharpness: textureUniforms.heightBlendSharpness as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      heightBlendMinWidth: textureUniforms.heightBlendMinWidth as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      triplanarSharpness: textureUniforms.triplanarSharpness as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      debugMode: textureUniforms.debugMode as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      variationScale: textureUniforms.variationScale as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      blendMode: textureUniforms.blendMode as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseBlur: textureUniforms.noiseBlur as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseAmplitude: textureUniforms.noiseAmplitude as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseWavelength: textureUniforms.noiseWavelength as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseAccuracy: textureUniforms.noiseAccuracy as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      saturation: textureUniforms.saturation as any,
-    });
-  }, [terrain, textureArray, textureUniforms]);
-
+  // AO node - use shared material nodes
   const aoNode = useMemo(() => {
-    if (!terrain || !textureArray) {
+    if (!materialNodes) {
       return Fn(() => {
         return float(1.0); // Default: no occlusion
       })();
     }
-
-    return createTerrainAoNode({
-      varyings: terrain.varyings,
-      uniforms: terrain.uniforms,
-      textureArray,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      textureScale: textureUniforms.textureScale as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      heightBlendSharpness: textureUniforms.heightBlendSharpness as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      heightBlendMinWidth: textureUniforms.heightBlendMinWidth as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      triplanarSharpness: textureUniforms.triplanarSharpness as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      debugMode: textureUniforms.debugMode as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      variationScale: textureUniforms.variationScale as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      transitionBlendWidth: textureUniforms.transitionBlendWidth as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      blendMode: textureUniforms.blendMode as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseBlur: textureUniforms.noiseBlur as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseAmplitude: textureUniforms.noiseAmplitude as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseWavelength: textureUniforms.noiseWavelength as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      noiseAccuracy: textureUniforms.noiseAccuracy as any,
-      // biome-ignore lint/suspicious/noExplicitAny: uniform types are compatible at runtime
-      saturation: textureUniforms.saturation as any,
-    });
-  }, [terrain, textureArray, textureUniforms]);
+    return materialNodes.aoNode;
+  }, [materialNodes]);
 
   useFrame(() => {
     // Update sun position and shadow camera
@@ -1186,19 +1080,6 @@ const TerrainPlane = () => {
     textureUniforms.transitionBlendWidth.value =
       textureControls.transitionBlendWidth;
     textureUniforms.showTiles.value = debugControls.showTiles ? 1 : 0;
-
-    // Update enhanced blending uniforms (from three-landscape)
-    const blendModeValue =
-      textureControls.blendMode === "linear"
-        ? 0
-        : textureControls.blendMode === "height"
-          ? 1
-          : 2;
-    textureUniforms.blendMode.value = blendModeValue;
-    textureUniforms.noiseBlur.value = textureControls.noiseBlur;
-    textureUniforms.noiseAmplitude.value = textureControls.noiseAmplitude;
-    textureUniforms.noiseWavelength.value = textureControls.noiseWavelength;
-    textureUniforms.noiseAccuracy.value = textureControls.noiseAccuracy;
     textureUniforms.saturation.value = textureControls.saturation;
 
     // Update control function uniforms (slope/altitude thresholds)
@@ -1304,6 +1185,7 @@ const TerrainPlane = () => {
         minNodeSize={terrainGeometryControls.minNodeSize}
       >
         <meshStandardNodeMaterial
+          name="TerrainMaterial"
           positionNode={positionNode}
           colorNode={colorNode}
           normalNode={normalNode}

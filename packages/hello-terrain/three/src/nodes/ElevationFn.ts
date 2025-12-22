@@ -1,24 +1,21 @@
 import { Fn, type ShaderNodeFn } from "three/src/nodes/TSL.js";
 import type Node from "three/src/nodes/core/Node.js";
-import type { ProxiedObject, ShaderNodeObject } from "three/tsl";
-import type { ConstNode, Vector2, Vector3 } from "three/webgpu";
+import type { ProxiedObject } from "three/tsl";
 
 export interface ElevationParams {
-  worldPosition: ShaderNodeObject<ConstNode<Vector3>>;
-  rootSize: ShaderNodeObject<ConstNode<number>>;
-  rootUV: ShaderNodeObject<ConstNode<Vector2>>;
-  tileUV: ShaderNodeObject<ConstNode<Vector2>>;
-  tileLevel: ShaderNodeObject<ConstNode<number>>;
-  tileSize: ShaderNodeObject<ConstNode<number>>;
-  tileOriginVec2: ShaderNodeObject<ConstNode<Vector2>>;
-  nodeIndex: ShaderNodeObject<ConstNode<number>>;
+  worldPosition: Node;
+  rootSize: Node;
+  rootUV: Node;
+  tileUV: Node;
+  tileLevel: Node;
+  tileSize: Node;
+  tileOriginVec2: Node;
+  nodeIndex: Node;
 }
 
 export type ElevationReturn = ShaderNodeFn<[ProxiedObject<ElevationParams>]>;
 
-export type ElevationCallback = (
-  params: ElevationParams
-) => ShaderNodeObject<Node>;
+export type ElevationCallback = (params: ElevationParams) => Node;
 
 export function ElevationFn(callback: ElevationCallback): ElevationReturn {
   const tslFunction = (args: ElevationParams) => {

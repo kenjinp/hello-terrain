@@ -1,14 +1,9 @@
-import type { ShaderNodeObject } from "three/tsl";
 import { Fn, dot, int, vec3, vec4 } from "three/tsl";
-import type { ConstNode, Node, Vector3 } from "three/webgpu";
+import type { Node } from "three/webgpu";
 import { normalmapStorageProperty } from "./properties";
 
 // reoriented normal mapping
-export const blendNormalsRNM = Fn(
-  ([normalA, normalB]: [
-    normalA: ShaderNodeObject<ConstNode<Vector3>>,
-    normalB: ShaderNodeObject<ConstNode<Vector3>>,
-  ]) => {
+export const blendNormalsRNM = Fn(([normalA, normalB]: [normalA: Node, normalB: Node]) => {
     const t = normalA
       .toVar()
       .xyz.mul(vec3(2, 2, 2))
@@ -29,9 +24,7 @@ export const blendNormalsRNM = Fn(
  *                                This must be passed explicitly because varyings cannot be read
  *                                in the same shader stage they are written.
  */
-export const createReadNormalAtPositionLocal = (
-  globalVertexIndexNode: ShaderNodeObject<Node>
-) =>
+export const createReadNormalAtPositionLocal = (globalVertexIndexNode: Node) =>
   Fn(() => {
     const globalIndex = globalVertexIndexNode.toVar();
 

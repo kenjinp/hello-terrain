@@ -1,7 +1,6 @@
 import { Fn, type ShaderNodeFn } from "three/src/nodes/TSL.js";
 import type Node from "three/src/nodes/core/Node.js";
-import type { ProxiedObject, ShaderNodeObject } from "three/tsl";
-import type { ConstNode, Vector2, Vector3 } from "three/webgpu";
+import type { ProxiedObject } from "three/tsl";
 
 /**
  * Parameters passed to the control function in the compute shader.
@@ -10,25 +9,25 @@ import type { ConstNode, Vector2, Vector3 } from "three/webgpu";
  */
 export interface ControlParams {
   /** World-space position of the vertex */
-  worldPosition: ShaderNodeObject<ConstNode<Vector3>>;
+  worldPosition: Node;
   /** Size of the root terrain tile in world units */
-  rootSize: ShaderNodeObject<ConstNode<number>>;
+  rootSize: Node;
   /** UV coordinates in the root tile space [0,1] */
-  rootUV: ShaderNodeObject<ConstNode<Vector2>>;
+  rootUV: Node;
   /** UV coordinates within the current tile [0,1] */
-  tileUV: ShaderNodeObject<ConstNode<Vector2>>;
+  tileUV: Node;
   /** LOD level of this tile (0 = root, higher = more subdivided) */
-  tileLevel: ShaderNodeObject<ConstNode<number>>;
+  tileLevel: Node;
   /** Size of this tile in world units */
-  tileSize: ShaderNodeObject<ConstNode<number>>;
+  tileSize: Node;
   /** Origin of this tile in quadtree coordinates */
-  tileOriginVec2: ShaderNodeObject<ConstNode<Vector2>>;
+  tileOriginVec2: Node;
   /** Index of this node in the quadtree */
-  nodeIndex: ShaderNodeObject<ConstNode<number>>;
+  nodeIndex: Node;
   /** Computed height at this vertex (from heightmap) */
-  height: ShaderNodeObject<ConstNode<number>>;
+  height: Node;
   /** Computed normal at this vertex (from normalmap) */
-  normal: ShaderNodeObject<ConstNode<Vector3>>;
+  normal: Node;
 }
 
 export type ControlReturn = ShaderNodeFn<[ProxiedObject<ControlParams>]>;
@@ -46,7 +45,7 @@ export type ControlReturn = ShaderNodeFn<[ProxiedObject<ControlParams>]>;
  * - Bit 3: Hole flag
  * - Bits 2-0: Reserved
  */
-export type ControlCallback = (params: ControlParams) => ShaderNodeObject<Node>;
+export type ControlCallback = (params: ControlParams) => Node;
 
 /**
  * Creates a TSL function for computing control map data in a compute shader.

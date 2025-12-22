@@ -1,6 +1,4 @@
-import { type ShaderNodeObject, int, select, uint, vec3 } from "three/tsl";
-
-import { Fn } from "three/tsl";
+import { Fn, int, select, uint, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TerrainUniforms } from "../TerrainUniforms";
 import type { StorageBuffer } from "../compute/StorageBuffer";
@@ -45,10 +43,10 @@ export const createControl = (
   const tileLevel = createTileLevel();
 
   return (
-    nodeIndex: ShaderNodeObject<Node>,
-    globalVertexIndex: ShaderNodeObject<Node>,
-    localUV: ShaderNodeObject<Node>,
-    _texelSize: ShaderNodeObject<Node>
+    nodeIndex: Node,
+    globalVertexIndex: Node,
+    localUV: Node,
+    _texelSize: Node
   ) =>
     Fn(() => {
       const isActive = nodeStorageProperty

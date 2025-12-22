@@ -1,6 +1,5 @@
 import {
   Fn,
-  type ShaderNodeObject,
   float,
   normalLocal,
   positionLocal,
@@ -8,18 +7,12 @@ import {
   triplanarTexture,
   vec3,
 } from 'three/tsl';
-import type {
-  ConstNode,
-  Node,
-  TextureNode,
-  VarNode,
-  Vector3,
-} from 'three/webgpu';
+import type { Node, TextureNode } from 'three/webgpu';
 
 export const slopeTextureBlend = Fn(
   ([textureA, textureB, slopeTransitionStart, slopeTransitionEnd, slope]: [
-    textureA: ShaderNodeObject<ConstNode<Vector3>>,
-    textureB: ShaderNodeObject<ConstNode<Vector3>>,
+    textureA: Node,
+    textureB: Node,
     slopeTransitionStart: number,
     slopeTransitionEnd: number,
     slope: number,
@@ -42,11 +35,11 @@ export const slopeTextureBlend = Fn(
 
 export const heightBlend = Fn(
   ([textureA, textureB, heightMapA, heightMapB, blendFactor, contrast = 4.0]: [
-    textureA: ShaderNodeObject<ConstNode<Vector3>>,
-    textureB: ShaderNodeObject<ConstNode<Vector3>>,
-    heightMapA: ShaderNodeObject<TextureNode>,
-    heightMapB: ShaderNodeObject<TextureNode>,
-    blendFactor: ShaderNodeObject<ConstNode<number>>,
+    textureA: Node,
+    textureB: Node,
+    heightMapA: TextureNode,
+    heightMapB: TextureNode,
+    blendFactor: Node,
     contrast?: number,
   ]) => {
     const contrastValue = float(contrast);
@@ -86,11 +79,7 @@ export const heightBlend = Fn(
 );
 
 export const slerp = Fn(
-  ([textureA, textureB, blendFactor]: [
-    textureA: ShaderNodeObject<TextureNode>,
-    textureB: ShaderNodeObject<TextureNode>,
-    blendFactor: ShaderNodeObject<ConstNode<number>>,
-  ]) => {
+  ([textureA, textureB, blendFactor]: [textureA: TextureNode, textureB: TextureNode, blendFactor: Node]) => {
     const dotAB = textureA.dot(textureB).clamp(-1, 1);
     const theta = dotAB.acos().mul(blendFactor);
     const relativeVec = textureB.sub(textureA.mul(dotAB)).normalize();
@@ -108,16 +97,12 @@ export const slerpTriplanarTexture = Fn(
     positionNode = positionLocal,
     normalNode = normalLocal,
   ]: [
-    textureXNode: ShaderNodeObject<TextureNode>,
-    textureYNode?: ShaderNodeObject<TextureNode> | null,
-    textureZNode?: ShaderNodeObject<TextureNode> | null,
-    scaleNode?: ShaderNodeObject<ConstNode<number>>,
-    positionNode?:
-      | ShaderNodeObject<ConstNode<Vector3>>
-      | ShaderNodeObject<Node>,
-    normalNode?:
-      | ShaderNodeObject<ConstNode<Vector3>>
-      | ShaderNodeObject<VarNode>,
+    textureXNode: TextureNode,
+    textureYNode?: TextureNode | null,
+    textureZNode?: TextureNode | null,
+    scaleNode?: Node,
+    positionNode?: Node,
+    normalNode?: Node,
   ]) => {
     const bf = normalNode.abs().normalize();
     const bg = bf.div(bf.dot(vec3(1.0)));
@@ -154,15 +139,13 @@ export const createTriplanarTextureBlend = Fn(
     slopeTransitionEnd = 0.25,
     contrast = 1.0,
   ]: [
-    grassTexture: ShaderNodeObject<TextureNode>,
-    cliffTexture: ShaderNodeObject<TextureNode>,
-    grassHeightTexture: ShaderNodeObject<TextureNode>,
-    cliffHeightTexture: ShaderNodeObject<TextureNode>,
-    textureScale: ShaderNodeObject<ConstNode<number>>,
-    worldPosition:
-      | ShaderNodeObject<ConstNode<Vector3>>
-      | ShaderNodeObject<Node>,
-    normal: ShaderNodeObject<ConstNode<Vector3>> | ShaderNodeObject<VarNode>,
+    grassTexture: TextureNode,
+    cliffTexture: TextureNode,
+    grassHeightTexture: TextureNode,
+    cliffHeightTexture: TextureNode,
+    textureScale: Node,
+    worldPosition: Node,
+    normal: Node,
     slopeTransitionStart?: number,
     slopeTransitionEnd?: number,
     contrast?: number,

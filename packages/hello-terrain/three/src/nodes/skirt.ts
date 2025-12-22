@@ -1,12 +1,5 @@
-import {
-  Fn,
-  type ShaderNodeObject,
-  float,
-  int,
-  uv,
-  vertexIndex,
-} from "three/tsl";
-import type { ConstNode, Vector2 } from "three/webgpu";
+import { Fn, float, int, uv, vertexIndex } from "three/tsl";
+import type { Node } from "three/webgpu";
 import type { TerrainUniforms } from "../TerrainUniforms";
 
 /**
@@ -77,7 +70,7 @@ export const createIsSkirtFragment = (uniforms: TerrainUniforms) =>
  * @returns A node resolving to a boolean indicating a skirt fragment.
  */
 export const createIsSkirtCompute = (uniforms: TerrainUniforms) =>
-  Fn(([localUV]: [ShaderNodeObject<ConstNode<Vector2>>]) => {
+  Fn(([localUV]: [Node]) => {
     const ux = localUV.x;
     const uy = localUV.y;
     const segments = uniforms.uSegments.toVar();

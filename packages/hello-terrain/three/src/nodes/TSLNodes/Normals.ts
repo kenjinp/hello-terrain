@@ -1,13 +1,8 @@
-import type { ShaderNodeObject } from 'three/tsl';
 import { Fn, dot, vec3, vec4 } from 'three/tsl';
-import type { ConstNode, Vector3 } from 'three/webgpu';
+import type { Node } from 'three/webgpu';
 
 // reoriented normal mapping
-export const blendNormalsRNM = Fn(
-  ([normalA, normalB]: [
-    normalA: ShaderNodeObject<ConstNode<Vector3>>,
-    normalB: ShaderNodeObject<ConstNode<Vector3>>,
-  ]) => {
+export const blendNormalsRNM = Fn(([normalA, normalB]: [normalA: Node, normalB: Node]) => {
     const t = normalA
       .toVar()
       .xyz.mul(vec3(2, 2, 2))

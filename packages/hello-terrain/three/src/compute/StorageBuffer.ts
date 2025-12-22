@@ -1,4 +1,4 @@
-import { type ShaderNodeObject, storage } from "three/tsl";
+import { storage } from "three/tsl";
 import {
   StorageBufferAttribute,
   type StorageBufferNode,
@@ -28,7 +28,7 @@ export function inferWGSLType(buffer: TypedArray) {
 
 export class StorageBuffer {
   public readonly storageBufferAttribute: StorageBufferAttribute;
-  public readonly storageNode: ShaderNodeObject<StorageBufferNode>;
+  public readonly storageNode: StorageBufferNode;
 
   constructor(
     public readonly name: string,

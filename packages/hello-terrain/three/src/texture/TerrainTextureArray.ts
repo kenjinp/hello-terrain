@@ -1,8 +1,11 @@
 import {
   DataArrayTexture,
+  DataTexture,
+  FloatType,
   LinearFilter,
   LinearMipmapLinearFilter,
   RGBAFormat,
+  RedFormat,
   RepeatWrapping,
   UnsignedByteType,
 } from "three/webgpu";
@@ -25,6 +28,9 @@ export class TerrainTextureArray {
 
   /** AO (R channel, single-channel grayscale stored in RGBA) texture array */
   readonly aoArray: DataArrayTexture;
+
+  /** Pre-computed tileable noise texture for stochastic sampling (replaces procedural mx_noise) */
+  readonly noiseTexture: DataTexture;
 
   /** Number of texture sets currently loaded */
   private textureCount = 0;
@@ -91,6 +97,114 @@ export class TerrainTextureArray {
     this.aoArray.wrapS = RepeatWrapping;
     this.aoArray.wrapT = RepeatWrapping;
     this.aoArray.needsUpdate = true;
+
+    // Generate tileable noise texture for stochastic sampling
+    this.noiseTexture = this.generateNoiseTexture(256);
+  }
+
+  /**
+   * Generate a tileable Perlin noise texture for stochastic tiling.
+   * This replaces expensive per-fragment mx_noise_float calls with cheap texture lookups.
+   *
+   * @param size Texture size (power of 2, default 256)
+   * @returns DataTexture containing tileable noise in the R channel
+   */
+  private generateNoiseTexture(size = 256): DataTexture {
+    const data = new Float32Array(size * size);
+
+    // Perlin noise implementation that tiles seamlessly
+    // Uses gradient noise with smooth interpolation
+    const gradients = this.generateGradients(size);
+
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        // Sample at multiple octaves for more natural variation
+        // Scale factor 4 gives 4 tiles across the texture
+        const nx = x / size;
+        const ny = y / size;
+
+        // Single octave tileable noise
+        const noise = this.tileablePerlinNoise(nx * 4, ny * 4, 4, gradients);
+
+        // Store in range [0, 1] - will be remapped in shader
+        data[y * size + x] = noise * 0.5 + 0.5;
+      }
+    }
+
+    const texture = new DataTexture(data, size, size, RedFormat, FloatType);
+    texture.minFilter = LinearFilter;
+    texture.magFilter = LinearFilter;
+    texture.wrapS = RepeatWrapping;
+    texture.wrapT = RepeatWrapping;
+    texture.needsUpdate = true;
+
+    return texture;
+  }
+
+  /**
+   * Generate random gradients for Perlin noise
+   */
+  private generateGradients(size: number): Float32Array {
+    const gradients = new Float32Array(size * size * 2);
+    for (let i = 0; i < size * size; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      gradients[i * 2] = Math.cos(angle);
+      gradients[i * 2 + 1] = Math.sin(angle);
+    }
+    return gradients;
+  }
+
+  /**
+   * Tileable 2D Perlin noise
+   * @param x X coordinate
+   * @param y Y coordinate
+   * @param period Tiling period (noise tiles every 'period' units)
+   * @param gradients Pre-generated gradient array
+   */
+  private tileablePerlinNoise(
+    x: number,
+    y: number,
+    period: number,
+    gradients: Float32Array
+  ): number {
+    const size = Math.sqrt(gradients.length / 2);
+
+    // Grid cell coordinates (wrapping for seamless tiling)
+    const x0 = Math.floor(x) % period;
+    const y0 = Math.floor(y) % period;
+    const x1 = (x0 + 1) % period;
+    const y1 = (y0 + 1) % period;
+
+    // Fractional position within cell
+    const fx = x - Math.floor(x);
+    const fy = y - Math.floor(y);
+
+    // Smooth interpolation weights (quintic curve for smoother results)
+    const sx = fx * fx * fx * (fx * (fx * 6 - 15) + 10);
+    const sy = fy * fy * fy * (fy * (fy * 6 - 15) + 10);
+
+    // Get gradient indices (mod size for wrap-around)
+    const getGradient = (gx: number, gy: number) => {
+      const idx = ((gy % size) * size + (gx % size)) * 2;
+      return [gradients[idx], gradients[idx + 1]];
+    };
+
+    // Dot products with gradients
+    const g00 = getGradient(x0, y0);
+    const g10 = getGradient(x1, y0);
+    const g01 = getGradient(x0, y1);
+    const g11 = getGradient(x1, y1);
+
+    const n00 = g00[0] * fx + g00[1] * fy;
+    const n10 = g10[0] * (fx - 1) + g10[1] * fy;
+    const n01 = g01[0] * fx + g01[1] * (fy - 1);
+    const n11 = g11[0] * (fx - 1) + g11[1] * (fy - 1);
+
+    // Bilinear interpolation
+    const nx0 = n00 * (1 - sx) + n10 * sx;
+    const nx1 = n01 * (1 - sx) + n11 * sx;
+
+    return nx0 * (1 - sy) + nx1 * sy;
   }
 
   /**
@@ -243,5 +357,6 @@ export class TerrainTextureArray {
     this.albedoHeightArray.dispose();
     this.normalRoughnessArray.dispose();
     this.aoArray.dispose();
+    this.noiseTexture.dispose();
   }
 }

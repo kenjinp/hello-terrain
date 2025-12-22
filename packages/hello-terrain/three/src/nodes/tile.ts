@@ -1,22 +1,10 @@
-import {
-  type ShaderNodeObject,
-  float,
-  int,
-  positionWorld,
-  pow,
-  select,
-  uv,
-  vec2,
-  vec3,
-} from "three/tsl";
-
-import { Fn } from "three/tsl";
-import type { ConstNode, Vector2 } from "three/webgpu";
+import { Fn, float, int, positionWorld, pow, select, uv, vec2, vec3 } from "three/tsl";
+import type { Node } from "three/webgpu";
 import type { TerrainUniforms } from "../TerrainUniforms";
 import { nodeStorageProperty } from "./properties";
 
 export const createTileSize = (uniforms: TerrainUniforms) =>
-  Fn(([nodeIndex]: [ShaderNodeObject<ConstNode<number>>]) => {
+  Fn(([nodeIndex]: [Node]) => {
     const rootSize = uniforms.uRootSize.toVar();
     const level = createTileLevel()(nodeIndex);
     return float(rootSize).div(pow(float(2), level.toFloat()));
@@ -27,7 +15,7 @@ export const createTileSize = (uniforms: TerrainUniforms) =>
   });
 
 export const createTileLevel = () =>
-  Fn(([nodeIndex]: [ShaderNodeObject<ConstNode<number>>]) => {
+  Fn(([nodeIndex]: [Node]) => {
     const nodeOffset = nodeIndex.mul(int(4));
     return nodeStorageProperty.element(nodeOffset).toInt();
   }).setLayout({
@@ -37,7 +25,7 @@ export const createTileLevel = () =>
   });
 
 export const createTileOriginVec2 = () =>
-  Fn(([nodeIndex]: [ShaderNodeObject<ConstNode<number>>]) => {
+  Fn(([nodeIndex]: [Node]) => {
     const nodeOffset = nodeIndex.mul(int(4));
     const nodeX = nodeStorageProperty.element(nodeOffset.add(int(1))).toFloat();
     const nodeY = nodeStorageProperty.element(nodeOffset.add(int(2))).toFloat();
@@ -49,7 +37,7 @@ export const createTileOriginVec2 = () =>
   });
 
 export const createTileIsLeaf = () =>
-  Fn(([nodeIndex]: [ShaderNodeObject<ConstNode<number>>]) => {
+  Fn(([nodeIndex]: [Node]) => {
     const nodeOffset = nodeIndex.mul(int(4));
     const isLeaf = nodeStorageProperty
       .element(nodeOffset.add(int(3)))
@@ -66,11 +54,7 @@ export const createTileVertexWorldPosition = (uniforms: TerrainUniforms) => {
   const tileOriginVec2 = createTileOriginVec2();
   const tileSize = createTileSize(uniforms);
 
-  return Fn(
-    ([nodeIndex, positionLocal]: [
-      ShaderNodeObject<ConstNode<number>>,
-      ShaderNodeObject<ConstNode<Vector2>>,
-    ]) => {
+  return Fn(([nodeIndex, positionLocal]: [Node, Node]) => {
       const rootSize = uniforms.uRootSize.toVar();
       const rootOrigin = uniforms.uRootOrigin.toVar();
       const innerTileSegments = uniforms.uSegments.toVar();
@@ -125,12 +109,7 @@ export const createTileGeometryPosition = (uniforms: TerrainUniforms) => {
   const tileOriginVec2 = createTileOriginVec2();
   const tileSize = createTileSize(uniforms);
 
-  return Fn(
-    ([nodeIndex, positionLocal, isSkirtVertex]: [
-      ShaderNodeObject<ConstNode<number>>,
-      ShaderNodeObject<ConstNode<Vector2>>,
-      ShaderNodeObject<ConstNode<boolean>>,
-    ]) => {
+  return Fn(([nodeIndex, positionLocal, isSkirtVertex]: [Node, Node, Node]) => {
       const nodeVec2 = tileOriginVec2(nodeIndex);
       const nodeX = nodeVec2.x;
       const nodeY = nodeVec2.y;
@@ -165,22 +144,17 @@ export const createTileVertexWorldPositionCompute = (
 ) => {
   const rootUVCompute = createRootUVCompute(uniforms);
 
-  return Fn(
-    ([nodeIndex, localUV]: [
-      ShaderNodeObject<ConstNode<number>>,
-      ShaderNodeObject<ConstNode<number>>,
-    ]) => {
-      const half = float(0.5);
-      const rootSize = uniforms.uRootSize.toVar();
-      const rootOrigin = uniforms.uRootOrigin.toVar();
-      const uv = rootUVCompute(nodeIndex, localUV);
+  return Fn(([nodeIndex, localUV]: [Node, Node]) => {
+    const half = float(0.5);
+    const rootSize = uniforms.uRootSize.toVar();
+    const rootOrigin = uniforms.uRootOrigin.toVar();
+    const uvVal = rootUVCompute(nodeIndex, localUV);
 
-      // Inverse of rootUV mapping
-      const worldX = rootOrigin.x.add(uv.x.sub(half).mul(rootSize));
-      const worldZ = rootOrigin.z.add(half.sub(uv.y).mul(rootSize));
-      return vec3(worldX, rootOrigin.y, worldZ);
-    }
-  ).setLayout({
+    // Inverse of rootUV mapping
+    const worldX = rootOrigin.x.add(uvVal.x.sub(half).mul(rootSize));
+    const worldZ = rootOrigin.z.add(half.sub(uvVal.y).mul(rootSize));
+    return vec3(worldX, rootOrigin.y, worldZ);
+  }).setLayout({
     name: "tileVertexWorldPositionCompute",
     type: "vec3",
     inputs: [
@@ -218,11 +192,7 @@ export const createRootUVCompute = (uniforms: TerrainUniforms) => {
   const tileOriginVec2 = createTileOriginVec2();
   const tileSize = createTileSize(uniforms);
 
-  return Fn(
-    ([nodeIndex, localUV]: [
-      ShaderNodeObject<ConstNode<number>>,
-      ShaderNodeObject<ConstNode<number>>,
-    ]) => {
+  return Fn(([nodeIndex, localUV]: [Node, Node]) => {
       const nodeVec2 = tileOriginVec2(nodeIndex);
       const nodeX = nodeVec2.x;
       const nodeY = nodeVec2.y;

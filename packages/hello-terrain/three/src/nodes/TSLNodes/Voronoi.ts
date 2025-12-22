@@ -2,16 +2,14 @@ import {
   Fn,
   If,
   Loop,
-  type ShaderNodeObject,
   float,
   mix,
   mx_noise_float,
   vec3,
 } from 'three/tsl';
-import type { ConstNode, Vector2, Vector3 } from 'three/webgpu';
+import type { Node } from 'three/webgpu';
 
-const cellCenter = Fn(
-  ({ cell }: { cell: ShaderNodeObject<ConstNode<Vector3>> }) => {
+const cellCenter = Fn(({ cell }: { cell: Node }) => {
     return cell.add(mx_noise_float(cell.mul(Math.PI)));
   },
 );
@@ -21,7 +19,7 @@ const voronoiCells = Fn(
     scale: number;
     facet: number;
     seed: number;
-    uv: ShaderNodeObject<ConstNode<Vector2>>;
+    uv: Node;
   }) => {
     const scale = float(params.scale);
     const facet = float(params.facet);
