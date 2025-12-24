@@ -1,25 +1,18 @@
 import {
   Fn,
-  type ShaderNodeObject,
   float,
   normalLocal,
   positionLocal,
   smoothstep,
   triplanarTexture,
   vec3,
-} from 'three/tsl';
-import type {
-  ConstNode,
-  Node,
-  TextureNode,
-  VarNode,
-  Vector3,
-} from 'three/webgpu';
+} from "three/tsl";
+import type { Node } from "three/webgpu";
 
 export const slopeTextureBlend = Fn(
   ([textureA, textureB, slopeTransitionStart, slopeTransitionEnd, slope]: [
-    textureA: ShaderNodeObject<ConstNode<Vector3>>,
-    textureB: ShaderNodeObject<ConstNode<Vector3>>,
+    textureA: Node,
+    textureB: Node,
     slopeTransitionStart: number,
     slopeTransitionEnd: number,
     slope: number,
@@ -37,16 +30,16 @@ export const slopeTextureBlend = Fn(
       .add(textureB.mul(blendFactor));
 
     return blendedTexture.saturate();
-  },
+  }
 );
 
 export const heightBlend = Fn(
   ([textureA, textureB, heightMapA, heightMapB, blendFactor, contrast = 4.0]: [
-    textureA: ShaderNodeObject<ConstNode<Vector3>>,
-    textureB: ShaderNodeObject<ConstNode<Vector3>>,
-    heightMapA: ShaderNodeObject<TextureNode>,
-    heightMapB: ShaderNodeObject<TextureNode>,
-    blendFactor: ShaderNodeObject<ConstNode<number>>,
+    textureA: Node,
+    textureB: Node,
+    heightMapA: Node,
+    heightMapB: Node,
+    blendFactor: Node,
     contrast?: number,
   ]) => {
     const contrastValue = float(contrast);
@@ -82,20 +75,20 @@ export const heightBlend = Fn(
       .saturate();
 
     return blendedTexture;
-  },
+  }
 );
 
 export const slerp = Fn(
   ([textureA, textureB, blendFactor]: [
-    textureA: ShaderNodeObject<TextureNode>,
-    textureB: ShaderNodeObject<TextureNode>,
-    blendFactor: ShaderNodeObject<ConstNode<number>>,
+    textureA: Node,
+    textureB: Node,
+    blendFactor: Node,
   ]) => {
     const dotAB = textureA.dot(textureB).clamp(-1, 1);
     const theta = dotAB.acos().mul(blendFactor);
     const relativeVec = textureB.sub(textureA.mul(dotAB)).normalize();
     return textureA.mul(theta.cos()).add(relativeVec.mul(theta.sin()));
-  },
+  }
 );
 
 // TODO I can't get this function to work
@@ -108,16 +101,12 @@ export const slerpTriplanarTexture = Fn(
     positionNode = positionLocal,
     normalNode = normalLocal,
   ]: [
-    textureXNode: ShaderNodeObject<TextureNode>,
-    textureYNode?: ShaderNodeObject<TextureNode> | null,
-    textureZNode?: ShaderNodeObject<TextureNode> | null,
-    scaleNode?: ShaderNodeObject<ConstNode<number>>,
-    positionNode?:
-      | ShaderNodeObject<ConstNode<Vector3>>
-      | ShaderNodeObject<Node>,
-    normalNode?:
-      | ShaderNodeObject<ConstNode<Vector3>>
-      | ShaderNodeObject<VarNode>,
+    textureXNode: Node,
+    textureYNode?: Node | null,
+    textureZNode?: Node | null,
+    scaleNode?: Node,
+    positionNode?: Node,
+    normalNode?: Node,
   ]) => {
     const bf = normalNode.abs().normalize();
     const bg = bf.div(bf.dot(vec3(1.0)));
@@ -127,9 +116,17 @@ export const slerpTriplanarTexture = Fn(
     const tz = positionNode.xy.mul(scaleNode);
 
     // Base color
-    const textureX = textureXNode;
-    const textureY = textureYNode !== null ? textureYNode : textureX;
-    const textureZ = textureZNode !== null ? textureZNode : textureX;
+    const textureX = textureXNode as Node & { sample: (uv: Node) => Node };
+    const textureY = (
+      textureYNode !== null ? textureYNode : textureX
+    ) as Node & {
+      sample: (uv: Node) => Node;
+    };
+    const textureZ = (
+      textureZNode !== null ? textureZNode : textureX
+    ) as Node & {
+      sample: (uv: Node) => Node;
+    };
 
     const cx = textureX.sample(tx);
     const cy = textureY.sample(ty);
@@ -138,7 +135,7 @@ export const slerpTriplanarTexture = Fn(
     const ab = slerp(cx, cy, bg.x.div(bg.x.add(bg.y)));
     const abc = slerp(ab, cz, bg.z.div(bg.x.add(bg.y).add(bg.z)));
     return abc;
-  },
+  }
 );
 
 export const createTriplanarTextureBlend = Fn(
@@ -154,15 +151,13 @@ export const createTriplanarTextureBlend = Fn(
     slopeTransitionEnd = 0.25,
     contrast = 1.0,
   ]: [
-    grassTexture: ShaderNodeObject<TextureNode>,
-    cliffTexture: ShaderNodeObject<TextureNode>,
-    grassHeightTexture: ShaderNodeObject<TextureNode>,
-    cliffHeightTexture: ShaderNodeObject<TextureNode>,
-    textureScale: ShaderNodeObject<ConstNode<number>>,
-    worldPosition:
-      | ShaderNodeObject<ConstNode<Vector3>>
-      | ShaderNodeObject<Node>,
-    normal: ShaderNodeObject<ConstNode<Vector3>> | ShaderNodeObject<VarNode>,
+    grassTexture: Node,
+    cliffTexture: Node,
+    grassHeightTexture: Node,
+    cliffHeightTexture: Node,
+    textureScale: Node,
+    worldPosition: Node,
+    normal: Node,
     slopeTransitionStart?: number,
     slopeTransitionEnd?: number,
     contrast?: number,
@@ -175,7 +170,7 @@ export const createTriplanarTextureBlend = Fn(
       grassTexture,
       textureScale,
       worldPosition,
-      normal,
+      normal
     );
 
     const cliffTriplanar = triplanarTexture(
@@ -184,7 +179,7 @@ export const createTriplanarTextureBlend = Fn(
       cliffTexture,
       textureScale,
       worldPosition,
-      normal,
+      normal
     );
 
     const grassHeightTriplanar = triplanarTexture(
@@ -193,7 +188,7 @@ export const createTriplanarTextureBlend = Fn(
       grassHeightTexture,
       textureScale,
       worldPosition,
-      normal,
+      normal
     );
 
     const cliffHeightTriplanar = triplanarTexture(
@@ -202,14 +197,14 @@ export const createTriplanarTextureBlend = Fn(
       cliffHeightTexture,
       textureScale,
       worldPosition,
-      normal,
+      normal
     );
 
     // Calculate the slope-based blend factor as a scalar
     const slopeBlendFactor = smoothstep(
       float(slopeTransitionStart),
       float(slopeTransitionEnd),
-      slope,
+      slope
     );
 
     const heightBlendedTexture = heightBlend(
@@ -218,9 +213,9 @@ export const createTriplanarTextureBlend = Fn(
       grassHeightTriplanar,
       cliffHeightTriplanar,
       slopeBlendFactor,
-      contrast,
+      contrast
     );
 
     return heightBlendedTexture;
-  },
+  }
 );

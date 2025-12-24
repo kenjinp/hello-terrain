@@ -1,11 +1,5 @@
-import {
-  Fn,
-  type ShaderNodeObject,
-  float,
-  vec2,
-  vec3,
-  wgslFn,
-} from "three/tsl";
+import { Fn, float, vec2, vec3, wgslFn } from "three/tsl";
+import type { Node } from "three/webgpu";
 
 export const vec2_fbm = wgslFn(/* wgsl */ `
   fn fbm(position: vec2f, iterations: i32, amplitude: f32, frequency: f32, lacunarity: f32, persistence: f32) -> f32 {
@@ -53,39 +47,23 @@ export const vec2_fbm = wgslFn(/* wgsl */ `
   }
       `);
 
-export const warp_fbm = Fn(
-  ({ position }: { position: ShaderNodeObject<any> }) => {
-    const rotated = vec2(
-      position.x.mul(0.8).sub(position.y.mul(0.6)).add(position.z.mul(0.2)),
-      position.x.mul(-0.2).add(position.y.mul(0.1)).add(position.z.mul(0.9))
-    );
+export const warp_fbm = Fn(({ position }: { position: Node }) => {
+  const rotated = vec2(
+    position.x.mul(0.8).sub(position.y.mul(0.6)).add(position.z.mul(0.2)),
+    position.x.mul(-0.2).add(position.y.mul(0.1)).add(position.z.mul(0.9))
+  );
 
-    const warp_factor = vec2(
-      vec2_fbm(
-        rotated.mul(17.3).add(vec3(0.1, 0.3, 1.2)),
-        1,
-        2.0,
-        0.5,
-        2.0,
-        0.5
-      ),
-      vec2_fbm(
-        rotated.mul(21.2).add(vec3(3.7, 8.1, 1.1)),
-        1,
-        2.0,
-        0.5,
-        2.0,
-        0.5
-      )
-    );
+  const warp_factor = vec2(
+    vec2_fbm(rotated.mul(17.3).add(vec3(0.1, 0.3, 1.2)), 1, 2.0, 0.5, 2.0, 0.5),
+    vec2_fbm(rotated.mul(21.2).add(vec3(3.7, 8.1, 1.1)), 1, 2.0, 0.5, 2.0, 0.5)
+  );
 
-    return vec2_fbm(
-      rotated.mul(19.3).add(float(4.0).mul(warp_factor)),
-      1,
-      2.0,
-      0.5,
-      2.0,
-      0.5
-    );
-  }
-);
+  return vec2_fbm(
+    rotated.mul(19.3).add(float(4.0).mul(warp_factor)),
+    1,
+    2.0,
+    0.5,
+    2.0,
+    0.5
+  );
+});

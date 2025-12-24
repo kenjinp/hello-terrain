@@ -1,6 +1,5 @@
 import type { TerrainTextureArray } from "@hello-terrain/three";
 import { sampleTriplanarNoTile } from "@hello-terrain/three";
-import type { ShaderNodeObject } from "three/tsl";
 import {
   Fn,
   exp,
@@ -80,19 +79,19 @@ export const createBrushPreviewUniforms = (): BrushPreviewUniforms => ({
 
 export interface PaintableTerrainColorNodeParams {
   /** The base terrain color node to wrap */
-  baseColorNode: ShaderNodeObject<Node>;
+  baseColorNode: Node;
   /** Texture array for sampling preview texture */
   textureArray: TerrainTextureArray;
   /** Brush preview uniforms */
   brushUniforms: BrushPreviewUniforms;
   /** World-space scale for texture UVs */
-  textureScale: number | ShaderNodeObject<Node>;
+  textureScale: number | Node;
   /** Triplanar sharpness for preview texture sampling */
-  triplanarSharpness?: number | ShaderNodeObject<Node>;
+  triplanarSharpness?: number | Node;
   /** Variation scale for anti-tiling */
-  variationScale?: number | ShaderNodeObject<Node>;
+  variationScale?: number | Node;
   /** Optional normal for triplanar sampling (defaults to up vector) */
-  normalNode?: ShaderNodeObject<Node>;
+  normalNode?: Node;
 }
 
 /**
@@ -126,7 +125,7 @@ export interface PaintableTerrainColorNodeParams {
  */
 export const createPaintableTerrainColorNode = (
   params: PaintableTerrainColorNodeParams
-): ShaderNodeObject<Node> => {
+): Node => {
   const {
     baseColorNode,
     textureArray,

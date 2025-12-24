@@ -1,13 +1,9 @@
-import type { ShaderNodeObject } from "three/tsl";
 import { Fn, dot, int, max, min, vec3, vec4 } from "three/tsl";
-import type { ConstNode, Node, Vector3 } from "three/webgpu";
+import type { Node } from "three/webgpu";
 
 // reoriented normal mapping
 export const blendNormalsRNM = Fn(
-  ([normalA, normalB]: [
-    normalA: ShaderNodeObject<ConstNode<Vector3>>,
-    normalB: ShaderNodeObject<ConstNode<Vector3>>,
-  ]) => {
+  ([normalA, normalB]: [normalA: Node, normalB: Node]) => {
     const t = normalA
       .toVar()
       .xyz.mul(vec3(2, 2, 2))
@@ -23,9 +19,9 @@ export const blendNormalsRNM = Fn(
 
 // Read XYZ normal by deriving the per-node vertex index from positionLocal.xz
 export const readNormalAtPositionLocal = (
-  normalmapStorage: ShaderNodeObject<Node>,
+  normalmapStorage: Node,
   edgeVertexCount: number,
-  positionLocal: ShaderNodeObject<Node>
+  positionLocal: Node
 ) =>
   Fn(() => {
     const intEdge = int(edgeVertexCount);
