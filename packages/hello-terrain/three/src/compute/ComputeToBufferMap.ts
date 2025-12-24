@@ -1,13 +1,4 @@
-import {
-  Fn,
-  If,
-  float,
-  int,
-  storage,
-  uint,
-  vec2,
-  workgroupId,
-} from "three/tsl";
+import { Fn, If, float, globalId, int, storage, uint, vec2 } from "three/tsl";
 import type { ComputeNode, Node, WebGPURenderer } from "three/webgpu";
 import type { StorageBuffer } from "./StorageBuffer";
 
@@ -17,6 +8,8 @@ export class ComputeToBufferMap {
   private computeInstanceCount?: number;
   private workgroupSize?: [number, number, number];
   dispatchSize?: [number, number, number];
+  private static readonly WORKGROUP_X = 16;
+  private static readonly WORKGROUP_Y = 16;
 
   private static ceilPowerOfTwo(n: number): number {
     if (n <= 1) return 1;
@@ -43,9 +36,20 @@ export class ComputeToBufferMap {
   ) {
     // Create optimized shader that uses indirection via active leaf indices
     this.computeInstanceCount = instanceCount;
-    this.workgroupSize = [1, 1, 1];
-    const dispatchX = ComputeToBufferMap.ceilPowerOfTwo(width);
-    const dispatchY = ComputeToBufferMap.ceilPowerOfTwo(width);
+    // Use 2D workgroups for better GPU occupancy.
+    // IMPORTANT: With workgroup sizes > 1, we must use `globalId` (invocation index),
+    // not `workgroupId`, when mapping threads to pixels/texels.
+    this.workgroupSize = [
+      ComputeToBufferMap.WORKGROUP_X,
+      ComputeToBufferMap.WORKGROUP_Y,
+      1,
+    ];
+    const dispatchX = ComputeToBufferMap.ceilPowerOfTwo(
+      Math.ceil(width / ComputeToBufferMap.WORKGROUP_X)
+    );
+    const dispatchY = ComputeToBufferMap.ceilPowerOfTwo(
+      Math.ceil(width / ComputeToBufferMap.WORKGROUP_Y)
+    );
     const dispatchZ = ComputeToBufferMap.ceilPowerOfTwo(instanceCount);
     this.dispatchSize = [dispatchX, dispatchY, dispatchZ];
 
@@ -58,11 +62,12 @@ export class ComputeToBufferMap {
 
     return Fn(() => {
       const fWidth = float(width);
-      const activeIndex = workgroupId.z; // This is 0..activeLeafCount-1
+      const activeIndex = globalId.z; // This is 0..activeLeafCount-1 (workgroup Z index)
       const nodeIndex = activeLeafIndicesNode.element(activeIndex).toVar(); // Look up actual node index
       const iWidth = int(width);
-      const ix = int(workgroupId.x);
-      const iy = int(workgroupId.y);
+      // globalId.x/y = invocation coordinates in the global grid
+      const ix = int(globalId.x);
+      const iy = int(globalId.y);
       const iInstanceCount = int(instanceCount);
 
       // Only execute the body when within XY bounds and active index is valid.
@@ -73,7 +78,7 @@ export class ComputeToBufferMap {
           .and(uint(activeIndex).lessThan(uint(iInstanceCount))),
         () => {
           const texelSize = vec2(1, 1).div(fWidth);
-          const localCoordinates = vec2(workgroupId.x, workgroupId.y);
+          const localCoordinates = vec2(globalId.x, globalId.y);
           const localUVCoords = localCoordinates.div(fWidth);
           // Compute global vertex index: nodeIndex * (width*width) + y * width + x
           const verticesPerNode = iWidth.mul(iWidth);
