@@ -510,37 +510,27 @@ const TerrainPlane = () => {
         grass.albedo,
         grass.normal,
         grass.height,
-        grass.roughness,
-        grass.ao
+        grass.roughness
       );
       texArray.addTextureSet(
         rock.albedo,
         rock.normal,
         rock.height,
-        rock.roughness,
-        rock.ao
+        rock.roughness
       );
       texArray.addTextureSet(
         slate.albedo,
         slate.normal,
         slate.height,
-        slate.roughness,
-        slate.ao
+        slate.roughness
       );
       texArray.addTextureSet(
         snow.albedo,
         snow.normal,
         snow.height,
-        snow.roughness,
-        snow.ao
+        snow.roughness
       );
-      texArray.addTextureSet(
-        mud.albedo,
-        mud.normal,
-        mud.height,
-        mud.roughness,
-        mud.ao
-      );
+      texArray.addTextureSet(mud.albedo, mud.normal, mud.height, mud.roughness);
 
       setTextureArray(texArray);
     };
@@ -550,16 +540,9 @@ const TerrainPlane = () => {
 
   // Elevation function that samples from the heightmap texture
   const elevationFn = useMemo(() => {
-    return ElevationFn(({ worldPosition, rootSize }) => {
-      // Map world position to UV coordinates [0, 1]
-      // Center the terrain: worldPosition goes from -rootSize/2 to +rootSize/2
-      const uv = vec2(
-        worldPosition.x.div(rootSize).add(0.5),
-        worldPosition.z.div(rootSize).add(0.5)
-      );
-
+    return ElevationFn(({ rootUV }) => {
       // Sample the heightmap texture - LinearFilter provides bilinear interpolation
-      const heightSample = texture(heightmapTexture, uv);
+      const heightSample = texture(heightmapTexture, rootUV);
 
       // Return raw height from red channel (0-1 range)
       // The TerrainMesh will apply heightmapScale via setHeightmapScale()
@@ -1010,6 +993,12 @@ const TerrainPlane = () => {
     })();
   }, [terrain, materialNodes, textureUniforms]);
 
+  const otherColorNodes = useMemo(() => {
+    return Fn(() => {
+      return vec4(0.5, 0.5, 0.5, 1);
+    })();
+  }, []);
+
   // Normal node - use terrain geometric normals transformed to view space
   const normalNode = useMemo(() => {
     if (!terrain) {
@@ -1019,7 +1008,7 @@ const TerrainPlane = () => {
     }
     // Transform object-space normals to view space for correct lighting
     // meshStandardNodeMaterial expects view-space normals for its PBR calculations
-    return transformNormalToView(terrain.varyings.vNormal);
+    return transformNormalToView(terrain?.varyings.vNormal);
   }, [terrain]);
 
   // Roughness node - use shared material nodes
@@ -1030,16 +1019,6 @@ const TerrainPlane = () => {
       })();
     }
     return materialNodes.roughnessNode;
-  }, [materialNodes]);
-
-  // AO node - use shared material nodes
-  const aoNode = useMemo(() => {
-    if (!materialNodes) {
-      return Fn(() => {
-        return float(1.0); // Default: no occlusion
-      })();
-    }
-    return materialNodes.aoNode;
   }, [materialNodes]);
 
   useFrame(() => {
@@ -1187,10 +1166,11 @@ const TerrainPlane = () => {
         <meshStandardNodeMaterial
           name="TerrainMaterial"
           positionNode={positionNode}
-          colorNode={colorNode}
+          colorNode={otherColorNodes}
+          // colorNode={colorNode}
           normalNode={normalNode}
-          roughnessNode={roughnessNode}
-          aoNode={aoNode}
+          // roughnessNode={roughnessNode}
+          // aoNode={aoNode}
           wireframe={debugControls.wireframe}
         />
       </hello.TerrainMesh>

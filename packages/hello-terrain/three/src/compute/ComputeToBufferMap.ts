@@ -5,7 +5,6 @@ import type { StorageBuffer } from "./StorageBuffer";
 // A buffer map is an array-like representation of a texture with a width and height times number of nodes
 export class ComputeToBufferMap {
   bufferToShader: Map<StorageBuffer, ComputeNode>;
-  private computeInstanceCount?: number;
   private workgroupSize?: [number, number, number];
   dispatchSize?: [number, number, number];
   private static readonly WORKGROUP_X = 16;
@@ -35,7 +34,6 @@ export class ComputeToBufferMap {
     activeLeafIndicesStorage: StorageBuffer
   ) {
     // Create optimized shader that uses indirection via active leaf indices
-    this.computeInstanceCount = instanceCount;
     // Use 2D workgroups for better GPU occupancy.
     // IMPORTANT: With workgroup sizes > 1, we must use `globalId` (invocation index),
     // not `workgroupId`, when mapping threads to pixels/texels.
@@ -117,30 +115,7 @@ export class ComputeToBufferMap {
     return this;
   }
 
-  renderBind(renderer: WebGPURenderer, bindTarget: StorageBuffer) {
-    if (!this.bufferToShader.has(bindTarget)) {
-      throw new Error(
-        "You are trying to render to a ComputeToBufferMap that this shader doesn't have. Did you forgot to call createBindTo?"
-      );
-    }
-    if (!this.computeInstanceCount) {
-      throw new Error("No compute instance count");
-    }
-    if (!this.workgroupSize) {
-      throw new Error("No workgroupSize");
-    }
-    if (!this.dispatchSize) {
-      throw new Error("No dispatchSize");
-    }
-
-    renderer.compute(
-      // biome-ignore lint/style/noNonNullAssertion: Handled above
-      this.bufferToShader.get(bindTarget)!,
-      this.dispatchSize
-    );
-  }
-
-  renderBindOptimized(
+  renderBind(
     renderer: WebGPURenderer,
     bindTarget: StorageBuffer,
     activeInstanceCount: number

@@ -32,7 +32,7 @@ type SamplerFn = any;
 /**
  * Create terrain sampling functions with setLayout() for shader function extraction.
  *
- * This factory creates THREE separate functions (one per texture array) that:
+ * This factory creates TWO separate functions (one per texture array) that:
  * 1. Use triplanar projection (prevents stretching on slopes)
  * 2. Apply stochastic tiling (reduces visible repetition)
  * 3. Generate as actual WGSL functions via setLayout()
@@ -43,18 +43,15 @@ type SamplerFn = any;
  *
  * @param albedoHeightArr Texture array with RGB=albedo, A=height
  * @param normalRoughnessArr Texture array with RGB=normal, A=roughness
- * @param aoArr Texture array with R=ambient occlusion
  * @param noiseTexture Pre-computed noise for stochastic tiling
  */
 export const createTerrainSamplerFunctions = (
   albedoHeightArr: Texture,
   normalRoughnessArr: Texture,
-  aoArr: Texture,
   noiseTexture: Texture
 ): {
   sampleAlbedoHeight: SamplerFn;
   sampleNormalRoughness: SamplerFn;
-  sampleAo: SamplerFn;
 } => {
   // ============================================================
   // ALBEDO+HEIGHT SAMPLER
@@ -234,93 +231,9 @@ export const createTerrainSamplerFunctions = (
     ],
   });
 
-  // ============================================================
-  // AO SAMPLER
-  // ============================================================
-  const sampleAo = Fn(
-    ({
-      worldPos,
-      geometricNormal,
-      textureId,
-      textureScale,
-      triplanarSharpness,
-      variationScale,
-    }: {
-      worldPos: Node;
-      geometricNormal: Node;
-      textureId: Node;
-      textureScale: Node;
-      triplanarSharpness: Node;
-      variationScale: Node;
-    }) => {
-      // Triplanar weights - explicitly splat sharpness to vec3 for WGSL compatibility
-      const sharpnessVec = vec3(
-        triplanarSharpness,
-        triplanarSharpness,
-        triplanarSharpness
-      );
-      const weights = pow(abs(geometricNormal), sharpnessVec);
-      const totalWeight = weights.x.add(weights.y).add(weights.z);
-      const w = weights.div(totalWeight);
-
-      // UV coordinates for each projection axis
-      const uvX = vec2(worldPos.z, worldPos.y).div(textureScale);
-      const uvY = vec2(worldPos.x, worldPos.z).div(textureScale);
-      const uvZ = vec2(worldPos.x, worldPos.y).div(textureScale);
-
-      // Pre-compute layer offset for stochastic tiling (explicit float cast for WGSL)
-      // This is to reduce patterns in the stochastic tiling
-      const irrationalNumberOffset = float(0.37);
-      const textureIdFloat = float(0).toVar();
-      textureIdFloat.assign(textureId.toFloat());
-      const layerOffset = textureIdFloat.mul(irrationalNumberOffset);
-
-      // Sample each axis with stochastic tiling (textureId is already int)
-      const sampleX = sampleStochastic(
-        aoArr,
-        noiseTexture,
-        uvX,
-        textureId,
-        layerOffset,
-        variationScale
-      );
-      const sampleY = sampleStochastic(
-        aoArr,
-        noiseTexture,
-        uvY,
-        textureId,
-        layerOffset,
-        variationScale
-      );
-      const sampleZ = sampleStochastic(
-        aoArr,
-        noiseTexture,
-        uvZ,
-        textureId,
-        layerOffset,
-        variationScale
-      );
-
-      // Blend samples and return just R channel
-      return sampleX.r.mul(w.x).add(sampleY.r.mul(w.y)).add(sampleZ.r.mul(w.z));
-    }
-  ).setLayout({
-    name: "sampleAo",
-    type: "float",
-    inputs: [
-      { name: "worldPos", type: "vec3" },
-      { name: "geometricNormal", type: "vec3" },
-      { name: "textureId", type: "int" },
-      { name: "textureScale", type: "float" },
-      { name: "triplanarSharpness", type: "float" },
-      { name: "variationScale", type: "float" },
-    ],
-  });
-
   return {
     sampleAlbedoHeight,
     sampleNormalRoughness,
-    sampleAo,
   };
 };
 

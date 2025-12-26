@@ -1,4 +1,19 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
+
+// Compute DAG API (composable compute stages)
+export { ComputeDAG, type ComputeDAGConfig } from "./compute/ComputeDAG";
+export type {
+  ComputeStageConfig,
+  ComputeStageContext,
+  ComputeStageFn,
+  ComputeStageName,
+  ComputeStageOutputConfig,
+} from "./compute/ComputeStage";
+export {
+  createControlmapStage,
+  createHeightmapStage,
+  createNormalmapStage,
+} from "./compute/stages";
 export { createControl } from "./nodes/control";
 export {
   ControlFn,

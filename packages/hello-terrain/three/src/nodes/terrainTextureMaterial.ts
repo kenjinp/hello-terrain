@@ -130,8 +130,6 @@ export interface TerrainMaterialNodes {
   normalNode: Node;
   /** Roughness node for roughnessNode (float) */
   roughnessNode: Node;
-  /** Ambient occlusion node for aoNode (float) */
-  aoNode: Node;
 }
 
 /**
@@ -153,7 +151,7 @@ export interface TerrainMaterialNodes {
  *
  * Example usage:
  * ```ts
- * const { colorNode, normalNode, roughnessNode, aoNode } = createTerrainMaterialNodes({
+ * const { colorNode, normalNode, roughnessNode } = createTerrainMaterialNodes({
  *   varyings: terrain.varyings,
  *   uniforms: terrain.uniforms,
  *   textureArray,
@@ -164,7 +162,6 @@ export interface TerrainMaterialNodes {
  * material.colorNode = colorNode;
  * material.normalNode = normalNode;
  * material.roughnessNode = roughnessNode;
- * material.aoNode = aoNode;
  * ```
  *
  * Debug modes (controlled by debugMode uniform):
@@ -216,18 +213,16 @@ export const createTerrainMaterialNodes = (
   // Get texture arrays
   const albedoHeightTexture = textureArray.albedoHeightArray;
   const normalRoughnessTexture = textureArray.normalRoughnessArray;
-  const aoTexture = textureArray.aoArray;
   const noiseTexture = textureArray.noiseTexture;
 
   // ============================================================
   // CREATE SAMPLER FUNCTIONS WITH setLayout()
   // ============================================================
   // These functions are compiled as actual WGSL functions, not inlined
-  const { sampleAlbedoHeight, sampleNormalRoughness, sampleAo } =
+  const { sampleAlbedoHeight, sampleNormalRoughness } =
     createTerrainSamplerFunctions(
       albedoHeightTexture,
       normalRoughnessTexture,
-      aoTexture,
       noiseTexture
     );
 
@@ -317,14 +312,6 @@ export const createTerrainMaterialNodes = (
       triplanarSharpness: triplanarSharpnessNode,
       variationScale: variationScaleNode,
     }).toVar(),
-    ao: sampleAo({
-      worldPos,
-      geometricNormal,
-      textureId,
-      textureScale: scaledTextureScale,
-      triplanarSharpness: triplanarSharpnessNode,
-      variationScale: variationScaleNode,
-    }).toVar(),
   });
 
   // Sample all 8 materials (base + overlay for 4 vertices)
@@ -395,7 +382,6 @@ export const createTerrainMaterialNodes = (
       mat00Overlay.normalRoughness.a,
       blendMask00
     ).toVar(),
-    ao: mix(mat00Base.ao, mat00Overlay.ao, blendMask00).toVar(),
     height: mix(
       mat00Base.albedoHeight.a,
       mat00Overlay.albedoHeight.a,
@@ -419,7 +405,6 @@ export const createTerrainMaterialNodes = (
       mat10Overlay.normalRoughness.a,
       blendMask10
     ).toVar(),
-    ao: mix(mat10Base.ao, mat10Overlay.ao, blendMask10).toVar(),
     height: mix(
       mat10Base.albedoHeight.a,
       mat10Overlay.albedoHeight.a,
@@ -443,7 +428,6 @@ export const createTerrainMaterialNodes = (
       mat01Overlay.normalRoughness.a,
       blendMask01
     ).toVar(),
-    ao: mix(mat01Base.ao, mat01Overlay.ao, blendMask01).toVar(),
     height: mix(
       mat01Base.albedoHeight.a,
       mat01Overlay.albedoHeight.a,
@@ -467,7 +451,6 @@ export const createTerrainMaterialNodes = (
       mat11Overlay.normalRoughness.a,
       blendMask11
     ).toVar(),
-    ao: mix(mat11Base.ao, mat11Overlay.ao, blendMask11).toVar(),
     height: mix(
       mat11Base.albedoHeight.a,
       mat11Overlay.albedoHeight.a,
@@ -532,14 +515,6 @@ export const createTerrainMaterialNodes = (
     .add(blended10.roughness.mul(w10))
     .add(blended01.roughness.mul(w01))
     .add(blended11.roughness.mul(w11))
-    .div(totalWeight)
-    .toVar();
-
-  const finalAo = blended00.ao
-    .mul(w00)
-    .add(blended10.ao.mul(w10))
-    .add(blended01.ao.mul(w01))
-    .add(blended11.ao.mul(w11))
     .div(totalWeight)
     .toVar();
 
@@ -611,6 +586,5 @@ export const createTerrainMaterialNodes = (
     colorNode,
     normalNode: finalNormal,
     roughnessNode: finalRoughness,
-    aoNode: finalAo,
   };
 };
