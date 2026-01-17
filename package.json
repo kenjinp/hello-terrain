@@ -29,5 +29,8 @@
     {
       "path": "./packages/hello-terrain/react"
     }
-  ]
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
 }

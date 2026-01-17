@@ -1,6 +1,7 @@
 {
   "name": "@hello-terrain/three",
   "description": "High performance terrain system for three.js",
+  "version": "0.0.0-alpha.1",
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -17,7 +18,7 @@
   ],
   "scripts": {
     "build": "unbuild",
-    "release": "pnpm run build && pnpm publish",
+    "release": "pnpm run build && pnpm publish --access=public",
     "test": "vitest",
     "lint": "oxlint -c node_modules/@config/oxlint/base.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
