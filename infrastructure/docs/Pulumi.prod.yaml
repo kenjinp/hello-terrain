@@ -1,0 +1,4 @@
+config:
+  aws:region: us-east-1
+  hello-terrain-infrastructure:domain: hello-terrain.kenny.wtf
+  hello-terrain-infrastructure:environment: prod

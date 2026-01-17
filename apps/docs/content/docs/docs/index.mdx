@@ -1,0 +1,34 @@
+---
+title: Hello World
+description: Your first document
+---
+
+Hello Terrain is for real-time rendering of large virtual worlds, using web technology (webgpu). 
+
+Displaying terrains for your virtual world requires two things. An instruction of what the terrain should be, the terrain data, and 
+then a performant way to render that terrain data onto the screen. Hello Terrain provides tools to help generating the terrain data instructions. 
+Your terrain data can come from real-life sources, or from special software used to generate heightmaps, but I find it most interesting when that data
+is produced at run-time, procedurally.
+
+## Rendering
+
+How can hello-terrain render a large world in realtime?
+
+It does this by chopping up the world into tiles, of the same shape but different sizes (more on this later), 
+with the most detailed tile (highest LOD) situated near the observer/camera. This makes it easier for the GPU to handle, because rendering the whole world in the same detail would result in far too much data for the computer to crunch,
+and as the observer, we couldn't make out that detail anyways. 
+
+(Quadtree diagram)
+
+
+There's a couple other tricks we can use, to limit the amount of terrain tiles we render and save some GPU crunch time. We can only
+render terrain that's in front of the camera, and hide what's behind it (Frustum Culling). 
+
+(FC Example)
+
+{/* We can also hide tiles that would be hidden by the terrain itself, such as a mountain standing in front of a lower plain (Occlusion Culling).
+
+(OC example) */}
+
+## Quadtree
+

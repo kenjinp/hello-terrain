@@ -1,0 +1,69 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+
+/* Example pages: remove top padding and adjust layout */
+.example-layout-container {
+  /* Pull the canvas up to remove top padding from parent */
+  margin-top: calc(-1 * var(--fd-nav-height, 0px) - 1rem);
+}
+
+/* TOC positioning for example pages - target the nd-toc element */
+:has(.example-layout-container) #nd-toc {
+  /* Push the TOC down to start at the article content level */
+  margin-top: 90vh;
+  /* Make it sticky so it fixes to top when scrolling past */
+  position: sticky;
+  top: var(--fd-nav-height, 3.5rem);
+}
+
+/* Remove padding from the article content container when example layout is present */
+:has(.example-layout-container) > article {
+  padding-top: 0;
+}
+
+/* Glossary tooltip animations */
+@keyframes glossary-tooltip-fade-in-above {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+@keyframes glossary-tooltip-fade-in-below {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.animate-glossary-tooltip-above {
+  animation: glossary-tooltip-fade-in-above 0.15s ease;
+}
+
+.animate-glossary-tooltip-below {
+  animation: glossary-tooltip-fade-in-below 0.15s ease;
+}
+
+/* Contour background canvas styling */
+#contour-background {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+/* Slightly reduce opacity in dark mode for better readability */
+.dark #contour-background {
+  opacity: 0.5;
+}

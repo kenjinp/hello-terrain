@@ -1,0 +1,90 @@
+---
+title: Installation
+description: How to install Hello Terrain in your project
+---
+
+## Prerequisites
+
+Hello Terrain requires [three.js](https://threejs.org/) as a peer dependency. Make sure you have it installed in your project.
+
+## Packages
+
+Hello Terrain provides two packages depending on your setup:
+
+| Package | Description |
+|---------|-------------|
+| `@hello-terrain/three` | Core terrain system for vanilla three.js projects |
+| `@hello-terrain/react` | React bindings for react-three/fiber projects |
+
+## Installing for Three.js
+
+If you're using vanilla three.js, install the core package:
+
+```bash
+# npm
+npm install @hello-terrain/three three
+
+# pnpm
+pnpm add @hello-terrain/three three
+
+# yarn
+yarn add @hello-terrain/three three
+```
+
+### Basic Usage
+
+```ts
+import * as THREE from "three";
+import { TerrainGeometry } from "@hello-terrain/three";
+
+const geometry = new TerrainGeometry(16, true);
+const material = new THREE.MeshStandardMaterial();
+const mesh = new THREE.Mesh(geometry, material);
+
+scene.add(mesh);
+```
+
+## Installing for React Three Fiber
+
+If you're using [react-three/fiber](https://r3f.docs.pmnd.rs/), install the React package along with its peer dependencies:
+
+```bash
+# npm
+npm install @hello-terrain/react @react-three/fiber three react react-dom
+
+# pnpm
+pnpm add @hello-terrain/react @react-three/fiber three react react-dom
+
+# yarn
+yarn add @hello-terrain/react @react-three/fiber three react react-dom
+```
+
+The `@hello-terrain/react` package includes `@hello-terrain/three` as a dependency, so you can use both packages in your React project.
+
+### Basic Usage
+
+```tsx
+import { TerrainGeometry } from "@hello-terrain/three";
+import { Canvas, extend } from "@react-three/fiber";
+
+extend({ TerrainGeometry });
+
+function App() {
+  return (
+    <Canvas>
+      <mesh>
+        <terrainGeometry args={[16, true]} />
+        <meshStandardMaterial />
+      </mesh>
+    </Canvas>
+  );
+}
+```
+
+## TypeScript Support
+
+Both packages ship with TypeScript definitions out of the box. No additional `@types` packages are required.
+
+## Next Steps
+
+Once installed, check out the [Terrain Geometry](/docs/core/terrain-geometry) documentation to learn about the core building block of the terrain system.

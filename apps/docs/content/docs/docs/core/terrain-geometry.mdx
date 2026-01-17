@@ -1,0 +1,128 @@
+---
+title: Terrain Geometry
+description: The base terrain tile geometry which makes up the hello terrain system
+---
+
+import Scene from "@/examples/TerrainGeometryScene"
+
+<ExampleLayout title="Terrain Geometry" description="The base terrain tile geometry which makes up the hello terrain system">
+  <Scene />
+</ExampleLayout>
+
+## Overview
+
+This is the basic geometry unit of the Hello Terrain system. It will be instanced and duplicated to render the terrain scene.
+
+It's slightly different from the [`PlaneGeometry`](https://threejs.org/docs/#PlaneGeometry) native to three.js, in that it handles skirt geometry correctly, by using rotational symmetry.
+This way, if we pull down the edges to make a box-like terrain skirt, the corners will not be distorted on opposing sides of the tile. 
+
+The number of total segments is important, as it will define the shape of the terrain data. 
+If you want to render a terrain with a 16x16 grid, you would use a `TerrainGeometry` with `innerSegments` set to `14`.
+This is because the total number of segments is `innerSegments + 2`, for the outer skirt ring.
+
+
+## Constructor Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `innerSegments` | `number` | `14` | Number of subdivisions for the inner grid. Must be a positive integer. |
+| `extendUV` | `boolean` | `true` | When `true`, UVs extend to cover skirt vertices. When `false`, skirt UVs are clamped to the border of the inner grid. Toggling this may be useful for when you want to texture the skirts for a terrarium effect. |
+
+## Instance Properties 
+inherited from [`BufferGeometry`](https://threejs.org/docs/#BufferGeometry)
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `index` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) | Triangle indices defining face connectivity with quadrant-based diagonal flipping for proper skirt corners. |
+| `attributes.position` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 3) | Vertex positions normalized to `[-0.5, 0.5]` range. Includes duplicated outer ring for skirt geometry. |
+| `attributes.normal` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 3) | Vertex normals. Inner vertices point upward `(0, 1, 0)`. Skirt edge vertices point outward horizontally. |
+| `attributes.uv` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 2) | UV coordinates in `[0, 1]` range with flipped V coordinate. Behavior depends on `extendUV` constructor parameter. |
+
+## Usage
+
+### React Three Fiber
+
+```tsx
+import { TerrainGeometry } from "@hello-terrain/three";
+import { extend } from "@react-three/fiber";
+
+// Extend R3F to recognize the TerrainGeometry element
+extend({ TerrainGeometry });
+
+function TerrainMesh() {
+  return (
+    <mesh>
+      <terrainGeometry args={[16, true]} />
+      <meshStandardMaterial />
+    </mesh>
+  );
+}
+```
+
+### Vanilla Three.js
+
+```ts
+import * as THREE from "three";
+import { TerrainGeometry } from "@hello-terrain/three";
+
+// Create geometry with 16 inner segments and extended UVs
+const geometry = new TerrainGeometry(16, true);
+
+// Create mesh with a material
+const material = new THREE.MeshStandardMaterial();
+const mesh = new THREE.Mesh(geometry, material);
+
+// Add to scene
+scene.add(mesh);
+```
+
+## Skirt TSL Functions
+
+The `@hello-terrain/three` package exports two TSL (Three.js Shading Language) helper functions for working with skirt geometry in shaders.
+
+### `isSkirtVertex`
+
+Returns a boolean node indicating whether the current vertex belongs to the skirt (outermost ring of the grid).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `segments` | `number \| Node` | The number of inner segments in the terrain grid. |
+
+**Usage:** Vertex shader only. Use this to transform skirt vertices differently, such as pulling them downward to create the skirt drop.
+
+```ts
+import { isSkirtVertex } from "@hello-terrain/three";
+import { Fn, positionLocal, select, vec3 } from "three/tsl";
+
+const positionNode = Fn(() => {
+  const skirtDrop = 0.5;
+  return select(
+    isSkirtVertex(segments),
+    vec3(positionLocal.x, positionLocal.y.sub(skirtDrop), positionLocal.z),
+    positionLocal
+  );
+})();
+```
+
+### `isSkirtUV`
+
+Returns a boolean node indicating whether the current fragment's UV coordinates fall within the skirt region.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `segments` | `number \| Node` | The number of inner segments in the terrain grid. |
+
+**Usage:** Fragment shader. Use this to apply different colors or textures to skirt faces, such as painting them a solid color or applying a "terrarium side" texture.
+
+```ts
+import { isSkirtUV } from "@hello-terrain/three";
+import { Fn, select, texture, uv, vec3 } from "three/tsl";
+
+const colorNode = Fn(() => {
+  return select(
+    isSkirtUV(segments),
+    vec3(0.4, 0.3, 0.2), // Brown color for skirt faces
+    texture(terrainTexture, uv())
+  );
+})();
+```

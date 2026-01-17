@@ -1,0 +1,45 @@
+{
+  "name": "@hello-terrain/react",
+  "description": "High performance terrain system for three.js and react-three/fiber",
+  "type": "module",
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "unbuild",
+    "release": "pnpm run build && pnpm publish",
+    "test": "vitest",
+    "lint": "oxlint -c node_modules/@config/oxlint/react.json",
+    "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@config/oxfmt": "workspace:*",
+    "@config/oxlint": "workspace:*",
+    "@config/typescript": "workspace:*",
+    "@testing-library/dom": "^10.4.0",
+    "@testing-library/react": "^16.2.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "catalog:",
+    "jsdom": "^26.0.0",
+    "unbuild": "^3.5.0",
+    "vitest": "^4.0.17"
+  },
+  "peerDependencies": {
+    "@react-three/fiber": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "three": "catalog:"
+  }
+}

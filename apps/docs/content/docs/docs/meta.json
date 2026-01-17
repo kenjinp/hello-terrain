@@ -1,0 +1,14 @@
+{
+  "title": "Docs",
+  "description": "Library documentation",
+  "root": true,
+  "pages": [
+    "---Introduction---",
+    "index",
+    "installation",
+    "---Core API---",
+    "...core",
+    "---Appendix---",
+    "glossary"
+  ]
+}

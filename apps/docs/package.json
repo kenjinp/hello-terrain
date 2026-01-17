@@ -1,0 +1,46 @@
+{
+  "name": "@hello-terrain/docs",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "prebuild": "node ../../scripts/get-git-info.js",
+    "build": "next build",
+    "dev": "next dev --turbo",
+    "start": "next start",
+    "postinstall": "fumadocs-mdx",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hello-terrain/three": "workspace:*",
+    "@react-three/drei": "catalog:",
+    "@react-three/fiber": "catalog:",
+    "@react-three/rapier": "^1.5.0",
+    "fumadocs-core": "15.7.2",
+    "fumadocs-mdx": "11.8.0",
+    "fumadocs-ui": "15.7.2",
+    "leva": "^0.10.0",
+    "lucide-react": "^0.562.0",
+    "maath": "^0.10.8",
+    "next": "15.5.0",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "three": "catalog:",
+    "three-stdlib": "^2.36.0",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.1.12",
+    "@types/mdast": "^4.0.4",
+    "@types/mdx": "^2.0.13",
+    "@types/node": "24.3.0",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@types/three": "catalog:",
+    "@types/uuid": "^10.0.0",
+    "@webgpu/types": "^0.1.64",
+    "mdast-util-mdx-jsx": "^3.2.0",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.12",
+    "unist-util-visit": "^5.0.0"
+  }
+}
