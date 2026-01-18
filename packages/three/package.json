@@ -1,7 +1,12 @@
 {
   "name": "@hello-terrain/three",
   "description": "High performance terrain system for three.js",
-  "version": "0.0.0-alpha.1",
+  "homepage": "http://hello-terrain.kenny.wtf",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kenjinp/hello-terrain.git"
+  },
+  "version": "0.0.0-alpha.2",
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
