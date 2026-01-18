@@ -48,7 +48,7 @@ export function baseOptions(): BaseLayoutProps {
       title: (
         <>
           <Logo size="sm" />
-          Hello Terrain
+          <span className="ht-logo">Hello Terrain</span>
         </>
       ),
     },

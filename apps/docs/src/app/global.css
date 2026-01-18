@@ -77,3 +77,28 @@
 .footer-nav-glass > a:hover {
   background-color: color-mix(in oklch, var(--color-fd-accent) 70%, transparent);
 }
+
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-serif);
+  --tw-tracking: var(--tracking-tight);
+  letter-spacing: var(--tracking-tight);
+  text-shadow: 0px 1px 0px var(--tw-text-shadow-color, rgba(0, 0, 0, .075)), 0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, .075));
+}
+
+h1 {
+  font-style: italic;
+}
+
+.ht-logo {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-style: italic;
+  font-size: 1.2rem;
+  text-shadow: 0px 1px 0px var(--tw-text-shadow-color, rgba(0, 0, 0, .075)), 0px 1px 1px var(--tw-text-shadow-color, rgba(0, 0, 0, .075)), 0px 2px 2px var(--tw-text-shadow-color, rgba(0, 0, 0, .075));
+} 
+
+.terrain-logo {
+  filter: drop-shadow( 3px 3px 2px rgba(0, 0, 0, .7));
+}
+  

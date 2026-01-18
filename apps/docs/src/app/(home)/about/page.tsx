@@ -1,5 +1,5 @@
-import Link from "next/link";
 import { Mail } from "lucide-react";
+import Link from "next/link";
 
 // Bluesky icon - not available in lucide-react (brand icon)
 const BlueskyIcon = ({ size = 18 }: { size?: number }) => (
@@ -27,9 +27,9 @@ export default function AboutPage() {
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold">Why Hello Terrain?</h2>
           <p className="text-fd-muted-foreground leading-relaxed">
-            I made this library to provide a simple framework for rendering
-            large terrains so you can focus on the artful parts, like procedural
-            generation, terrain painting, or experimentation.
+            I made this library to provide a simple framework for rendering large terrains so you
+            can focus on the artful parts, like procedural generation, terrain painting, or
+            experimentation.
           </p>
         </section>
 
@@ -37,11 +37,9 @@ export default function AboutPage() {
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold">A Learning Journey</h2>
           <p className="text-fd-muted-foreground leading-relaxed">
-            This project is my personal exploration of the world of ...
-            rendering worlds. Terrain rendering is full of fascinating
-            algorithms and techniques, so Hello Terrain is as much about
-            learning and documenting these concepts as it is about providing
-            useful tools.
+            This project is my personal exploration of the world of ... rendering worlds. Terrain
+            rendering is full of fascinating algorithms and techniques, so Hello Terrain is as much
+            about learning and documenting these concepts as it is about providing useful tools.
           </p>
           <p className="text-fd-muted-foreground leading-relaxed">
             Expect explorations into topics like:
@@ -59,11 +57,10 @@ export default function AboutPage() {
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold">Learn With Me</h2>
           <p className="text-fd-muted-foreground leading-relaxed">
-            One of my goals with Hello Terrain is to make procedural terrain
-            generation more accessible. The documentation aims to not just show
-            you <em>how</em> to use the library, but explain <em>why</em> things
-            work the way they do. If you&apos;ve ever wanted to understand
-            terrain erosion or procedural generation, I hope this project helps.
+            One of my goals with Hello Terrain is to make procedural terrain generation more
+            accessible. The documentation aims to not just show you <em>how</em> to use the library,
+            but explain <em>why</em> things work the way they do. If you&apos;ve ever wanted to
+            understand terrain erosion or procedural generation, I hope this project helps.
           </p>
         </section>
 
@@ -71,8 +68,7 @@ export default function AboutPage() {
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold">Get in Touch</h2>
           <p className="text-fd-muted-foreground leading-relaxed">
-            Have questions, ideas, or want to collaborate? I&apos;d love to hear
-            from you!
+            Have questions, ideas, or want to collaborate? I&apos;d love to hear from you!
           </p>
           <div className="flex flex-wrap gap-4 pt-2">
             <Link
@@ -86,7 +82,7 @@ export default function AboutPage() {
               href="https://bsky.app/profile/kenny.wtf"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-fd-border font-medium hover:bg-fd-accent transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-fd-border font-medium hover:bg-fd-accent transition-colors backdrop-blur-sm"
             >
               <BlueskyIcon size={18} />
               @kenny.wtf on Bluesky
@@ -97,9 +93,7 @@ export default function AboutPage() {
         {/* CTA */}
         <div className="text-center pt-4 space-y-4">
           <div className="h-px bg-fd-border" />
-          <p className="text-fd-muted-foreground">
-            Ready to make some virtual worlds?
-          </p>
+          <p className="text-fd-muted-foreground">Ready to make some virtual worlds?</p>
           <div className="flex justify-center gap-4">
             <Link
               href="/docs"
@@ -109,7 +103,7 @@ export default function AboutPage() {
             </Link>
             <Link
               href="/examples"
-              className="px-6 py-2 rounded-lg border border-fd-border font-medium hover:bg-fd-accent transition-colors"
+              className="px-6 py-2 rounded-lg border border-fd-border font-medium hover:bg-fd-accent transition-colors backdrop-blur-sm"
             >
               View Examples
             </Link>
