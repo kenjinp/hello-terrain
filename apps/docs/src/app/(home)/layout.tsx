@@ -1,6 +1,7 @@
-import { baseOptions } from "@/lib/layout.shared";
+import { baseOptions, sharedLinkItems } from "@/lib/layout.shared";
 import { GithubInfo } from "fumadocs-ui/components/github-info";
 import { HomeLayout } from "fumadocs-ui/layouts/home";
+import { Book } from "lucide-react";
 
 export default function Layout({ children }: LayoutProps<"/">) {
   return (
@@ -38,6 +39,20 @@ export default function Layout({ children }: LayoutProps<"/">) {
           children: <GithubInfo owner="kenjinp" repo="hello-terrain" />,
           secondary: true,
         },
+        {
+          type: "menu",
+          on: "menu",
+          text: "Documentation",
+          items: [
+            {
+              text: "Getting Started",
+              url: "/docs",
+              icon: <Book />,
+            },
+          ],
+        },
+
+        ...sharedLinkItems,
       ]}
     >
       {children}
