@@ -1,5 +1,4 @@
 import "@/app/global.css";
-import { ContourBackground } from "@/components/ContourBackground/ContourBackground";
 import { Footer } from "@/components/Footer/Footer";
 import { LevaPanel } from "@/components/LevaPanel/LevaPanel";
 import DefaultSearchDialog from "@/components/Search/Search";
@@ -21,7 +20,6 @@ export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
-        <ContourBackground />
         <RootProvider
           search={{
             SearchDialog: DefaultSearchDialog,

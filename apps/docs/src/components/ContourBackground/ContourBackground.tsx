@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useMemo, createContext, useContext, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
 // ============================================================================
@@ -42,7 +42,7 @@ const defaultOptions: Required<ContourBackgroundOptions> = {
   darkModeOpacity: 0.2,
   contourCount: 18,
   scale: 1.5,
-  speed: 0.5,
+  speed: 0.25,
   lineWidth: 0.6,
   octaves: 10,
   depthFade: 0.4,
@@ -51,8 +51,7 @@ const defaultOptions: Required<ContourBackgroundOptions> = {
 };
 
 // Context to pass options to the plane component
-const ContourOptionsContext =
-  createContext<Required<ContourBackgroundOptions>>(defaultOptions);
+const ContourOptionsContext = createContext<Required<ContourBackgroundOptions>>(defaultOptions);
 
 // ============================================================================
 // Shaders
@@ -247,11 +246,9 @@ function ContourPlane() {
           // @ts-expect-error - iOS-specific API
           const permission = await DeviceOrientationEvent.requestPermission();
           if (permission === "granted") {
-            window.addEventListener(
-              "deviceorientation",
-              handleDeviceOrientation,
-              { passive: true }
-            );
+            window.addEventListener("deviceorientation", handleDeviceOrientation, {
+              passive: true,
+            });
           }
         } catch {
           // Permission denied or not available
@@ -299,7 +296,7 @@ function ContourPlane() {
       uMouseParallax: { value: options.mouseParallax },
       uGyroInfluence: { value: options.gyroInfluence },
     }),
-    [options]
+    [options],
   );
 
   useFrame(({ clock, gl }) => {
@@ -313,10 +310,7 @@ function ContourPlane() {
 
       // Update resolution with actual pixel dimensions
       const pixelRatio = gl.getPixelRatio();
-      material.uniforms.uResolution.value.set(
-        size.width * pixelRatio,
-        size.height * pixelRatio
-      );
+      material.uniforms.uResolution.value.set(size.width * pixelRatio, size.height * pixelRatio);
       material.uniforms.uPixelRatio.value = pixelRatio;
 
       // Smoothly interpolate motion values (lerp factor for smooth movement)
@@ -351,14 +345,8 @@ export interface ContourBackgroundProps extends ContourBackgroundOptions {
   className?: string;
 }
 
-export function ContourBackground({
-  className,
-  ...options
-}: ContourBackgroundProps) {
-  const mergedOptions = useMemo(
-    () => ({ ...defaultOptions, ...options }),
-    [options]
-  );
+export function ContourBackground({ className, ...options }: ContourBackgroundProps) {
+  const mergedOptions = useMemo(() => ({ ...defaultOptions, ...options }), [options]);
 
   return (
     <ContourOptionsContext.Provider value={mergedOptions}>
