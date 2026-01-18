@@ -1,6 +1,7 @@
 [![Discord Shield](https://img.shields.io/discord/900742295710728282?style=flat&colorA=000000&colorB=000000&label=&logo=discord&logoColor=ffffff)](https://discord.gg/HgTd2B828n)
 
-[![Three.js](https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/docs/) [![React-Three-Fiber](https://img.shields.io/badge/React--Three--Fiber-000000?style=for-the-badge&logo=react&logoColor=61DAFB)](https://docs.pmnd.rs/react-three-fiber) [![WebGPU](https://img.shields.io/badge/WebGPU-F34B7D?style=for-the-badge&logo=webgpu&logoColor=white)](https://threejs.org/docs/)
+[![Three.js](https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/docs/) [![React-Three-Fiber](https://img.shields.io/badge/React--Three--Fiber-000000?style=for-the-badge&logo=react&logoColor=61DAFB)](https://docs.pmnd.rs/react-three-fiber) [![WebGPU](https://img.shields.io/badge/WebGPU-F34B7D?style=for-the-badge&logo=webgpu&logoColor=white&colorA=000000&colorB=000000)](https://threejs.org/docs/) [![npm version](https://img.shields.io/npm/v/@hello-terrain/three?style=for-the-badge&colorA=000000&colorB=000000)](https://www.npmjs.com/package/@hello-terrain/three)
+
 
 ![A Quadtree Debug Scene using Hello-Terrain](https://kenny.wtf/hello-terrain.webp)
 
