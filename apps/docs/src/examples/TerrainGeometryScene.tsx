@@ -1,18 +1,14 @@
 "use client";
 
-import {
-  isSkirtUV,
-  isSkirtVertex,
-  TerrainGeometry,
-} from "@hello-terrain/three";
-import { Environment, OrbitControls, useTexture } from "@react-three/drei";
+import { isSkirtUV, isSkirtVertex, TerrainGeometry } from "@hello-terrain/three";
+import { Bounds, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useMemo } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
-  Fn,
   float,
+  Fn,
   int,
   positionLocal,
   select,
@@ -67,9 +63,7 @@ const TerrainPlane = () => {
       uWireframe: uniform(false).setName("uWireframe"),
       uPaintSkirts: uniform(false).setName("uPaintSkirts"),
       uSegments: uniform(terrainGeometryControls.segments).setName("uSegments"),
-      uSkirtLength: uniform(terrainGeometryControls.skirtLength).setName(
-        "uSkirtLength"
-      ),
+      uSkirtLength: uniform(terrainGeometryControls.skirtLength).setName("uSkirtLength"),
       uExtendUV: uniform(terrainGeometryControls.extendUv).setName("uExtendUV"),
     };
   }, []);
@@ -82,7 +76,7 @@ const TerrainPlane = () => {
       const beforeTransform = select(
         isSkirtVertex(uniforms.uSegments),
         vec3(wp.x, wp.y.sub(float(skirtLength)), wp.z),
-        wp
+        wp,
       );
       return beforeTransform;
     })();
@@ -112,12 +106,8 @@ const TerrainPlane = () => {
       const afterScale = select(isSkirtVertex, wp, scaledInner);
       const beforeTransform = select(
         isSkirtVertex,
-        vec3(
-          afterScale.x,
-          afterScale.y,
-          afterScale.z.sub(uniforms.uSkirtLength.toVar())
-        ),
-        afterScale
+        vec3(afterScale.x, afterScale.y, afterScale.z.sub(uniforms.uSkirtLength.toVar())),
+        afterScale,
       );
       return beforeTransform;
     })();
@@ -130,8 +120,8 @@ const TerrainPlane = () => {
         select(
           uniforms.uExtendUV,
           float(uniforms.uSegments.div(uniforms.uSegments.add(2))),
-          float(1)
-        )
+          float(1),
+        ),
       );
       const scale = uniforms.uSegments.toFloat().div(textureSubdivisions);
       const offset = float(1).sub(scale).div(2);
@@ -140,7 +130,7 @@ const TerrainPlane = () => {
       const color = select(
         uniforms.uPaintSkirts.and(isSkirtUV(uniforms.uSegments)),
         vec3(1, 0, 0),
-        texture(uvMap, remappedUV)
+        texture(uvMap, remappedUV),
       );
       return select(uniforms.uWireframe, vec3(1, 0, 0), color);
     })();
@@ -155,13 +145,10 @@ const TerrainPlane = () => {
   });
 
   return (
-    <group>
+    <group position={[0, 1, 0]}>
       <mesh position={[-0.6, 0, -0.6]}>
         <terrainGeometry
-          args={[
-            terrainGeometryControls.segments,
-            terrainGeometryControls.extendUv,
-          ]}
+          args={[terrainGeometryControls.segments, terrainGeometryControls.extendUv]}
         />
         <meshStandardNodeMaterial
           wireframe={terrainGeometryControls.wireframe}
@@ -171,12 +158,7 @@ const TerrainPlane = () => {
       </mesh>
       <mesh position={[0.6, 0, -0.6]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry
-          args={[
-            1,
-            1,
-            terrainGeometryControls.segments + 2,
-            terrainGeometryControls.segments + 2,
-          ]}
+          args={[1, 1, terrainGeometryControls.segments + 2, terrainGeometryControls.segments + 2]}
         />
         <meshStandardNodeMaterial
           wireframe={terrainGeometryControls.wireframe}
@@ -192,7 +174,7 @@ const TerrainGeometryScene = () => {
   return (
     <Canvas
       style={{
-        position: "absolute",
+        position: "relative",
         top: 0,
         left: 0,
         width: "100%",
@@ -203,9 +185,7 @@ const TerrainGeometryScene = () => {
         props.alpha = true;
         props.antialias = true;
         // soft shadows
-        const renderer = new THREE.WebGPURenderer(
-          props as WebGPURendererParameters
-        );
+        const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
 
         renderer.logarithmicDepthBuffer = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -217,17 +197,16 @@ const TerrainGeometryScene = () => {
       camera={{
         near: 0.1,
         far: Number.MAX_SAFE_INTEGER,
-        position: [3, 0, 3],
       }}
       dpr={[1, 1]}
       performance={{ min: 0.5 }}
     >
-      <color attach="background" args={["#6dd1ed"]} />
-      <Environment preset="park" background={false} environmentIntensity={1} />
       <ambientLight intensity={0.15} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
-      <OrbitControls />
-      <TerrainPlane />
+      {/* <OrbitControls /> */}
+      <Bounds fit observe>
+        <TerrainPlane />
+      </Bounds>
     </Canvas>
   );
 };

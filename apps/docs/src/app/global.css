@@ -67,3 +67,13 @@
 .dark #contour-background {
   opacity: 0.5;
 }
+
+/* Frosted glass effect for footer navigation links (Previous/Next) */
+.footer-nav-glass > a {
+  backdrop-filter: blur(4px);
+  border-color: color-mix(in oklch, var(--color-fd-border) 50%, transparent);
+}
+
+.footer-nav-glass > a:hover {
+  background-color: color-mix(in oklch, var(--color-fd-accent) 70%, transparent);
+}
