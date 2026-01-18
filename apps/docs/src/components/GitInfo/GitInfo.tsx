@@ -28,10 +28,7 @@ export const GitInfo = ({
   const commitInfo: CommitInfo = {
     hash: process.env.NEXT_PUBLIC_GIT_COMMIT_HASH || "unknown",
     date: process.env.NEXT_PUBLIC_GIT_COMMIT_DATE || "unknown",
-    shortHash: (process.env.NEXT_PUBLIC_GIT_COMMIT_HASH || "unknown").substring(
-      0,
-      7
-    ),
+    shortHash: (process.env.NEXT_PUBLIC_GIT_COMMIT_HASH || "unknown").substring(0, 7),
   };
 
   const formatDate = (dateString: string) => {
@@ -48,11 +45,12 @@ export const GitInfo = ({
   return (
     <Link
       href={githubCommitUrl}
-      className="flex justify-between items-center gap-2 text-sm py-2 px-4"
+      external
+      className="flex justify-between items-center gap-2 text-sm font-mono"
     >
-      <span className="whitespace-nowrap">Hello Terrain</span>
-      <span className="font-bold">{commitInfo.shortHash}</span>
-      <span>{formatDate(commitInfo.date)}</span>
+      <span className="font-bold">
+        commit: {commitInfo.shortHash} {formatDate(commitInfo.date)}
+      </span>
     </Link>
   );
 };
