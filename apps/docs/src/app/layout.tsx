@@ -2,6 +2,7 @@ import "@/app/global.css";
 import { ContourBackground } from "@/components/ContourBackground/ContourBackground";
 import { Footer } from "@/components/Footer/Footer";
 import { LevaPanel } from "@/components/LevaPanel/LevaPanel";
+import DefaultSearchDialog from "@/components/Search/Search";
 import { RootProvider } from "fumadocs-ui/provider";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
@@ -21,7 +22,11 @@ export default function Layout({ children }: LayoutProps<"/">) {
     <html lang="en" className={inter.className} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
         <ContourBackground />
-        <RootProvider>
+        <RootProvider
+          search={{
+            SearchDialog: DefaultSearchDialog,
+          }}
+        >
           <LevaPanel />
           {children}
           <Footer />

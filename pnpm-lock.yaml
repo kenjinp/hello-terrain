@@ -59,6 +59,9 @@ importers:
       '@hello-terrain/three':
         specifier: workspace:*
         version: link:../../packages/three
+      '@orama/orama':
+        specifier: ^3.1.18
+        version: 3.1.18
       '@react-three/drei':
         specifier: 'catalog:'
         version: 10.7.7(@react-three/fiber@9.5.0(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(three@0.182.0))(@types/react@19.2.7)(@types/three@0.182.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(three@0.182.0)
