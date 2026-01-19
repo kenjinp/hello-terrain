@@ -185,43 +185,45 @@ const TerrainPlane = () => {
 
 const TerrainGeometryScene = () => {
   return (
-    <Canvas
-      style={{
-        position: "relative",
-        top: 0,
-        left: 0,
-        width: "100%",
-        height: "100%",
-      }}
-      shadows
-      gl={async (props) => {
-        props.alpha = true;
-        props.antialias = true;
-        // soft shadows
-        const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+    <div className="relative w-full h-full rounded overflow-hidden overflow-hidden backdrop-blur-sm">
+      <Canvas
+        style={{
+          position: "relative",
+          top: 0,
+          left: 0,
+          width: "100%",
+          height: "100%",
+        }}
+        shadows
+        gl={async (props) => {
+          props.alpha = true;
+          props.antialias = true;
+          // soft shadows
+          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
 
-        renderer.logarithmicDepthBuffer = true;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        renderer.shadowMap.enabled = true;
+          renderer.logarithmicDepthBuffer = true;
+          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+          renderer.shadowMap.enabled = true;
 
-        await renderer.init();
-        return renderer;
-      }}
-      camera={{
-        near: 0.1,
-        far: Number.MAX_SAFE_INTEGER,
-        position: [0, 3, 1],
-      }}
-      dpr={[1, 1]}
-      performance={{ min: 0.5 }}
-    >
-      <ambientLight intensity={0.15} />
-      <directionalLight intensity={1} position={[1, 1, 1]} />
-      <Bounds fit observe>
-        <TerrainPlane />
-      </Bounds>
-      <OrbitControls makeDefault />
-    </Canvas>
+          await renderer.init();
+          return renderer;
+        }}
+        camera={{
+          near: 0.1,
+          far: Number.MAX_SAFE_INTEGER,
+          position: [0, 3, 1],
+        }}
+        dpr={[1, 1]}
+        performance={{ min: 0.5 }}
+      >
+        <ambientLight intensity={0.15} />
+        <directionalLight intensity={1} position={[1, 1, 1]} />
+        <Bounds fit observe>
+          <TerrainPlane />
+        </Bounds>
+        <OrbitControls makeDefault />
+      </Canvas>
+    </div>
   );
 };
 
