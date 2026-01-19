@@ -11,10 +11,10 @@ import Scene from "@/examples/TerrainGeometryScene"
 
 ## Overview
 
-This is the basic geometry unit of the Hello Terrain system. It will be instanced and duplicated to render the terrain scene.
+This is the basic geometry unit of the Hello Terrain system. It will be instanced and duplicated to render the terrain scene, as many terrain tiles.
 
 It's slightly different from the [`PlaneGeometry`](https://threejs.org/docs/#PlaneGeometry) native to three.js, in that it handles skirt geometry correctly, by using rotational symmetry.
-This way, if we pull down the edges to make a box-like terrain skirt, the corners will not be distorted on opposing sides of the tile. 
+This way, if we pull down the edge vertices to make a box-like terrain skirt, the corners will not be distorted on opposing sides of the tile. 
 
 The number of total segments is important, as it will define the shape of the terrain data. 
 If you want to render a terrain with a 16x16 grid, you would use a `TerrainGeometry` with `innerSegments` set to `14`.

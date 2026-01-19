@@ -1,0 +1,292 @@
+---
+title: Quadtree
+description: Level-of-detail terrain subdivision using a camera-aware quadtree
+---
+
+## Overview
+
+The `Quadtree` class provides dynamic level-of-detail (LOD) subdivision for terrain rendering. It recursively subdivides terrain tiles based on camera distance, ensuring higher detail near the viewer and lower detail in the distance.
+
+The quadtree operates in 2D space (X/Z plane) and supports frustum culling, customizable subdivision strategies, and efficient buffer-based storage for GPU-friendly data access.
+
+### Key Features
+
+- **Distance-based LOD**: Automatically subdivides tiles closer to the camera
+- **Frustum culling**: Skips subdivision for tiles outside the view frustum
+- **Customizable strategies**: Plug in different subdivision algorithms (distance-based, screen-space)
+- **Zero-allocation updates**: Uses pre-allocated typed arrays to avoid GC pressure
+- **GPU-ready buffers**: Direct access to typed arrays for instanced rendering
+
+## Constructor
+
+```ts
+import { Quadtree } from "@hello-terrain/three";
+
+const quadtree = new Quadtree(config, subdivisionStrategy?, nodeView?);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `config` | `QuadtreeParams` | Configuration object (see below) |
+| `subdivisionStrategy` | `SubdivisionStrategy` | Optional. Strategy function for subdivision decisions. Defaults to `distanceBasedSubdivision(2)`. |
+| `nodeView` | `QuadtreeNodeView` | Optional. Pre-allocated node view for buffer reuse. |
+
+### QuadtreeParams
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `maxLevel` | `number` | Maximum subdivision depth. Higher values allow finer detail. |
+| `rootSize` | `number` | World-space size of the root tile (edge length). |
+| `minNodeSize` | `number` | Minimum allowed tile size. Prevents over-subdivision. |
+| `origin` | `THREE.Vector3` | World-space origin of the terrain center. |
+| `maxNodes` | `number` | Maximum number of nodes the quadtree can allocate. Prevents buffer overflow. |
+
+## Methods
+
+### update
+
+Updates the quadtree based on a camera or reference position. Returns the index of the closest leaf node.
+
+```ts
+const closestLeafIndex = quadtree.update(position, frustum?);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `position` | `THREE.Vector3` | Camera or reference position for LOD calculations |
+| `frustum` | `THREE.Frustum` | Optional. Frustum for culling tiles outside the view |
+
+### getLeafNodes
+
+Returns all active leaf nodes as an array of objects.
+
+```ts
+const leaves = quadtree.getLeafNodes();
+// [{ level: 0, x: 0, y: 0 }, { level: 2, x: 1, y: 3 }, ...]
+```
+
+### getActiveLeafNodeIndices
+
+Returns active leaf node indices for efficient GPU processing. This is a zero-copy operation.
+
+```ts
+const { indices, count } = quadtree.getActiveLeafNodeIndices();
+// indices: Uint16Array, count: number of valid entries
+```
+
+### setSubdivisionStrategy
+
+Changes the subdivision strategy at runtime.
+
+```ts
+import { screenSpaceSubdivision } from "@hello-terrain/three";
+
+quadtree.setSubdivisionStrategy(
+  screenSpaceSubdivision({
+    targetTrianglePixels: 6,
+    getScreenSpaceInfo: () => screenInfo,
+  })
+);
+```
+
+### Other Methods
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `getNodeCount()` | `number` | Total number of nodes in the tree |
+| `getLeafNodeCount()` | `number` | Number of active leaf nodes |
+| `getDeepestLevel()` | `number` | Maximum subdivision depth reached |
+| `getConfig()` | `QuadtreeParams` | Current configuration |
+| `getNodeView()` | `QuadtreeNodeView` | Direct access to the underlying buffer view |
+| `reset()` | `void` | Clears the tree and recreates the root node |
+| `destroy()` | `void` | Releases all internal resources |
+
+## Subdivision Strategies
+
+Subdivision strategies determine when a tile should be split into four children. The package provides two built-in strategies.
+
+### distanceBasedSubdivision
+
+Subdivides based on distance from the camera. Simple and predictable.
+
+```ts
+import { distanceBasedSubdivision } from "@hello-terrain/three";
+
+// Subdivide when distance < nodeSize * factor
+const strategy = distanceBasedSubdivision(2); // factor = 2
+```
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `factor` | `number` | `2` | Multiplier for subdivision threshold |
+
+### screenSpaceSubdivision
+
+Subdivides based on projected triangle size in screen pixels. Ensures consistent visual quality across different distances and screen resolutions.
+
+```ts
+import { screenSpaceSubdivision, computeScreenSpaceInfo } from "@hello-terrain/three";
+
+const strategy = screenSpaceSubdivision({
+  targetTrianglePixels: 6,
+  tileSegments: 13,
+  getScreenSpaceInfo: () => {
+    const fovRadians = camera.fov * Math.PI / 180;
+    return computeScreenSpaceInfo(fovRadians, renderer.domElement.height);
+  },
+});
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `targetTrianglePixels` | `number` | `6` | Maximum triangle size in screen pixels |
+| `tileSegments` | `number` | `13` | Segments per tile edge (should match TerrainGeometry) |
+| `getScreenSpaceInfo` | `() => ScreenSpaceInfo \| null` | Required | Callback returning current screen-space projection info |
+
+### Custom Strategies
+
+You can create custom subdivision strategies by implementing the `SubdivisionStrategy` type.
+
+```ts
+import type { SubdivisionStrategy, SubdivisionContext } from "@hello-terrain/three";
+
+const customStrategy: SubdivisionStrategy = (ctx: SubdivisionContext) => {
+  // ctx.level - current quadtree level (0 = root)
+  // ctx.distance - distance from camera to node center
+  // ctx.nodeSize - world-space size of the node
+  // ctx.minNodeSize - minimum allowed node size
+  // ctx.rootSize - root terrain size
+  
+  // Return true to subdivide, false to keep as leaf
+  return ctx.distance < ctx.nodeSize * 1.5 && ctx.nodeSize > ctx.minNodeSize;
+};
+```
+
+## Usage
+
+### React Three Fiber
+
+```tsx
+import { useRef, useMemo } from "react";
+import { useFrame, useThree } from "@react-three/fiber";
+import { Quadtree, distanceBasedSubdivision } from "@hello-terrain/three";
+import * as THREE from "three";
+
+function TerrainLOD() {
+  const { camera } = useThree();
+  const frustum = useRef(new THREE.Frustum());
+  const projScreenMatrix = useRef(new THREE.Matrix4());
+  
+  const quadtree = useMemo(() => new Quadtree({
+    maxLevel: 8,
+    rootSize: 1000,
+    minNodeSize: 10,
+    origin: new THREE.Vector3(0, 0, 0),
+    maxNodes: 4096,
+  }), []);
+  
+  useFrame(() => {
+    // Update frustum from camera
+    projScreenMatrix.current.multiplyMatrices(
+      camera.projectionMatrix,
+      camera.matrixWorldInverse
+    );
+    frustum.current.setFromProjectionMatrix(projScreenMatrix.current);
+    
+    // Update quadtree
+    quadtree.update(camera.position, frustum.current);
+    
+    // Get leaf nodes for rendering
+    const leaves = quadtree.getLeafNodes();
+    // Use leaves to position terrain tile instances...
+  });
+  
+  return null;
+}
+```
+
+### Vanilla Three.js
+
+```ts
+import * as THREE from "three";
+import { Quadtree, screenSpaceSubdivision, computeScreenSpaceInfo } from "@hello-terrain/three";
+
+// Create quadtree
+const quadtree = new Quadtree({
+  maxLevel: 8,
+  rootSize: 1000,
+  minNodeSize: 10,
+  origin: new THREE.Vector3(0, 0, 0),
+  maxNodes: 4096,
+});
+
+// Use screen-space subdivision for consistent visual quality
+quadtree.setSubdivisionStrategy(
+  screenSpaceSubdivision({
+    targetTrianglePixels: 6,
+    getScreenSpaceInfo: () => {
+      const fovRadians = camera.fov * Math.PI / 180;
+      return computeScreenSpaceInfo(fovRadians, renderer.domElement.height);
+    },
+  })
+);
+
+// In render loop
+const frustum = new THREE.Frustum();
+const projScreenMatrix = new THREE.Matrix4();
+
+function animate() {
+  // Update frustum
+  projScreenMatrix.multiplyMatrices(
+    camera.projectionMatrix,
+    camera.matrixWorldInverse
+  );
+  frustum.setFromProjectionMatrix(projScreenMatrix);
+  
+  // Update quadtree
+  quadtree.update(camera.position, frustum);
+  
+  // Get active leaves for instanced rendering
+  const { indices, count } = quadtree.getActiveLeafNodeIndices();
+  
+  // Use indices to update instance matrices...
+  requestAnimationFrame(animate);
+}
+```
+
+## QuadtreeNodeView
+
+The `QuadtreeNodeView` class manages the underlying typed array buffers that store quadtree node data. You typically don't need to interact with it directly, but it's useful for advanced use cases like GPU buffer uploads.
+
+### Buffer Access
+
+```ts
+const nodeView = quadtree.getNodeView();
+const buffers = nodeView.getBuffers();
+
+// buffers.nodeBuffer - Int32Array with level, x, y, active per node
+// buffers.childrenIndicesBuffer - Uint16Array with child indices
+// buffers.neighborsIndicesBuffer - Uint16Array with neighbor indices  
+// buffers.leafNodeMask - Uint8Array marking leaf nodes
+```
+
+### Node Properties
+
+Each node stores:
+- **level**: Subdivision depth (0 = root)
+- **x, y**: Grid coordinates at this level
+- **children**: Indices of four child nodes (or sentinel value if leaf)
+- **neighbors**: Indices of adjacent nodes for seamless LOD transitions
+- **leaf**: Whether this node should be rendered
+
+## Performance Tips
+
+1. **Choose maxNodes wisely**: Too small limits detail; too large wastes memory. Start with 4096 for medium terrains.
+
+2. **Use frustum culling**: Always pass a frustum to `update()` to skip subdividing tiles behind the camera.
+
+3. **Prefer screen-space subdivision**: It provides consistent visual quality and automatically adapts to screen resolution.
+
+4. **Reuse the quadtree**: Don't recreate it each frame. Call `update()` to refresh the subdivision.
+
+5. **Access buffers directly**: For instanced rendering, use `getActiveLeafNodeIndices()` instead of `getLeafNodes()` to avoid allocations.

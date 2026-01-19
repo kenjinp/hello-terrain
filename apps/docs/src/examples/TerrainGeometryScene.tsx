@@ -1,7 +1,7 @@
 "use client";
 
 import { isSkirtUV, isSkirtVertex, TerrainGeometry } from "@hello-terrain/three";
-import { Bounds, useTexture } from "@react-three/drei";
+import { Bounds, Html, OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useMemo } from "react";
@@ -145,28 +145,41 @@ const TerrainPlane = () => {
   });
 
   return (
-    <group position={[0, 1, 0]}>
-      <mesh position={[-0.6, 0, -0.6]}>
-        <terrainGeometry
-          args={[terrainGeometryControls.segments, terrainGeometryControls.extendUv]}
-        />
-        <meshStandardNodeMaterial
-          wireframe={terrainGeometryControls.wireframe}
-          positionNode={positionNode}
-          colorNode={colorNode}
-        />
-      </mesh>
-      <mesh position={[0.6, 0, -0.6]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry
-          args={[1, 1, terrainGeometryControls.segments + 2, terrainGeometryControls.segments + 2]}
-        />
-        <meshStandardNodeMaterial
-          wireframe={terrainGeometryControls.wireframe}
-          positionNode={positionNodePlane}
-          colorNode={colorNode}
-        />
-      </mesh>
-    </group>
+    <>
+      <group position={[0, 1, 0]}>
+        <mesh position={[-0.6, 0, -0.6]}>
+          <Html>
+            <span>TerrainGeometry</span>
+          </Html>
+          <terrainGeometry
+            args={[terrainGeometryControls.segments, terrainGeometryControls.extendUv]}
+          />
+          <meshStandardNodeMaterial
+            wireframe={terrainGeometryControls.wireframe}
+            positionNode={positionNode}
+            colorNode={colorNode}
+          />
+        </mesh>
+        <mesh position={[0.6, 0, -0.6]} rotation={[-Math.PI / 2, 0, 0]}>
+          <Html>
+            <span>PlaneGeometry</span>
+          </Html>
+          <planeGeometry
+            args={[
+              1,
+              1,
+              terrainGeometryControls.segments + 2,
+              terrainGeometryControls.segments + 2,
+            ]}
+          />
+          <meshStandardNodeMaterial
+            wireframe={terrainGeometryControls.wireframe}
+            positionNode={positionNodePlane}
+            colorNode={colorNode}
+          />
+        </mesh>
+      </group>
+    </>
   );
 };
 
@@ -197,16 +210,17 @@ const TerrainGeometryScene = () => {
       camera={{
         near: 0.1,
         far: Number.MAX_SAFE_INTEGER,
+        position: [0, 3, 1],
       }}
       dpr={[1, 1]}
       performance={{ min: 0.5 }}
     >
       <ambientLight intensity={0.15} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
-      {/* <OrbitControls /> */}
       <Bounds fit observe>
         <TerrainPlane />
       </Bounds>
+      <OrbitControls makeDefault />
     </Canvas>
   );
 };
