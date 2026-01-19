@@ -1,7 +1,6 @@
 import { docsSource } from "@/lib/source";
 import { createFromSource } from "fumadocs-core/search/server";
 
-// it should be cached forever
+// statically cached
 export const revalidate = false;
-
 export const { staticGET: GET } = createFromSource(docsSource);
