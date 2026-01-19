@@ -1,47 +1,36 @@
-import * as THREE from "three";
+import {
+  type QuadtreeParams,
+  type ShouldSubdivideContext,
+  type SubdivisionStrategy,
+  type Vector3Like,
+} from "./Quadtree.types";
 import {
   type ChildIndices,
   EMPTY_SENTINEL_VALUE,
   type NeighborIndices,
   QuadtreeNodeView,
 } from "./QuadtreeNodeView";
-import {
-  type SubdivisionContext,
-  type SubdivisionStrategy,
-  distanceBasedSubdivision,
-} from "./subdivision-strategies";
+import { distanceBasedSubdivision } from "./subdivision-strategies";
 
+export type {
+  QuadtreeParams,
+  ShouldSubdivideContext,
+  SubdivisionStrategy,
+  Vector3Like,
+} from "./Quadtree.types";
 export {
   computeScreenSpaceInfo,
   distanceBasedSubdivision,
   screenSpaceSubdivision,
 } from "./subdivision-strategies";
-export type {
-  ScreenSpaceInfo,
-  SubdivisionContext,
-  SubdivisionStrategy,
-} from "./subdivision-strategies";
-
-export interface QuadtreeParams {
-  maxLevel: number;
-  rootSize: number;
-  minNodeSize: number;
-  origin: THREE.Vector3;
-  maxNodes: number;
-}
-
-const tempVector3 = new THREE.Vector3();
-const tempBox3 = new THREE.Box3();
-const tempMin = new THREE.Vector3();
-const tempMax = new THREE.Vector3();
+export type { ScreenSpaceInfo } from "./subdivision-strategies";
 
 export class Quadtree {
   private nodeCount = 0;
   private deepestLevel = 0;
   private config: QuadtreeParams;
   private nodeView: QuadtreeNodeView;
-  private subdivisionStrategy: SubdivisionStrategy;
-
+  subdivisionStrategy: SubdivisionStrategy;
   // Pre-allocated buffers to avoid object creation
   private tempChildIndices: ChildIndices = [-1, -1, -1, -1];
   private tempNeighborIndices: NeighborIndices = [-1, -1, -1, -1];
@@ -65,23 +54,6 @@ export class Quadtree {
     this.initialize();
   }
 
-  /**
-   * Set the subdivision strategy.
-   * Use this to change LOD behavior at runtime.
-   *
-   * @param strategy The subdivision strategy function
-   */
-  setSubdivisionStrategy(strategy: SubdivisionStrategy): void {
-    this.subdivisionStrategy = strategy;
-  }
-
-  /**
-   * Get the current subdivision strategy
-   */
-  getSubdivisionStrategy(): SubdivisionStrategy {
-    return this.subdivisionStrategy;
-  }
-
   private initialize(): void {
     this.nodeView.clear();
     this.nodeCount = 0;
@@ -95,11 +67,11 @@ export class Quadtree {
    * Update the quadtree based on the given position and return the index
    * of the leaf node that best corresponds to the position (closest leaf).
    */
-  update(position: THREE.Vector3, frustum?: THREE.Frustum): number {
+  update(position: Vector3Like): number {
     this.reset();
 
     // Start from root node and capture the closest leaf index
-    const closestLeafIndex = this.updateNode(0, position, frustum);
+    const closestLeafIndex = this.updateNode(0, position);
 
     return closestLeafIndex;
   }
@@ -108,46 +80,37 @@ export class Quadtree {
    * Recursively update a node and its children based on distance and size criteria
    * and return the closest leaf node index to the provided position.
    */
-  private updateNode(nodeIndex: number, position: THREE.Vector3, frustum?: THREE.Frustum): number {
+  private updateNode(nodeIndex: number, position: Vector3Like): number {
     const level = this.nodeView.getLevel(nodeIndex);
     const nodeSize = this.config.rootSize / (1 << level);
 
-    // Calculate node center position (matching the shader calculation)
+    // Calculate node center position
     const nodeX = this.nodeView.getX(nodeIndex);
     const nodeY = this.nodeView.getY(nodeIndex);
     const minX = this.config.origin.x + (nodeX * nodeSize - 0.5 * this.config.rootSize);
-    const minZ = this.config.origin.z + (nodeY * nodeSize - 0.5 * this.config.rootSize);
+    const minY = this.config.origin.z + (nodeY * nodeSize - 0.5 * this.config.rootSize);
     const worldX = minX + 0.5 * nodeSize;
-    const worldZ = minZ + 0.5 * nodeSize;
+    const worldY = minY + 0.5 * nodeSize;
 
-    // Frustum culling in world space.
-    // IMPORTANT: terrain can extend far above/below origin.y, so a fixed vertical
-    // bound around origin can incorrectly cull high-elevation tiles (leading to
-    // reduced subdivision on mountain peaks). We expand the vertical range by
-    // the camera/position altitude as a conservative, stable bound.
-    if (frustum) {
-      const altitude = Math.abs(position.y - this.config.origin.y);
-      const verticalHalfExtent = this.config.rootSize + altitude;
-      const minY = this.config.origin.y - verticalHalfExtent;
-      const maxY = this.config.origin.y + verticalHalfExtent;
-      tempMin.set(minX, minY, minZ);
-      tempMax.set(minX + nodeSize, maxY, minZ + nodeSize);
-      tempBox3.set(tempMin, tempMax);
-      if (!frustum.intersectsBox(tempBox3)) {
-        // Mark node as not active
-        this.nodeView.setLeaf(nodeIndex, false);
-        return -1;
-      }
-    }
+    const dx = position.x - worldX;
+    const dy = position.y - this.config.origin.y;
+    const dz = position.z - worldY;
+    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
 
-    // adjust position.y to be origin.y + camera elevation,
-    // so this effectively measures distance from the terrain surface.
-    // Standing on a 500m mountain with camera at 502m passes adjustedY = origin.y + 2,
-    // giving the same subdivision as standing on flat ground at height 2.
-    tempVector3.set(worldX, this.config.origin.y, worldZ);
-    const distance = position.distanceTo(tempVector3);
-
-    const shouldSubdivide = this.shouldSubdivide(level, distance, nodeSize);
+    const shouldSubdivide = this.shouldSubdivide(
+      this,
+      distance,
+      level,
+      nodeSize,
+      this.config.minNodeSize,
+      this.config.rootSize,
+      nodeX,
+      nodeY,
+      minX,
+      minY,
+      worldX,
+      worldY,
+    );
 
     if (shouldSubdivide && level < this.config.maxLevel) {
       // If we are out of capacity, do NOT attempt subdivision.
@@ -169,7 +132,7 @@ export class Quadtree {
       let bestDistSq = Number.POSITIVE_INFINITY;
       for (let i = 0; i < 4; i++) {
         if (children[i] !== -1) {
-          const leafIdx = this.updateNode(children[i], position, frustum);
+          const leafIdx = this.updateNode(children[i], position);
           if (leafIdx !== -1) {
             // Compute center of the returned leaf and track the closest
             const leafLevel = this.nodeView.getLevel(leafIdx);
@@ -201,15 +164,8 @@ export class Quadtree {
   /**
    * Determine if a node should be subdivided using the configured strategy
    */
-  private shouldSubdivide(level: number, distance: number, nodeSize: number): boolean {
-    const context: SubdivisionContext = {
-      level,
-      distance,
-      nodeSize,
-      minNodeSize: this.config.minNodeSize,
-      rootSize: this.config.rootSize,
-    };
-    return this.subdivisionStrategy(context);
+  private shouldSubdivide(...context: ShouldSubdivideContext): boolean {
+    return this.subdivisionStrategy(...context);
   }
 
   /**

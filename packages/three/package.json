@@ -25,6 +25,7 @@
     "build": "unbuild",
     "release": "pnpm run build && pnpm publish --access=public",
     "test": "vitest",
+    "bench": "npx tsx benchmarks/Quadtree.bench.ts",
     "lint": "oxlint -c node_modules/@config/oxlint/base.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
   },
@@ -35,8 +36,9 @@
     "@config/oxfmt": "workspace:*",
     "@config/oxlint": "workspace:*",
     "@config/typescript": "workspace:*",
+    "@types/three": "catalog:",
+    "mitata": "^1.0.34",
     "unbuild": "^3.5.0",
-    "vitest": "^4.0.16",
-    "@types/three": "catalog:"
+    "vitest": "^4.0.16"
   }
 }

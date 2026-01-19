@@ -1,25 +1,4 @@
-/**
- * Context passed to subdivision strategy functions.
- * Contains all information needed to make subdivision decisions.
- */
-export interface SubdivisionContext {
-  /** Current node's quadtree level (0 = root) */
-  level: number;
-  /** Distance from camera/position to node center in world units */
-  distance: number;
-  /** World-space size of the node (edge length) */
-  nodeSize: number;
-  /** Minimum allowed node size from config */
-  minNodeSize: number;
-  /** Root terrain size from config */
-  rootSize: number;
-}
-
-/**
- * Function type for subdivision strategies.
- * Returns true if the node should be subdivided, false otherwise.
- */
-export type SubdivisionStrategy = (context: SubdivisionContext) => boolean;
+import { ShouldSubdivideContext, SubdivisionStrategy } from "./Quadtree.types";
 
 /**
  * Screen-space projection info for LOD calculations.
@@ -45,11 +24,11 @@ export interface ScreenSpaceInfo {
  * @returns SubdivisionStrategy function
  */
 export function distanceBasedSubdivision(factor = 2): SubdivisionStrategy {
-  return (ctx: SubdivisionContext) => {
-    if (ctx.nodeSize <= ctx.minNodeSize) {
+  return (...[_quadtree, distance, _level, nodeSize, minNodeSize]: ShouldSubdivideContext) => {
+    if (nodeSize <= minNodeSize) {
       return false;
     }
-    return ctx.distance < ctx.nodeSize * factor;
+    return distance < nodeSize * factor;
   };
 }
 
@@ -84,21 +63,21 @@ export function screenSpaceSubdivision(options: {
   const targetTrianglePixels = options.targetTrianglePixels ?? 6;
   const tileSegments = options.tileSegments ?? 13;
 
-  return (ctx: SubdivisionContext) => {
+  return (...[_quadtree, distance, _level, nodeSize, minNodeSize]: ShouldSubdivideContext) => {
     // Don't subdivide if node is too small
-    if (ctx.nodeSize <= ctx.minNodeSize) {
+    if (nodeSize <= minNodeSize) {
       return false;
     }
 
     const screenInfo = options.getScreenSpaceInfo();
     if (!screenInfo) {
-      return ctx.distance < ctx.nodeSize * 2;
+      return distance < nodeSize * 2;
     }
 
     // Calculate screen-space size of the tile
     // screenSize = (worldSize / distance) * projectionFactor
-    const safeDistance = Math.max(ctx.distance, 0.001); // Prevent division by zero
-    const tileScreenSize = (ctx.nodeSize / safeDistance) * screenInfo.projectionFactor;
+    const safeDistance = Math.max(distance, 0.001); // Prevent division by zero
+    const tileScreenSize = (nodeSize / safeDistance) * screenInfo.projectionFactor;
 
     // Calculate the screen-space size of each triangle
     // triangleSize = tileScreenSize / tileSegments

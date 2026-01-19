@@ -59,8 +59,6 @@ interface QuadtreeTerrainProps {
 const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
   const { camera } = useThree();
   const instancedMeshRef = useRef<THREE.InstancedMesh>(null);
-  const frustum = useRef(new THREE.Frustum());
-  const projScreenMatrix = useRef(new THREE.Matrix4());
   const tempMatrix = useRef(new THREE.Matrix4());
   const tempColor = useRef(new THREE.Color());
 
@@ -201,12 +199,8 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
       camera.lookAt(0, 0, 0);
     }
 
-    // Update frustum
-    projScreenMatrix.current.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    frustum.current.setFromProjectionMatrix(projScreenMatrix.current);
-
     // Update quadtree
-    quadtree.update(camera.position, frustum.current);
+    quadtree.update(camera.position);
 
     // Get leaf nodes and update instances
     const leaves = quadtree.getLeafNodes();
