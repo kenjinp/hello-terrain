@@ -47,6 +47,8 @@ jobs:
         run: pnpm -r --filter './packages/**' build
 
       - name: Build docs
+        env:
+          NEXT_PUBLIC_SITE_URL: https://hello-terrain.kenny.wtf
         run: |
           cd apps/docs
           pnpm build

@@ -37,7 +37,6 @@ export function Logo({ size = "md" }: LogoProps) {
       <path
         d="M4 4c0-1.1.9-2 2-2h12c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2H8.83L5.59 20.17A1 1 0 0 1 4 19.41V4z"
         fill="#6dd1ed"
-        opacity="0.85"
       />
       {/* Mountain emoji in the center */}
       <text

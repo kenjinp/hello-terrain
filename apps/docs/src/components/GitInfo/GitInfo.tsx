@@ -46,11 +46,11 @@ export const GitInfo = ({
     <Link
       href={githubCommitUrl}
       external
-      className="flex justify-between items-center gap-2 text-sm font-mono"
+      className="flex justify-between items-center gap-2 font-mono"
     >
-      <span className="font-bold">
+      <b>
         commit: {commitInfo.shortHash} {formatDate(commitInfo.date)}
-      </span>
+      </b>
     </Link>
   );
 };

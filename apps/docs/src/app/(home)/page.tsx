@@ -1,5 +1,25 @@
 import { Logo } from "@/components/Logo/Logo";
+import { getHomePageImage, homePages } from "@/lib/home-pages";
+import type { Metadata } from "next";
 import Link from "next/link";
+
+const { title, description } = homePages.home;
+
+export const metadata: Metadata = {
+  title,
+  description,
+  openGraph: {
+    title,
+    description,
+    images: [getHomePageImage("home")],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
+    images: [getHomePageImage("home")],
+  },
+};
 
 export default function HomePage() {
   return (

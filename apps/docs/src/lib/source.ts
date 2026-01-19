@@ -1,5 +1,5 @@
 import { docs } from "@/.source";
-import { loader } from "fumadocs-core/source";
+import { loader, type InferPageType } from "fumadocs-core/source";
 
 // See https://fumadocs.vercel.app/docs/headless/source-api for more info
 export const docsSource = loader({
@@ -7,3 +7,11 @@ export const docsSource = loader({
   baseUrl: "/",
   source: docs.toFumadocsSource(),
 });
+
+export function getPageImage(page: InferPageType<typeof docsSource>) {
+  const segments = [...page.slugs, "image.webp"];
+  return {
+    segments,
+    url: `/og/docs/${segments.join("/")}`,
+  };
+}

@@ -1,5 +1,25 @@
+import { getHomePageImage, homePages } from "@/lib/home-pages";
 import { Mail } from "lucide-react";
+import type { Metadata } from "next";
 import Link from "next/link";
+
+const { title, description } = homePages.about;
+
+export const metadata: Metadata = {
+  title: `${title} | Hello Terrain`,
+  description,
+  openGraph: {
+    title,
+    description,
+    images: [getHomePageImage("about")],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${title} | Hello Terrain`,
+    description,
+    images: [getHomePageImage("about")],
+  },
+};
 
 // Bluesky icon - not available in lucide-react (brand icon)
 const BlueskyIcon = ({ size = 18 }: { size?: number }) => (

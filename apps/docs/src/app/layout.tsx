@@ -7,6 +7,7 @@ import type { Metadata } from "next";
 import { Lato, Lisu_Bosa } from "next/font/google";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
   icons: {
     icon: "/assets/logo.svg",
   },

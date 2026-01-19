@@ -1,4 +1,4 @@
-import { docsSource } from "@/lib/source";
+import { docsSource, getPageImage } from "@/lib/source";
 import { getMDXComponents } from "@/mdx-components";
 import { PageFooter } from "fumadocs-ui/layouts/docs/page";
 import { createRelativeLink } from "fumadocs-ui/mdx";
@@ -51,5 +51,8 @@ export async function generateMetadata(
   return {
     title: page.data.title,
     description: page.data.description,
+    openGraph: {
+      images: getPageImage(page).url,
+    },
   };
 }

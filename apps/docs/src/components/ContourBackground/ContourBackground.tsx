@@ -47,7 +47,7 @@ const defaultOptions: Required<ContourBackgroundOptions> = {
   octaves: 10,
   depthFade: 0.4,
   mouseParallax: 0.15,
-  gyroInfluence: 0.3,
+  gyroInfluence: 0.6,
 };
 
 // Context to pass options to the plane component
