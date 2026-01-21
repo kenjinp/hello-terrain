@@ -13,7 +13,7 @@ import Scene from "@/examples/QuadtreeScene"
 
 The `Quadtree` class provides dynamic level-of-detail (LOD) subdivision for terrain rendering. It recursively subdivides terrain tiles based on position's distance to node centers, which can be used to ensure higher detail near the viewer and lower detail in the distance.
 
-The quadtree operates in 2D space (X/Z plane) and supports customizable subdivision strategies and efficient buffer-based storage for GPU-friendly data access.
+The quadtree operates in 2D space (X/Z plane) and supports efficient buffer-based storage for GPU-friendly data access.
 
 
 ## Constructor
@@ -85,6 +85,52 @@ quadtree.subdivisionStrategy = screenSpaceSubdivision({
 });
 ```
 
+### findNeighbor
+
+Finds the adjacent node(s) in a given direction. Returns a single index, an array of indices (for finer neighbors), or `0xFFFF` if at boundary.
+
+```ts
+import { Direction } from "@hello-terrain/three";
+
+const leftNeighbor = quadtree.findNeighbor(nodeIndex, Direction.LEFT);
+const rightNeighbor = quadtree.findNeighbor(nodeIndex, Direction.RIGHT);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `nodeIndex` | `number` | Index of the node to find neighbors for |
+| `direction` | `Direction` | `Direction.LEFT`, `RIGHT`, `TOP`, or `BOTTOM` |
+
+**Returns**: `number | number[]` - Single neighbor index, array of finer neighbor indices, or `0xFFFF` (empty sentinel).
+
+### findAllNeighbors
+
+Finds all four neighbors of a node at once.
+
+```ts
+const neighbors = quadtree.findAllNeighbors(nodeIndex);
+console.log(neighbors.left);   // number | number[]
+console.log(neighbors.right);  // number | number[]
+console.log(neighbors.top);    // number | number[]
+console.log(neighbors.bottom); // number | number[]
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `nodeIndex` | `number` | Index of the node to find neighbors for |
+
+**Returns**: `NeighborResult` - Object with `left`, `right`, `top`, `bottom` properties.
+
+### getSpatialIndex
+
+Returns the spatial index used for O(1) neighbor lookups. Useful for advanced use cases or GPU upload.
+
+```ts
+const spatialIndex = quadtree.getSpatialIndex();
+const { keys, values, size } = spatialIndex.getBuffers();
+// keys: Uint32Array, values: Uint16Array
+```
+
 ### Other Methods
 
 | Method | Returns | Description |
@@ -95,6 +141,7 @@ quadtree.subdivisionStrategy = screenSpaceSubdivision({
 | `getConfig()` | `QuadtreeParams` | Current configuration |
 | `setConfig(config, reset?)` | `void` | Updates configuration. Pass `reset: true` to reinitialize the tree. |
 | `getNodeView()` | `QuadtreeNodeView` | Direct access to the underlying buffer view |
+| `getSpatialIndex()` | `SpatialIndex` | Typed array spatial index for neighbor lookups |
 | `reset()` | `void` | Clears the tree and recreates the root node |
 | `destroy()` | `void` | Releases all internal resources |
 
@@ -230,6 +277,60 @@ function updateQuadtree() {
 }
 ```
 
+## Neighbor Finding
+
+The quadtree provides O(1) neighbor lookups using a typed-array spatial index. This is essential for LOD stitching—connecting terrain tiles at different levels of detail without visible seams.
+
+### Direction Enum
+
+```ts
+import { Direction } from "@hello-terrain/three";
+
+Direction.LEFT   // 0 - Adjacent cell to the left (−X)
+Direction.RIGHT  // 1 - Adjacent cell to the right (+X)
+Direction.TOP    // 2 - Adjacent cell above (−Z)
+Direction.BOTTOM // 3 - Adjacent cell below (+Z)
+```
+
+### Cross-Level Neighbors
+
+Neighbors can exist at different levels of detail:
+
+- **Same level**: Direct 1:1 neighbor relationship
+- **Coarser neighbor**: A larger tile containing the adjacent area
+- **Finer neighbors**: Multiple smaller tiles along the shared edge
+
+```ts
+const neighbors = quadtree.findAllNeighbors(leafIndex);
+
+if (Array.isArray(neighbors.left)) {
+  // Multiple finer neighbors - need to stitch to all of them
+  console.log(`${neighbors.left.length} smaller tiles on left edge`);
+} else if (neighbors.left === 0xFFFF) {
+  // At boundary - no neighbor exists
+} else {
+  // Single neighbor (same or coarser level)
+  const neighborLevel = nodeView.getLevel(neighbors.left);
+}
+```
+
+### Spatial Index
+
+The spatial index uses typed arrays for GPU compatibility:
+
+```ts
+const spatialIndex = quadtree.getSpatialIndex();
+
+// Get raw buffers for GPU upload
+const { keys, values, size } = spatialIndex.getBuffers();
+// keys: Uint32Array - packed (level, x, y) coordinates
+// values: Uint16Array - node indices
+// size: number - hash table size
+
+// Manual lookup (usually not needed)
+const nodeIndex = spatialIndex.lookup(level, x, y);
+```
+
 ## Usage
 
 ### React Three Fiber
@@ -309,28 +410,88 @@ The `QuadtreeNodeView` class manages the underlying typed array buffers that sto
 ```ts
 const nodeView = quadtree.getNodeView();
 const buffers = nodeView.getBuffers();
-
-// buffers.nodeBuffer - Int32Array with level, x, y, active per node
-// buffers.childrenIndicesBuffer - Uint16Array with child indices
-// buffers.neighborsIndicesBuffer - Uint16Array with neighbor indices  
-// buffers.leafNodeMask - Uint8Array marking leaf nodes
 ```
 
-### Node Properties
+## Buffer Structures
 
-Each node stores:
-- **level**: Subdivision depth (0 = root)
-- **x, y**: Grid coordinates at this level
-- **children**: Indices of four child nodes (or sentinel value if leaf)
-- **neighbors**: Indices of adjacent nodes for seamless LOD transitions
-- **leaf**: Whether this node should be rendered
+The quadtree uses several typed array buffers to store node data efficiently. This structure-of-arrays (SoA) layout enables cache-friendly access patterns and direct GPU uploads without data transformation.
 
-## Performance Tips
+### nodeBuffer
 
-1. **Choose maxNodes wisely**: Too small limits detail; too large wastes memory. Start with 4096 for medium terrains.
+**Type:** `Int32Array` | **Stride:** 4 | **Size:** `maxNodes × 4`
 
-2. **Prefer screen-space subdivision**: It provides consistent visual quality and automatically adapts to screen resolution.
+Stores the core metadata for each node. This is the primary buffer for node identification and spatial positioning.
 
-3. **Reuse the quadtree**: Don't recreate it each frame. Call `update()` to refresh the subdivision.
+| Offset | Property | Type      | Description                                      |
+|--------|----------|-----------|--------------------------------------------------|
+| `+0`   | `level`  | `Int32`   | Subdivision depth (0 = root)                     |
+| `+1`   | `x`      | `Int32`   | Grid coordinate X at this level                  |
+| `+2`   | `y`      | `Int32`   | Grid coordinate Y at this level                  |
+| `+3`   | `leaf`   | `Int32`   | Whether this node is a leaf (1) or branch (0)    |
 
-4. **Access buffers directly**: For instanced rendering, use `getActiveLeafNodeIndices()` instead of `getLeafNodes()` to avoid allocations.
+**Usage:** Node world position calculation, level-of-detail determination, GPU vertex shader transforms.
+
+### childrenIndicesBuffer
+
+**Type:** `Uint16Array` | **Stride:** 4 | **Size:** `maxNodes × 4`
+
+Stores indices to child nodes for tree traversal. Uses the sentinel value `0xFFFF` to indicate no child (leaf nodes).
+
+| Offset | Property     | Type     | Description                          |
+|--------|--------------|----------|--------------------------------------|
+| `+0`   | `children[0]`| `Uint16` | Top-left child index                 |
+| `+1`   | `children[1]`| `Uint16` | Top-right child index                |
+| `+2`   | `children[2]`| `Uint16` | Bottom-left child index              |
+| `+3`   | `children[3]`| `Uint16` | Bottom-right child index             |
+
+**Usage:** Tree traversal, subdivision operations, parent-child relationship queries.
+
+### neighborsIndicesBuffer
+
+**Type:** `Uint16Array` | **Stride:** 4 | **Size:** `maxNodes × 4`
+
+Stores indices to neighboring nodes for LOD stitching. Uses the sentinel value `0xFFFF` to indicate no neighbor (edge of terrain or not yet computed).
+
+| Offset | Property      | Type     | Description                          |
+|--------|---------------|----------|--------------------------------------|
+| `+0`   | `neighbors[0]`| `Uint16` | Left neighbor index                  |
+| `+1`   | `neighbors[1]`| `Uint16` | Right neighbor index                 |
+| `+2`   | `neighbors[2]`| `Uint16` | Top neighbor index                   |
+| `+3`   | `neighbors[3]`| `Uint16` | Bottom neighbor index                |
+
+**Usage:** Seamless LOD transitions, edge stitching to prevent T-junctions, skirt generation.
+
+### leafNodeMask
+
+**Type:** `Uint8Array` | **Stride:** 1 | **Size:** `maxNodes`
+
+A bitmask indicating which nodes are active leaves that should be rendered. Provides O(1) leaf status lookup.
+
+| Value | Meaning                              |
+|-------|--------------------------------------|
+| `0`   | Branch node (not rendered directly)  |
+| `1`   | Leaf node (should be rendered)       |
+
+**Usage:** Fast leaf filtering, GPU instancing, draw call generation.
+
+### leafNodeCountBuffer
+
+**Type:** `Uint16Array` | **Size:** 1
+
+Single-element buffer storing the total count of active leaf nodes. Updated automatically when nodes are marked as leaves.
+
+**Usage:** Instance count for GPU draw calls, progress tracking, debugging.
+
+### activeLeafIndices
+
+**Type:** `Uint16Array` | **Size:** `maxNodes`
+
+A compact list of indices pointing to all currently active leaf nodes. Enables iteration over only renderable nodes without scanning the entire tree.
+
+**Usage:** Efficient leaf iteration, GPU indirect draws, culling passes.
+
+---
+
+<Callout>
+  All indices use `Uint16`, supporting up to 65,534 nodes (with `0xFFFF` reserved as the empty sentinel). For larger terrains, consider using multiple quadtree instances or tiling strategies.
+</Callout>

@@ -1,5 +1,6 @@
 import { bench, group, run, summary } from "mitata";
-import { Quadtree } from "../src/quadtree/Quadtree";
+import { SpatialIndex, buildSpatialIndex, encodeKey } from "../src/quadtree/find-neighbors";
+import { Direction, Quadtree } from "../src/quadtree/Quadtree";
 import { QuadtreeNodeView } from "../src/quadtree/QuadtreeNodeView";
 import {
   computeScreenSpaceInfo,
@@ -310,6 +311,125 @@ group("Memory patterns", () => {
     const view = new QuadtreeNodeView(4096);
     view.getBuffers();
     view.destroy();
+  });
+});
+
+// ============================================================
+// Neighbor Finding Benchmarks
+// ============================================================
+summary(() => {
+  group("Neighbor finding - SpatialIndex", () => {
+    const spatialIndex = new SpatialIndex(4096);
+
+    // Pre-populate with some entries
+    for (let i = 0; i < 1000; i++) {
+      spatialIndex.insert(i % 8, i % 64, Math.floor(i / 64) % 64, i);
+    }
+
+    bench("encodeKey()", () => {
+      encodeKey(5, 32, 48);
+    });
+
+    bench("SpatialIndex.insert()", () => {
+      spatialIndex.insert(3, 10, 20, 500);
+    });
+
+    bench("SpatialIndex.lookup() - hit", () => {
+      spatialIndex.lookup(3, 10, 20);
+    });
+
+    bench("SpatialIndex.lookup() - miss", () => {
+      spatialIndex.lookup(7, 99, 99);
+    });
+
+    bench("SpatialIndex.has()", () => {
+      spatialIndex.has(3, 10, 20);
+    });
+
+    bench("SpatialIndex.clear()", () => {
+      spatialIndex.clear();
+    });
+
+    bench("new SpatialIndex(4096)", () => {
+      const idx = new SpatialIndex(4096);
+      idx.clear(); // prevent optimization
+    });
+  });
+});
+
+summary(() => {
+  group("Neighbor finding - buildSpatialIndex", () => {
+    // Setup quadtree with subdivision
+    const qt = new Quadtree(defaultConfig);
+    qt.update(centerPosition);
+    const nodeView = qt.getNodeView();
+    const nodeCount = qt.getNodeCount();
+    const spatialIndex = new SpatialIndex(defaultConfig.maxNodes);
+
+    bench("buildSpatialIndex() (reuse buffer)", () => {
+      buildSpatialIndex(nodeView, nodeCount, spatialIndex);
+    });
+
+    bench("buildSpatialIndex() (new buffer)", () => {
+      buildSpatialIndex(nodeView, nodeCount);
+    });
+  });
+});
+
+summary(() => {
+  group("Neighbor finding - findNeighbor", () => {
+    // Setup subdivided quadtree
+    quadtree = new Quadtree(defaultConfig);
+    quadtree.update(centerPosition);
+
+    // Get a middle node index for testing
+    const { indices, count } = quadtree.getActiveLeafNodeIndices();
+    const middleLeafIdx = indices[Math.floor(count / 2)];
+
+    bench("findNeighbor() - LEFT (first call, builds index)", () => {
+      // This will build the spatial index on first call
+      quadtree.update(centerPosition); // Reset to force rebuild
+      quadtree.findNeighbor(middleLeafIdx, Direction.LEFT);
+    });
+
+    bench("findNeighbor() - LEFT (cached index)", () => {
+      quadtree.findNeighbor(middleLeafIdx, Direction.LEFT);
+    });
+
+    bench("findNeighbor() - RIGHT", () => {
+      quadtree.findNeighbor(middleLeafIdx, Direction.RIGHT);
+    });
+
+    bench("findNeighbor() - TOP", () => {
+      quadtree.findNeighbor(middleLeafIdx, Direction.TOP);
+    });
+
+    bench("findNeighbor() - BOTTOM", () => {
+      quadtree.findNeighbor(middleLeafIdx, Direction.BOTTOM);
+    });
+
+    bench("findAllNeighbors()", () => {
+      quadtree.findAllNeighbors(middleLeafIdx);
+    });
+
+    bench("getSpatialIndex()", () => {
+      quadtree.getSpatialIndex();
+    });
+  });
+});
+
+summary(() => {
+  group("Neighbor finding - all leaves", () => {
+    // Setup subdivided quadtree
+    quadtree = new Quadtree(defaultConfig);
+    quadtree.update(centerPosition);
+    const { indices, count } = quadtree.getActiveLeafNodeIndices();
+
+    bench(`findAllNeighbors() for all ${count} leaves`, () => {
+      for (let i = 0; i < count; i++) {
+        quadtree.findAllNeighbors(indices[i]);
+      }
+    });
   });
 });
 

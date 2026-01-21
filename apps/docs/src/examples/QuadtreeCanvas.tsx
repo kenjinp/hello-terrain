@@ -1,6 +1,6 @@
 "use client";
 
-import { Quadtree, type QuadtreeParams } from "@hello-terrain/three";
+import { Quadtree, type NeighborResult, type QuadtreeParams } from "@hello-terrain/three";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
 
@@ -28,13 +28,15 @@ interface NodeRect {
   worldX: number;
   worldY: number;
   size: number;
-  neighbors: [number, number, number, number];
   isLeaf: boolean;
 }
 
 interface HoveredInfo {
   node: NodeRect;
-  neighbors: (NodeRect | null)[];
+  /** Each direction can have one neighbor, multiple (finer), or none */
+  neighbors: (NodeRect | NodeRect[] | null)[];
+  /** Raw neighbor data for display */
+  rawNeighbors: NeighborResult;
 }
 
 const EMPTY_SENTINEL = 0xffff;
@@ -88,7 +90,6 @@ export default function QuadtreeCanvas() {
       const x = nodeView.getX(i);
       const y = nodeView.getY(i);
       const size = config.rootSize / (1 << level);
-      const neighbors = nodeView.getNeighbors(i);
       const isLeaf = nodeView.getLeaf(i);
 
       // Calculate world position (top-left corner)
@@ -103,7 +104,6 @@ export default function QuadtreeCanvas() {
         worldX,
         worldY,
         size,
-        neighbors,
         isLeaf,
       });
     }
@@ -253,23 +253,36 @@ export default function QuadtreeCanvas() {
     if (hoveredInfo) {
       const { node, neighbors } = hoveredInfo;
 
+      // Helper to draw a single neighbor highlight
+      const drawNeighborHighlight = (neighbor: NodeRect, dirIndex: number) => {
+        const [nx, ny] = worldToCanvas(neighbor.worldX, neighbor.worldY);
+        const nsize = (neighbor.size / config.rootSize) * drawSize;
+
+        ctx.strokeStyle = NEIGHBOR_COLORS[dirIndex];
+        ctx.lineWidth = 3;
+        ctx.strokeRect(nx + 2, ny + 2, nsize - 4, nsize - 4);
+
+        // Draw direction indicator
+        ctx.fillStyle = NEIGHBOR_COLORS[dirIndex];
+        ctx.font = "bold 10px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(NEIGHBOR_LABELS[dirIndex][0], nx + nsize / 2, ny + 10);
+      };
+
       // Draw neighbor highlights first
       for (let i = 0; i < 4; i++) {
         const neighbor = neighbors[i];
         if (neighbor) {
-          const [nx, ny] = worldToCanvas(neighbor.worldX, neighbor.worldY);
-          const nsize = (neighbor.size / config.rootSize) * drawSize;
-
-          ctx.strokeStyle = NEIGHBOR_COLORS[i];
-          ctx.lineWidth = 3;
-          ctx.strokeRect(nx + 2, ny + 2, nsize - 4, nsize - 4);
-
-          // Draw direction indicator
-          ctx.fillStyle = NEIGHBOR_COLORS[i];
-          ctx.font = "bold 10px monospace";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText(NEIGHBOR_LABELS[i][0], nx + nsize / 2, ny + 10);
+          if (Array.isArray(neighbor)) {
+            // Multiple finer neighbors
+            for (const n of neighbor) {
+              drawNeighborHighlight(n, i);
+            }
+          } else {
+            // Single neighbor
+            drawNeighborHighlight(neighbor, i);
+          }
         }
       }
 
@@ -294,11 +307,30 @@ export default function QuadtreeCanvas() {
     setLeafCount(nodes.filter((n) => n.isLeaf).length);
   }, [canvasSize, version, hoveredInfo, worldToCanvas, getNodeRects, config.rootSize]);
 
+  // Helper to resolve neighbor indices to NodeRects
+  const resolveNeighbor = useCallback(
+    (neighborData: number | number[], nodes: NodeRect[]): NodeRect | NodeRect[] | null => {
+      if (neighborData === EMPTY_SENTINEL) return null;
+
+      if (Array.isArray(neighborData)) {
+        // Finer neighbors - array of indices
+        return neighborData
+          .map((idx) => nodes.find((n) => n.index === idx))
+          .filter((n): n is NodeRect => n !== undefined);
+      }
+
+      // Single neighbor
+      return nodes.find((n) => n.index === neighborData) ?? null;
+    },
+    [],
+  );
+
   // Handle mouse move
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       const canvas = canvasRef.current;
-      if (!canvas) return;
+      const quadtree = quadtreeRef.current;
+      if (!canvas || !quadtree) return;
 
       const rect = canvas.getBoundingClientRect();
       const cx = e.clientX - rect.left;
@@ -309,18 +341,23 @@ export default function QuadtreeCanvas() {
       const node = findNodeAt(wx, wy, nodes);
 
       if (node) {
-        // Find neighbor nodes
-        const neighborNodes = node.neighbors.map((neighborIndex) => {
-          if (neighborIndex === EMPTY_SENTINEL) return null;
-          return nodes.find((n) => n.index === neighborIndex) ?? null;
-        });
+        // Use the new findAllNeighbors API
+        const rawNeighbors = quadtree.findAllNeighbors(node.index);
 
-        setHoveredInfo({ node, neighbors: neighborNodes });
+        // Convert to array in order: [left, right, top, bottom]
+        const neighborNodes = [
+          resolveNeighbor(rawNeighbors.left, nodes),
+          resolveNeighbor(rawNeighbors.right, nodes),
+          resolveNeighbor(rawNeighbors.top, nodes),
+          resolveNeighbor(rawNeighbors.bottom, nodes),
+        ];
+
+        setHoveredInfo({ node, neighbors: neighborNodes, rawNeighbors });
       } else {
         setHoveredInfo(null);
       }
     },
-    [canvasToWorld, getNodeRects, findNodeAt],
+    [canvasToWorld, getNodeRects, findNodeAt, resolveNeighbor],
   );
 
   // Handle click - subdivide at click position all the way to maxLevel
@@ -416,8 +453,20 @@ export default function QuadtreeCanvas() {
           <div className="mt-2 font-bold">Neighbors</div>
           <div className="space-y-1">
             {NEIGHBOR_LABELS.map((label, i) => {
-              const neighborIdx = hoveredInfo.node.neighbors[i];
-              const hasNeighbor = neighborIdx !== EMPTY_SENTINEL;
+              const rawKeys = ["left", "right", "top", "bottom"] as const;
+              const rawValue = hoveredInfo.rawNeighbors[rawKeys[i]];
+              const isArray = Array.isArray(rawValue);
+              const isEmpty = rawValue === EMPTY_SENTINEL;
+
+              let displayValue: string;
+              if (isEmpty) {
+                displayValue = "none";
+              } else if (isArray) {
+                displayValue = `[${rawValue.join(", ")}]`;
+              } else {
+                displayValue = String(rawValue);
+              }
+
               return (
                 <div key={label} className="flex items-center gap-2">
                   <div
@@ -425,12 +474,13 @@ export default function QuadtreeCanvas() {
                     style={{ backgroundColor: NEIGHBOR_COLORS[i] }}
                   />
                   <span>
-                    [{i}] {label}:{" "}
-                    {hasNeighbor ? (
-                      <span className="text-white">{neighborIdx}</span>
+                    {label}:{" "}
+                    {isEmpty ? (
+                      <span className="text-gray-500">{displayValue}</span>
                     ) : (
-                      <span className="text-gray-500">none</span>
+                      <span className="text-white">{displayValue}</span>
                     )}
+                    {isArray && <span className="text-yellow-400 ml-1">(finer)</span>}
                   </span>
                 </div>
               );

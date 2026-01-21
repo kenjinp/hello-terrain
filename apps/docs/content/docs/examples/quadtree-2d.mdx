@@ -22,19 +22,23 @@ This interactive 2D visualization demonstrates how the `Quadtree` from `@hello-t
 
 ## Understanding Neighbors
 
-Each quadtree node maintains references to its four neighbors:
+The quadtree provides O(1) neighbor lookup using a spatial index. Each node can find its neighbors in all four cardinal directions:
 
-| Index | Direction | Color |
-|-------|-----------|-------|
-| 0 | Left | Red |
-| 1 | Right | Blue |
-| 2 | Top | Green |
-| 3 | Bottom | Purple |
+| Direction | Color | Description |
+|-----------|-------|-------------|
+| Left | Red | Adjacent cell to the left (−X) |
+| Right | Blue | Adjacent cell to the right (+X) |
+| Top | Green | Adjacent cell above (−Y) |
+| Bottom | Purple | Adjacent cell below (+Y) |
 
-Neighbors are stored as indices into the quadtree's internal buffer. When a neighbor doesn't exist (e.g., at the edge of the terrain), the value is set to `0xFFFF` (displayed as "none").
+**Key features of neighbor finding:**
+
+- **Cross-level neighbors**: Finds neighbors even when they're at different levels of detail (coarser or finer)
+- **Boundary detection**: Returns empty sentinel (`0xFFFF`) for edges of the quadtree
+- **Finer neighbors**: When looking at a large tile whose neighbor has been subdivided, returns all the smaller tiles along the shared edge
 
 <Callout>
-Neighbors are only stored for siblings of the same parent node! In order to find all neighbors of a node regardless of ancestry, an algorithm is being implemented for both CPU and GPU (WIP)
+The neighbor finding algorithm uses a typed-array spatial index for O(1) lookup performance, making it suitable for GPU upload and real-time terrain stitching.
 </Callout>
 
 ## Node Indexing
@@ -59,7 +63,7 @@ External neighbors (outside the parent's bounds) are only set when those nodes e
 ## Code Example
 
 ```tsx
-import { Quadtree } from "@hello-terrain/three";
+import { Quadtree, Direction } from "@hello-terrain/three";
 
 const quadtree = new Quadtree({
   maxLevel: 6,
@@ -72,13 +76,21 @@ const quadtree = new Quadtree({
 // Update with a position to trigger subdivision
 quadtree.update({ x: 0.1, y: 0, z: 0.2 });
 
-// Access neighbor information
-const nodeView = quadtree.getNodeView();
-const neighbors = nodeView.getNeighbors(5); // [left, right, top, bottom]
-console.log("Left neighbor:", neighbors[0]);
-console.log("Right neighbor:", neighbors[1]);
-console.log("Top neighbor:", neighbors[2]);
-console.log("Bottom neighbor:", neighbors[3]);
+// Find neighbors for a specific node (works across different levels)
+const leftNeighbor = quadtree.findNeighbor(5, Direction.LEFT);
+const rightNeighbor = quadtree.findNeighbor(5, Direction.RIGHT);
+
+// Or get all neighbors at once
+const allNeighbors = quadtree.findAllNeighbors(5);
+console.log("Left:", allNeighbors.left);   // number | number[] | 0xFFFF
+console.log("Right:", allNeighbors.right);
+console.log("Top:", allNeighbors.top);
+console.log("Bottom:", allNeighbors.bottom);
+
+// Neighbors can be:
+// - A single index (same or coarser level neighbor)
+// - An array of indices (finer level neighbors along the edge)
+// - 0xFFFF (EMPTY_SENTINEL_VALUE) if at boundary
 ```
 
 ## Related

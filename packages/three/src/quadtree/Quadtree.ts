@@ -10,6 +10,14 @@ import {
   type NeighborIndices,
   QuadtreeNodeView,
 } from "./QuadtreeNodeView";
+import {
+  buildSpatialIndex,
+  type Direction,
+  findAllNeighbors as findAllNeighborsImpl,
+  findNeighbor as findNeighborImpl,
+  type NeighborResult,
+  SpatialIndex,
+} from "./find-neighbors";
 import { distanceBasedSubdivision } from "./subdivision-strategies";
 
 export type {
@@ -18,6 +26,7 @@ export type {
   SubdivisionStrategy,
   Vector3Like,
 } from "./Quadtree.types";
+export { Direction, SpatialIndex, type NeighborResult } from "./find-neighbors";
 export {
   computeScreenSpaceInfo,
   distanceBasedSubdivision,
@@ -30,6 +39,8 @@ export class Quadtree {
   private deepestLevel = 0;
   private config: QuadtreeParams;
   private nodeView: QuadtreeNodeView;
+  private spatialIndex: SpatialIndex;
+  private spatialIndexDirty = true;
   subdivisionStrategy: SubdivisionStrategy;
   // Pre-allocated buffers to avoid object creation
   private tempChildIndices: ChildIndices = [-1, -1, -1, -1];
@@ -51,6 +62,7 @@ export class Quadtree {
     this.config = config;
     this.subdivisionStrategy = subdivisionStrategy ?? distanceBasedSubdivision(2);
     this.nodeView = nodeView ?? new QuadtreeNodeView(config.maxNodes);
+    this.spatialIndex = new SpatialIndex(config.maxNodes);
     this.initialize();
   }
 
@@ -72,6 +84,9 @@ export class Quadtree {
 
     // Start from root node and capture the closest leaf index
     const closestLeafIndex = this.updateNode(0, position);
+
+    // Mark spatial index as needing rebuild
+    this.spatialIndexDirty = true;
 
     return closestLeafIndex;
   }
@@ -339,10 +354,54 @@ export class Quadtree {
   }
 
   /**
+   * Get the SpatialIndex instance for direct access.
+   * Rebuilds the index if it's dirty (after update).
+   */
+  getSpatialIndex(): SpatialIndex {
+    this.ensureSpatialIndex();
+    return this.spatialIndex;
+  }
+
+  /**
+   * Ensure the spatial index is up to date
+   */
+  private ensureSpatialIndex(): void {
+    if (this.spatialIndexDirty) {
+      buildSpatialIndex(this.nodeView, this.nodeCount, this.spatialIndex);
+      this.spatialIndexDirty = false;
+    }
+  }
+
+  /**
+   * Find the neighbor(s) of a node in a given direction.
+   * Handles neighbors at same level, coarser level (larger), or finer level (smaller).
+   *
+   * @param nodeIndex Index of the node to find neighbor for
+   * @param direction Direction to look (Direction.LEFT, RIGHT, TOP, or BOTTOM)
+   * @returns Single node index, array of node indices (for finer neighbors), or EMPTY_SENTINEL_VALUE
+   */
+  findNeighbor(nodeIndex: number, direction: Direction): number | number[] {
+    this.ensureSpatialIndex();
+    return findNeighborImpl(this.nodeView, this.spatialIndex, nodeIndex, direction);
+  }
+
+  /**
+   * Find all neighbors of a node in all four directions.
+   *
+   * @param nodeIndex Index of the node to find neighbors for
+   * @returns NeighborResult with neighbors in all four directions
+   */
+  findAllNeighbors(nodeIndex: number): NeighborResult {
+    this.ensureSpatialIndex();
+    return findAllNeighborsImpl(this.nodeView, this.spatialIndex, nodeIndex);
+  }
+
+  /**
    * Release internal resources associated with this quadtree
    */
   destroy(): void {
     this.nodeView.destroy();
+    this.spatialIndex.clear();
     this.nodeCount = 0;
     this.deepestLevel = 0;
   }

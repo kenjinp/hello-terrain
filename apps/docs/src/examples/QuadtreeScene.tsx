@@ -4,6 +4,7 @@ import {
   distanceBasedSubdivision,
   isSkirtUV,
   isSkirtVertex,
+  type NeighborResult,
   Quadtree,
   type QuadtreeParams,
   TerrainGeometry,
@@ -11,15 +12,17 @@ import {
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   abs,
+  attribute,
   float,
   Fn,
   fract,
   fwidth,
   max,
+  min,
   positionLocal,
   select,
   smoothstep,
@@ -47,20 +50,42 @@ const LEVEL_COLORS_HEX = [
 // THREE.Color versions for GPU
 const LEVEL_COLORS = LEVEL_COLORS_HEX.map((hex) => new THREE.Color(hex));
 
+// Highlight colors for hovered tile and neighbors
+const HIGHLIGHT_COLOR = new THREE.Color("#ffffff");
+const NEIGHBOR_COLORS = {
+  left: new THREE.Color("#e74c3c"), // Red
+  right: new THREE.Color("#3498db"), // Blue
+  top: new THREE.Color("#2ecc71"), // Green
+  bottom: new THREE.Color("#9b59b6"), // Purple
+};
+
+// Blend factor for highlights (0 = full base color, 1 = full highlight color)
+const HIGHLIGHT_BLEND = 1;
+
 interface TileInfo {
   count: number;
   deepestLevel: number;
 }
 
-interface QuadtreeTerrainProps {
-  onTileInfoUpdate: (info: TileInfo) => void;
+interface HoverInfo {
+  nodeIndex: number;
+  neighbors: NeighborResult;
 }
 
-const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
-  const { camera } = useThree();
+interface QuadtreeTerrainProps {
+  onTileInfoUpdate: (info: TileInfo) => void;
+  onHoverUpdate: (info: HoverInfo | null) => void;
+}
+
+const QuadtreeTerrain = ({ onTileInfoUpdate, onHoverUpdate }: QuadtreeTerrainProps) => {
+  const { camera, pointer } = useThree();
   const instancedMeshRef = useRef<THREE.InstancedMesh>(null);
   const tempMatrix = useRef(new THREE.Matrix4());
   const tempColor = useRef(new THREE.Color());
+  const raycaster = useRef(new THREE.Raycaster());
+  const hoverInfoRef = useRef<HoverInfo | null>(null);
+  const leafIndexToNodeIndexRef = useRef<Map<number, number>>(new Map());
+  const borderColorAttrRef = useRef<THREE.InstancedBufferAttribute | null>(null);
 
   const controls = useControls("Quadtree", {
     rootSize: {
@@ -130,6 +155,14 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
     [],
   );
 
+  // Create border color attribute buffer for neighbor highlighting
+  const borderColorBuffer = useMemo(() => {
+    const buffer = new Float32Array(maxNodes * 3); // RGB per instance
+    const attr = new THREE.InstancedBufferAttribute(buffer, 3);
+    attr.setUsage(THREE.DynamicDrawUsage);
+    return attr;
+  }, []);
+
   // Position node for skirt vertices
   const positionNode = useMemo(() => {
     return Fn(() => {
@@ -138,7 +171,7 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
     })();
   }, [uniforms]);
 
-  // Color node showing grid lines with pixel-perfect anti-aliasing
+  // Color node showing grid lines with pixel-perfect anti-aliasing and neighbor borders
   const colorNode = useMemo(() => {
     return Fn(() => {
       const uvCoord = uv();
@@ -177,12 +210,82 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
       const gridColor = vec3(0.15, 0.15, 0.15);
 
       const tileColor = select(isSkirtUV(segments), skirtColor, baseColor);
-      const finalColor = tileColor
+      const colorWithGrid = tileColor
         .mul(float(1).sub(gridIntensity))
         .add(gridColor.mul(gridIntensity));
-      return select(uniforms.uShowGrid, finalColor, tileColor);
+      const colorWithoutGrid = tileColor;
+
+      // Border rendering for neighbor highlighting
+      // Read border color from instance attribute (RGB, black = no border)
+      const borderColorAttr = attribute("borderColor", "vec3");
+
+      // Border width in UV space (about 1.5 grid cells wide)
+      const borderWidth = float(0.25).div(float(segments));
+
+      // Check if we're in the inner area (not skirt) - skirt UVs are outside [uvStep, 1-uvStep]
+      const isInnerArea = uvCoord.x
+        .greaterThan(uvStep)
+        .and(uvCoord.x.lessThan(float(1).sub(uvStep)))
+        .and(uvCoord.y.greaterThan(uvStep))
+        .and(uvCoord.y.lessThan(float(1).sub(uvStep)));
+
+      // Distance from inner edges (normalized to inner area)
+      const distFromLeft = innerU;
+      const distFromRight = float(1).sub(innerU);
+      const distFromBottom = innerV;
+      const distFromTop = float(1).sub(innerV);
+
+      // Minimum distance from any edge
+      const minEdgeDist = min(min(distFromLeft, distFromRight), min(distFromBottom, distFromTop));
+
+      // Anti-aliased border using fwidth
+      const borderFw = fwidth(minEdgeDist).mul(1.5);
+      const borderIntensity = smoothstep(borderWidth.add(borderFw), borderWidth, minEdgeDist);
+
+      // Check if border color is set (not black)
+      const hasBorder = borderColorAttr.x
+        .add(borderColorAttr.y)
+        .add(borderColorAttr.z)
+        .greaterThan(0.01);
+
+      // Apply border only in inner area where border color is set
+      const shouldShowBorder = isInnerArea.and(hasBorder);
+      const borderMix = select(shouldShowBorder, borderIntensity, float(0));
+
+      // Final composition: base tile -> grid lines -> border on top
+      const withGrid = select(uniforms.uShowGrid, colorWithGrid, colorWithoutGrid);
+      const finalColor = withGrid.mul(float(1).sub(borderMix)).add(borderColorAttr.mul(borderMix));
+
+      return finalColor;
     })();
   }, [uniforms]);
+
+  // Helper to check if a node index is a neighbor
+  const getNeighborDirection = useCallback(
+    (nodeIndex: number, neighbors: NeighborResult): keyof typeof NEIGHBOR_COLORS | null => {
+      for (const [dir, neighbor] of Object.entries(neighbors) as [
+        keyof NeighborResult,
+        number | number[],
+      ][]) {
+        if (Array.isArray(neighbor)) {
+          if (neighbor.includes(nodeIndex)) return dir;
+        } else if (neighbor === nodeIndex) {
+          return dir;
+        }
+      }
+      return null;
+    },
+    [],
+  );
+
+  // Set up border color attribute on geometry
+  useEffect(() => {
+    const mesh = instancedMeshRef.current;
+    if (mesh && mesh.geometry) {
+      mesh.geometry.setAttribute("borderColor", borderColorBuffer);
+      borderColorAttrRef.current = borderColorBuffer;
+    }
+  }, [borderColorBuffer]);
 
   // Update uniforms
   useFrame((state) => {
@@ -203,19 +306,30 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
     quadtree.update(camera.position);
 
     // Get leaf nodes and update instances
-    const leaves = quadtree.getLeafNodes();
+    const { indices: leafIndices, count: leafCount } = quadtree.getActiveLeafNodeIndices();
+    const nodeView = quadtree.getNodeView();
     const mesh = instancedMeshRef.current;
 
     if (!mesh) return;
 
     const config = quadtree.getConfig();
 
-    // TODO: resolve this on the GPU
-    // Update instance matrices and colors
-    leaves.forEach((leaf, index) => {
-      const nodeSize = config.rootSize / (1 << leaf.level);
-      const worldX = config.origin.x + (leaf.x * nodeSize - 0.5 * config.rootSize) + nodeSize * 0.5;
-      const worldZ = config.origin.z + (leaf.y * nodeSize - 0.5 * config.rootSize) + nodeSize * 0.5;
+    // Build mapping from instance index to node index
+    leafIndexToNodeIndexRef.current.clear();
+    for (let i = 0; i < leafCount; i++) {
+      leafIndexToNodeIndexRef.current.set(i, leafIndices[i]);
+    }
+
+    // FIRST: Update all instance matrices (before raycasting!)
+    for (let i = 0; i < leafCount; i++) {
+      const nodeIndex = leafIndices[i];
+      const level = nodeView.getLevel(nodeIndex);
+      const x = nodeView.getX(nodeIndex);
+      const y = nodeView.getY(nodeIndex);
+
+      const nodeSize = config.rootSize / (1 << level);
+      const worldX = config.origin.x + (x * nodeSize - 0.5 * config.rootSize) + nodeSize * 0.5;
+      const worldZ = config.origin.z + (y * nodeSize - 0.5 * config.rootSize) + nodeSize * 0.5;
 
       // Create transform matrix
       // Scale X and Z by nodeSize, but keep Y at 1 so skirt length is consistent
@@ -223,23 +337,102 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
       tempMatrix.current.makeScale(nodeSize, 1, nodeSize);
       tempMatrix.current.setPosition(worldX, 0, worldZ);
 
-      mesh.setMatrixAt(index, tempMatrix.current);
+      mesh.setMatrixAt(i, tempMatrix.current);
+    }
 
-      // Set color based on LOD level
-      const colorIndex = Math.min(leaf.level, LEVEL_COLORS.length - 1);
-      tempColor.current.copy(LEVEL_COLORS[colorIndex]);
-      mesh.setColorAt(index, tempColor.current);
-    });
-
-    mesh.count = leaves.length;
+    mesh.count = leafCount;
     mesh.instanceMatrix.needsUpdate = true;
+
+    // Update bounding sphere for raycasting to work properly
+    mesh.computeBoundingSphere();
+
+    // NOW raycast against updated matrices
+    raycaster.current.setFromCamera(pointer, camera);
+    const intersects = raycaster.current.intersectObject(mesh);
+    let newHoverInfo: HoverInfo | null = null;
+
+    if (intersects.length > 0 && intersects[0].instanceId !== undefined) {
+      const instanceId = intersects[0].instanceId;
+      const nodeIndex = leafIndexToNodeIndexRef.current.get(instanceId);
+      if (nodeIndex !== undefined) {
+        const neighbors = quadtree.findAllNeighbors(nodeIndex);
+        newHoverInfo = { nodeIndex, neighbors };
+      }
+    }
+
+    // Update hover state if changed
+    if (newHoverInfo?.nodeIndex !== hoverInfoRef.current?.nodeIndex) {
+      hoverInfoRef.current = newHoverInfo;
+      onHoverUpdate(newHoverInfo);
+    }
+
+    // Update instance colors and border colors based on hover state
+    const borderAttr = borderColorAttrRef.current;
+    const borderArray = borderAttr?.array as Float32Array | undefined;
+
+    for (let i = 0; i < leafCount; i++) {
+      const nodeIndex = leafIndices[i];
+      const level = nodeView.getLevel(nodeIndex);
+
+      // Get base LOD color
+      const colorIndex = Math.min(level, LEVEL_COLORS.length - 1);
+      const baseColor = LEVEL_COLORS[colorIndex];
+
+      // Determine color based on hover state
+      const hoverInfo = hoverInfoRef.current;
+      if (hoverInfo && nodeIndex === hoverInfo.nodeIndex) {
+        // Hovered tile - blend white highlight with base color
+        tempColor.current.copy(baseColor).lerp(HIGHLIGHT_COLOR, HIGHLIGHT_BLEND);
+        // Clear border for hovered tile
+        if (borderArray) {
+          borderArray[i * 3] = 0;
+          borderArray[i * 3 + 1] = 0;
+          borderArray[i * 3 + 2] = 0;
+        }
+      } else if (hoverInfo) {
+        // Check if this is a neighbor
+        const neighborDir = getNeighborDirection(nodeIndex, hoverInfo.neighbors);
+        if (neighborDir) {
+          // Keep normal LOD color for neighbor tiles
+          tempColor.current.copy(baseColor);
+          // Set border color for neighbor tiles
+          if (borderArray) {
+            const neighborColor = NEIGHBOR_COLORS[neighborDir];
+            borderArray[i * 3] = neighborColor.r;
+            borderArray[i * 3 + 1] = neighborColor.g;
+            borderArray[i * 3 + 2] = neighborColor.b;
+          }
+        } else {
+          // Normal LOD color, clear border
+          tempColor.current.copy(baseColor);
+          if (borderArray) {
+            borderArray[i * 3] = 0;
+            borderArray[i * 3 + 1] = 0;
+            borderArray[i * 3 + 2] = 0;
+          }
+        }
+      } else {
+        // No hover - normal LOD color, clear border
+        tempColor.current.copy(baseColor);
+        if (borderArray) {
+          borderArray[i * 3] = 0;
+          borderArray[i * 3 + 1] = 0;
+          borderArray[i * 3 + 2] = 0;
+        }
+      }
+      mesh.setColorAt(i, tempColor.current);
+    }
+
     if (mesh.instanceColor) {
       mesh.instanceColor.needsUpdate = true;
+    }
+    if (borderAttr) {
+      borderAttr.needsUpdate = true;
     }
 
     // Update info display
     onTileInfoUpdate({
-      count: leaves.length,
+      count: leafCount,
       deepestLevel: quadtree.getDeepestLevel(),
     });
   });
@@ -265,8 +458,18 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
   );
 };
 
+const EMPTY_SENTINEL = 0xffff;
+
+// Helper to format neighbor value for display
+const formatNeighbor = (value: number | number[]): string => {
+  if (value === EMPTY_SENTINEL) return "none";
+  if (Array.isArray(value)) return `[${value.join(", ")}]`;
+  return String(value);
+};
+
 const QuadtreeScene = () => {
   const [tileInfo, setTileInfo] = useState<TileInfo>({ count: 0, deepestLevel: 0 });
+  const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
   const maxLevel = useControls("Quadtree", {
     maxLevel: { value: 5, min: 1, max: 8, step: 1 },
   }).maxLevel;
@@ -299,7 +502,7 @@ const QuadtreeScene = () => {
       >
         <ambientLight intensity={0.4} />
         <directionalLight intensity={0.8} position={[5, 10, 5]} />
-        <QuadtreeTerrain onTileInfoUpdate={setTileInfo} />
+        <QuadtreeTerrain onTileInfoUpdate={setTileInfo} onHoverUpdate={setHoverInfo} />
         <OrbitControls makeDefault target={[0, 0, 0]} />
       </Canvas>
 
@@ -308,6 +511,31 @@ const QuadtreeScene = () => {
         <div>Tiles: {tileInfo.count}</div>
         <div>Deepest Level: {tileInfo.deepestLevel}</div>
       </div>
+
+      {/* Hover info - positioned in bottom-left */}
+      {hoverInfo && (
+        <div className="absolute bottom-3 left-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono pointer-events-none min-w-[160px]">
+          <div className="font-bold mb-1">Node {hoverInfo.nodeIndex}</div>
+          <div className="text-[11px] space-y-0.5">
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#e74c3c" }} />
+              <span>Left: {formatNeighbor(hoverInfo.neighbors.left)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#3498db" }} />
+              <span>Right: {formatNeighbor(hoverInfo.neighbors.right)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#2ecc71" }} />
+              <span>Top: {formatNeighbor(hoverInfo.neighbors.top)}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#9b59b6" }} />
+              <span>Bottom: {formatNeighbor(hoverInfo.neighbors.bottom)}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Level color legend - positioned in top-right */}
       <div className="absolute top-3 right-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-[11px] font-mono pointer-events-none">
@@ -318,6 +546,11 @@ const QuadtreeScene = () => {
             <span>Level {i}</span>
           </div>
         ))}
+      </div>
+
+      {/* Instructions - positioned in bottom-right */}
+      <div className="absolute bottom-3 right-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono pointer-events-none text-right">
+        <div>Hover to see neighbors</div>
       </div>
     </div>
   );
