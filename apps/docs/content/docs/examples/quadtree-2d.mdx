@@ -1,0 +1,87 @@
+---
+title: Quadtree 2D Visualization
+description: Interactive 2D canvas visualization of the Quadtree data structure
+---
+
+import QuadtreeCanvas from "@/examples/QuadtreeCanvas"
+
+<div className="h-[600px] rounded overflow-hidden">
+<QuadtreeCanvas />
+</div>
+
+## Overview
+
+This interactive 2D visualization demonstrates how the `Quadtree` from `@hello-terrain/three` works. Unlike the [3D scene](/docs/core/quadtree), this simplified view lets you directly inspect the data structure.
+
+## Interaction
+
+- **Click** on any cell to subdivide it into four children
+- **Hover** over a cell to see its neighbors highlighted
+- Use the **Max Level** dropdown to limit subdivision depth
+- Click **Reset** to start over
+
+## Understanding Neighbors
+
+Each quadtree node maintains references to its four neighbors:
+
+| Index | Direction | Color |
+|-------|-----------|-------|
+| 0 | Left | Red |
+| 1 | Right | Blue |
+| 2 | Top | Green |
+| 3 | Bottom | Purple |
+
+Neighbors are stored as indices into the quadtree's internal buffer. When a neighbor doesn't exist (e.g., at the edge of the terrain), the value is set to `0xFFFF` (displayed as "none").
+
+<Callout>
+Neighbors are only stored for siblings of the same parent node! In order to find all neighbors of a node regardless of ancestry, an algorithm is being implemented for both CPU and GPU (WIP)
+</Callout>
+
+## Node Indexing
+
+Each node displays its buffer index (the number in the center). The root node is always index 0. When a node subdivides, its four children are assigned consecutive indices in the order they're created:
+
+| Child | Position | Index Offset |
+|-------|----------|--------------|
+| 0 | Top-left | +1 |
+| 1 | Top-right | +2 |
+| 2 | Bottom-left | +3 |
+| 3 | Bottom-right | +4 |
+
+This layout means siblings have internal neighbor relationships:
+- Child 0's right neighbor is child 1
+- Child 0's bottom neighbor is child 2
+- Child 3's left neighbor is child 2
+- Child 3's top neighbor is child 1
+
+External neighbors (outside the parent's bounds) are only set when those nodes exist at the same or greater level of detail.
+
+## Code Example
+
+```tsx
+import { Quadtree } from "@hello-terrain/three";
+
+const quadtree = new Quadtree({
+  maxLevel: 6,
+  rootSize: 1,
+  minNodeSize: 1 / 64,
+  origin: { x: 0, y: 0, z: 0 },
+  maxNodes: 4096,
+});
+
+// Update with a position to trigger subdivision
+quadtree.update({ x: 0.1, y: 0, z: 0.2 });
+
+// Access neighbor information
+const nodeView = quadtree.getNodeView();
+const neighbors = nodeView.getNeighbors(5); // [left, right, top, bottom]
+console.log("Left neighbor:", neighbors[0]);
+console.log("Right neighbor:", neighbors[1]);
+console.log("Top neighbor:", neighbors[2]);
+console.log("Bottom neighbor:", neighbors[3]);
+```
+
+## Related
+
+- [Quadtree API Reference](/docs/core/quadtree) - Full documentation with 3D visualization
+- [TerrainGeometry](/docs/core/terrain-geometry) - The geometry tiles used with quadtree LOD

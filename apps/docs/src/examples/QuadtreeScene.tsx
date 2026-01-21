@@ -210,6 +210,7 @@ const QuadtreeTerrain = ({ onTileInfoUpdate }: QuadtreeTerrainProps) => {
 
     const config = quadtree.getConfig();
 
+    // TODO: resolve this on the GPU
     // Update instance matrices and colors
     leaves.forEach((leaf, index) => {
       const nodeSize = config.rootSize / (1 << leaf.level);
