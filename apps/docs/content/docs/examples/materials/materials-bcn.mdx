@@ -1,0 +1,51 @@
+---
+title: BCn Terrain Materials 
+description: Interactive demo showcasing BCN texture materials with meshStandardNodeMaterial
+---
+
+import MaterialsBCNScene from "@/examples/MaterialsBCNScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<MaterialsBCNScene />
+</div>
+
+## Overview
+
+Physically based (PBR) materials using channel-packed textures compressed via [Block Compression (BCn)](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/). 
+
+BCn is an industry standard compression format commonly used by major game engines, and a now it's my side quest for the weekend. Using this we can squeeze more texture per Megabyte.
+
+## Texture format example
+
+Each terrain material will have 3 textures/maps.
+
+Special properties such as `Metalicity` or `Emission` can be excluded, as they are rare for terrain textures. 
+For making cool special materials such as ore veins or lava, custom shaders should be sufficient.
+
+| **Texture Type**                          | **Channels** | **Compression Format**                                                                                                                                                     |
+|:------------------------------------------|:------------:|:-------------------------------------------------------------------------------------------------------------------------------------|
+| Albedo                                   | RGB          | [BC1](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc1)                                             |
+| Normal                                   | RG     | [BC5](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc2-bc3-and-bc5)                                 |
+| Ambient Occlusion, Roughness, Height   | RGB          | [BC1](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc1)                                             |
+
+Another choice would be to add another map in place of `Height`, and have `Height` be its own texture in [BC4](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc4)
+
+## Texture costs, `.ktx2` compared to `.png`
+
+I use the BCn file format `.ktx2` which is available on more platforms than it's popular native alternative `.dds`. 
+
+<Callout title="Work in progress" type="warn">
+  There should be a table here...
+</Callout>
+
+## Tools
+
+I used [Nvidia's Texture Tools Exporter](https://developer.nvidia.com/texture-tools-exporter) to create the `.ktx2` files.
+
+## Sources
+
+- [Rocky ground](https://ambientcg.com/view?id=Ground063)
+<Callout title="Work in progress" type="warn">
+  There should be some more links here...
+</Callout>
+

@@ -2,6 +2,7 @@ import "@/app/global.css";
 import { Footer } from "@/components/Footer/Footer";
 import { LevaPanel } from "@/components/LevaPanel/LevaPanel";
 import DefaultSearchDialog from "@/components/Search/Search";
+import { Banner } from "fumadocs-ui/components/banner";
 import { RootProvider } from "fumadocs-ui/provider";
 import type { Metadata } from "next";
 import { Lato, Lisu_Bosa } from "next/font/google";
@@ -31,6 +32,16 @@ export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable}`} suppressHydrationWarning>
       <body className="flex flex-col min-h-screen">
+        <Banner
+          variant="rainbow"
+          rainbowColors={[
+            "#6dd1ed",
+            "#38a471", // green
+            "#a89a8e",
+          ]}
+        >
+          Pardon our dust! All this is still a work in progress.
+        </Banner>
         <RootProvider
           search={{
             SearchDialog: DefaultSearchDialog,

@@ -19,7 +19,7 @@ export type IntNodeInput = number | ConstNode<number> | Node;
  * @param segments - The number of inner segments in the terrain grid.
  * @returns A node resolving to a boolean indicating a skirt vertex.
  */
-export const isSkirtVertex = Fn<[segments: IntNodeInput]>(([segments]) => {
+export const isSkirtVertex = Fn<[segments: IntNodeInput]>(([segments]: [IntNodeInput]) => {
   const segmentsNode = typeof segments === "number" ? int(segments) : segments;
   const vIndex = int(vertexIndex);
   const segmentEdges = int(segmentsNode.add(3));
@@ -44,17 +44,13 @@ export const isSkirtVertex = Fn<[segments: IntNodeInput]>(([segments]) => {
  * @param segments - The number of inner segments in the terrain grid.
  * @returns A node resolving to a boolean indicating a skirt fragment.
  */
-export const isSkirtUV = Fn<[segments: IntNodeInput]>(([segments]) => {
+export const isSkirtUV = Fn<[segments: IntNodeInput]>(([segments]: [IntNodeInput]) => {
   const segmentsNode = typeof segments === "number" ? int(segments) : segments;
   const ux = uv().x;
   const uy = uv().y;
   const segmentCount = segmentsNode.add(2);
   const segmentStep = float(1).div(segmentCount);
-  const innerX = ux
-    .greaterThan(segmentStep)
-    .and(ux.lessThan(segmentStep.oneMinus()));
-  const innerY = uy
-    .greaterThan(segmentStep)
-    .and(uy.lessThan(segmentStep.oneMinus()));
+  const innerX = ux.greaterThan(segmentStep).and(ux.lessThan(segmentStep.oneMinus()));
+  const innerY = uy.greaterThan(segmentStep).and(uy.lessThan(segmentStep.oneMinus()));
   return innerX.and(innerY).not();
 });

@@ -98,7 +98,7 @@ const QuadtreeTerrain = ({ onTileInfoUpdate, onHoverUpdate }: QuadtreeTerrainPro
     maxLevel: {
       value: 5,
       min: 1,
-      max: 8,
+      max: 16,
       step: 1,
       label: "Max Level",
     },

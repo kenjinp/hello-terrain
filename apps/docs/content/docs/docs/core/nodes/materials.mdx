@@ -1,0 +1,145 @@
+---
+title: Material Nodes
+description: TSL node functions for normal map processing and texture space conversion
+---
+
+## Overview
+
+The `@hello-terrain/three` package provides a set of TSL (Three.js Shading Language) node functions for common material operations. These functions are designed to work within the WebGPU/TSL node material system and can be composed into custom shaders.
+
+## Space Conversion Functions
+
+When working with normal maps and other texture data, you often need to convert between different coordinate spaces:
+
+- **Texture space** `[0, 1]`: Values stored in textures (RGB channels)
+- **Vector space** `[-1, 1]`: Mathematical representation used in lighting calculations
+
+### textureSpaceToVectorSpace
+
+Converts a value from texture space `[0, 1]` to vector space `[-1, 1]`.
+
+```ts
+import { textureSpaceToVectorSpace } from "@hello-terrain/three";
+import { texture, uv } from "three/tsl";
+
+// Convert a normal map sample from texture space to vector space
+const normalMap = texture(normalTexture, uv());
+const normalVector = textureSpaceToVectorSpace(normalMap);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | `Node` | A TSL node with values in the `[0, 1]` range |
+
+**Returns:** `Node` — The remapped value in the `[-1, 1]` range.
+
+### vectorSpaceToTextureSpace
+
+Converts a value from vector space `[-1, 1]` to texture space `[0, 1]`.
+
+```ts
+import { vectorSpaceToTextureSpace } from "@hello-terrain/three";
+import { vec3 } from "three/tsl";
+
+// Convert a computed normal back to texture space for storage
+const normalVector = vec3(0.5, 0.5, 1.0); // In vector space
+const normalTexture = vectorSpaceToTextureSpace(normalVector);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `value` | `Node` | A TSL node with values in the `[-1, 1]` range |
+
+**Returns:** `Node` — The remapped value in the `[0, 1]` range.
+
+## Normal Map Functions
+
+### blendAngleCorrectedNormals
+
+Blends two normal maps using the Reoriented Normal Mapping (RNM) technique. This is the same algorithm used by Unreal Engine's `BlendAngleCorrectedNormals` node.
+
+RNM produces more accurate results than simple linear blending, especially for normal maps with strong details. It correctly handles the reorientation of the detail normal relative to the base normal.
+
+```ts
+import { blendAngleCorrectedNormals, textureSpaceToVectorSpace } from "@hello-terrain/three";
+import { texture, uv } from "three/tsl";
+
+// Both inputs must be in vector space [-1, 1]
+const baseNormal = textureSpaceToVectorSpace(texture(baseNormalMap, uv()));
+const detailNormal = textureSpaceToVectorSpace(texture(detailNormalMap, uv()));
+
+// Blend the normals
+const blendedNormal = blendAngleCorrectedNormals(baseNormal, detailNormal);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `n1` | `Node` | Base normal in vector space `[-1, 1]` |
+| `n2` | `Node` | Detail normal in vector space `[-1, 1]` |
+
+**Returns:** `Node` — The blended normal vector (normalized).
+
+**Reference:** [Blending in Detail](https://blog.selfshadow.com/publications/blending-in-detail/) by Colin Barré-Brisebois and Stephen Hill.
+
+### deriveNormalZ
+
+Reconstructs the Z component of a normal vector from its X and Y components. This is useful when working with compressed normal maps that store only two channels (such as BC5/RGTC format).
+
+The Z component is derived using the formula: `z = sqrt(1 - x² - y²)`
+
+```ts
+import { deriveNormalZ } from "@hello-terrain/three";
+import { texture, uv } from "three/tsl";
+
+// Load a two-channel normal map (e.g., BC5 compressed)
+const normalXY = texture(compressedNormalMap, uv()).rg;
+
+// Reconstruct the full normal vector
+const fullNormal = deriveNormalZ(normalXY);
+// Result: vec3(x, y, derived_z)
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `normalXY` | `Node` | A vec2 node containing the X and Y components of the normal |
+
+**Returns:** `Node` — A vec3 with the full normal (X, Y, derived Z).
+
+<Callout>
+  The input X and Y values should be in vector space `[-1, 1]`. If loading from a texture, convert from texture space first using `textureSpaceToVectorSpace` or by remapping the individual channels.
+</Callout>
+
+## Usage Example
+
+Here's a complete example combining these functions to blend a base normal map with a tiled detail normal map:
+
+```ts
+import {
+  blendAngleCorrectedNormals,
+  deriveNormalZ,
+  textureSpaceToVectorSpace,
+} from "@hello-terrain/three";
+import { Fn, texture, uv, vec2 } from "three/tsl";
+
+const createBlendedNormalNode = Fn(() => {
+  // Sample base normal map
+  const baseNormalSample = texture(baseNormalMap, uv());
+  const baseNormal = textureSpaceToVectorSpace(baseNormalSample);
+
+  // Sample tiled detail normal (BC5 compressed, two channels only)
+  const tiledUV = uv().mul(8); // Tile 8x
+  const detailXY = texture(detailNormalMapBC5, tiledUV).rg;
+  // Remap from [0,1] to [-1,1] for the two channels
+  const detailXYVector = textureSpaceToVectorSpace(detailXY);
+  // Reconstruct Z component
+  const detailNormal = deriveNormalZ(detailXYVector);
+
+  // Blend using angle-corrected technique
+  return blendAngleCorrectedNormals(baseNormal, detailNormal);
+});
+```
+
+## Related
+
+- [Terrain Geometry](/docs/advanced/terrain-geometry) — Skirt TSL functions (`isSkirtVertex`, `isSkirtUV`)
+- [Materials BCN Example](/examples/materials/materials-bcn) — Working example with compressed textures

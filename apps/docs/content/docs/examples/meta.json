@@ -2,5 +2,10 @@
   "title": "Examples",
   "description": "Here are some examples of how to use the library",
   "root": true,
-  "pages": ["index", "quadtree-2d"]
+  "pages": [
+    "index",
+    "quadtree-2d",
+    "---Materials---",
+    "...materials"
+  ]
 }

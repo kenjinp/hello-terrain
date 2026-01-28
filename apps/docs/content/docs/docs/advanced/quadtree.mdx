@@ -9,6 +9,16 @@ import Scene from "@/examples/QuadtreeScene"
 <Scene />
 </div>
 
+<Callout title="Work in progress" type="warn">
+  Still noodling on this feature and page.
+</Callout>
+
+## Technical Goals
+- Support a lot of nodes (max nodes probably `1 << 16` ~ 65,536)
+- Support a lot of levels (meter or unit resolution for 16 meter tile size on earth radius (6,371,000m))
+- Allow neighbor lookups for LOD stitching on GPU (is CPU necessary?)
+- Efficient memory usage / cache locality to keep things speedy
+
 ## Overview
 
 The `Quadtree` class provides dynamic level-of-detail (LOD) subdivision for terrain rendering. It recursively subdivides terrain tiles based on position's distance to node centers, which can be used to ensure higher detail near the viewer and lower detail in the distance.
@@ -414,6 +424,11 @@ const buffers = nodeView.getBuffers();
 
 ## Buffer Structures
 
+<Callout>
+  All indices use `Uint16`, supporting up to 65,534 nodes (with `0xFFFF` reserved as the empty sentinel). For larger terrains, consider using multiple quadtree instances or tiling strategies.
+</Callout>
+
+
 The quadtree uses several typed array buffers to store node data efficiently. This structure-of-arrays (SoA) layout enables cache-friendly access patterns and direct GPU uploads without data transformation.
 
 ### nodeBuffer
@@ -490,8 +505,3 @@ A compact list of indices pointing to all currently active leaf nodes. Enables i
 
 **Usage:** Efficient leaf iteration, GPU indirect draws, culling passes.
 
----
-
-<Callout>
-  All indices use `Uint16`, supporting up to 65,534 nodes (with `0xFFFF` reserved as the empty sentinel). For larger terrains, consider using multiple quadtree instances or tiling strategies.
-</Callout>
