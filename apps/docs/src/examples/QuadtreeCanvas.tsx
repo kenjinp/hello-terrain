@@ -1,5 +1,6 @@
 "use client";
 
+import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import { Quadtree, type NeighborResult, type QuadtreeParams } from "@hello-terrain/three";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Vector3 } from "three";
@@ -41,7 +42,7 @@ interface HoveredInfo {
 
 const EMPTY_SENTINEL = 0xffff;
 
-export default function QuadtreeCanvas() {
+function QuadtreeCanvasInner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 600, height: 600 });
@@ -400,8 +401,10 @@ export default function QuadtreeCanvas() {
     }
   }, [config]);
 
+  const { showUI } = useExamplesCanvas();
+
   return (
-    <div className="relative w-full h-full bg-[#1a1a2e]">
+    <>
       <div ref={containerRef} className="absolute inset-0">
         <canvas
           ref={canvasRef}
@@ -414,97 +417,109 @@ export default function QuadtreeCanvas() {
         />
       </div>
 
-      {/* Controls */}
-      <div className="absolute top-3 left-3 bg-fd-background/80 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono space-y-2 pointer-events-auto">
-        <div>Nodes: {nodeCount}</div>
-        <div>Leaves: {leafCount}</div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="max-level">Max Level:</label>
-          <select
-            id="max-level"
-            value={maxLevel}
-            onChange={(e) => setMaxLevel(Number(e.target.value))}
-            className="bg-fd-background/50 border border-white/20 rounded px-1 py-0.5"
-          >
-            {[3, 4, 5, 6, 7, 8].map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
+      {showUI && (
+        <>
+          {/* Controls */}
+          <div className="absolute top-2 left-10 md:top-3 md:left-12 bg-fd-background/80 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[10px] md:text-xs font-mono space-y-1.5 md:space-y-2 pointer-events-auto z-10">
+            <div>Nodes: {nodeCount}</div>
+            <div>Leaves: {leafCount}</div>
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <label htmlFor="max-level">Max Level:</label>
+              <select
+                id="max-level"
+                value={maxLevel}
+                onChange={(e) => setMaxLevel(Number(e.target.value))}
+                className="bg-fd-background/50 border border-white/20 rounded px-1 py-0.5 text-[10px] md:text-xs"
+              >
+                {[3, 4, 5, 6, 7, 8].map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="button"
+              onClick={handleReset}
+              className="bg-fd-primary/80 hover:bg-fd-primary px-1.5 py-0.5 md:px-2 md:py-1 rounded text-[10px] md:text-xs"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Hovered node info */}
+          {hoveredInfo && (
+            <div className="absolute top-2 right-2 md:top-3 md:right-3 bg-fd-background/80 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[10px] md:text-xs font-mono pointer-events-none min-w-[140px] md:min-w-[180px] z-10">
+              <div className="font-bold mb-1 md:mb-2 text-xs md:text-sm">Node {hoveredInfo.node.index}</div>
+              <div>Level: {hoveredInfo.node.level}</div>
+              <div>
+                Grid: ({hoveredInfo.node.x}, {hoveredInfo.node.y})
+              </div>
+              <div className="mt-1.5 md:mt-2 font-bold">Neighbors</div>
+              <div className="space-y-0.5 md:space-y-1">
+                {NEIGHBOR_LABELS.map((label, i) => {
+                  const rawKeys = ["left", "right", "top", "bottom"] as const;
+                  const rawValue = hoveredInfo.rawNeighbors[rawKeys[i]];
+                  const isArray = Array.isArray(rawValue);
+                  const isEmpty = rawValue === EMPTY_SENTINEL;
+
+                  let displayValue: string;
+                  if (isEmpty) {
+                    displayValue = "none";
+                  } else if (isArray) {
+                    displayValue = `[${rawValue.join(", ")}]`;
+                  } else {
+                    displayValue = String(rawValue);
+                  }
+
+                  return (
+                    <div key={label} className="flex items-center gap-1.5 md:gap-2">
+                      <div
+                        className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-sm"
+                        style={{ backgroundColor: NEIGHBOR_COLORS[i] }}
+                      />
+                      <span>
+                        {label}:{" "}
+                        {isEmpty ? (
+                          <span className="text-gray-500">{displayValue}</span>
+                        ) : (
+                          <span className="text-white">{displayValue}</span>
+                        )}
+                        {isArray && <span className="text-yellow-400 ml-1">(finer)</span>}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Level color legend */}
+          <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 bg-fd-background/80 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[9px] md:text-[11px] font-mono pointer-events-none z-10">
+            <div className="mb-0.5 md:mb-1 font-bold">LOD Levels</div>
+            {LEVEL_COLORS.slice(0, maxLevel + 1).map((color, i) => (
+              <div key={i} className="flex items-center gap-1 md:gap-1.5">
+                <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-sm" style={{ backgroundColor: color }} />
+                <span>Level {i}</span>
+              </div>
             ))}
-          </select>
-        </div>
-        <button
-          type="button"
-          onClick={handleReset}
-          className="bg-fd-primary/80 hover:bg-fd-primary px-2 py-1 rounded text-xs"
-        >
-          Reset
-        </button>
-      </div>
-
-      {/* Hovered node info */}
-      {hoveredInfo && (
-        <div className="absolute top-3 right-3 bg-fd-background/80 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono pointer-events-none min-w-[180px]">
-          <div className="font-bold mb-2 text-sm">Node {hoveredInfo.node.index}</div>
-          <div>Level: {hoveredInfo.node.level}</div>
-          <div>
-            Grid: ({hoveredInfo.node.x}, {hoveredInfo.node.y})
           </div>
-          <div className="mt-2 font-bold">Neighbors</div>
-          <div className="space-y-1">
-            {NEIGHBOR_LABELS.map((label, i) => {
-              const rawKeys = ["left", "right", "top", "bottom"] as const;
-              const rawValue = hoveredInfo.rawNeighbors[rawKeys[i]];
-              const isArray = Array.isArray(rawValue);
-              const isEmpty = rawValue === EMPTY_SENTINEL;
 
-              let displayValue: string;
-              if (isEmpty) {
-                displayValue = "none";
-              } else if (isArray) {
-                displayValue = `[${rawValue.join(", ")}]`;
-              } else {
-                displayValue = String(rawValue);
-              }
-
-              return (
-                <div key={label} className="flex items-center gap-2">
-                  <div
-                    className="w-3 h-3 rounded-sm"
-                    style={{ backgroundColor: NEIGHBOR_COLORS[i] }}
-                  />
-                  <span>
-                    {label}:{" "}
-                    {isEmpty ? (
-                      <span className="text-gray-500">{displayValue}</span>
-                    ) : (
-                      <span className="text-white">{displayValue}</span>
-                    )}
-                    {isArray && <span className="text-yellow-400 ml-1">(finer)</span>}
-                  </span>
-                </div>
-              );
-            })}
+          {/* Instructions */}
+          <div className="absolute bottom-2 right-2 md:bottom-3 md:right-3 bg-fd-background/80 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[10px] md:text-xs font-mono pointer-events-none text-right z-10">
+            <div>Click to subdivide</div>
+            <div>Hover to see neighbors</div>
           </div>
-        </div>
+        </>
       )}
+    </>
+  );
+}
 
-      {/* Level color legend */}
-      <div className="absolute bottom-3 left-3 bg-fd-background/80 backdrop-blur-md text-white px-3 py-2 rounded text-[11px] font-mono pointer-events-none">
-        <div className="mb-1 font-bold">LOD Levels</div>
-        {LEVEL_COLORS.slice(0, maxLevel + 1).map((color, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-            <span>Level {i}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Instructions */}
-      <div className="absolute bottom-3 right-3 bg-fd-background/80 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono pointer-events-none text-right">
-        <div>Click to subdivide</div>
-        <div>Hover to see neighbors</div>
-      </div>
-    </div>
+export default function QuadtreeCanvas() {
+  return (
+    <ExamplesCanvas className="bg-[#1a1a2e]">
+      <QuadtreeCanvasInner />
+    </ExamplesCanvas>
   );
 }

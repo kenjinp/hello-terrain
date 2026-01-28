@@ -1,5 +1,6 @@
 "use client";
 
+import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import {
   deriveNormalZ,
   textureSpaceToVectorSpace,
@@ -8,7 +9,6 @@ import {
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Suspense, useRef, useState } from "react";
-import { LoadingBar } from "@/components/LoadingBar/LoadingBar";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { Fn, normalLocal, normalMap, positionLocal, texture, uv, vec2, vec3 } from "three/tsl";
@@ -30,7 +30,7 @@ extend(THREE as any);
 
 const SPHERES = [
   {
-    id: "rocky_ground",
+    id: "rocky-ground",
     label: "Rocky Ground",
     albedoMap: "/assets/materials/ground-rocky/ground_rocky_albedo.ktx2",
     normalMap: "/assets/materials/ground-rocky/ground_rocky_normal.ktx2",
@@ -42,6 +42,20 @@ const SPHERES = [
     albedoMap: "/assets/materials/cliff/cliff_albedo.ktx2",
     normalMap: "/assets/materials/cliff/cliff_normal.ktx2",
     aorhMap: "/assets/materials/cliff/cliff_aorh.ktx2",
+  },
+  {
+    id: "moss",
+    label: "Moss",
+    albedoMap: "/assets/materials/moss/moss_albedo.ktx2",
+    normalMap: "/assets/materials/moss/moss_normal.ktx2",
+    aorhMap: "/assets/materials/moss/moss_aorh.ktx2",
+  },
+  {
+    id: "ground-forest-stone",
+    label: "Forest Stones",
+    albedoMap: "/assets/materials/ground-forest-stone/ground_forest_stone_albedo.ktx2",
+    normalMap: "/assets/materials/ground-forest-stone/ground_forest_stone_normal.ktx2",
+    aorhMap: "/assets/materials/ground-forest-stone/ground_forest_stone_aorh.ktx2",
   },
 ] as const;
 
@@ -58,7 +72,14 @@ interface SphereProps {
   heightEnabled: boolean;
 }
 
-const MaterialSphere = ({ id, position, isRotating, textures, debugView, heightEnabled }: SphereProps) => {
+const MaterialSphere = ({
+  id,
+  position,
+  isRotating,
+  textures,
+  debugView,
+  heightEnabled,
+}: SphereProps) => {
   const { gl } = useThree();
   const meshRef = useRef<Mesh | null>(null);
 
@@ -175,7 +196,12 @@ const MaterialSphere = ({ id, position, isRotating, textures, debugView, heightE
 
   if (debugView === "complete") {
     return (
-      <mesh key={`${id}-${debugView}-${heightEnabled ? "height" : "no-height"}`} ref={meshRef} position={position} receiveShadow>
+      <mesh
+        key={`${id}-${debugView}-${heightEnabled ? "height" : "no-height"}`}
+        ref={meshRef}
+        position={position}
+        receiveShadow
+      >
         <sphereGeometry args={[0.8, 64, 64]} />
         <meshStandardNodeMaterial
           key={`${id}-${debugView}`}
@@ -191,7 +217,11 @@ const MaterialSphere = ({ id, position, isRotating, textures, debugView, heightE
   }
 
   return (
-    <mesh key={`${id}-${debugView}-${heightEnabled ? "height" : "no-height"}`}  ref={meshRef} position={position}>
+    <mesh
+      key={`${id}-${debugView}-${heightEnabled ? "height" : "no-height"}`}
+      ref={meshRef}
+      position={position}
+    >
       <sphereGeometry args={[0.8, 64, 64]} />
       <meshBasicNodeMaterial
         key={`${id}-${debugView}`}
@@ -252,7 +282,13 @@ interface SceneProps {
   heightEnabled: boolean;
 }
 
-const Scene = ({ focusedSphere, controlsRef, isRotating, debugView, heightEnabled }: SceneProps) => {
+const Scene = ({
+  focusedSphere,
+  controlsRef,
+  isRotating,
+  debugView,
+  heightEnabled,
+}: SceneProps) => {
   const spacing = 3;
   const totalWidth = (SPHERES.length - 1) * spacing;
   const startX = -totalWidth / 2;
@@ -266,7 +302,7 @@ const Scene = ({ focusedSphere, controlsRef, isRotating, debugView, heightEnable
 
   return (
     <>
-      <directionalLight position={[5, 5, 5]} intensity={5} castShadow  />
+      <directionalLight position={[5, 5, 5]} intensity={3} castShadow />
 
       {SPHERES.map((sphere, index) => (
         <MaterialSphere
@@ -289,6 +325,81 @@ const Scene = ({ focusedSphere, controlsRef, isRotating, debugView, heightEnable
   );
 };
 
+interface SceneUIProps {
+  focusedSphere: string | null;
+  setFocusedSphere: (sphere: string | null) => void;
+  debugView: DebugView;
+  setDebugView: (view: DebugView) => void;
+  heightEnabled: boolean;
+  setHeightEnabled: (enabled: boolean) => void;
+}
+
+const SceneUI = ({
+  focusedSphere,
+  setFocusedSphere,
+  debugView,
+  setDebugView,
+  heightEnabled,
+  setHeightEnabled,
+}: SceneUIProps) => {
+  const { showUI } = useExamplesCanvas();
+
+  if (!showUI) return null;
+
+  return (
+    <>
+      {/* Debug View Panel */}
+      <div className="absolute top-2 right-2 md:top-4 md:right-4 bg-black/60 backdrop-blur-md rounded-md md:rounded-lg p-2 md:p-3 border border-white/10 z-10">
+        <div className="text-[10px] md:text-xs font-medium text-white/70 uppercase tracking-wider mb-1.5 md:mb-2">
+          Material View
+        </div>
+        <div className="flex flex-col gap-0.5 md:gap-1">
+          {DEBUG_VIEW_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setDebugView(option.value)}
+              className={`px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm rounded transition-all text-left ${
+                debugView === option.value
+                  ? "bg-white text-black font-medium"
+                  : "text-white/80 hover:bg-white/10"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div className="border-t border-white/10 mt-2 pt-2 md:mt-3 md:pt-3">
+          <button
+            onClick={() => setHeightEnabled(!heightEnabled)}
+            className={`w-full px-2 py-1 md:px-3 md:py-1.5 text-xs md:text-sm rounded transition-all text-left ${
+              heightEnabled ? "bg-white text-black font-medium" : "text-white/80 hover:bg-white/10"
+            }`}
+          >
+            Height Displacement
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom button bar */}
+      <div className="absolute bottom-2 md:bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 md:gap-2 z-10">
+        {SPHERES.map((sphere) => (
+          <button
+            key={sphere.id}
+            onClick={() => setFocusedSphere(focusedSphere === sphere.id ? null : sphere.id)}
+            className={`px-2.5 py-1.5 md:px-4 md:py-2 rounded-md md:rounded-lg text-xs md:text-base font-medium transition-all ${
+              focusedSphere === sphere.id
+                ? "bg-white text-black shadow-lg scale-105"
+                : "bg-black/50 text-white hover:bg-black/70 backdrop-blur-sm"
+            }`}
+          >
+            {sphere.label}
+          </button>
+        ))}
+      </div>
+    </>
+  );
+};
+
 const MaterialsBCNScene = () => {
   const [focusedSphere, setFocusedSphere] = useState<string | null>(null);
   const [isRotating, setIsRotating] = useState(true);
@@ -300,123 +411,76 @@ const MaterialsBCNScene = () => {
   const resumeRotation = () => setIsRotating(true);
 
   return (
-    <div
-      className="relative w-full h-full rounded overflow-hidden backdrop-blur-sm"
-      onMouseDown={stopRotation}
-      onMouseUp={resumeRotation}
-      onMouseLeave={resumeRotation}
-      onKeyDown={(e) => {
-        if (e.key === " " || e.key === "Enter") {
-          e.preventDefault();
-          stopRotation();
-        }
-      }}
-      onKeyUp={(e) => {
-        if (e.key === " " || e.key === "Enter") {
-          resumeRotation();
-        }
-      }}
-      tabIndex={0}
-    >
-      <LoadingBar />
-      <Canvas
-        style={{
-          position: "relative",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
+    <ExamplesCanvas>
+      <div
+        className="w-full h-full"
+        onMouseDown={stopRotation}
+        onMouseUp={resumeRotation}
+        onMouseLeave={resumeRotation}
+        onKeyDown={(e) => {
+          if (e.key === " " || e.key === "Enter") {
+            e.preventDefault();
+            stopRotation();
+          }
         }}
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.shadowMap.enabled = true;
-
-          await renderer.init();
-          return renderer;
+        onKeyUp={(e) => {
+          if (e.key === " " || e.key === "Enter") {
+            resumeRotation();
+          }
         }}
-        camera={{
-          near: 0.1,
-          far: 1000,
-          position: [0, 2, 8],
-          fov: 50,
-        }}
-        dpr={[1, 2]}
+        tabIndex={0}
       >
-        <Suspense fallback={null}>
-          <Scene
-            focusedSphere={focusedSphere}
-            controlsRef={controlsRef}
-            isRotating={isRotating}
-            debugView={debugView}
-            heightEnabled={heightEnabled}
+        <Canvas
+          className="touch-none relative top-0 left-0 w-full h-full"
+          shadows
+          gl={async (props) => {
+            props.alpha = true;
+            props.antialias = true;
+            const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.shadowMap.enabled = true;
+
+            await renderer.init();
+            return renderer;
+          }}
+          camera={{
+            near: 0.1,
+            far: 1000,
+            position: [0, 2, 8],
+            fov: 50,
+          }}
+          dpr={[1, 2]}
+        >
+          <Suspense fallback={null}>
+            <Scene
+              focusedSphere={focusedSphere}
+              controlsRef={controlsRef}
+              isRotating={isRotating}
+              debugView={debugView}
+              heightEnabled={heightEnabled}
+            />
+          </Suspense>
+          <OrbitControls
+            ref={controlsRef}
+            makeDefault
+            enablePan={false}
+            minDistance={1.5}
+            maxDistance={15}
           />
-        </Suspense>
-        <OrbitControls
-          ref={controlsRef}
-          makeDefault
-          enablePan={false}
-          minDistance={1.5}
-          maxDistance={15}
+          <Environment preset="forest" background />
+        </Canvas>
+
+        <SceneUI
+          focusedSphere={focusedSphere}
+          setFocusedSphere={setFocusedSphere}
+          debugView={debugView}
+          setDebugView={setDebugView}
+          heightEnabled={heightEnabled}
+          setHeightEnabled={setHeightEnabled}
         />
-        <Environment preset="forest" background />
-      </Canvas>
-
-      {/* Debug View Panel */}
-      <div className="absolute top-4 right-4 bg-black/60 backdrop-blur-md rounded-lg p-3 border border-white/10">
-        <div className="text-xs font-medium text-white/70 uppercase tracking-wider mb-2">
-          Material View
-        </div>
-        <div className="flex flex-col gap-1">
-          {DEBUG_VIEW_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setDebugView(option.value)}
-              className={`px-3 py-1.5 text-sm rounded transition-all text-left ${
-                debugView === option.value
-                  ? "bg-white text-black font-medium"
-                  : "text-white/80 hover:bg-white/10"
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <div className="border-t border-white/10 mt-3 pt-3">
-          <button
-            onClick={() => setHeightEnabled(!heightEnabled)}
-            className={`w-full px-3 py-1.5 text-sm rounded transition-all text-left ${
-              heightEnabled
-                ? "bg-white text-black font-medium"
-                : "text-white/80 hover:bg-white/10"
-            }`}
-          >
-            Height Displacement
-          </button>
-        </div>
       </div>
-
-      {/* Bottom button bar */}
-      <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
-        {SPHERES.map((sphere) => (
-          <button
-            key={sphere.id}
-            onClick={() => setFocusedSphere(focusedSphere === sphere.id ? null : sphere.id)}
-            className={`px-4 py-2 rounded-lg font-medium transition-all ${
-              focusedSphere === sphere.id
-                ? "bg-white text-black shadow-lg scale-105"
-                : "bg-black/50 text-white hover:bg-black/70 backdrop-blur-sm"
-            }`}
-          >
-            {sphere.label}
-          </button>
-        ))}
-      </div>
-    </div>
+    </ExamplesCanvas>
   );
 };
 

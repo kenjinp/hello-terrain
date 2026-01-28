@@ -1,5 +1,6 @@
 "use client";
 
+import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { isSkirtUV, isSkirtVertex, TerrainGeometry } from "@hello-terrain/three";
 import { Bounds, Html, OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
@@ -185,15 +186,9 @@ const TerrainPlane = () => {
 
 const TerrainGeometryScene = () => {
   return (
-    <div className="relative w-full h-full rounded overflow-hidden overflow-hidden backdrop-blur-sm">
+    <ExamplesCanvas>
       <Canvas
-        style={{
-          position: "relative",
-          top: 0,
-          left: 0,
-          width: "100%",
-          height: "100%",
-        }}
+        className="touch-none relative w-full h-full top-0 left-0"
         shadows
         gl={async (props) => {
           props.alpha = true;
@@ -223,7 +218,7 @@ const TerrainGeometryScene = () => {
         </Bounds>
         <OrbitControls makeDefault />
       </Canvas>
-    </div>
+    </ExamplesCanvas>
   );
 };
 

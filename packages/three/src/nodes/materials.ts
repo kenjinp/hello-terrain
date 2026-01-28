@@ -1,10 +1,22 @@
 import Node from "three/src/nodes/core/Node.js";
 import { dot, float, Fn, remap, vec3 } from "three/tsl";
 
+/**
+ * Maps a value or node from texture space [0, 1] to vector space [-1, 1].
+ *
+ * @param value - The node or value in the range [0, 1].
+ * @returns A node mapping the input value to the range [-1, 1].
+ */
 export const textureSpaceToVectorSpace = Fn<[Node]>(([value]: [Node]) => {
   return remap(value, float(0), float(1), float(-1), float(1));
 });
 
+/**
+ * Maps a value or node from vector space [-1, 1] to texture space [0, 1].
+ *
+ * @param value - The node or value in the range [-1, 1].
+ * @returns A node mapping the input value to the range [0, 1].
+ */
 export const vectorSpaceToTextureSpace = Fn<[Node]>(([value]: [Node]) => {
   return remap(value, float(-1), float(1), float(0), float(1));
 });

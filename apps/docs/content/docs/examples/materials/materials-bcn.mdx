@@ -34,9 +34,16 @@ Another choice would be to add another map in place of `Height`, and have `Heigh
 
 I use the BCn file format `.ktx2` which is available on more platforms than it's popular native alternative `.dds`. 
 
-<Callout title="Work in progress" type="warn">
-  There should be a table here...
-</Callout>
+**Rocky Ground example** (4K textures)
+
+| **Texture**              | **PNG**  | **KTX2** | **Savings** | **Reduction** |
+|:-------------------------|:--------:|:--------:|:-----------:|:-------------:|
+| Albedo                   | 8.53 MB  | 2.19 MB  | 6.34 MB     | 74%           |
+| Normal                   | 22.4 MB  | 5.31 MB  | 17.09 MB    | 76%           |
+| AO + Roughness + Height  | 11.4 MB  | 1.79 MB  | 9.61 MB     | 84%           |
+| **Total**                | **42.33 MB** | **9.29 MB** | **33.04 MB** | **78%**   |
+
+The combined AO, Roughness, and Height textures (2.6 + 2.4 + 6.4 MB as separate PNGs) are channel-packed into a single `aorh.ktx2` file. 
 
 ## Tools
 
@@ -44,8 +51,10 @@ I used [Nvidia's Texture Tools Exporter](https://developer.nvidia.com/texture-to
 
 ## Sources
 
+Downloaded from ambientcg with CCO license
+
 - [Rocky ground](https://ambientcg.com/view?id=Ground063)
-<Callout title="Work in progress" type="warn">
-  There should be some more links here...
-</Callout>
+- [Cliff](https://ambientcg.com/view?id=Ground063)
+- [Moss](https://ambientcg.com/view?id=Rock052)
+- [Ground forest stone](https://ambientcg.com/view?id=Ground068)
 

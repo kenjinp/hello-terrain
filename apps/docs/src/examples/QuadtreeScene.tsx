@@ -1,5 +1,6 @@
 "use client";
 
+import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import {
   distanceBasedSubdivision,
   isSkirtUV,
@@ -467,6 +468,84 @@ const formatNeighbor = (value: number | number[]): string => {
   return String(value);
 };
 
+interface SceneUIProps {
+  tileInfo: TileInfo;
+  hoverInfo: HoverInfo | null;
+  maxLevel: number;
+}
+
+const SceneUI = ({ tileInfo, hoverInfo, maxLevel }: SceneUIProps) => {
+  const { showUI } = useExamplesCanvas();
+
+  if (!showUI) return null;
+
+  return (
+    <>
+      {/* Info overlay - positioned in top-left */}
+      <div className="absolute top-2 left-10 md:top-3 md:left-12 bg-fd-background/50 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[10px] md:text-xs font-mono whitespace-nowrap pointer-events-none z-10">
+        <div>Tiles: {tileInfo.count}</div>
+        <div>Deepest Level: {tileInfo.deepestLevel}</div>
+      </div>
+
+      {/* Hover info - positioned in bottom-left */}
+      {hoverInfo && (
+        <div className="absolute bottom-2 left-2 md:bottom-3 md:left-3 bg-fd-background/50 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[10px] md:text-xs font-mono pointer-events-none min-w-[120px] md:min-w-[160px] z-10">
+          <div className="font-bold mb-0.5 md:mb-1">Node {hoverInfo.nodeIndex}</div>
+          <div className="text-[9px] md:text-[11px] space-y-0.5">
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <div
+                className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-sm"
+                style={{ backgroundColor: "#e74c3c" }}
+              />
+              <span>Left: {formatNeighbor(hoverInfo.neighbors.left)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <div
+                className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-sm"
+                style={{ backgroundColor: "#3498db" }}
+              />
+              <span>Right: {formatNeighbor(hoverInfo.neighbors.right)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <div
+                className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-sm"
+                style={{ backgroundColor: "#2ecc71" }}
+              />
+              <span>Top: {formatNeighbor(hoverInfo.neighbors.top)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 md:gap-2">
+              <div
+                className="w-2 h-2 md:w-2.5 md:h-2.5 rounded-sm"
+                style={{ backgroundColor: "#9b59b6" }}
+              />
+              <span>Bottom: {formatNeighbor(hoverInfo.neighbors.bottom)}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Level color legend - positioned in top-right */}
+      <div className="absolute top-2 right-2 md:top-3 md:right-3 bg-fd-background/50 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[9px] md:text-[11px] font-mono pointer-events-none z-10">
+        <div className="mb-0.5 md:mb-1 font-bold">LOD Levels</div>
+        {LEVEL_COLORS_HEX.slice(0, maxLevel + 1).map((color, i) => (
+          <div key={i} className="flex items-center gap-1 md:gap-1.5">
+            <div
+              className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-sm"
+              style={{ backgroundColor: color }}
+            />
+            <span>Level {i}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Instructions - positioned in bottom-right */}
+      <div className="absolute bottom-2 right-2 md:bottom-3 md:right-3 bg-fd-background/50 backdrop-blur-md text-white px-2 py-1.5 md:px-3 md:py-2 rounded text-[10px] md:text-xs font-mono pointer-events-none text-right z-10">
+        <div>Hover to see neighbors</div>
+      </div>
+    </>
+  );
+};
+
 const QuadtreeScene = () => {
   const [tileInfo, setTileInfo] = useState<TileInfo>({ count: 0, deepestLevel: 0 });
   const [hoverInfo, setHoverInfo] = useState<HoverInfo | null>(null);
@@ -475,9 +554,9 @@ const QuadtreeScene = () => {
   }).maxLevel;
 
   return (
-    <div className="relative w-full h-full rounded overflow-hidden backdrop-blur-sm">
+    <ExamplesCanvas>
       <Canvas
-        className="absolute inset-0 w-full h-full"
+        className="touch-none absolute inset-0 w-full h-full"
         shadows
         gl={async (props) => {
           props.alpha = true;
@@ -506,53 +585,8 @@ const QuadtreeScene = () => {
         <OrbitControls makeDefault target={[0, 0, 0]} />
       </Canvas>
 
-      {/* Info overlay - positioned in top-left */}
-      <div className="absolute top-3 left-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono whitespace-nowrap pointer-events-none">
-        <div>Tiles: {tileInfo.count}</div>
-        <div>Deepest Level: {tileInfo.deepestLevel}</div>
-      </div>
-
-      {/* Hover info - positioned in bottom-left */}
-      {hoverInfo && (
-        <div className="absolute bottom-3 left-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono pointer-events-none min-w-[160px]">
-          <div className="font-bold mb-1">Node {hoverInfo.nodeIndex}</div>
-          <div className="text-[11px] space-y-0.5">
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#e74c3c" }} />
-              <span>Left: {formatNeighbor(hoverInfo.neighbors.left)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#3498db" }} />
-              <span>Right: {formatNeighbor(hoverInfo.neighbors.right)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#2ecc71" }} />
-              <span>Top: {formatNeighbor(hoverInfo.neighbors.top)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: "#9b59b6" }} />
-              <span>Bottom: {formatNeighbor(hoverInfo.neighbors.bottom)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Level color legend - positioned in top-right */}
-      <div className="absolute top-3 right-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-[11px] font-mono pointer-events-none">
-        <div className="mb-1 font-bold">LOD Levels</div>
-        {LEVEL_COLORS_HEX.slice(0, maxLevel + 1).map((color, i) => (
-          <div key={i} className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: color }} />
-            <span>Level {i}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Instructions - positioned in bottom-right */}
-      <div className="absolute bottom-3 right-3 bg-fd-background/50 backdrop-blur-md text-white px-3 py-2 rounded text-xs font-mono pointer-events-none text-right">
-        <div>Hover to see neighbors</div>
-      </div>
-    </div>
+      <SceneUI tileInfo={tileInfo} hoverInfo={hoverInfo} maxLevel={maxLevel} />
+    </ExamplesCanvas>
   );
 };
 
