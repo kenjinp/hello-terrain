@@ -1,12 +1,6 @@
 {
-  "name": "@hello-terrain/three",
-  "description": "High performance terrain system for three.js",
-  "homepage": "http://hello-terrain.kenny.wtf",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/kenjinp/hello-terrain.git"
-  },
-  "version": "0.0.0-alpha.3",
+  "name": "@hello-terrain/work",
+  "description": "Built with 🌹 create-krispya",
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -23,22 +17,19 @@
   ],
   "scripts": {
     "build": "unbuild",
-    "release": "pnpm run build && pnpm publish --access=public",
+    "release": "pnpm run build && pnpm publish",
     "test": "vitest",
-    "bench": "npx tsx benchmarks/Quadtree.bench.ts",
     "lint": "oxlint -c node_modules/@config/oxlint/base.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
   },
-  "peerDependencies": {
-    "three": "catalog:"
+  "dependencies": {
+    "eventery": "^0.0.4"
   },
   "devDependencies": {
     "@config/oxfmt": "workspace:*",
     "@config/oxlint": "workspace:*",
     "@config/typescript": "workspace:*",
-    "@types/three": "catalog:",
-    "mitata": "^1.0.34",
     "unbuild": "^3.5.0",
-    "vitest": "^4.0.16"
+    "vitest": "^4.0.0"
   }
 }

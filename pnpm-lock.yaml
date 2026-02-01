@@ -236,9 +236,6 @@ importers:
 
   packages/three:
     dependencies:
-      '@ts-dag/builder':
-        specifier: 0.1.0-alpha.6
-        version: 0.1.0-alpha.6
       three:
         specifier: 'catalog:'
         version: 0.182.0
@@ -264,6 +261,28 @@ importers:
       vitest:
         specifier: ^4.0.16
         version: 4.0.16(@opentelemetry/api@1.9.0)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)
+
+  packages/work:
+    dependencies:
+      eventery:
+        specifier: ^0.0.4
+        version: 0.0.4
+    devDependencies:
+      '@config/oxfmt':
+        specifier: workspace:*
+        version: link:../../.config/oxfmt
+      '@config/oxlint':
+        specifier: workspace:*
+        version: link:../../.config/oxlint
+      '@config/typescript':
+        specifier: workspace:*
+        version: link:../../.config/typescript
+      unbuild:
+        specifier: ^3.5.0
+        version: 3.6.1(typescript@5.9.3)
+      vitest:
+        specifier: ^4.0.0
+        version: 4.0.17(@opentelemetry/api@1.9.0)(@types/node@24.3.0)(jiti@2.6.1)(jsdom@26.1.0)(lightningcss@1.30.2)
 
 packages:
 
@@ -2365,14 +2384,6 @@ packages:
   '@tootallnate/quickjs-emscripten@0.23.0':
     resolution: {integrity: sha512-C5Mc6rdnsaJDjO3UpGW/CQTHtCKaYlScZTly4JIu97Jxo/odCiH0ITnDXSJPTOrEKk/ycSZ0AOgTmkDtkOsvIA==}
 
-  '@ts-dag/builder@0.1.0-alpha.6':
-    resolution: {integrity: sha512-XBt4D9WT7ZNRSqt+xexOFNG8Xi28+tvmfHthJ6TCnzMfQfdMJxqWzckkPaRuLL+CIKziJPJGprMFLLCwx1QOzg==}
-
-  '@ts-dag/simple-lock-state@0.1.0-alpha.3':
-    resolution: {integrity: sha512-IT0fjX6hmZWRWYLNpLBCctT7n8vNxK/PePCSQPmpgeCUPcgX7JWZeWaLuxjKE+B32mhsosu1NC4c46pPVpOKfQ==}
-    peerDependencies:
-      '@ts-dag/builder': ^0.1.0-alpha.4
-
   '@tsconfig/node10@1.0.12':
     resolution: {integrity: sha512-UCYBaeFvM11aU2y3YPZ//O5Rhj+xKyzy7mvcIoAjASbigy8mHMryP5cK7dgjlz2hWxh1g5pLw084E0a/wlUSFQ==}
 
@@ -2475,9 +2486,6 @@ packages:
 
   '@types/responselike@1.0.3':
     resolution: {integrity: sha512-H/+L+UkTV33uf49PH5pCAUBVPNj2nDBXTN+qS1dOwyyg24l3CcicicCA7ca+HMvJBZcFgl5r8e+RR6elsb4Lyw==}
-
-  '@types/retry@0.12.0':
-    resolution: {integrity: sha512-wWKOClTTiizcZhXnPY4wikVAwmdYHp8q6DmC+EJUzAMsycb7HB32Kh9RN4+0gExjmPmZSAQjgURXIGATPegAvA==}
 
   '@types/semver@7.7.1':
     resolution: {integrity: sha512-FmgJfu+MOcQ370SD0ev7EI8TlCAfKYU+B4m5T3yXc1CiRN94g/SZPtsCkk506aUDtlMnFZvasDwHHUcZUEaYuA==}
@@ -2682,9 +2690,6 @@ packages:
   astring@1.9.0:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
-
-  async-await-mutex-lock@1.0.12:
-    resolution: {integrity: sha512-zFq1Cxvk0OeU+dbrOFCLleOTNjG7g/PHKkQxzi6SfPR1vO1J3SC0rDoKf99TPb+nC5ezPirsZAff7qZVb+u8sA==}
 
   atomically@2.1.0:
     resolution: {integrity: sha512-+gDffFXRW6sl/HCwbta7zK4uNqbPjv4YJEAdz7Vu+FLQHe77eZ4bvbJGi4hE0QPeJlMYMA3piXEr1UL3dAwx7Q==}
@@ -3212,6 +3217,9 @@ packages:
   esutils@2.0.3:
     resolution: {integrity: sha512-kVscqXk4OCp68SZ0dkgEKVi6/8ij300KBWTJq32P/dYeWTSwK41WyTxalN1eRmA5Z9UU/LX9D7FWSmV9SAYx6g==}
     engines: {node: '>=0.10.0'}
+
+  eventery@0.0.4:
+    resolution: {integrity: sha512-rQbXJG8WX9z2cm3IJadkSUZLWFXuwGMIJ40oWyB23DhVb1e92T7Jx3qF0UwtgHI7D4VZzVswbZ7MXfW88cFF4Q==}
 
   execa@5.1.1:
     resolution: {integrity: sha512-8uSpZZocAZRBAPIEINJj3Lo9HyGitllczc27Eh5YYojjMFMn8yHMDMaUHE2Jqfq05D/wucwI4JGURyXt1vchyg==}
@@ -4401,10 +4409,6 @@ packages:
     resolution: {integrity: sha512-/bjOqmgETBYB5BoEeGVea8dmvHb2m9GLy1E9W43yeyfP6QQCZGFNa+XRceJEuDB6zqr+gKpIAmlLebMpykw/MQ==}
     engines: {node: '>=10'}
 
-  p-retry@4.6.2:
-    resolution: {integrity: sha512-312Id396EbJdvRONlngUx0NydfrIQ5lsYu0znKVUzVvArzEIt08V1qhtyESbGVd1FGX7UKtiFp5uwKZdM8wIuQ==}
-    engines: {node: '>=8'}
-
   pac-proxy-agent@7.2.0:
     resolution: {integrity: sha512-TEB8ESquiLMc0lV8vcd5Ql/JAKAoyzHFXaStwjkzpOpC5Yv+pIzLfHvjTSdf3vpa2bMiUQrg9i6276yn8666aA==}
     engines: {node: '>= 14'}
@@ -4917,10 +4921,6 @@ packages:
 
   retry@0.12.0:
     resolution: {integrity: sha512-9LkiTwjUh6rT555DtE9rTX+BKByPfrMzEAtnlEtdEwr3Nkffwiihqe2bWADg+OQRjt9gl6ICdmB/ZFDCGAtSow==}
-    engines: {node: '>= 4'}
-
-  retry@0.13.1:
-    resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
     engines: {node: '>= 4'}
 
   rollup-plugin-dts@6.3.0:
@@ -8030,17 +8030,6 @@ snapshots:
 
   '@tootallnate/quickjs-emscripten@0.23.0': {}
 
-  '@ts-dag/builder@0.1.0-alpha.6':
-    dependencies:
-      '@ts-dag/simple-lock-state': 0.1.0-alpha.3(@ts-dag/builder@0.1.0-alpha.6)
-      nanoid: 3.3.11
-      p-retry: 4.6.2
-
-  '@ts-dag/simple-lock-state@0.1.0-alpha.3(@ts-dag/builder@0.1.0-alpha.6)':
-    dependencies:
-      '@ts-dag/builder': 0.1.0-alpha.6
-      async-await-mutex-lock: 1.0.12
-
   '@tsconfig/node10@1.0.12': {}
 
   '@tsconfig/node12@1.0.11': {}
@@ -8139,8 +8128,6 @@ snapshots:
   '@types/responselike@1.0.3':
     dependencies:
       '@types/node': 20.19.30
-
-  '@types/retry@0.12.0': {}
 
   '@types/semver@7.7.1': {}
 
@@ -8338,8 +8325,6 @@ snapshots:
       tslib: 2.8.1
 
   astring@1.9.0: {}
-
-  async-await-mutex-lock@1.0.12: {}
 
   atomically@2.1.0:
     dependencies:
@@ -8932,6 +8917,8 @@ snapshots:
       '@types/estree': 1.0.8
 
   esutils@2.0.3: {}
+
+  eventery@0.0.4: {}
 
   execa@5.1.1:
     dependencies:
@@ -10443,11 +10430,6 @@ snapshots:
     dependencies:
       aggregate-error: 3.1.0
 
-  p-retry@4.6.2:
-    dependencies:
-      '@types/retry': 0.12.0
-      retry: 0.13.1
-
   pac-proxy-agent@7.2.0:
     dependencies:
       '@tootallnate/quickjs-emscripten': 0.23.0
@@ -11039,8 +11021,6 @@ snapshots:
       signal-exit: 4.1.0
 
   retry@0.12.0: {}
-
-  retry@0.13.1: {}
 
   rollup-plugin-dts@6.3.0(rollup@4.55.1)(typescript@5.9.3):
     dependencies:
