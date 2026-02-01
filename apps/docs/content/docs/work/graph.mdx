@@ -1,0 +1,418 @@
+---
+title: Graph
+description: Execution engine for running task graphs
+---
+
+The `Graph` is the runtime that:
+- executes tasks
+- tracks dependencies
+- memoizes results
+- enforces per-lane concurrency
+- emits observability events
+
+## Creating a Graph
+
+```ts
+import { graph } from "@hello-terrain/work";
+
+const g = graph();
+```
+
+The `graph()` function creates a new execution context with its own task registry and state.
+
+## API Reference
+
+### graph()
+
+Creates a new graph instance.
+
+**Returns:** `Graph`
+
+## Graph Methods
+
+### add(task)
+
+Registers a task with the graph. Tasks must be added before they can be executed.
+
+```ts
+const myTask = task((get, work) => {
+  const v = get(someParam);
+  return work(() => v * 2);
+});
+g.add(myTask);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `task` | `Task<T>` | The task to register |
+
+**Returns:** `TaskRef<T>` - The same task reference (for chaining)
+
+<Callout type="warn">
+  This graph runtime does **not** auto-register dependencies. If a task calls `get(otherTask)`,
+  `otherTask` must also have been added via `g.add(otherTask)` (in any order).
+</Callout>
+
+### run(options?)
+
+Executes the graph, computing all registered tasks (or specified targets) with dependency resolution.
+
+```ts
+const report = await g.run();
+console.log(report.status); // "ok", "error", or "cancelled"
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `targets` | `TaskRef[]` | Specific tasks to run (defaults to all) |
+| `laneConcurrency` | `Record<string, number>` | Max concurrent tasks per lane |
+| `signal` | `AbortSignal` | Abort signal for cancellation |
+| `resources` | `unknown` | Resources passed to task contexts |
+
+**Returns:** `Promise<RunReport>`
+
+### get(task)
+
+Returns the computed value of a task. Throws if the task hasn't been run or is not in a ready state.
+
+```ts
+await g.run();
+const result = g.get(myTask);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `task` | `TaskRef<T>` | The task to get the value for |
+
+**Returns:** `T` - The computed value
+
+**Throws:** `NoComputedValueError` if task is not ready, `UnknownNodeError` if task is not registered
+
+### peek(task)
+
+Returns the computed value of a task, or `undefined` if not ready. Does not throw.
+
+```ts
+const maybeResult = g.peek(myTask);
+if (maybeResult !== undefined) {
+  console.log("Got result:", maybeResult);
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `task` | `TaskRef<T>` | The task to peek at |
+
+**Returns:** `T | undefined`
+
+### on(callback)
+
+Subscribes to graph events for monitoring, logging, or debugging.
+
+```ts
+// Subscribe to all events (legacy)
+const unsubAll = g.on((event) => {
+  console.log(event.type, event);
+});
+
+// Subscribe to a group of events
+const unsubTasks = g.on("task:*", (event) => {
+  console.log(event.type, event.taskId);
+});
+
+// Subscribe to a single event type
+const unsubCacheHit = g.on("task:cacheHit", (event) => {
+  console.log("cache hit", event.taskId);
+});
+```
+
+| Signature | Description |
+|----------|-------------|
+| `on(cb)` | Subscribe to all events (legacy) |
+| `on("task:*", cb)` | Subscribe to all task events |
+| `on("run:*", cb)` | Subscribe to all run events |
+| `on("task:cacheHit", cb)` | Subscribe to a single event type |
+
+**Returns:** `() => void` - Unsubscribe function
+
+## Run Options
+
+### targets
+
+Run only specific tasks (and their dependencies):
+
+```ts
+// Only compute these tasks and their dependencies
+await g.run({
+  targets: [taskA, taskB],
+});
+```
+
+### laneConcurrency
+
+Control how many tasks can run in parallel per lane:
+
+```ts
+await g.run({
+  laneConcurrency: {
+    cpu: 4,     // Max 4 CPU-bound tasks in parallel
+    io: 10,     // Max 10 I/O-bound tasks in parallel
+    gpu: 1,     // Only 1 GPU task at a time
+  },
+});
+```
+
+Tasks without an explicit lane default to `"cpu"` with concurrency of 1.
+
+### signal
+
+Cancel a running graph:
+
+```ts
+const controller = new AbortController();
+
+// Start the run
+const promise = g.run({ signal: controller.signal });
+
+// Cancel after 5 seconds
+setTimeout(() => controller.abort(), 5000);
+
+const report = await promise;
+console.log(report.status); // "cancelled"
+```
+
+### resources
+
+Pass shared resources to all tasks:
+
+```ts
+const db = new Database();
+const cache = new Cache();
+
+await g.run({
+  resources: { db, cache },
+});
+
+// In tasks:
+const fetchUser = task(async (get, work, ctx) => {
+  const { db } = ctx.resources;
+  return db.users.find(get(userId));
+});
+```
+
+## Run Report
+
+The `run()` method returns a report with execution statistics:
+
+```ts
+interface RunReport {
+  runId: string;      // Unique run identifier
+  status: RunStatus;  // "ok", "error", or "cancelled"
+  startedAt: number;  // Start timestamp (ms)
+  finishedAt: number; // End timestamp (ms)
+  durationMs: number; // Total duration
+  taskCount: number;  // Tasks executed (not from cache)
+  cacheHits: number;  // Tasks served from cache
+}
+```
+
+```ts
+const report = await g.run();
+
+console.log(`Run ${report.runId}`);
+console.log(`Status: ${report.status}`);
+console.log(`Duration: ${report.durationMs}ms`);
+console.log(`Tasks: ${report.taskCount} executed, ${report.cacheHits} cached`);
+```
+
+## Graph Events
+
+Subscribe to events for observability:
+
+| Event Type | Properties | Description |
+|------------|------------|-------------|
+| `run:start` | `runId`, `at` | Run begins |
+| `run:finish` | `runId`, `at`, `status` | Run completes |
+| `task:start` | `runId`, `taskId`, `at`, `lane` | Task begins |
+| `task:finish` | `runId`, `taskId`, `at`, `durationMs` | Task completes |
+| `task:cacheHit` | `runId`, `taskId`, `at` | Task served from cache |
+| `task:error` | `runId`, `taskId`, `at`, `durationMs`, `error` | Task failed |
+
+```ts
+g.on("run:*", (event) => console.log(`[${event.runId}]`, event.type));
+g.on("task:*", (event) => console.log(`[${event.runId}]`, event.type, event.taskId));
+g.on("task:error", (event) => console.error(`[${event.runId}]`, event.taskId, event.error));
+```
+
+## Error Handling
+
+### UnknownNodeError
+
+Thrown when attempting to access a task that hasn't been registered:
+
+```ts
+try {
+  g.get(unregisteredTask);
+} catch (e) {
+  if (e instanceof UnknownNodeError) {
+    console.error(`Task ${e.id} is not registered`);
+  }
+}
+```
+
+### NoComputedValueError
+
+Thrown when accessing a task that hasn't been computed yet:
+
+```ts
+try {
+  g.get(myTask); // Without running first
+} catch (e) {
+  if (e instanceof NoComputedValueError) {
+    console.error(`Task ${e.id} has not been computed`);
+  }
+}
+```
+
+### CyclicalGraphError
+
+Thrown when a cycle is detected during execution:
+
+```ts
+// This would create a cycle
+const a = task((get, work) => {
+  const bv = get(b);
+  return work(() => bv + 1);
+});
+const b = task((get, work) => {
+  const av = get(a);
+  return work(() => av + 1);
+});
+
+// Running will throw CyclicalGraphError
+```
+
+### CancelledError
+
+Thrown when a run is aborted:
+
+```ts
+const controller = new AbortController();
+controller.abort();
+
+try {
+  await g.run({ signal: controller.signal });
+} catch (e) {
+  // Tasks may throw the abort reason
+}
+```
+
+## Examples
+
+### Complete Example
+
+```ts
+import { param, task, graph } from "@hello-terrain/work";
+
+// Inputs
+const items = param<number[]>([1, 2, 3, 4, 5]).displayName("items");
+const multiplier = param(2).displayName("multiplier");
+
+// Computations
+const doubled = task((get, work) => {
+  const xs = get(items);
+  const m = get(multiplier);
+  return work(() => xs.map((x) => x * m));
+}).displayName("doubled");
+
+const sum = task((get, work) => {
+  const xs = get(doubled);
+  return work(() => xs.reduce((a, b) => a + b, 0));
+}).displayName("sum");
+
+const average = task((get, work) => {
+  const s = get(sum);
+  const values = get(doubled);
+  return work(() => s / values.length);
+}).displayName("average");
+
+// Setup
+const g = graph();
+g.add(doubled);
+g.add(sum);
+g.add(average);
+
+// Monitor execution
+g.on((e) => {
+  if (e.type === "task:finish") {
+    console.log(`${e.taskId} took ${e.durationMs}ms`);
+  }
+});
+
+// Initial run
+let report = await g.run();
+console.log("Sum:", g.get(sum));         // 30
+console.log("Average:", g.get(average)); // 6
+console.log("Cache hits:", report.cacheHits); // 0
+
+// Update input and re-run
+multiplier.set(() => 3);
+report = await g.run();
+console.log("Sum:", g.get(sum));         // 45
+console.log("Average:", g.get(average)); // 9
+console.log("Cache hits:", report.cacheHits); // 0 (all recomputed due to dependency change)
+
+// Re-run without changes
+report = await g.run();
+console.log("Cache hits:", report.cacheHits); // 3 (all from cache)
+```
+
+### Async Pipeline
+
+```ts
+const apiUrl = param("https://api.example.com");
+
+const fetchUsers = task(async (get, work, ctx) => {
+  const url = get(apiUrl);
+  const response = await fetch(`${url}/users`, { signal: ctx.signal });
+  return work(() => response.json());
+}).displayName("fetchUsers").lane("network");
+
+const fetchPosts = task(async (get, work, ctx) => {
+  const url = get(apiUrl);
+  const response = await fetch(`${url}/posts`, { signal: ctx.signal });
+  return work(() => response.json());
+}).displayName("fetchPosts").lane("network");
+
+const combined = task((get, work) => {
+  const users = get(fetchUsers);
+  const posts = get(fetchPosts);
+  return work(() => ({ users, posts }));
+}).displayName("combined");
+
+const g = graph();
+g.add(combined);
+
+// Both fetches run in parallel (same lane, default concurrency)
+await g.run({
+  laneConcurrency: { network: 5 },
+});
+```
+
+## Inspecting the Graph (inspect)
+
+Use `g.inspect()` to export a snapshot of the graph for visualization/debugging. This does **not**
+run tasks; it only reflects what the graph currently knows (including discovered dependencies).
+
+```ts
+const snapshot = g.inspect({ includeRuntime: true, includeTopo: true });
+
+console.log(snapshot.nodes);
+console.log(snapshot.edges);
+console.log(snapshot.meta?.topoOrder);
+```
+
+The returned shape is:
+- `nodes`: params + tasks (optionally includes `state`, `dirty`, `version`)
+- `edges`: `from -> to` dependencies (`kind: "param" | "task"`)
+- `meta`: internal counters like `compileCount` and optional `topoOrder`

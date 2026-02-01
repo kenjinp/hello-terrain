@@ -59,6 +59,9 @@ importers:
       '@hello-terrain/three':
         specifier: workspace:*
         version: link:../../packages/three
+      '@hello-terrain/work':
+        specifier: workspace:*
+        version: link:../../packages/work
       '@orama/orama':
         specifier: ^3.1.18
         version: 3.1.18

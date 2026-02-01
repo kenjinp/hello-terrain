@@ -1,0 +1,145 @@
+---
+title: Work
+description: A small reactive task graph for typed async computations
+---
+
+
+`@hello-terrain/work` is a small library for building **reactive computation graphs**.
+You define **inputs** (`param`), **computations** (`task`), and run them in an **engine** (`graph`).
+
+It’s designed for:
+- **Typed dependency graphs** (params + tasks)
+- **Memoized recomputation** when inputs change
+- **Lane-based concurrency** (per-lane semaphores)
+- **Cancellation** (AbortSignal)
+- **Observability** via a lightweight event stream
+
+## Key Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **Param** | A reactive value that can be read, updated, and subscribed to |
+| **Task** | A computation node that depends on params or other tasks |
+| **Graph** | An execution engine that runs tasks with dependency resolution and caching |
+
+## Installation
+
+```bash
+# npm
+npm install @hello-terrain/work
+
+# pnpm
+pnpm add @hello-terrain/work
+
+# yarn
+yarn add @hello-terrain/work
+```
+
+## Quick Start
+
+This example shows params → tasks → graph execution:
+
+```ts
+import { param, task, graph } from "@hello-terrain/work";
+
+const width = param(10).displayName("width");
+const height = param(20).displayName("height");
+
+const area = task((get, work) => {
+  const w = get(width);
+  const h = get(height);
+  return work(() => w * h);
+}).displayName("area");
+
+const description = task((get, work) => {
+  const a = get(area);
+  return work(() => `The area is ${a} square units`);
+}).displayName("description");
+
+const g = graph();
+g.add(area);
+g.add(description); // tasks must be registered before they can run
+
+const report = await g.run();
+console.log(report.status); // "ok"
+
+console.log(g.get(area)); // 200
+console.log(g.get(description)); // "The area is 200 square units"
+
+width.set(() => 15);
+await g.run();
+console.log(g.get(area)); // 300
+```
+
+## Features
+
+### Automatic Dependency Tracking
+
+Dependencies are discovered automatically when tasks call `get()` (before `work()`). No manual wiring required.
+
+```ts
+const total = task((get, work) => {
+  const aVal = get(a);
+  const bVal = get(b);
+  const cVal = get(c);
+  return work(() => aVal + bVal + cVal);
+});
+```
+
+<Callout type="note">
+  Dependency tracking is automatic, but **task registration is explicit**: you still need to
+  `g.add(task)` for every task you want the graph to be able to compute (including upstream tasks).
+</Callout>
+
+### Memoization
+
+Tasks cache their results by default. They only recompute when their dependencies change.
+
+```ts
+const expensive = task((get, work) => {
+  const input = get(someParam);
+  return work(() => heavyComputation(input));
+}).cache("memo"); // Default behavior
+
+const alwaysFresh = task((get, work) => {
+  const input = get(someParam);
+  return work(() => input);
+}).cache("none"); // Always recompute
+```
+
+### Cancellation Support
+
+All tasks receive an abort signal for cooperative cancellation.
+
+```ts
+const fetchTask = task(async (get, work, ctx) => {
+  const response = await fetch(url, { signal: ctx.signal });
+  return work(() => response.json());
+});
+
+// Cancel a running graph
+const controller = new AbortController();
+const promise = g.run({ signal: controller.signal });
+controller.abort();
+```
+
+### Event System
+
+Subscribe to graph events for monitoring, logging, or debugging.
+
+```ts
+// Subscribe to a group of events
+const unsubTasks = g.on("task:*", (event) => console.log(event.type, event.taskId));
+
+// Subscribe to a single event type
+const unsubCacheHits = g.on("task:cacheHit", (event) => console.log("cache hit", event.taskId));
+
+unsubTasks();
+unsubCacheHits();
+```
+
+## Next Steps
+
+- [Param](/work/param) - Reactive parameter primitives
+- [Task](/work/task) - Task definition and configuration
+- [Graph](/work/graph) - Execution engine and run options

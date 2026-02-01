@@ -1,0 +1,348 @@
+---
+title: Task
+description: Computation nodes with automatic dependency tracking
+---
+
+A `Task` is a computation node that can depend on params or other tasks.
+Tasks are **lazy**: they only execute when you run a graph, and they’re **memoized** by default.
+
+## Creating a Task
+
+```ts
+import { task } from "@hello-terrain/work";
+
+const double = task((get, work) => {
+  const value = get(someParam);
+  return work(() => value * 2);
+});
+```
+
+`task(compute)` returns a `Task<T>` you can configure fluently (`.cache()`, `.lane()`, `.displayName()`, …) and then register with a graph.
+
+## API Reference
+
+### task(compute, options?)
+
+Creates a new task node.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `compute` | `(get, work, ctx) => T \| Promise<T>` | The computation function |
+| `options` | `TaskOptions` | Optional configuration |
+
+**Returns:** `Task<T>`
+
+### Compute Function Parameters
+
+The compute function receives three arguments:
+
+#### get(ref)
+
+Retrieves the value of a param or another task. This automatically registers a dependency.
+
+```ts
+const sum = task((get, work) => {
+  const a = get(paramA);  // Depends on paramA
+  const b = get(taskB);   // Depends on taskB
+  return work(() => a + b);
+});
+```
+
+<Callout type="warn">
+  All `get()` calls must happen before calling `work()`. Reading dependencies after starting work will throw an error.
+</Callout>
+
+#### work(fn)
+
+Executes a “work unit”. This boundary ensures the dependancies are up to date when the callback is executed. 
+
+```ts
+const processed = task((get, work) => {
+  const data = get(rawData);
+  
+  return work(() => {
+    // Heavy computation happens here
+    return expensiveProcess(data);
+  });
+});
+```
+
+<Callout type="note">
+  `work()` may be called **at most once per task compute**. Calling `work()` more than once will throw.
+</Callout>
+
+#### ctx (TaskContext)
+
+Provides execution context including lane info, abort signal, and timing utilities.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `lane` | `string` | The lane this task is executing in |
+| `signal` | `AbortSignal` | Abort signal for cancellation |
+| `now()` | `() => number` | High-precision time in milliseconds |
+| `resources` | `unknown` | User-supplied resources (if provided to run) |
+
+```ts
+const fetchData = task(async (get, work, ctx) => {
+  const url = get(apiUrl);
+  
+  // Check for cancellation
+  if (ctx.signal.aborted) {
+    throw new Error("Cancelled");
+  }
+  
+  // Pass signal to fetch for automatic cancellation
+  const response = await fetch(url, { signal: ctx.signal });
+  return work(() => response.json());
+});
+```
+
+## Task Configuration
+
+Tasks support fluent configuration methods:
+
+### displayName(name)
+
+Sets a human-readable name for debugging and visualization.
+
+```ts
+const area = task((get, work) => {
+  const w = get(width);
+  const h = get(height);
+  return work(() => w * h);
+}).displayName("area");
+```
+
+### lane(lane)
+
+Assigns the task to a lane for concurrency control. Tasks on the same lane share a semaphore.
+
+```ts
+const cpuBound = task((get, work) => {
+  return work(() => heavyComputation());
+}).lane("cpu");
+
+const ioBound = task(async (get, work, ctx) => {
+  return await fetchFromNetwork(ctx.signal);
+}).lane("io");
+```
+
+### cache(strategy)
+
+Sets the caching strategy for the task.
+
+| Strategy | Description |
+|----------|-------------|
+| `"memo"` | Cache results; only recompute when dependencies change (default) |
+| `"none"` | Always recompute on every run |
+
+```ts
+// Default: memoized
+const memoized = task((get, work) => {
+  const v = get(input);
+  return work(() => v * 2);
+});
+
+// Explicit memoization
+const cached = task((get, work) => {
+  const v = get(input);
+  return work(() => v * 2);
+}).cache("memo");
+
+// Always recompute
+const fresh = task((_get, work) => work(() => Date.now())).cache("none");
+```
+
+### tags(tags)
+
+Annotates the task with tags for filtering or debugging.
+
+```ts
+const critical = task((get, work) => {
+  const v = get(input);
+  return work(() => v);
+}).tags(["critical", "user-facing"]);
+```
+
+## Examples
+
+### Simple Computation
+
+```ts
+import { param, task, graph } from "@hello-terrain/work";
+
+const a = param(5);
+const b = param(3);
+
+const sum = task((get, work) => {
+  const av = get(a);
+  const bv = get(b);
+  return work(() => av + bv);
+}).displayName("sum");
+
+const product = task((get, work) => {
+  const av = get(a);
+  const bv = get(b);
+  return work(() => av * bv);
+}).displayName("product");
+
+const g = graph();
+g.add(sum);
+g.add(product);
+
+await g.run();
+console.log(g.get(sum));     // 8
+console.log(g.get(product)); // 15
+```
+
+### Task Dependencies
+
+Tasks can depend on other tasks, forming a computation DAG:
+
+```ts
+const basePrice = param(100);
+const quantity = param(3);
+const taxRate = param(0.08);
+
+const subtotal = task((get, work) => {
+  const base = get(basePrice);
+  const qty = get(quantity);
+  return work(() => base * qty);
+}).displayName("subtotal");
+
+const tax = task((get, work) => {
+  const s = get(subtotal);
+  const r = get(taxRate);
+  return work(() => s * r);
+}).displayName("tax");
+
+const total = task((get, work) => {
+  const s = get(subtotal);
+  const t = get(tax);
+  return work(() => s + t);
+}).displayName("total");
+
+const g = graph();
+g.add(subtotal);
+g.add(tax);
+g.add(total);
+
+await g.run();
+console.log(g.get(subtotal)); // 300
+console.log(g.get(tax));      // 24
+console.log(g.get(total));    // 324
+```
+
+### Async Tasks
+
+Tasks can be asynchronous:
+
+```ts
+const userId = param("user-123");
+
+const userData = task(async (get, work, ctx) => {
+  const id = get(userId);
+  
+  const response = await fetch(`/api/users/${id}`, {
+    signal: ctx.signal,
+  });
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch user: ${response.status}`);
+  }
+  
+  return work(() => response.json());
+}).displayName("userData").lane("network");
+
+const userName = task((get, work) => {
+  const user = get(userData);
+  return work(() => user.name);
+}).displayName("userName");
+```
+
+### Using the Work Function
+
+The `work()` function isolates the actual computation from dependency resolution:
+
+```ts
+const processedImage = task((get, work) => {
+  // Read all dependencies first
+  const image = get(rawImage);
+  const filters = get(filterSettings);
+  const quality = get(outputQuality);
+  
+  // Then do the heavy work
+  return work(() => {
+    let result = image;
+    for (const filter of filters) {
+      result = applyFilter(result, filter);
+    }
+    return compress(result, quality);
+  });
+}).displayName("processedImage").lane("cpu");
+```
+
+### With Resources
+
+Pass shared resources to tasks via the run options:
+
+```ts
+interface Resources {
+  db: Database;
+  cache: CacheClient;
+}
+
+const userRecord = task(async (get, work, ctx) => {
+  const id = get(userId);
+  const { db, cache } = ctx.resources as Resources;
+  
+  // Check cache first
+  const cached = await cache.get(`user:${id}`);
+  if (cached) return cached;
+  
+  // Fetch from database
+  const record = await db.users.findById(id);
+  await cache.set(`user:${id}`, record);
+  return record;
+});
+
+// Run with resources
+await g.run({
+  resources: { db, cache },
+});
+```
+
+## Task States
+
+During execution, tasks transition through states:
+
+| State | Description |
+|-------|-------------|
+| `idle` | Not started or waiting to be scheduled |
+| `running` | Currently executing |
+| `ready` | Completed successfully; result is cached |
+| `error` | Failed with an error |
+
+## Type Inference
+
+Task output types are inferred from the compute function:
+
+```ts
+// Inferred as Task<number>
+const count = task((get, work) => {
+  const xs = get(items);
+  return work(() => xs.length);
+});
+
+// Inferred as Task<User>
+const user = task(async (_get, work) => {
+  const response = await fetch("/api/user");
+  return work(() => response.json() as User);
+});
+
+// Explicit type (rarely needed)
+const typed = task<string>((get, work) => {
+  const v = get(value);
+  return work(() => String(v));
+});
+```

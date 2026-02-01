@@ -1,0 +1,213 @@
+---
+title: Param
+description: Reactive parameters for the task graph
+---
+
+A `Param` is a small reactive container you can:
+- read (`get()`)
+- update (`set(cb)`)
+- observe (`subscribe(cb)`)
+
+Params are usually the **inputs** to tasks. When a param changes, dependent tasks become **dirty** and will recompute on the next `g.run()`.
+
+## Creating a Param
+
+```ts
+import { param } from "@hello-terrain/work";
+
+const count = param(0);
+const name = param("hello");
+const config = param({ debug: true, maxRetries: 3 });
+```
+
+`param(initial)` infers the type from the initial value and returns a `ParamRef<T>`.
+
+## API Reference
+
+### param(initial)
+
+Creates a new reactive parameter.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `initial` | `T` | The initial value of the parameter |
+
+**Returns:** `ParamRef<T>`
+
+## ParamRef Interface
+
+### get()
+
+Returns the current value of the parameter.
+
+```ts
+const width = param(100);
+console.log(width.get()); // 100
+```
+
+### set(callback)
+
+Updates the parameter value using a callback function. The callback receives the previous value and returns the new value.
+
+```ts
+const count = param(0);
+
+// Increment
+count.set((prev) => prev + 1);
+
+// Replace entirely
+count.set(() => 42);
+
+// Chain updates (fluent API)
+count
+  .set((prev) => prev + 1)
+  .set((prev) => prev * 2);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `callback` | `(prev: T) => T` | Function that receives current value and returns new value |
+
+**Returns:** `ParamRef<T>` (for chaining)
+
+### subscribe(callback)
+
+Subscribes to value changes. The callback is invoked whenever the param is updated via `set()`.
+
+```ts
+const theme = param("light");
+
+const unsubscribe = theme.subscribe((next, prev) => {
+  console.log(`Theme changed from ${prev} to ${next}`);
+});
+
+theme.set(() => "dark");
+// Logs: "Theme changed from light to dark"
+
+// Clean up when done
+unsubscribe();
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `callback` | `(next: T, prev: T) => void` | Function called on each value change |
+
+**Returns:** `() => void` - Unsubscribe function
+
+### displayName(name)
+
+Assigns a human-readable name for debugging and visualization.
+
+```ts
+const playerHealth = param(100).displayName("playerHealth");
+console.log(playerHealth.name); // "playerHealth"
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `name` | `string` | Display name for the parameter |
+
+**Returns:** `ParamRef<T>` (for chaining)
+
+### Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `kind` | `"param"` | Type discriminator for distinguishing params from tasks |
+| `id` | `string` | Unique identifier (UUID) |
+| `name` | `string \| undefined` | Display name if set |
+
+## Examples
+
+### Counter
+
+```ts
+const count = param(0).displayName("count");
+
+// Read
+console.log(count.get()); // 0
+
+// Update
+count.set((n) => n + 1);
+console.log(count.get()); // 1
+
+// Subscribe
+count.subscribe((next, prev) => {
+  console.log(`Count: ${prev} → ${next}`);
+});
+
+count.set((n) => n + 1); // Logs: "Count: 1 → 2"
+```
+
+### Configuration Object
+
+```ts
+interface Config {
+  apiUrl: string;
+  timeout: number;
+  retries: number;
+}
+
+const config = param<Config>({
+  apiUrl: "https://api.example.com",
+  timeout: 5000,
+  retries: 3,
+}).displayName("config");
+
+// Update a single field
+config.set((prev) => ({
+  ...prev,
+  timeout: 10000,
+}));
+
+// Read current config
+const current = config.get();
+console.log(current.timeout); // 10000
+```
+
+### Using with Tasks
+
+Params are the primary way to inject changing input values into a task graph:
+
+```ts
+import { param, task, graph } from "@hello-terrain/work";
+
+const basePrice = param(100).displayName("basePrice");
+const taxRate = param(0.08).displayName("taxRate");
+
+const totalPrice = task((get, work) => {
+  const base = get(basePrice);
+  const tax = get(taxRate);
+  return work(() => base * (1 + tax));
+}).displayName("totalPrice");
+
+const g = graph();
+g.add(totalPrice);
+
+await g.run();
+console.log(g.get(totalPrice)); // 108
+
+// Update input and re-run
+taxRate.set(() => 0.10);
+await g.run();
+console.log(g.get(totalPrice)); // 110
+```
+
+## Type Safety
+
+Params are fully typed—the type is inferred from the initial value or can be explicitly specified:
+
+```ts
+// Type inferred as ParamRef<number>
+const count = param(0);
+
+// Explicit type annotation
+const items = param<string[]>([]);
+
+// Complex types
+interface User {
+  id: string;
+  name: string;
+}
+const currentUser = param<User | null>(null);
+```

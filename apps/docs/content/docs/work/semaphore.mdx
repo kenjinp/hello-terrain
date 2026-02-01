@@ -1,0 +1,36 @@
+---
+title: Semaphore
+description: The per-lane concurrency primitive used by Graph
+---
+
+The Work graph runtime uses a **semaphore per lane** to enforce `laneConcurrency`.
+
+This page describes the concept and behavior. (The semaphore implementation is an internal utility used by the graph runtime.)
+
+## What it does
+
+A semaphore controls how many tasks can run at the same time in a given lane:
+
+- If a lane has 1 permit, tasks in that lane run **one at a time**
+- If a lane has N permits, up to **N tasks** can be running concurrently in that lane
+- Different lanes do **not** share permits
+
+## How it’s used
+
+When you run a graph you can configure concurrency per lane:
+
+```ts
+await g.run({
+  laneConcurrency: {
+    cpu: 4,
+    io: 16,
+  },
+});
+```
+
+Tasks opt into lanes via `.lane("cpu")`, `.lane("io")`, etc.
+
+## Edge cases
+
+- Lane concurrency values are effectively clamped to **at least 1**.
+- Non-integers are **floored**.

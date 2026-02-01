@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hello-terrain/three": "workspace:*",
+    "@hello-terrain/work": "workspace:*",
     "@orama/orama": "^3.1.18",
     "@react-three/drei": "catalog:",
     "@react-three/fiber": "catalog:",

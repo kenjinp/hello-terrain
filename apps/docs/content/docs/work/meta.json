@@ -1,0 +1,12 @@
+{
+  "title": "Work",
+  "description": "Task graph and reactive computation library",
+  "root": true,
+  "pages": [
+    "index",
+    "param",
+    "task",
+    "graph",
+    "semaphore"
+  ]
+}

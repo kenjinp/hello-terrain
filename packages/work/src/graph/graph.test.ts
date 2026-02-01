@@ -158,25 +158,22 @@ describe("graph()", () => {
         workRuns += 1;
         return 1;
       });
-      const b = work(() => {
+      // Second work() call should throw.
+      void work(() => {
         workRuns += 1;
         return 2;
       });
-      return a + b;
+      return a;
     })
       .cache("none")
       .displayName("t");
 
     g.add(t);
 
-    await g.run({ targets: [t] });
-    // `work()` only executes the first callback; subsequent calls return the first value.
-    expect(g.get(t)).toBe(2);
+    const r1 = await g.run({ targets: [t] });
+    expect(r1.status).toBe("error");
+    expect(() => g.get(t)).toThrow(/no computed value/i);
     expect(workRuns).toBe(1);
-
-    await g.run({ targets: [t] });
-    expect(g.get(t)).toBe(2);
-    expect(workRuns).toBe(2);
   });
 
   it("respects lanes and laneConcurrency", async () => {
@@ -317,8 +314,15 @@ describe("graph()", () => {
 
   it("emits graph events (run/task/cacheHit/error) via on()", async () => {
     const g = graph();
-    const events: any[] = [];
-    const unsub = g.on((e) => events.push(e));
+    const allEvents: any[] = [];
+    const taskEvents: any[] = [];
+    const cacheHitEvents: any[] = [];
+    const errorEvents: any[] = [];
+
+    const unsubAll = g.on((e) => allEvents.push(e));
+    const unsubTask = g.on("task:*", (e) => taskEvents.push(e));
+    const unsubCacheHit = g.on("task:cacheHit", (e) => cacheHitEvents.push(e));
+    const unsubError = g.on("task:error", (e) => errorEvents.push(e));
 
     const ok = task(() => 1).displayName("ok");
     g.add(ok);
@@ -327,23 +331,36 @@ describe("graph()", () => {
     expect(r1.status).toBe("ok");
 
     // Basic shape + ordering for a successful run.
-    expect(events[0]?.type).toBe("run:start");
-    expect(events.some((e) => e.type === "task:start" && e.taskId === ok.id)).toBe(true);
-    expect(events.some((e) => e.type === "task:finish" && e.taskId === ok.id)).toBe(true);
-    expect(events[events.length - 1]?.type).toBe("run:finish");
+    expect(allEvents[0]?.type).toBe("run:start");
+    expect(allEvents.some((e) => e.type === "task:start" && e.taskId === ok.id)).toBe(true);
+    expect(allEvents.some((e) => e.type === "task:finish" && e.taskId === ok.id)).toBe(true);
+    expect(allEvents[allEvents.length - 1]?.type).toBe("run:finish");
 
-    const runId1 = events[0].runId;
-    expect(events.every((e) => e.runId === runId1)).toBe(true);
+    const runId1 = allEvents[0].runId;
+    expect(allEvents.every((e) => e.runId === runId1)).toBe(true);
+
+    expect(taskEvents.map((e) => e.type)).toEqual(["task:start", "task:finish"]);
+    expect(cacheHitEvents.length).toBe(0);
+    expect(errorEvents.length).toBe(0);
 
     // Second run should cache-hit the memo task (no task:start/finish).
-    events.length = 0;
+    allEvents.length = 0;
+    taskEvents.length = 0;
+    cacheHitEvents.length = 0;
+    errorEvents.length = 0;
     const r2 = await g.run({ targets: [ok] });
     expect(r2.status).toBe("ok");
-    expect(events.map((e) => e.type)).toEqual(["run:start", "task:cacheHit", "run:finish"]);
-    expect(events[0].runId).toBe(events[1].runId);
+    expect(allEvents.map((e) => e.type)).toEqual(["run:start", "task:cacheHit", "run:finish"]);
+    expect(allEvents[0].runId).toBe(allEvents[1].runId);
+    expect(taskEvents.map((e) => e.type)).toEqual(["task:cacheHit"]);
+    expect(cacheHitEvents.map((e) => e.type)).toEqual(["task:cacheHit"]);
+    expect(errorEvents.length).toBe(0);
 
     // Error case should emit task:error and run:finish status=error.
-    events.length = 0;
+    allEvents.length = 0;
+    taskEvents.length = 0;
+    cacheHitEvents.length = 0;
+    errorEvents.length = 0;
     const boom = new Error("boom");
     const bad = task(() => {
       throw boom;
@@ -353,17 +370,113 @@ describe("graph()", () => {
     const r3 = await g.run({ targets: [bad] });
     expect(r3.status).toBe("error");
 
-    expect(events[0]?.type).toBe("run:start");
-    expect(events.some((e) => e.type === "task:start" && e.taskId === bad.id)).toBe(true);
-    const errEvent = events.find((e) => e.type === "task:error" && e.taskId === bad.id);
+    expect(allEvents[0]?.type).toBe("run:start");
+    expect(allEvents.some((e) => e.type === "task:start" && e.taskId === bad.id)).toBe(true);
+    const errEvent = allEvents.find((e) => e.type === "task:error" && e.taskId === bad.id);
     expect(errEvent).toBeTruthy();
     expect(errEvent.error).toBe(boom);
-    expect(events[events.length - 1]).toMatchObject({ type: "run:finish", status: "error" });
+    expect(allEvents[allEvents.length - 1]).toMatchObject({ type: "run:finish", status: "error" });
+
+    expect(taskEvents.map((e) => e.type)).toEqual(["task:start", "task:error"]);
+    expect(cacheHitEvents.length).toBe(0);
+    expect(errorEvents.length).toBe(1);
+    expect(errorEvents[0].error).toBe(boom);
 
     // Unsubscribe should stop future delivery.
-    unsub();
-    events.length = 0;
+    unsubAll();
+    unsubTask();
+    unsubCacheHit();
+    unsubError();
+    allEvents.length = 0;
+    taskEvents.length = 0;
+    cacheHitEvents.length = 0;
+    errorEvents.length = 0;
     await g.run({ targets: [ok] });
-    expect(events.length).toBe(0);
+    expect(allEvents.length).toBe(0);
+    expect(taskEvents.length).toBe(0);
+    expect(cacheHitEvents.length).toBe(0);
+    expect(errorEvents.length).toBe(0);
+  });
+
+  it("inspect() exports nodes + edges for visualization", async () => {
+    const g = graph();
+    const p = param(1).displayName("p");
+
+    const a = task((get, work) => {
+      const pv = get(p);
+      return work(() => pv + 1);
+    }).displayName("a");
+
+    const b = task((get, work) => {
+      const av = get(a);
+      return work(() => av + 1);
+    }).displayName("b");
+
+    g.add(a);
+    g.add(b);
+
+    await g.run({ targets: [b] });
+
+    const inspected = g.inspect();
+    expect(inspected.nodes.some((n) => n.kind === "task" && n.id === a.id)).toBe(true);
+    expect(inspected.nodes.some((n) => n.kind === "task" && n.id === b.id)).toBe(true);
+    expect(inspected.nodes.some((n) => n.kind === "param" && n.id === p.id)).toBe(true);
+
+    expect(
+      inspected.edges.some((e) => e.from === p.id && e.to === a.id && e.kind === "param"),
+    ).toBe(true);
+    expect(inspected.edges.some((e) => e.from === a.id && e.to === b.id && e.kind === "task")).toBe(
+      true,
+    );
+  });
+
+  it("does not recompile DAG when only values change", async () => {
+    const g = graph();
+    const p = param(1).displayName("p");
+
+    const t = task((get, work) => {
+      const pv = get(p);
+      return work(() => pv + 1);
+    }).displayName("t");
+
+    g.add(t);
+
+    // Run once to discover deps; run again to ensure topo is compiled after structure settles.
+    await g.run({ targets: [t] });
+
+    const before = g.inspect({ includeRuntime: true }).meta!;
+    p.set((prev) => prev + 1);
+    await g.run({ targets: [t] });
+    const after = g.inspect({ includeRuntime: true }).meta!;
+
+    expect(after.compileCount).toBe(before.compileCount);
+  });
+
+  it("recompiles DAG when a task's deps set changes", async () => {
+    const g = graph();
+    const toggle = param(false).displayName("toggle");
+    const p1 = param(1).displayName("p1");
+    const p2 = param(10).displayName("p2");
+
+    const t = task((get, work) => {
+      const on = get(toggle);
+      const v = on ? get(p2) : get(p1);
+      return work(() => v);
+    }).displayName("t");
+
+    g.add(t);
+
+    await g.run({ targets: [t] });
+
+    const before = g.inspect({ includeRuntime: true }).meta!;
+
+    toggle.set(() => true);
+    await g.run({ targets: [t] }); // deps change during this run
+
+    // Next run should trigger a recompile due to structureVersion bump.
+    await g.run({ targets: [t] });
+    const after = g.inspect({ includeRuntime: true }).meta!;
+
+    expect(after.compileCount).toBeGreaterThan(before.compileCount);
   });
 });

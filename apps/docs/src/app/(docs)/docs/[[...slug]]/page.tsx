@@ -35,10 +35,13 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
 
 export async function generateStaticParams() {
   // Limit params to the docs subtree and strip the leading "docs" segment
-  return docsSource
+  const params = docsSource
     .generateParams()
     .filter((p: { slug?: string[] }) => Array.isArray(p.slug) && p.slug[0] === "docs")
     .map((p: { slug: string[] }) => ({ slug: p.slug.slice(1) }));
+
+  // `[[...slug]]` requires an explicit empty slug for `/docs` when `output: "export"`.
+  return [{ slug: [] as string[] }, ...params];
 }
 
 export async function generateMetadata(props: PageProps<"/docs/[[...slug]]">): Promise<Metadata> {

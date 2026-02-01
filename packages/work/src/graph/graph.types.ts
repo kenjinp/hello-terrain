@@ -46,6 +46,24 @@ export type GraphEvent =
       error: unknown;
     };
 
+export type GraphEventType = GraphEvent["type"];
+
+export type GraphEventPrefix = GraphEventType extends `${infer P}:${string}` ? P : never;
+
+/** Wildcard subscription like `"task:*"` */
+export type GraphEventPattern = `${GraphEventPrefix}:*`;
+
+/** Exact event type or wildcard subscription like `"task:*"` */
+export type GraphEventSelector = GraphEventType | GraphEventPattern;
+
+export type GraphEventOfType<T extends GraphEventType> = Extract<GraphEvent, { type: T }>;
+
+export type GraphEventOfSelector<S extends GraphEventSelector> = S extends GraphEventType
+  ? GraphEventOfType<S>
+  : S extends `${infer P}:*`
+    ? Extract<GraphEvent, { type: `${P}:${string}` }>
+    : GraphEvent;
+
 /**
  * Report summarizing the outcome of a graph run.
  */
@@ -72,3 +90,46 @@ export interface RunOptions<L extends string, Res> {
   signal?: AbortSignal;
   resources?: Res;
 }
+
+export type InspectNode =
+  | {
+      id: string;
+      kind: "param";
+      name?: string;
+      version?: number;
+    }
+  | {
+      id: string;
+      kind: "task";
+      name?: string;
+      lane?: Lane;
+      cache?: "memo" | "none";
+      tags?: readonly string[];
+      state?: "idle" | "running" | "ready" | "error";
+      dirty?: boolean;
+      version?: number;
+    };
+
+export type InspectEdge = {
+  from: string;
+  to: string;
+  kind: "task" | "param";
+};
+
+export type InspectMeta = {
+  structureVersion: number;
+  compiledVersion: number;
+  compileCount: number;
+  topoOrder?: readonly string[];
+};
+
+export type InspectOptions = {
+  /** Include runtime state (dirty/state/version) and meta fields. */
+  includeRuntime?: boolean;
+};
+
+export type InspectResult = {
+  nodes: InspectNode[];
+  edges: InspectEdge[];
+  meta?: InspectMeta;
+};
