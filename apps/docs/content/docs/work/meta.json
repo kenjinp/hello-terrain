@@ -1,12 +1,13 @@
 {
   "title": "Work",
-  "description": "Task graph and reactive computation library",
+  "description": "A small reactive task graph for typed async computations",
   "root": true,
   "pages": [
     "index",
     "param",
     "task",
     "graph",
+    "benchmarks",
     "semaphore"
   ]
 }

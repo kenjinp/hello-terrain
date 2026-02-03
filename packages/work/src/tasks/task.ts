@@ -89,8 +89,8 @@ export function task<
     },
 
     /**
-     * Annotates the task with a list of tags (for filtering, debugging, etc).
-     * @param tags - The tags for this task.
+     * Specifies tags for this task.
+     * @param tags - Tags to associate with this task.
      * @returns The same task ref (fluent API).
      */
     tags(tags: readonly string[]) {

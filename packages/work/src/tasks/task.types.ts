@@ -80,7 +80,7 @@ export interface TaskRef<_T> {
 
   /**
    * Set tags for this task.
-   * @param tags - Array of string tags.
+   * @param tags - Tags to associate with this task.
    * @returns The current task ref (for chaining).
    */
   tags(tags: readonly string[]): this;

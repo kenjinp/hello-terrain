@@ -3,11 +3,36 @@ title: Work
 description: A small reactive task graph for typed async computations
 ---
 
+import WorkHero from "@/examples/WorkHero";
+import Link from "next/link";
+
+# @hello-terrain/work
+<Link
+  className="shadow-md"
+  href="https://www.npmjs.com/package/@hello-terrain/three"
+  target="_blank"
+  rel="noopener noreferrer"
+>
+  <img
+    src="https://img.shields.io/npm/v/@hello-terrain/three?style=for-the-badge&colorA=000000&colorB=000000"
+    alt="npm version"
+  />
+</Link>
+
+<div className="h-[600px] rounded overflow-hidden">
+<WorkHero />
+</div>
+
+
+## Overview
 
 `@hello-terrain/work` is a small library for building **reactive computation graphs**.
-You define **inputs** (`param`), **computations** (`task`), and run them in an **engine** (`graph`).
+You define **inputs** ([`param`](./work/param)), **computations** [(`task`)](./work/task), and run them in an **engine** [(`graph`)](./work/graph).
 
-It’s designed for:
+It's safe to run the graph in a hot loop (such as your render update loop), with minimal overhead. 
+That's because it will bake the graph topology on the first call, and memoize unchanged dependencies. 
+
+### Key features:
 - **Typed dependency graphs** (params + tasks)
 - **Memoized recomputation** when inputs change
 - **Lane-based concurrency** (per-lane semaphores)
@@ -35,42 +60,30 @@ pnpm add @hello-terrain/work
 yarn add @hello-terrain/work
 ```
 
-## Quick Start
 
-This example shows params → tasks → graph execution:
+## Quick start
 
 ```ts
-import { param, task, graph } from "@hello-terrain/work";
+import { graph, param, task } from "@hello-terrain/work";
 
-const width = param(10).displayName("width");
-const height = param(20).displayName("height");
+const value = param(2);
 
-const area = task((get, work) => {
-  const w = get(width);
-  const h = get(height);
-  return work(() => w * h);
-}).displayName("area");
+const calcSquare = task((get, work) => {
+  const currentValue = get(value);
+  return work(() => currentValue * currentValue);
+});
 
-const description = task((get, work) => {
-  const a = get(area);
-  return work(() => `The area is ${a} square units`);
-}).displayName("description");
+const calcGraph = graph();
+calcGraph.add(calcSquare);
 
-const g = graph();
-g.add(area);
-g.add(description); // tasks must be registered before they can run
+await calcGraph.run();
+calcGraph.get(calcSquare); // 4
 
-const report = await g.run();
-console.log(report.status); // "ok"
+value.set(4);
 
-console.log(g.get(area)); // 200
-console.log(g.get(description)); // "The area is 200 square units"
-
-width.set(() => 15);
-await g.run();
-console.log(g.get(area)); // 300
+await calcGraph.run();
+calcGraph.get(calcSquare); // 16
 ```
-
 ## Features
 
 ### Automatic Dependency Tracking
@@ -79,17 +92,12 @@ Dependencies are discovered automatically when tasks call `get()` (before `work(
 
 ```ts
 const total = task((get, work) => {
-  const aVal = get(a);
-  const bVal = get(b);
+  const aVal = get(a); // this could be a param
+  const bVal = get(b); // ...or a task!
   const cVal = get(c);
   return work(() => aVal + bVal + cVal);
 });
 ```
-
-<Callout type="note">
-  Dependency tracking is automatic, but **task registration is explicit**: you still need to
-  `g.add(task)` for every task you want the graph to be able to compute (including upstream tasks).
-</Callout>
 
 ### Memoization
 

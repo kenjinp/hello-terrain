@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "pnpm --filter './apps/*' run dev",
     "build": "pnpm --filter './packages/*' run build && pnpm --filter './apps/*' run build",
+    "bench:work:docs": "node scripts/update-work-graph-bench-docs.js",
     "test": "pnpm -r run test",
     "lint": "oxlint .",
     "format": "oxfmt .",

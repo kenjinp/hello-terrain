@@ -40,5 +40,8 @@
     "mitata": "^1.0.34",
     "unbuild": "^3.5.0",
     "vitest": "^4.0.16"
+  },
+  "dependencies": {
+    "@hello-terrain/work": "workspace:*"
   }
 }

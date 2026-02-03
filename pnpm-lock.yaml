@@ -239,6 +239,9 @@ importers:
 
   packages/three:
     dependencies:
+      '@hello-terrain/work':
+        specifier: workspace:*
+        version: link:../work
       three:
         specifier: 'catalog:'
         version: 0.182.0
@@ -280,6 +283,9 @@ importers:
       '@config/typescript':
         specifier: workspace:*
         version: link:../../.config/typescript
+      mitata:
+        specifier: ^1.0.34
+        version: 1.0.34
       unbuild:
         specifier: ^3.5.0
         version: 3.6.1(typescript@5.9.3)

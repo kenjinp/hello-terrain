@@ -54,16 +54,27 @@ const sum = task((get, work) => {
 
 #### work(fn)
 
-Executes a “work unit”. This boundary ensures the dependancies are up to date when the callback is executed. 
+Executes a “work unit”. This boundary ensures the dependancies are up to date when the callback is executed.
+
 
 ```ts
 const processed = task((get, work) => {
   const data = get(rawData);
-  
   return work(() => {
     // Heavy computation happens here
     return expensiveProcess(data);
   });
+});
+```
+Any value returned in the task callback function will be stored, but it is recommended to return work() with a callback
+to ensure your dependencies are not stale. 
+
+```ts
+
+// this works fine, especially for tasks that do trivial calculations
+const processed = task(async () => {
+  const data = await someOperationNotRequiringDependencies()
+  return data
 });
 ```
 
@@ -91,9 +102,12 @@ const fetchData = task(async (get, work, ctx) => {
     throw new Error("Cancelled");
   }
   
-  // Pass signal to fetch for automatic cancellation
-  const response = await fetch(url, { signal: ctx.signal });
-  return work(() => response.json());
+  return work(() => {
+    // Pass signal to fetch for automatic cancellation
+    // this will cancel propogation to downstream tasks
+    const response = await fetch(url, { signal: ctx.signal });
+    response.json()
+  });
 });
 ```
 
@@ -123,7 +137,7 @@ const cpuBound = task((get, work) => {
 }).lane("cpu");
 
 const ioBound = task(async (get, work, ctx) => {
-  return await fetchFromNetwork(ctx.signal);
+  return work(() => fetchFromNetwork(ctx.signal));
 }).lane("io");
 ```
 
@@ -165,35 +179,6 @@ const critical = task((get, work) => {
 ```
 
 ## Examples
-
-### Simple Computation
-
-```ts
-import { param, task, graph } from "@hello-terrain/work";
-
-const a = param(5);
-const b = param(3);
-
-const sum = task((get, work) => {
-  const av = get(a);
-  const bv = get(b);
-  return work(() => av + bv);
-}).displayName("sum");
-
-const product = task((get, work) => {
-  const av = get(a);
-  const bv = get(b);
-  return work(() => av * bv);
-}).displayName("product");
-
-const g = graph();
-g.add(sum);
-g.add(product);
-
-await g.run();
-console.log(g.get(sum));     // 8
-console.log(g.get(product)); // 15
-```
 
 ### Task Dependencies
 
@@ -241,17 +226,17 @@ Tasks can be asynchronous:
 const userId = param("user-123");
 
 const userData = task(async (get, work, ctx) => {
-  const id = get(userId);
-  
-  const response = await fetch(`/api/users/${id}`, {
-    signal: ctx.signal,
+  const id = get(userId);  
+  return work(async () => {
+    const response = await fetch(`/api/users/${id}`, {
+      signal: ctx.signal,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user: ${response.status}`);
+    }
+    return response.json()
   });
-  
-  if (!response.ok) {
-    throw new Error(`Failed to fetch user: ${response.status}`);
-  }
-  
-  return work(() => response.json());
 }).displayName("userData").lane("network");
 
 const userName = task((get, work) => {
@@ -295,15 +280,17 @@ interface Resources {
 const userRecord = task(async (get, work, ctx) => {
   const id = get(userId);
   const { db, cache } = ctx.resources as Resources;
-  
-  // Check cache first
-  const cached = await cache.get(`user:${id}`);
-  if (cached) return cached;
-  
-  // Fetch from database
-  const record = await db.users.findById(id);
-  await cache.set(`user:${id}`, record);
-  return record;
+
+  return work(async () => {
+    // Check cache first
+    const cached = await cache.get(`user:${id}`);
+    if (cached) return cached;
+    
+    // Fetch from database
+    const record = await db.users.findById(id);
+    await cache.set(`user:${id}`, record);
+    return record;
+  })
 });
 
 // Run with resources
@@ -336,8 +323,10 @@ const count = task((get, work) => {
 
 // Inferred as Task<User>
 const user = task(async (_get, work) => {
-  const response = await fetch("/api/user");
-  return work(() => response.json() as User);
+  return work(async () => {
+    const response = await fetch("/api/user");
+    return response.json() as User
+  });
 });
 
 // Explicit type (rarely needed)

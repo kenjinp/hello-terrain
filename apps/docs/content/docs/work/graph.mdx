@@ -49,8 +49,8 @@ g.add(myTask);
 **Returns:** `TaskRef<T>` - The same task reference (for chaining)
 
 <Callout type="warn">
-  This graph runtime does **not** auto-register dependencies. If a task calls `get(otherTask)`,
-  `otherTask` must also have been added via `g.add(otherTask)` (in any order).
+  Tasks that you pass as **targets** must be registered (via `g.add(task)`), otherwise the graph can’t run them.
+  Upstream tasks referenced via `get(otherTask)` will be registered automatically when discovered.
 </Callout>
 
 ### run(options?)
@@ -70,6 +70,15 @@ console.log(report.status); // "ok", "error", or "cancelled"
 | `resources` | `unknown` | Resources passed to task contexts |
 
 **Returns:** `Promise<RunReport>`
+
+### dispose()
+
+Releases resources held by the graph (currently: param subscriptions) and clears internal state.
+Use this when graphs are created/destroyed frequently (e.g. in hot-reload or per-level/per-scene lifecycles).
+
+```ts
+g.dispose();
+```
 
 ### get(task)
 
@@ -374,14 +383,18 @@ const apiUrl = param("https://api.example.com");
 
 const fetchUsers = task(async (get, work, ctx) => {
   const url = get(apiUrl);
-  const response = await fetch(`${url}/users`, { signal: ctx.signal });
-  return work(() => response.json());
+  return work(async () => {
+    const response = await fetch(`${url}/users`, { signal: ctx.signal });
+    return response.json();
+  });
 }).displayName("fetchUsers").lane("network");
 
 const fetchPosts = task(async (get, work, ctx) => {
   const url = get(apiUrl);
-  const response = await fetch(`${url}/posts`, { signal: ctx.signal });
-  return work(() => response.json());
+  return work(async () => {
+    const response = await fetch(`${url}/posts`, { signal: ctx.signal });
+    return response.json();
+  });
 }).displayName("fetchPosts").lane("network");
 
 const combined = task((get, work) => {
@@ -397,7 +410,16 @@ g.add(combined);
 await g.run({
   laneConcurrency: { network: 5 },
 });
+
+g.get(combined) // { users:[...], posts: [...] }
 ```
+
+## Performance
+
+This runtime is designed to be used in a hot loop; we track performance with mitata.
+
+- Run locally: `pnpm --filter @hello-terrain/work bench`
+- Latest published results: [Benchmarks](/work/benchmarks)
 
 ## Inspecting the Graph (inspect)
 

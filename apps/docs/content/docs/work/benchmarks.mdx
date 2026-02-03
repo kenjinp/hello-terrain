@@ -1,0 +1,42 @@
+---
+title: Benchmarks
+description: Mitata benchmarks for graph.run hot loop
+---
+
+This page is generated from the repo by running:
+
+- `pnpm bench:work:docs`
+
+**Last updated:** 2026-02-03T02:23:56.154Z
+
+```text
+clk: ~5.28 GHz
+cpu: AMD Ryzen 9 9950X3D 16-Core Processor
+runtime: node 24.3.0 (x64-linux)
+
+benchmark                         avg (min … max) p75 / p99    (min … top 1%)
+------------------------------------------------- -------------------------------
+• graph.run() hot loop
+------------------------------------------------- -------------------------------
+allClean (single target)             1.00 µs/iter   1.01 µs   ▇▃█                
+                            (960.32 ns … 1.56 µs)   1.15 µs  ▅███▆               
+                          (  1.29 kb …   2.99 kb)   2.34 kb ▆██████▄▂▁▃▂▁▂▂▂▁▁▁▂▂
+
+smallDirty (param change each run)   5.84 µs/iter   5.53 µs  █                   
+                            (4.55 µs … 350.17 µs)  19.12 µs  █                   
+                          (176.00  b … 730.53 kb)  17.98 kb ██▅▂▂▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
+
+wideGraph (100 independent tasks)    7.79 µs/iter   7.81 µs               █      
+                              (7.72 µs … 7.87 µs)   7.85 µs   ▅           █      
+                          (  2.59 kb …   2.59 kb)   2.59 kb ▇▇█▁▇▁▇▁▇▁▇▁▇▇█▁▁▁▇▇▇
+
+deepChain (length 200)              10.39 µs/iter  11.64 µs                     █
+                             (8.40 µs … 11.69 µs)  11.65 µs █                  ██
+                          (  1.27 kb …  10.37 kb)   4.55 kb █▁▁██▁▁█▁█▁▁▁▁▁▁▁█▁██
+
+summary
+  allClean (single target)
+   5.81x faster than smallDirty (param change each run)
+   7.76x faster than wideGraph (100 independent tasks)
+   10.35x faster than deepChain (length 200)
+```

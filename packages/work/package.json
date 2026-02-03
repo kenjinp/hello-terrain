@@ -1,6 +1,12 @@
 {
   "name": "@hello-terrain/work",
-  "description": "Built with 🌹 create-krispya",
+  "description": "A small reactive task graph library for scheduling dependent computations.",
+  "version": "0.0.0",
+  "homepage": "http://hello-terrain.kenny.wtf/work",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kenjinp/hello-terrain.git"
+  },
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -17,8 +23,9 @@
   ],
   "scripts": {
     "build": "unbuild",
-    "release": "pnpm run build && pnpm publish",
+    "release": "pnpm run build && pnpm publish --access=public",
     "test": "vitest",
+    "bench": "npx tsx benchmarks/Graph.bench.ts",
     "lint": "oxlint -c node_modules/@config/oxlint/base.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
   },
@@ -29,6 +36,7 @@
     "@config/oxfmt": "workspace:*",
     "@config/oxlint": "workspace:*",
     "@config/typescript": "workspace:*",
+    "mitata": "^1.0.34",
     "unbuild": "^3.5.0",
     "vitest": "^4.0.0"
   }

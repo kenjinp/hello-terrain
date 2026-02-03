@@ -124,6 +124,42 @@ describe("graph()", () => {
     expect(g.get(a)).toBe(2);
   });
 
+  it("allows cache: none tasks to be used as dependencies within a run", async () => {
+    const g = graph();
+    let callsA = 0;
+    let callsB = 0;
+
+    const a = task((_get, work) =>
+      work(() => {
+        callsA += 1;
+        return callsA;
+      }),
+    )
+      .cache("none")
+      .displayName("a");
+
+    const b = task((get, work) => {
+      const av = get(a);
+      return work(() => {
+        callsB += 1;
+        return av + 1;
+      });
+    }).displayName("b");
+
+    g.add(a);
+    g.add(b);
+
+    await g.run({ targets: [b] });
+    expect(g.get(b)).toBe(2);
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+
+    await g.run({ targets: [b] });
+    expect(g.get(b)).toBe(3);
+    expect(callsA).toBe(2);
+    expect(callsB).toBe(2);
+  });
+
   it("invalidates downstream tasks when a param changes", async () => {
     const g = graph();
     const p = param(1).displayName("p");
@@ -147,6 +183,71 @@ describe("graph()", () => {
     await g.run();
     expect(g.get(t)).toBe(42);
     expect(calls).toBe(2);
+  });
+
+  it("caches the value of task", async () => {
+    const g = graph();
+    const p = param(1);
+
+    let calls = 0;
+    const t = task((get, _work) => {
+      const pv = get(p);
+      calls += 1;
+      return pv + 1;
+    });
+
+    g.add(t);
+
+    await g.run();
+    expect(g.get(t)).toBe(2);
+    expect(calls).toBe(1);
+
+    p.set(() => 41);
+    await g.run();
+    expect(g.get(t)).toBe(42);
+    expect(calls).toBe(2);
+  });
+
+  it("uses the return value of task()", async () => {
+    const g = graph();
+    const p = param(1);
+
+    let calls = 0;
+    const t = task((get, _work) => {
+      const pv = get(p);
+      calls += 1;
+      return pv + 1;
+    });
+
+    g.add(t);
+
+    await g.run();
+    expect(g.get(t)).toBe(2);
+    expect(calls).toBe(1);
+
+    p.set(() => 41);
+    await g.run();
+    expect(g.get(t)).toBe(42);
+    expect(calls).toBe(2);
+  });
+
+  it("does not use work if not returned", async () => {
+    const g = graph();
+    const p = param(1);
+
+    let calls = 0;
+    const t = task((get, work) => {
+      const pv = get(p);
+      work(() => {
+        calls += 1;
+        return pv + 1;
+      });
+    });
+
+    g.add(t);
+    await g.run();
+    expect(g.get(t)).toBe(undefined);
+    expect(calls).toBe(1);
   });
 
   it("executes work() at most once per task per compute", async () => {
@@ -174,6 +275,30 @@ describe("graph()", () => {
     expect(r1.status).toBe("error");
     expect(() => g.get(t)).toThrow(/no computed value/i);
     expect(workRuns).toBe(1);
+  });
+
+  it("supports async work() callbacks (await work(async () => ...))", async () => {
+    const g = graph();
+    const p = param(1).displayName("p");
+
+    const t = task(async (get, work) => {
+      // Dependencies must be read before calling work().
+      const pv = get(p);
+
+      const out = await work(async () => {
+        // Simulate async work.
+        await Promise.resolve();
+        return pv + 1;
+      });
+
+      return out;
+    }).displayName("t");
+
+    g.add(t);
+
+    const report = await g.run({ targets: [t] });
+    expect(report.status).toBe("ok");
+    expect(g.get(t)).toBe(2);
   });
 
   it("respects lanes and laneConcurrency", async () => {
@@ -310,6 +435,82 @@ describe("graph()", () => {
       expect(report.status).toBe("ok");
       expect(maxActive).toBe(2);
     }
+  });
+
+  it("cancels via AbortSignal and does not start downstream tasks", async () => {
+    const g = graph();
+
+    const waitForAbort = (signal: AbortSignal) =>
+      new Promise<void>((resolve) => {
+        if (signal.aborted) return resolve();
+        signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+
+    const deferred = <T>() => {
+      let resolve!: (value: T) => void;
+      let reject!: (error: unknown) => void;
+      const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+      });
+      return { promise, resolve, reject };
+    };
+
+    const abortErr = new Error("abort");
+    const mode = param<"warmup" | "abort">("warmup").displayName("mode");
+
+    const started = deferred<void>();
+    const t1 = task((get, work, ctx) => {
+      const m = get(mode);
+      return work(async () => {
+        if (m === "warmup") return 1;
+        started.resolve();
+        await waitForAbort(ctx.signal);
+        throw ctx.signal.reason ?? abortErr;
+      });
+    })
+      .cache("none")
+      .displayName("t1");
+
+    let t2WorkCalls = 0;
+    const t2 = task((get, work) => {
+      const v1 = get(t1);
+      return work(() => {
+        t2WorkCalls += 1;
+        return v1 + 1;
+      });
+    })
+      .cache("none")
+      .displayName("t2");
+
+    g.add(t1);
+    g.add(t2);
+
+    // Warm up once to ensure we exercise the compiled scheduler on the next run.
+    const warmup = await g.run({ targets: [t1, t2] });
+    expect(warmup.status).toBe("ok");
+    expect(g.get(t1)).toBe(1);
+    expect(g.get(t2)).toBe(2);
+
+    t2WorkCalls = 0;
+    mode.set(() => "abort");
+
+    const ac = new AbortController();
+    const runPromise = g.run({
+      targets: [t2],
+      signal: ac.signal,
+    });
+
+    await started.promise;
+    ac.abort(abortErr);
+
+    const report = await runPromise;
+
+    expect(report.status).toBe("cancelled");
+    expect(t2WorkCalls).toBe(0);
+    expect(() => g.get(t1)).toThrow(/no computed value/i);
+    // Downstream never started, so its previous (warmup) value remains.
+    expect(g.get(t2)).toBe(2);
   });
 
   it("emits graph events (run/task/cacheHit/error) via on()", async () => {
@@ -478,5 +679,23 @@ describe("graph()", () => {
     const after = g.inspect({ includeRuntime: true }).meta!;
 
     expect(after.compileCount).toBeGreaterThan(before.compileCount);
+  });
+
+  it("dispose() unsubscribes and clears graph state", async () => {
+    const g = graph();
+    const p = param(1);
+    const t = task((get, work) => {
+      const pv = get(p);
+      return work(() => pv + 1);
+    });
+    g.add(t);
+    await g.run({ targets: [t] });
+
+    expect(() => (g as any).dispose()).not.toThrow();
+
+    // After dispose, inspect should show an empty graph.
+    const inspected = g.inspect();
+    expect(inspected.nodes.length).toBe(0);
+    expect(inspected.edges.length).toBe(0);
   });
 });
