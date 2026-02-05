@@ -29,13 +29,21 @@ import Link from "next/link";
 `@hello-terrain/work` is a small library for building **reactive computation graphs**.
 You define **inputs** ([`param`](./work/param)), **computations** [(`task`)](./work/task), and run them in an **engine** [(`graph`)](./work/graph).
 
-It's safe to run the graph in a hot loop (such as your render update loop), with minimal overhead. 
-That's because it will bake the graph topology on the first call, and memoize unchanged dependencies. 
+It's designed to run in a hot loop (such as your render update loop), with minimal overhead. 
+That's because it will bake the graph topology on the first call, and memoize (cache) unchanged dependencies. 
+
+Dependencies are marked dirty when you change them by calling `myParam.set(newValue)` on the param handler.
+
+The graph won't be executed until you explicitly call `.run()`, but it will automatically sort out dirty dependencies and mark downstream tasks for re-computation. 
+
+You can set tasks to a "lane" (a simple string tag) and optionally enable **per-lane concurrency limits**
+by passing `laneConcurrency` to `graph.run()`. This is useful when you want to cap access to constrained
+resources (e.g. GPU work, rate-limited APIs, small DB pools).
 
 ### Key features:
 - **Typed dependency graphs** (params + tasks)
 - **Memoized recomputation** when inputs change
-- **Lane-based concurrency** (per-lane semaphores)
+- **Optional lane-based concurrency** via `laneConcurrency`
 - **Cancellation** (AbortSignal)
 - **Observability** via a lightweight event stream
 
@@ -121,8 +129,10 @@ All tasks receive an abort signal for cooperative cancellation.
 
 ```ts
 const fetchTask = task(async (get, work, ctx) => {
-  const response = await fetch(url, { signal: ctx.signal });
-  return work(() => response.json());
+  return work(() => {
+    const response = await fetch(url, { signal: ctx.signal });
+    response.json()
+  });
 });
 
 // Cancel a running graph

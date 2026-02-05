@@ -36,6 +36,41 @@ calcGraph.get(calcSquare); // 16
 - **Upstream tasks** referenced by `get(otherTask)` are registered automatically when discovered.
 - **`cache:"none"`**:\n  - the task recomputes on every run\n  - any downstream tasks are treated as dirty every run\n  - within a run, downstream tasks can still depend on values computed earlier in the run
 
+## Lanes and `laneConcurrency`
+
+Tasks can be tagged with a **lane** (default `"cpu"`). Lanes become meaningful when you pass
+`laneConcurrency` to `graph.run()`, which enables **per-lane concurrency limits** for that run.
+
+- If `laneConcurrency` is **omitted** (or `{}`), tasks are **not throttled** by lane.
+- If `laneConcurrency` is **provided and non-empty**, tasks acquire a permit for their lane before
+  running. Lanes not listed in `laneConcurrency` default to **1 permit**.
+
+```ts
+import { graph, task } from "@hello-terrain/work";
+
+const cpuTask = task((_get, work) => work(() => expensiveCompute()))
+  .lane("cpu")
+  .displayName("cpuTask");
+
+const ioTask = task(async (_get, work, ctx) =>
+  work(async () => fetch("https://example.com", { signal: ctx.signal })),
+)
+  .lane("io")
+  .displayName("ioTask");
+
+const g = graph();
+g.add(cpuTask);
+g.add(ioTask);
+
+await g.run({
+  targets: [cpuTask, ioTask],
+  laneConcurrency: {
+    cpu: 2,
+    io: 8,
+  },
+});
+```
+
 ## Benchmarks
 
 This package uses **mitata** for microbenchmarks:

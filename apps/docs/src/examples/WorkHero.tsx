@@ -1,6 +1,7 @@
 "use client";
 
 import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
+import { RunTimingBars } from "@/components/RunTimingBars";
 import { graph, param, task, type GraphEvent, type RunReport } from "@hello-terrain/work";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -1113,6 +1114,10 @@ function WorkHeroInner() {
                 <div>{uiSnapshot.seed}</div>
               </div>
             </div>
+          </div>
+
+          <div className="hidden md:block">
+            <RunTimingBars graph={g} />
           </div>
         </>
       )}

@@ -1,6 +1,6 @@
 import { CacheStrategy, Lane } from "../types";
 import { createNodeId } from "../utils";
-import type { Getter, Task, TaskCompute, TaskContext, TaskOptions, Work } from "./task.types";
+import type { Task, TaskCompute, TaskOptions } from "./task.types";
 import { TASK_DEF } from "./task.types";
 
 /**
@@ -26,11 +26,7 @@ import { TASK_DEF } from "./task.types";
 export function task<
   L extends Lane = Lane,
   Res = unknown,
-  Compute extends (get: Getter, work: Work, ctx: TaskContext<L, Res>) => any = (
-    get: Getter,
-    work: Work,
-    ctx: TaskContext<L, Res>,
-  ) => unknown,
+  Compute extends TaskCompute<any, L, Res> = TaskCompute<any, L, Res>,
 >(
   /**
    * The compute function for the task.
@@ -41,6 +37,7 @@ export function task<
    */
   initialOptions?: TaskOptions<L>,
 ): Task<Awaited<ReturnType<Compute>>, L, Res> {
+  type Out = Awaited<ReturnType<Compute>>;
   const id = createNodeId();
   let name: string | undefined = undefined;
 
@@ -50,7 +47,7 @@ export function task<
   /**
    * The TaskRef object for this task node.
    */
-  const ref: Task<Awaited<ReturnType<Compute>>, L, Res> = {
+  const ref: Task<Out, L, Res> = {
     kind: "task",
     id,
     /** Optional human-friendly name. */
@@ -79,7 +76,7 @@ export function task<
     },
 
     /**
-     * Specifies the cache strategy for this task (`memo` or `none`).
+     * Specifies the cache strategy for this task (`memo`, `none`, or `once`).
      * @param cache - The cache strategy.
      * @returns The same task ref (fluent API).
      */
@@ -103,7 +100,7 @@ export function task<
      * @internal
      */
     [TASK_DEF]: {
-      compute: compute as TaskCompute<Awaited<ReturnType<Compute>>, L, Res>,
+      compute,
       options,
     },
   };

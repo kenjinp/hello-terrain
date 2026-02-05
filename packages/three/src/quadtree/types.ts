@@ -1,0 +1,134 @@
+export const Dir = {
+  LEFT: 0,
+  RIGHT: 1,
+  TOP: 2,
+  BOTTOM: 3,
+} as const;
+
+export type Dir = (typeof Dir)[keyof typeof Dir];
+
+export const U32_EMPTY = 0xffffffff;
+
+export type TileId = {
+  /** 0 for flat terrain; 0..5 for cube-sphere faces */
+  space: number;
+  level: number;
+  x: number;
+  y: number;
+};
+
+export type TileBounds = {
+  /** camera-relative center */
+  cx: number;
+  cy: number;
+  cz: number;
+  /** conservative radius */
+  r: number;
+};
+
+export type Surface = {
+  spaceCount: number;
+
+  /**
+   * Compute the same-level neighbor TileId in the requested direction.
+   * Returns false if the neighbor is outside the valid topology.
+   *
+   * IMPORTANT: This must handle cross-space edges in the future (cube-sphere).
+   */
+  neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean;
+
+  /**
+   * Conservative camera-relative bounds for LOD decisions.
+   * Avoids absolute world coordinates so Earth-scale worlds remain stable.
+   */
+  tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void;
+};
+
+export type LeafSet = {
+  /** maximum number of leaves that fit in the buffers */
+  capacity: number;
+  /** number of valid leaf entries in this frame */
+  count: number;
+
+  space: Uint8Array;
+  level: Uint8Array;
+  x: Uint32Array;
+  y: Uint32Array;
+};
+
+export function allocLeafSet(capacity: number): LeafSet {
+  return {
+    capacity,
+    count: 0,
+    space: new Uint8Array(capacity),
+    level: new Uint8Array(capacity),
+    x: new Uint32Array(capacity),
+    y: new Uint32Array(capacity),
+  };
+}
+
+export function resetLeafSet(leaves: LeafSet): void {
+  leaves.count = 0;
+}
+
+export type SeamTable = {
+  /** maximum number of leaves the table can describe */
+  capacity: number;
+  /** number of leaves described (typically equals leaves.count) */
+  count: number;
+  /** fixed stride per leaf, in u32 entries */
+  stride: 8;
+  /**
+   * neighbors in leaf-list index space
+   * layout: neighbors[leafIndex * 8 + edge*2 + slot]
+   * edge order: LEFT, RIGHT, TOP, BOTTOM
+   * slot: 0..1 (at most 2 neighbors per edge under 2:1 balance)
+   */
+  neighbors: Uint32Array;
+};
+
+export function allocSeamTable(capacity: number): SeamTable {
+  return {
+    capacity,
+    count: 0,
+    stride: 8,
+    neighbors: new Uint32Array(capacity * 8),
+  };
+}
+
+export function resetSeamTable(seams: SeamTable): void {
+  seams.count = 0;
+}
+
+export type LodMode = "distance" | "screen";
+
+export type UpdateParams = {
+  cameraOrigin: { x: number; y: number; z: number };
+
+  /**
+   * Controls how subdivision decisions are made.
+   * `distance` is the initial focus; `screen` is supported for future parity.
+   */
+  mode?: LodMode;
+
+  /**
+   * Distance-based refinement threshold.
+   * Interpretation is criteria-dependent; keep it stable across surfaces by using bounds.
+   */
+  distanceFactor?: number;
+
+  /** Screen-space projection factor = screenHeight / (2*tan(fovY/2)) */
+  projectionFactor?: number;
+
+  /** Target pixel radius/size threshold for screen-space refinement */
+  targetPixels?: number;
+
+  /** Prevent flicker by separating split/merge thresholds (0..1 typical) */
+  hysteresis?: number;
+};
+
+export type QuadtreeConfig = {
+  maxNodes: number;
+  maxLevel: number;
+};
+

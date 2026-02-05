@@ -51,7 +51,8 @@ export function createGetForDiscovery<L extends Lane, Res>(args: GetFactoryArgs<
       const computedThisRun = (upstream as any).lastComputedRunId === ctx.runId;
       if (
         upstream.state === "ready" &&
-        ((cache === "memo" && !state.isTaskDirty(upstream as TaskNodeRuntime<L, Res>)) || computedThisRun)
+        ((cache !== "none" && !state.isTaskDirty(upstream as TaskNodeRuntime<L, Res>)) ||
+          computedThisRun)
       ) {
         return upstream.value as T;
       }

@@ -1,5 +1,5 @@
-import type { TaskRef } from "../tasks/task.types";
-import type { Lane } from "../types";
+import type { Task, TaskRef, TaskState } from "../tasks/task.types";
+import type { CacheStrategy, Lane } from "../types";
 
 /**
  * Callback type for handling graph events.
@@ -91,6 +91,20 @@ export interface RunOptions<L extends string, Res> {
   resources?: Res;
 }
 
+export interface Graph<L extends Lane = Lane, Res = unknown> {
+  on(cb: GraphEventCallback): Unsubscribe;
+  on<S extends GraphEventSelector>(
+    selector: S,
+    cb: (e: GraphEventOfSelector<S>) => void,
+  ): Unsubscribe;
+  run(options?: RunOptions<L, Res>): Promise<RunReport>;
+  dispose(): void;
+  inspect(options?: InspectOptions): InspectResult;
+  get<T>(taskRef: TaskRef<T>): T;
+  peek<T>(taskRef: TaskRef<T>): T | undefined;
+  add<T>(task: Task<T, L, Res>): Graph<L, Res>;
+}
+
 export type InspectNode =
   | {
       id: string;
@@ -103,9 +117,9 @@ export type InspectNode =
       kind: "task";
       name?: string;
       lane?: Lane;
-      cache?: "memo" | "none";
+      cache?: CacheStrategy;
       tags?: readonly string[];
-      state?: "idle" | "running" | "ready" | "error";
+      state?: TaskState;
       dirty?: boolean;
       version?: number;
     };

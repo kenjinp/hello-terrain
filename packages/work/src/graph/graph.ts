@@ -2,12 +2,7 @@ import { dag } from "../dag/dag";
 import { events } from "../events/events";
 import type { ParamRef, Unsubscribe } from "../param/param.types";
 import { semaphore } from "../semaphore/semaphore";
-import {
-  TASK_DEF,
-  type Task,
-  type TaskRef,
-  type TaskState,
-} from "../tasks/task.types";
+import { TASK_DEF, type Task, type TaskRef, type TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
 import { createRunId, isParam, isTask, nowMs } from "../utils";
 import {
@@ -18,13 +13,8 @@ import {
   UnknownNodeError,
   UnknownTaskError,
 } from "./graph.errors";
+import type { Graph, InspectOptions, InspectResult, RunOptions, RunReport } from "./graph.types";
 import { createRun } from "./run";
-import type {
-  InspectOptions,
-  InspectResult,
-  RunOptions,
-  RunReport,
-} from "./graph.types";
 
 type TaskNodeRuntime<L extends Lane, Res> = {
   ref: Task<any, L, Res>;
@@ -67,7 +57,7 @@ type GraphState<L extends Lane, Res> = {
   isTaskDirty(task: TaskNodeRuntime<L, Res>): boolean;
 };
 
-export function graph<L extends Lane = Lane, Res = unknown>() {
+export function graph<L extends Lane = Lane, Res = unknown>(): Graph<L, Res> {
   const { on, emit, hasListeners } = events();
   const tasksMap = new Map<string, TaskNodeRuntime<L, Res>>();
   const paramsMap = new Map<string, ParamNodeRuntime>();
@@ -104,6 +94,11 @@ export function graph<L extends Lane = Lane, Res = unknown>() {
       const stack = [...(d.getAdjacenciesId(param.id) ?? [])];
       while (stack.length) {
         const id = stack.pop()!;
+        const taskNode = tasksMap.get(id);
+        if (taskNode) {
+          const cache = taskNode.ref[TASK_DEF].options.cache;
+          if (cache === "once" && taskNode.state === "ready") continue;
+        }
         if (dirtyTasks.has(id)) continue;
         dirtyTasks.add(id);
         const next = d.getAdjacenciesId(id);
@@ -128,6 +123,7 @@ export function graph<L extends Lane = Lane, Res = unknown>() {
     const cache: CacheStrategy | undefined = task.ref[TASK_DEF].options.cache;
     // no cache requested, mark as dirty
     if (cache === "none") return true;
+    if (cache === "once") return task.state !== "ready";
     if (task.state !== "ready") return true;
     if (dirtyTasks.has(task.ref.id)) return true;
 
@@ -178,6 +174,13 @@ export function graph<L extends Lane = Lane, Res = unknown>() {
     d.addNode(task);
     markStructureChanged();
     return task;
+  }
+
+  let api: Graph<L, Res>;
+
+  function addTask<T>(task: Task<T, L, Res>): Graph<L, Res> {
+    ensureTaskRegistered(task);
+    return api;
   }
 
   const state: GraphState<L, Res> = {
@@ -288,13 +291,14 @@ export function graph<L extends Lane = Lane, Res = unknown>() {
   }
 
   // expose methods
-  return {
+  api = {
     on,
     run,
     dispose,
     inspect,
     get: getTaskValue,
     peek: peekTaskValue,
-    add: ensureTaskRegistered,
+    add: addTask,
   };
+  return api;
 }

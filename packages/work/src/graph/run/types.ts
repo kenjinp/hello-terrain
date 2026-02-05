@@ -71,7 +71,11 @@ export type RunContext<L extends Lane, Res> = {
   readonly signal: AbortSignal;
   readonly options?: RunOptions<L, Res>;
   readonly nowMs: () => number;
-  readonly getSemaphore: (lane: L) => { acquire(): Promise<VoidFunction> };
+  /**
+   * Returns the semaphore for a lane if lane-based concurrency is enabled for this run.
+   * If laneConcurrency is omitted/empty, this returns undefined and tasks will not be throttled.
+   */
+  readonly getSemaphore: (lane: L) => { acquire(): Promise<VoidFunction> } | undefined;
 
   status: RunStatus;
   taskCount: number;

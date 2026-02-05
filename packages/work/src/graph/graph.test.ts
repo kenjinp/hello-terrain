@@ -124,6 +124,47 @@ describe("graph()", () => {
     expect(g.get(a)).toBe(2);
   });
 
+  it("runs cache: once only once and freezes downstream", async () => {
+    const g = graph();
+    const p = param(1).displayName("p");
+    let callsA = 0;
+    let callsB = 0;
+
+    const a = task((get, work) => {
+      const pv = get(p);
+      return work(() => {
+        callsA += 1;
+        return pv + 1;
+      });
+    })
+      .cache("once")
+      .displayName("a");
+
+    const b = task((get, work) => {
+      const av = get(a);
+      return work(() => {
+        callsB += 1;
+        return av + 1;
+      });
+    }).displayName("b");
+
+    g.add(a);
+    g.add(b);
+
+    await g.run({ targets: [b] });
+    expect(g.get(b)).toBe(3);
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+
+    p.set(() => 41);
+    const r2 = await g.run({ targets: [b] });
+    expect(g.get(b)).toBe(3);
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+    expect(r2.taskCount).toBe(0);
+    expect(r2.cacheHits).toBeGreaterThanOrEqual(1);
+  });
+
   it("allows cache: none tasks to be used as dependencies within a run", async () => {
     const g = graph();
     let callsA = 0;
@@ -299,6 +340,116 @@ describe("graph()", () => {
     const report = await g.run({ targets: [t] });
     expect(report.status).toBe("ok");
     expect(g.get(t)).toBe(2);
+  });
+
+  it("does not throttle tasks when laneConcurrency is omitted", async () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+
+    const g = graph();
+    let active = 0;
+    let maxActive = 0;
+
+    const d1 = deferred();
+    const d2 = deferred();
+    const d3 = deferred();
+
+    const mkTask = (d: { promise: Promise<void> }, name: string) =>
+      task((_get, work) =>
+        work(() => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          return d.promise.finally(() => {
+            active -= 1;
+          });
+        }),
+      )
+        .lane("cpu")
+        .displayName(name);
+
+    const t1 = mkTask(d1, "t1");
+    const t2 = mkTask(d2, "t2");
+    const t3 = mkTask(d3, "t3");
+
+    g.add(t1);
+    g.add(t2);
+    g.add(t3);
+
+    const runPromise = g.run({ targets: [t1, t2, t3] });
+
+    // Let tasks start.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(maxActive).toBe(3);
+
+    d1.resolve();
+    d2.resolve();
+    d3.resolve();
+
+    const report = await runPromise;
+    expect(report.status).toBe("ok");
+    expect(maxActive).toBe(3);
+  });
+
+  it("does not throttle tasks when laneConcurrency is an empty object", async () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+
+    const g = graph();
+    let active = 0;
+    let maxActive = 0;
+
+    const d1 = deferred();
+    const d2 = deferred();
+    const d3 = deferred();
+
+    const mkTask = (d: { promise: Promise<void> }, name: string) =>
+      task((_get, work) =>
+        work(() => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          return d.promise.finally(() => {
+            active -= 1;
+          });
+        }),
+      )
+        .lane("cpu")
+        .displayName(name);
+
+    const t1 = mkTask(d1, "t1");
+    const t2 = mkTask(d2, "t2");
+    const t3 = mkTask(d3, "t3");
+
+    g.add(t1);
+    g.add(t2);
+    g.add(t3);
+
+    const runPromise = g.run({ targets: [t1, t2, t3], laneConcurrency: {} });
+
+    // Let tasks start.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(maxActive).toBe(3);
+
+    d1.resolve();
+    d2.resolve();
+    d3.resolve();
+
+    const report = await runPromise;
+    expect(report.status).toBe("ok");
+    expect(maxActive).toBe(3);
   });
 
   it("respects lanes and laneConcurrency", async () => {

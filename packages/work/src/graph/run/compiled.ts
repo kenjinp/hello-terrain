@@ -51,14 +51,14 @@ export async function runCompiled<L extends Lane, Res>(
   ctx: RunContext<L, Res>,
   targets: readonly TaskRef<any>[],
 ): Promise<void> {
-  // Hot-loop fast path: if all explicit targets are memo-cached and clean, skip scheduler setup.
+  // Hot-loop fast path: if all explicit targets are cached and clean, skip scheduler setup.
   // This avoids allocating required-closure sets and dependency-count maps in the common case.
   let allTargetsClean = true;
   for (const t of targets) {
     const n = state.tasksMap.get(t.id);
     if (!n) throw new deps.UnknownTaskError(t.id);
     const cache = n.ref[TASK_DEF].options.cache ?? ("memo" as CacheStrategy);
-    if (!(cache === "memo" && n.state === "ready" && !state.isTaskDirty(n))) {
+    if (!(cache !== "none" && n.state === "ready" && !state.isTaskDirty(n))) {
       allTargetsClean = false;
       break;
     }
@@ -85,7 +85,7 @@ export async function runCompiled<L extends Lane, Res>(
     const n = state.tasksMap.get(id);
     if (!n) continue;
     const cache = n.ref[TASK_DEF].options.cache ?? ("memo" as CacheStrategy);
-    if (cache === "memo" && n.state === "ready" && !state.isTaskDirty(n)) {
+    if (cache !== "none" && n.state === "ready" && !state.isTaskDirty(n)) {
       ctx.cacheHits += 1;
       if (state.shouldEmit("task:cacheHit"))
         state.emit({ type: "task:cacheHit", runId: ctx.runId, taskId: id, at: ctx.nowMs() });

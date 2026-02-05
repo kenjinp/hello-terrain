@@ -19,12 +19,15 @@ export function createRunContext<L extends Lane, Res>(
   }
   const signal = controller.signal;
 
-  const laneConcurrency = (options?.laneConcurrency ?? {}) as Partial<Record<L, number>>;
+  const laneConcurrency = options?.laneConcurrency as Partial<Record<L, number>> | undefined;
+  const laneConcurrencyEnabled = !!laneConcurrency && Object.keys(laneConcurrency).length > 0;
+
   const semaphoreByLane = new Map<L, ReturnType<RunDeps["semaphore"]>>();
   function getSemaphore(lane: L) {
+    if (!laneConcurrencyEnabled) return undefined;
     const existing = semaphoreByLane.get(lane);
     if (existing) return existing;
-    const permits = laneConcurrency[lane] ?? 1;
+    const permits = laneConcurrency![lane] ?? 1;
     const sema = deps.semaphore(permits);
     semaphoreByLane.set(lane, sema);
     return sema;

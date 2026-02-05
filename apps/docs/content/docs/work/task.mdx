@@ -129,7 +129,11 @@ const area = task((get, work) => {
 
 ### lane(lane)
 
-Assigns the task to a lane for concurrency control. Tasks on the same lane share a semaphore.
+Assigns the task to a lane (a string tag).
+
+If you pass `laneConcurrency` to `graph.run()`, the graph will enforce **per-lane concurrency limits**
+for that run. If `laneConcurrency` is omitted (or `{}`), lanes are still useful metadata (exposed via
+`ctx.lane` and `task:start` events), but tasks will not be throttled by lane.
 
 ```ts
 const cpuBound = task((get, work) => {

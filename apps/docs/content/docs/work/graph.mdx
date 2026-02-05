@@ -7,7 +7,7 @@ The `Graph` is the runtime that:
 - executes tasks
 - tracks dependencies
 - memoizes results
-- enforces per-lane concurrency
+- optionally enforces per-lane concurrency (when `laneConcurrency` is provided)
 - emits observability events
 
 ## Creating a Graph
@@ -171,7 +171,11 @@ await g.run({
 });
 ```
 
-Tasks without an explicit lane default to `"cpu"` with concurrency of 1.
+If `laneConcurrency` is omitted (or `{}`), the graph does **not** throttle task concurrency by lane.
+
+When `laneConcurrency` is provided and non-empty:
+- Tasks without an explicit lane default to `"cpu"`.
+- Lanes not listed in `laneConcurrency` default to **1 permit**.
 
 ### signal
 
@@ -406,7 +410,7 @@ const combined = task((get, work) => {
 const g = graph();
 g.add(combined);
 
-// Both fetches run in parallel (same lane, default concurrency)
+// Both fetches run in parallel (same lane, configured concurrency)
 await g.run({
   laneConcurrency: { network: 5 },
 });

@@ -1,26 +1,30 @@
 import type { TaskContext } from "../../tasks/task.types";
 import { TASK_DEF } from "../../tasks/task.types";
 import type { CacheStrategy, Lane } from "../../types";
-import type { RunContext, RunDeps, RunState, TaskNodeRuntime } from "./types";
 import { createGetForCompiled, createGetForDiscovery } from "./getters";
+import type { RunContext, RunDeps, RunState, TaskNodeRuntime } from "./types";
 
 function taskLane<L extends Lane, Res>(n: TaskNodeRuntime<L, Res>): L {
-  return ((n.ref[TASK_DEF].options.lane ?? "cpu") as unknown) as L;
+  return (n.ref[TASK_DEF].options.lane ?? "cpu") as unknown as L;
 }
 
 function taskCache<L extends Lane, Res>(n: TaskNodeRuntime<L, Res>): CacheStrategy {
   return (n.ref[TASK_DEF].options.cache ?? ("memo" as CacheStrategy)) as CacheStrategy;
 }
 
-function createWork(taskId: string, workCalled: { value: boolean }) {
-  return ((fn: () => unknown) => {
+function createWork<L extends Lane, Res>(
+  task: TaskNodeRuntime<L, Res>,
+  workCalled: { value: boolean },
+) {
+  const prev = task.value;
+  return ((fn: (prev: unknown) => unknown) => {
     if (workCalled.value) {
       throw new Error(
-        `Task "${taskId}" called work() more than once. Only one work() call is allowed per task.`,
+        `Task "${task.ref.id}" called work() more than once. Only one work() call is allowed per task.`,
       );
     }
     workCalled.value = true;
-    return fn();
+    return fn(prev);
   }) as any;
 }
 
@@ -136,7 +140,7 @@ export async function executeTaskDiscovery<L extends Lane, Res>(
   const lane = taskLane(n);
 
   const cache = taskCache(n);
-  if (cache === "memo" && n.state === "ready" && !state.isTaskDirty(n)) {
+  if (cache !== "none" && n.state === "ready" && !state.isTaskDirty(n)) {
     ctx.cacheHits += 1;
     if (state.shouldEmit("task:cacheHit"))
       state.emit({ type: "task:cacheHit", runId: ctx.runId, taskId, at: ctx.nowMs() });
@@ -158,9 +162,10 @@ export async function executeTaskDiscovery<L extends Lane, Res>(
       dependenciesSeen,
       workCalled,
     });
-    const work = createWork(taskId, workCalled);
+    const work = createWork(n, workCalled);
 
-    const release = await ctx.getSemaphore(lane).acquire();
+    const sema = ctx.getSemaphore(lane);
+    const release = sema ? await sema.acquire() : undefined;
     let releasedEarly = false;
     const taskStartedAt = ctx.nowMs();
     try {
@@ -180,8 +185,10 @@ export async function executeTaskDiscovery<L extends Lane, Res>(
       return;
     } catch (error) {
       if (error instanceof deps.MissingTaskValueError) {
-        releasedEarly = true;
-        release();
+        if (release) {
+          releasedEarly = true;
+          release();
+        }
         await computeMissing(error.taskId);
         continue;
       }
@@ -189,7 +196,7 @@ export async function executeTaskDiscovery<L extends Lane, Res>(
       finalizeError(deps, state, ctx, taskId, n, error, taskStartedAt, true);
       throw error;
     } finally {
-      if (!releasedEarly) release();
+      if (release && !releasedEarly) release();
     }
   }
 }
@@ -204,7 +211,8 @@ export async function executeTaskCompiled<L extends Lane, Res>(
   const taskId = n.ref.id;
   const lane = taskLane(n);
 
-  const release = await ctx.getSemaphore(lane).acquire();
+  const sema = ctx.getSemaphore(lane);
+  const release = sema ? await sema.acquire() : undefined;
   const taskStartedAt = ctx.nowMs();
   try {
     if (ctx.signal.aborted) throw ctx.signal.reason ?? new deps.CancelledError();
@@ -220,7 +228,7 @@ export async function executeTaskCompiled<L extends Lane, Res>(
       dependenciesSeen,
       workCalled,
     });
-    const work = createWork(taskId, workCalled);
+    const work = createWork(n, workCalled);
 
     n.state = "running";
     if (state.shouldEmit("task:start"))
@@ -241,7 +249,6 @@ export async function executeTaskCompiled<L extends Lane, Res>(
   } catch (error) {
     finalizeError(deps, state, ctx, taskId, n, error, taskStartedAt, true);
   } finally {
-    release();
+    release?.();
   }
 }
-
