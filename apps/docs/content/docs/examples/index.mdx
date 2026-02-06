@@ -1,6 +1,6 @@
 ---
 title: Hello World
-description: Your first Terrain
+description: Quadtree upload to GPU via WorkGraph
 ---
 
 import TerrainMeshScene from "@/examples/TerrainMeshScene"
@@ -8,3 +8,134 @@ import TerrainMeshScene from "@/examples/TerrainMeshScene"
 <div className="h-[600px] rounded overflow-hidden">
 <TerrainMeshScene />
 </div>
+
+## Milestone 1: Quadtree upload to GPU via WorkGraph
+
+This is a first step on the way to a stable, extensible terrain system. (I hope lol)
+
+This demo renders a dynamic LOD "terrain" using `@hello-terrain/three`. A camera-driven
+quadtree subdivides the terrain surface, uploads tile data to the GPU each frame, and
+a TSL position node places every instanced tile vertex in world space, orchestrated by a `@hello-terrain/work` graph.
+
+## Whereto Next? Heightmaps!
+
+The next step will be to allow the user to upload their own heightmapFn, which will be executed on the GPU.
+This will generate something like a virtual texture map of height values per tile, as well as a normal map. 
+Using the heightmap in the vertex shader, we can deform the vertices to their correct elevation positions, and the normals 
+can be used to shade them correctly. 
+
+### Figuring out ownership
+
+There's no right way to react-three/fiber, I'm wondering if the graph should have ownership of the Mesh/Material (basically wire things automatically) or if 
+the graph should just expose TSL nodes for users to plug into their materials. It's an open question, I have no idea. 
+
+### Sorting out `@hello-terrain/work` issues
+
+This helped me discover useful patterns for using `Work`, such as separating creation and write tasks.
+I also realized I needed a "run-once" task pattern, as well as a 
+
+### Setting up the graph
+
+`terrainGraph()` returns a pre-wired `Graph` containing all the params and tasks needed
+for rendering the quadtree tiles. Parameters like `rootSize`, `maxLevel`, and `innerTileSegments`
+control tile resolution and quadtree depth. The `quadtreeUpdate` param carries the
+camera position so the LOD system knows where to refine.
+
+```tsx
+import {
+  terrainGraph,
+  // .. yada yada
+} from "@hello-terrain/three";
+
+const g = terrainGraph();
+```
+
+### Connecting controls to params
+
+Each param is updated via `g.set()`. When a value changes, only the tasks that
+depend on it are re-evaluated on the next `g.run()`. Saving compute, but making tasks easy to write. 
+
+```tsx
+useEffect(() => {
+  g.set(innerTileSegments, () => controls.innerTileSegments);
+}, [controls.innerTileSegments]);
+
+useEffect(() => {
+  g.set(rootSize, () => controls.rootSize);
+}, [controls.rootSize]);
+```
+
+### The render loop
+
+Inside `useFrame`, the camera position is pushed into the `quadtreeUpdate` param and
+the graph is run. The quadtree refines and leaf tiles are uploaded to GPU storage buffers.
+
+```tsx
+useFrame(async ({ camera }) => {
+  g.set(quadtreeUpdate, (prev) => {
+    prev.cameraOrigin.x = camera.position.x;
+    prev.cameraOrigin.y = camera.position.y;
+    prev.cameraOrigin.z = camera.position.z;
+    return prev;
+  });
+  // is it okay to do async work here? Who knows!
+  await g.run();
+});
+```
+
+After each run, we read the computed outputs with `g.peek()` and apply them to the
+Three.js objects:
+
+```tsx
+useEffect(() => {
+  return g.on("run:finish", () => {
+    const leafSet = g.peek(quadtreeUpdateTask);
+    if (leafSet?.count && meshRef.current) {
+      // the mesh needs to know how many tiles to instance
+      meshRef.current.count = leafSet.count;
+    }
+
+    const positionNode = g.peek(positionNodeTask);
+    if (materialRef.current && positionNode) {
+      // if the positionNode is recreated (because the buffer changed)
+      // then we need to rebuild the material shaders entirely by flagging it
+      // in the traidional three.js style. 
+      materialRef.current.positionNode = positionNode;
+      materialRef.current.needsUpdate = true;
+    }
+  });
+}, [g]);
+```
+
+### Rendering with TerrainMesh
+
+`TerrainMesh` extends Three.js `InstancedMesh`. Each instance is a quadtree leaf tile (One draw call!).
+`TerrainGeometry` generates a single tile template (a grid with a skirt ring to hide
+cracks between LOD levels). The position node computed by the graph reads tile data from
+a GPU storage buffer and transforms each instance into its correct world-space position.
+
+```tsx
+<terrainMesh // I'm not sure if a special terrainMesh is actually necessary...
+  ref={meshRef}
+  innerTileSegments={controls.innerTileSegments} // ... but it saves us from having to add the geometry
+  maxNodes={controls.maxNodes}
+>
+  <meshStandardNodeMaterial
+    wireframe
+    colorNode={Fn(() => {
+      // paint each tile a different color
+      return u32ToColor(int(instanceIndex));
+    })()}
+  />
+</terrainMesh>
+```
+
+Each tile is colored by its instance index so you can see the quadtree subdivision.
+Move the camera closer to watch tiles split, and further to watch them merge. 
+
+Watch the debug graphs, the work-graph only re-runs the tasks whose inputs actually changed!
+
+okaybye 
+
+- Kenny
+
