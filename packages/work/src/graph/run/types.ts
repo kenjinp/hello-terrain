@@ -19,6 +19,8 @@ export type TaskNodeRuntime<L extends Lane, Res> = {
 export type ParamNodeRuntime = {
   ref: ParamRef<any>;
   version: number;
+  /** When present, the graph owns the param value locally (set via `graph.set()`). */
+  bound?: { value: any };
 };
 
 export type RunState<L extends Lane, Res> = {
@@ -71,7 +73,11 @@ export type RunContext<L extends Lane, Res> = {
   readonly signal: AbortSignal;
   readonly options?: RunOptions<L, Res>;
   readonly nowMs: () => number;
-  readonly getSemaphore: (lane: L) => { acquire(): Promise<VoidFunction> };
+  /**
+   * Returns the semaphore for a lane if lane-based concurrency is enabled for this run.
+   * If laneConcurrency is omitted/empty, this returns undefined and tasks will not be throttled.
+   */
+  readonly getSemaphore: (lane: L) => { acquire(): Promise<VoidFunction> } | undefined;
 
   status: RunStatus;
   taskCount: number;

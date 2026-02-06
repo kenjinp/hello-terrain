@@ -1,6 +1,7 @@
 "use client";
 
 import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
+import { RunTimingBars } from "@/components/RunTimingBars";
 import { graph, param, task, type GraphEvent, type RunReport } from "@hello-terrain/work";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -43,7 +44,7 @@ type InspectNode =
       kind: "task";
       name?: string;
       lane?: string;
-      cache?: "memo" | "none";
+      cache?: "memo" | "none" | "once";
       tags?: readonly string[];
       state?: "idle" | "running" | "ready" | "error";
       dirty?: boolean;
@@ -1081,37 +1082,43 @@ function WorkHeroInner() {
             </div>
           </div>
 
-          {/* Stats */}
-          <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-4 md:right-auto z-20 bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2.5 py-2 text-white font-mono text-[10px] md:text-xs pointer-events-none">
-            <div className="flex flex-wrap gap-x-4 gap-y-2">
-              <div>
-                <div className="text-white/70">run</div>
+          {/* Stats + timing HUD */}
+          <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 z-20 flex flex-col gap-1.5">
+            <div className="w-full bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2.5 py-2 text-white font-mono text-[10px] md:text-xs pointer-events-none">
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
                 <div>
-                  {uiSnapshot.lastReport?.status ?? "—"}{" "}
-                  {uiSnapshot.lastReport
-                    ? `(${uiSnapshot.lastReport.durationMs.toFixed(1)}ms)`
-                    : ""}
+                  <div className="text-white/70">run</div>
+                  <div>
+                    {uiSnapshot.lastReport?.status ?? "—"}{" "}
+                    {uiSnapshot.lastReport
+                      ? `(${uiSnapshot.lastReport.durationMs.toFixed(1)}ms)`
+                      : ""}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-white/70">tasks</div>
+                  <div>
+                    {uiSnapshot.lastReport?.taskCount ?? "—"} executed /{" "}
+                    {uiSnapshot.lastReport?.cacheHits ?? "—"} cached
+                  </div>
+                </div>
+                <div>
+                  <div className="text-white/70">events</div>
+                  <div>
+                    s:{uiSnapshot.eventCounts.start} f:{uiSnapshot.eventCounts.finish} c:
+                    {uiSnapshot.eventCounts.cacheHit} e:
+                    {uiSnapshot.eventCounts.error}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-white/70">seed</div>
+                  <div>{uiSnapshot.seed}</div>
                 </div>
               </div>
-              <div>
-                <div className="text-white/70">tasks</div>
-                <div>
-                  {uiSnapshot.lastReport?.taskCount ?? "—"} executed /{" "}
-                  {uiSnapshot.lastReport?.cacheHits ?? "—"} cached
-                </div>
-              </div>
-              <div>
-                <div className="text-white/70">events</div>
-                <div>
-                  s:{uiSnapshot.eventCounts.start} f:{uiSnapshot.eventCounts.finish} c:
-                  {uiSnapshot.eventCounts.cacheHit} e:
-                  {uiSnapshot.eventCounts.error}
-                </div>
-              </div>
-              <div>
-                <div className="text-white/70">seed</div>
-                <div>{uiSnapshot.seed}</div>
-              </div>
+            </div>
+
+            <div className="hidden md:block">
+              <RunTimingBars graph={g} />
             </div>
           </div>
         </>

@@ -19,7 +19,7 @@ export type TaskState = "idle" | "running" | "ready" | "error";
 export interface TaskOptions<L extends Lane = Lane> {
   /** The lane this task belongs to (used for scheduling, grouping, isolation, etc). */
   lane?: L;
-  /** The cache strategy for this task ("memo" or "none"). */
+  /** The cache strategy for this task ("memo", "none", or "once"). */
   cache?: CacheStrategy;
   /** Tags for this task (useful for filtering, debugging, etc). */
   tags?: readonly string[];
@@ -73,7 +73,7 @@ export interface TaskRef<_T> {
 
   /**
    * Set the cache strategy for this task.
-   * @param cache - The cache strategy ("memo" or "none").
+   * @param cache - The cache strategy ("memo", "none", or "once").
    * @returns The current task ref (for chaining).
    */
   cache(cache: CacheStrategy): this;

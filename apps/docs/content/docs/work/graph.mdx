@@ -7,7 +7,7 @@ The `Graph` is the runtime that:
 - executes tasks
 - tracks dependencies
 - memoizes results
-- enforces per-lane concurrency
+- optionally enforces per-lane concurrency (when `laneConcurrency` is provided)
 - emits observability events
 
 ## Creating a Graph
@@ -114,6 +114,37 @@ if (maybeResult !== undefined) {
 
 **Returns:** `T | undefined`
 
+### set(param, callback)
+
+Takes graph-local ownership of a param's value. After calling `set()`, the graph stores its
+own copy and detaches from the external `param.subscribe()` flow. This enables multiple graphs
+to share the same module-scope `param()` token with isolated runtime values.
+
+```ts
+import { param } from "@hello-terrain/work";
+
+const rootSize = param(256);
+
+const g = graph()
+  .add(myTask)
+  .set(rootSize, () => 128);   // graph-local value: 128
+
+// Update later
+g.set(rootSize, (prev) => prev * 2);  // graph-local value: 256
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `param` | `ParamRef<T>` | The param to take ownership of |
+| `callback` | `(prev: T) => T` | Function that receives current value and returns new value |
+
+**Returns:** `Graph` (for chaining)
+
+<Callout type="note">
+  After `graph.set()`, external `param.set()` calls no longer affect this graph's value for that param.
+  Other graphs that haven't called `graph.set()` on the same param are unaffected.
+</Callout>
+
 ### on(callback)
 
 Subscribes to graph events for monitoring, logging, or debugging.
@@ -171,7 +202,11 @@ await g.run({
 });
 ```
 
-Tasks without an explicit lane default to `"cpu"` with concurrency of 1.
+If `laneConcurrency` is omitted (or `{}`), the graph does **not** throttle task concurrency by lane.
+
+When `laneConcurrency` is provided and non-empty:
+- Tasks without an explicit lane default to `"cpu"`.
+- Lanes not listed in `laneConcurrency` default to **1 permit**.
 
 ### signal
 
@@ -246,11 +281,13 @@ Subscribe to events for observability:
 | `task:finish` | `runId`, `taskId`, `at`, `durationMs` | Task completes |
 | `task:cacheHit` | `runId`, `taskId`, `at` | Task served from cache |
 | `task:error` | `runId`, `taskId`, `at`, `durationMs`, `error` | Task failed |
+| `param:set` | `paramId`, `at` | Param value set via `graph.set()` |
 
 ```ts
 g.on("run:*", (event) => console.log(`[${event.runId}]`, event.type));
 g.on("task:*", (event) => console.log(`[${event.runId}]`, event.type, event.taskId));
 g.on("task:error", (event) => console.error(`[${event.runId}]`, event.taskId, event.error));
+g.on("param:*", (event) => console.log("param event", event.type, event.paramId));
 ```
 
 ## Error Handling
@@ -406,12 +443,54 @@ const combined = task((get, work) => {
 const g = graph();
 g.add(combined);
 
-// Both fetches run in parallel (same lane, default concurrency)
+// Both fetches run in parallel (same lane, configured concurrency)
 await g.run({
   laneConcurrency: { network: 5 },
 });
 
 g.get(combined) // { users:[...], posts: [...] }
+```
+
+### Multi-Instance with Shared Tasks
+
+Define params and tasks at module scope, then create multiple graphs with isolated values using `graph.set()`:
+
+```ts
+import { param, task, graph } from "@hello-terrain/work";
+
+// Module-scope params (shared declarations with defaults)
+const rootSize = param(256);
+const maxLevel = param(16);
+
+// Module-scope task (no factory wrapper needed)
+const configTask = task((get, work) => {
+  const size = get(rootSize);
+  const level = get(maxLevel);
+  return work(() => ({ size, level }));
+}).displayName("configTask");
+
+// Two graphs sharing the same task/param tokens, each with isolated values
+const terrain1 = graph()
+  .add(configTask)
+  .set(rootSize, () => 128)
+  .set(maxLevel, () => 12);
+
+const terrain2 = graph()
+  .add(configTask)
+  .set(rootSize, () => 512)
+  .set(maxLevel, () => 20);
+
+await terrain1.run();
+await terrain2.run();
+
+console.log(terrain1.get(configTask)); // { size: 128, level: 12 }
+console.log(terrain2.get(configTask)); // { size: 512, level: 20 }
+
+// Per-instance updates
+terrain1.set(rootSize, () => 256);
+await terrain1.run();
+console.log(terrain1.get(configTask)); // { size: 256, level: 12 }
+console.log(terrain2.get(configTask)); // { size: 512, level: 20 } — unaffected
 ```
 
 ## Performance

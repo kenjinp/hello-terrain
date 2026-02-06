@@ -129,7 +129,11 @@ const area = task((get, work) => {
 
 ### lane(lane)
 
-Assigns the task to a lane for concurrency control. Tasks on the same lane share a semaphore.
+Assigns the task to a lane (a string tag).
+
+If you pass `laneConcurrency` to `graph.run()`, the graph will enforce **per-lane concurrency limits**
+for that run. If `laneConcurrency` is omitted (or `{}`), lanes are still useful metadata (exposed via
+`ctx.lane` and `task:start` events), but tasks will not be throttled by lane.
 
 ```ts
 const cpuBound = task((get, work) => {
@@ -148,6 +152,7 @@ Sets the caching strategy for the task.
 | Strategy | Description |
 |----------|-------------|
 | `"memo"` | Cache results; only recompute when dependencies change (default) |
+| `"once"` | Compute once, then cache forever (ignores upstream changes) |
 | `"none"` | Always recompute on every run |
 
 ```ts
@@ -163,6 +168,12 @@ const cached = task((get, work) => {
   return work(() => v * 2);
 }).cache("memo");
 
+// Compute once and never again
+const init = task((get, work) => {
+  const config = get(configParam);
+  return work(() => createExpensiveResource(config));
+}).cache("once");
+
 // Always recompute
 const fresh = task((_get, work) => work(() => Date.now())).cache("none");
 ```
@@ -177,6 +188,123 @@ const critical = task((get, work) => {
   return work(() => v);
 }).tags(["critical", "user-facing"]);
 ```
+
+## Gotchas
+
+### Closure state is re-created on every run
+
+The compute function passed to `task()` is re-invoked each time the task runs. Any `let` or
+mutable variable declared **inside** the compute closure is re-initialized on every execution.
+This means you cannot use local variables to persist state across runs.
+
+```ts
+// BUG: `connection` is re-declared as undefined on every run
+const connectTask = task((get, work) => {
+  const url = get(urlParam);
+  let connection: Connection | undefined = undefined;
+  return work(() => {
+    if (!connection) {
+      connection = createConnection(url); // runs EVERY time
+    }
+    return connection;
+  });
+});
+```
+
+If you need state that persists across runs, use the **create / update** pattern (see below) or
+move the variable to module scope (not recommended for multi-instance use).
+
+### The create / update pattern
+
+When a task creates an object once and then updates it on subsequent runs, split it into two tasks:
+
+1. A **create task** with `.cache("once")` that allocates the resource.
+2. An **update task** with default `"memo"` cache that reads the resource via `get()` and mutates it.
+
+```ts
+// Creates the resource once; same reference is returned forever.
+const createDbPool = task((get, work) => {
+  const config = get(dbConfigParam);
+  return work(() => new ConnectionPool(config));
+})
+  .displayName("createDbPool")
+  .cache("once");
+
+// Re-runs when params change; updates the existing pool.
+const updateDbPool = task((get, work) => {
+  const pool = get(createDbPool);       // always the same instance
+  const maxConns = get(maxConnsParam);  // triggers re-run on change
+  return work(() => {
+    pool.setMaxConnections(maxConns);
+    return pool;
+  });
+}).displayName("updateDbPool");
+```
+
+This keeps the resource identity stable while allowing reactive updates.
+
+### Stale references in `cache("once")` tasks
+
+A `cache("once")` task runs exactly once and then ignores all upstream changes. If it captures
+a reference to an object that is later **recreated** by an upstream task, the `cache("once")` task
+will hold a stale reference.
+
+This is especially important when tasks create GPU resources (buffers, shader nodes, uniforms)
+that are referenced by a downstream shader builder:
+
+```ts
+// BAD: bufferTask recreates the buffer when maxNodes changes,
+// but shaderTask captured the ORIGINAL buffer and never re-runs.
+const bufferTask = task((get, work) => {
+  const maxNodes = get(maxNodesParam);
+  return work(() => createGpuBuffer(maxNodes));
+});
+
+const shaderTask = task((get, work) => {
+  const buffer = get(bufferTask);
+  return work(() => buildShader(buffer)); // stale after resize!
+}).cache("once");
+```
+
+**Fix:** Make the shader task use default `"memo"` cache and depend on the correct upstream.
+It will only re-run when the buffer task produces new objects (e.g. on resize), not on every
+frame:
+
+```ts
+// bufferTask only re-runs when maxNodes changes → new buffer objects
+const bufferTask = task((get, work) => {
+  const maxNodes = get(maxNodesParam);
+  return work(() => createGpuBuffer(maxNodes));
+});
+
+// dataWriteTask runs every frame but doesn't trigger shader rebuild
+const dataWriteTask = task((get, work) => {
+  const buffer = get(bufferTask);
+  const data = get(dataSource);
+  return work(() => writeToBuffer(buffer, data));
+});
+
+// shaderTask depends on bufferTask (not dataWriteTask) → rebuilds
+// only when the buffer is resized, stays cached otherwise.
+const shaderTask = task((get, work) => {
+  const buffer = get(bufferTask);
+  return work(() => buildShader(buffer));
+});
+```
+
+### Separate your creation and data-write dependencies
+
+When a downstream task only needs a **reference** to an object (not its contents), depend on
+the task that **creates** the object, not the task that **writes data** into it. This prevents
+unnecessary re-computation:
+
+```
+maxNodesParam → bufferTask → shaderTask   (rebuilds on resize only)
+                     ↓
+dataSource → dataWriteTask                 (runs every frame, no shader rebuild)
+```
+
+If `shaderTask` depended on `dataWriteTask` instead, it would rebuild the shader every frame.
 
 ## Examples
 

@@ -38,7 +38,7 @@ export function createRun(deps: RunDeps): RunFn {
         const n = state.tasksMap.get(t.id);
         if (!n) throw new deps.UnknownTaskError(t.id);
         const cache = (n.ref[TASK_DEF].options.cache ?? "memo") as CacheStrategy;
-        if (!(cache === "memo" && n.state === "ready" && !state.isTaskDirty(n))) {
+        if (!(cache !== "none" && n.state === "ready" && !state.isTaskDirty(n))) {
           allTargetsClean = false;
           break;
         }

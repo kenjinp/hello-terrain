@@ -124,6 +124,47 @@ describe("graph()", () => {
     expect(g.get(a)).toBe(2);
   });
 
+  it("runs cache: once only once and freezes downstream", async () => {
+    const g = graph();
+    const p = param(1).displayName("p");
+    let callsA = 0;
+    let callsB = 0;
+
+    const a = task((get, work) => {
+      const pv = get(p);
+      return work(() => {
+        callsA += 1;
+        return pv + 1;
+      });
+    })
+      .cache("once")
+      .displayName("a");
+
+    const b = task((get, work) => {
+      const av = get(a);
+      return work(() => {
+        callsB += 1;
+        return av + 1;
+      });
+    }).displayName("b");
+
+    g.add(a);
+    g.add(b);
+
+    await g.run({ targets: [b] });
+    expect(g.get(b)).toBe(3);
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+
+    p.set(() => 41);
+    const r2 = await g.run({ targets: [b] });
+    expect(g.get(b)).toBe(3);
+    expect(callsA).toBe(1);
+    expect(callsB).toBe(1);
+    expect(r2.taskCount).toBe(0);
+    expect(r2.cacheHits).toBeGreaterThanOrEqual(1);
+  });
+
   it("allows cache: none tasks to be used as dependencies within a run", async () => {
     const g = graph();
     let callsA = 0;
@@ -299,6 +340,116 @@ describe("graph()", () => {
     const report = await g.run({ targets: [t] });
     expect(report.status).toBe("ok");
     expect(g.get(t)).toBe(2);
+  });
+
+  it("does not throttle tasks when laneConcurrency is omitted", async () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+
+    const g = graph();
+    let active = 0;
+    let maxActive = 0;
+
+    const d1 = deferred();
+    const d2 = deferred();
+    const d3 = deferred();
+
+    const mkTask = (d: { promise: Promise<void> }, name: string) =>
+      task((_get, work) =>
+        work(() => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          return d.promise.finally(() => {
+            active -= 1;
+          });
+        }),
+      )
+        .lane("cpu")
+        .displayName(name);
+
+    const t1 = mkTask(d1, "t1");
+    const t2 = mkTask(d2, "t2");
+    const t3 = mkTask(d3, "t3");
+
+    g.add(t1);
+    g.add(t2);
+    g.add(t3);
+
+    const runPromise = g.run({ targets: [t1, t2, t3] });
+
+    // Let tasks start.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(maxActive).toBe(3);
+
+    d1.resolve();
+    d2.resolve();
+    d3.resolve();
+
+    const report = await runPromise;
+    expect(report.status).toBe("ok");
+    expect(maxActive).toBe(3);
+  });
+
+  it("does not throttle tasks when laneConcurrency is an empty object", async () => {
+    const deferred = () => {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      return { promise, resolve };
+    };
+
+    const g = graph();
+    let active = 0;
+    let maxActive = 0;
+
+    const d1 = deferred();
+    const d2 = deferred();
+    const d3 = deferred();
+
+    const mkTask = (d: { promise: Promise<void> }, name: string) =>
+      task((_get, work) =>
+        work(() => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          return d.promise.finally(() => {
+            active -= 1;
+          });
+        }),
+      )
+        .lane("cpu")
+        .displayName(name);
+
+    const t1 = mkTask(d1, "t1");
+    const t2 = mkTask(d2, "t2");
+    const t3 = mkTask(d3, "t3");
+
+    g.add(t1);
+    g.add(t2);
+    g.add(t3);
+
+    const runPromise = g.run({ targets: [t1, t2, t3], laneConcurrency: {} });
+
+    // Let tasks start.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(maxActive).toBe(3);
+
+    d1.resolve();
+    d2.resolve();
+    d3.resolve();
+
+    const report = await runPromise;
+    expect(report.status).toBe("ok");
+    expect(maxActive).toBe(3);
   });
 
   it("respects lanes and laneConcurrency", async () => {
@@ -697,5 +848,189 @@ describe("graph()", () => {
     const inspected = g.inspect();
     expect(inspected.nodes.length).toBe(0);
     expect(inspected.edges.length).toBe(0);
+  });
+
+  describe("graph.set()", () => {
+    it("takes ownership and task reads the bound value, not the module-scope default", async () => {
+      const p = param(100);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, () => 42);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(42);
+      // Module-scope param is untouched.
+      expect(p.get()).toBe(100);
+    });
+
+    it("subsequent set() calls update the graph-local value", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, () => 1);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(1);
+
+      g.set(p, () => 2);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(2);
+    });
+
+    it("isolates two graphs sharing the same param token", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g1 = graph().add(t).set(p, () => 10);
+      const g2 = graph().add(t).set(p, () => 20);
+
+      await g1.run({ targets: [t] });
+      await g2.run({ targets: [t] });
+
+      expect(g1.get(t)).toBe(10);
+      expect(g2.get(t)).toBe(20);
+    });
+
+    it("takes over ownership from an existing subscription-based param", async () => {
+      const p = param(1);
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv;
+        });
+      });
+
+      const g = graph();
+      g.add(t);
+
+      // First run: param is auto-registered with external subscription.
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(1);
+      expect(calls).toBe(1);
+
+      // External set should dirty the graph (subscription is active).
+      p.set(() => 2);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(2);
+      expect(calls).toBe(2);
+
+      // Now take ownership via graph.set(). This detaches the subscription.
+      g.set(p, () => 99);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(99);
+      expect(calls).toBe(3);
+
+      // External p.set() should NOT affect the graph anymore.
+      const callsBefore = calls;
+      p.set(() => 999);
+      await g.run({ targets: [t] });
+      // Task should still see 99 (the graph-local value).
+      expect(g.get(t)).toBe(99);
+      // Task should not have recomputed since p.set() is detached.
+      expect(calls).toBe(callsBefore);
+    });
+
+    it("emits param:set event on each graph.set() call", () => {
+      const p = param(0);
+      const g = graph();
+      const events: any[] = [];
+
+      g.on("param:set", (e) => events.push(e));
+      g.set(p, () => 1);
+      g.set(p, () => 2);
+
+      expect(events.length).toBe(2);
+      expect(events[0]!.type).toBe("param:set");
+      expect(events[0]!.paramId).toBe(p.id);
+      expect(events[1]!.paramId).toBe(p.id);
+    });
+
+    it("param:* wildcard subscription receives param:set events", () => {
+      const p = param(0);
+      const g = graph();
+      const events: any[] = [];
+
+      g.on("param:*", (e) => events.push(e));
+      g.set(p, () => 5);
+
+      expect(events.length).toBe(1);
+      expect(events[0]!.type).toBe("param:set");
+    });
+
+    it("marks downstream tasks dirty after set()", async () => {
+      const p = param(10);
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv * 2;
+        });
+      });
+
+      const g = graph().add(t).set(p, () => 10);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(20);
+      expect(calls).toBe(1);
+
+      // set() should dirty t, causing recomputation.
+      g.set(p, () => 15);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(30);
+      expect(calls).toBe(2);
+    });
+
+    it("does not throw after dispose()", () => {
+      const p = param(0);
+      const g = graph();
+      g.set(p, () => 1);
+      g.dispose();
+
+      // After dispose, set should still not throw — it just re-registers.
+      expect(() => g.set(p, () => 2)).not.toThrow();
+    });
+
+    it("is chainable (fluent API)", () => {
+      const p = param(0);
+      const q = param("hello");
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph()
+        .add(t)
+        .set(p, () => 1)
+        .set(q, () => "world");
+
+      // Verify the chain returned the graph.
+      expect(g).toBeDefined();
+      expect(typeof g.run).toBe("function");
+    });
+
+    it("set() callback receives the previous bound value", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, () => 10);
+
+      // Increment using prev.
+      g.set(p, (prev) => prev + 5);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(15);
+    });
   });
 });

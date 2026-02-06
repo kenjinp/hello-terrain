@@ -12,8 +12,9 @@ export type Lane = string;
  * The strategy for caching task results.
  * - "memo": Cache the result using memoization.
  * - "none": Do not cache; always recompute.
+ * - "once": Run the first time, never recompute.
  */
-export type CacheStrategy = "memo" | "none";
+export type CacheStrategy = "memo" | "none" | "once";
 
 /**
  * A type representing a reference to a node in the computation graph.
