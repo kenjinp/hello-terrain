@@ -36,8 +36,8 @@ export function createGetForDiscovery<L extends Lane, Res>(args: GetFactoryArgs<
 
     if (deps.isParam(refAny)) {
       const ref = refAny as ParamRef<any>;
-      state.ensureParamRegistered(ref);
-      return ref.get() as T;
+      const node = state.ensureParamRegistered(ref);
+      return (node.bound ? node.bound.value : ref.get()) as T;
     }
 
     if (deps.isTask(refAny)) {
@@ -79,8 +79,8 @@ export function createGetForCompiled<L extends Lane, Res>(args: GetFactoryArgs<L
 
     if (deps.isParam(refAny)) {
       const ref = refAny as ParamRef<any>;
-      state.ensureParamRegistered(ref);
-      return ref.get() as T;
+      const node = state.ensureParamRegistered(ref);
+      return (node.bound ? node.bound.value : ref.get()) as T;
     }
 
     if (deps.isTask(refAny)) {

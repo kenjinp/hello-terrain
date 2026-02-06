@@ -2,20 +2,23 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { RunTimingBars } from "@/components/RunTimingBars";
+import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
-  createGraph,
-  maxLevelParam,
-  maxNodesParam,
-  quadtreeUpdateParams,
+  innerTileSegments,
+  maxLevel,
+  maxNodes,
+  positionNodeTask,
+  quadtreeUpdate,
   quadtreeUpdateTask,
-  rootSizeParam,
+  rootSize,
+  skirtScale,
   TerrainGeometry,
+  terrainGraph,
   TerrainMesh,
-  updateTerrainUniformsTask,
-  terrainVertextPositionNodeTask,
+  type UpdateParams,
 } from "@hello-terrain/three";
-import { graph, param } from "@hello-terrain/work";
-import { OrbitControls, useTexture } from "@react-three/drei";
+import { Graph } from "@hello-terrain/work";
+import { Bounds, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
@@ -27,10 +30,8 @@ import * as THREE from "three/webgpu";
 extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
-const innerTileSegmentsParam = param(14);
-
 type TerrainMeshSceneImplProps = {
-  g: ReturnType<typeof graph>;
+  g: Graph;
 };
 
 function u32ToColor(indexNode: Node) {
@@ -51,9 +52,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       max: 4092 * 2,
       step: 2,
       label: "root size",
-      // onChange(value: number) {
-      //   rootSizeParam.set(() => value);
-      // },
     },
     maxLevel: {
       value: 12,
@@ -61,9 +59,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       max: 24,
       step: 2,
       label: "max level",
-      // onChange(value: number) {
-      //   maxLevelParam.set(() => value);
-      // },
     },
     innerTileSegments: {
       value: 14,
@@ -79,6 +74,13 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "max nodes",
     },
+    skirtScale: {
+      value: 10,
+      min: 0,
+      max: 1000,
+      step: 1,
+      label: "skirt scale",
+    },
   });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -86,26 +88,26 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
 
-  const uvMap = useTexture("/assets/uv-12x12.png");
-  uvMap.wrapS = THREE.RepeatWrapping;
-  uvMap.wrapT = THREE.RepeatWrapping;
-
   useEffect(() => {
-    innerTileSegmentsParam.set(() => controls.innerTileSegments);
+    g.set(innerTileSegments, () => controls.innerTileSegments);
     if (materialRef.current) materialRef.current.needsUpdate = true;
   }, [controls.innerTileSegments]);
 
   useEffect(() => {
-    maxNodesParam.set(() => controls.maxNodes);
+    g.set(maxNodes, () => controls.maxNodes);
   }, [controls.maxNodes]);
 
   useEffect(() => {
-    rootSizeParam.set(() => controls.rootSize);
+    g.set(rootSize, () => controls.rootSize);
   }, [controls.rootSize]);
 
   useEffect(() => {
-    maxLevelParam.set(() => controls.maxLevel);
+    g.set(maxLevel, () => controls.maxLevel);
   }, [controls.maxLevel]);
+
+  useEffect(() => {
+    g.set(skirtScale, () => controls.skirtScale);
+  }, [controls.skirtScale]);
 
   useEffect(() => {
     return g.on("run:finish", () => {
@@ -115,7 +117,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         meshRef.current.count = leafSet.count;
         meshRef.current.instanceMatrix.needsUpdate = true;
       }
-      const positionNode = g.peek(terrainVertextPositionNodeTask);
+      const positionNode = g.peek(positionNodeTask);
       if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
         materialRef.current.positionNode = positionNode;
         materialRef.current.needsUpdate = true;
@@ -130,7 +132,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       lastCameraRef.current.distanceToSquared(camera.position) >=
       cameraHysteresis * cameraHysteresis
     ) {
-      quadtreeUpdateParams.set((prev) => {
+      g.set(quadtreeUpdate, (prev: UpdateParams) => {
         prev.cameraOrigin.x = camera.position.x;
         prev.cameraOrigin.y = camera.position.y;
         prev.cameraOrigin.z = camera.position.z;
@@ -139,42 +141,8 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       lastCameraRef.current.copy(camera.position);
     }
 
-    const report = await g.run();
-
-    if (report) {
-      const cameraOrigin = quadtreeUpdateParams.get().cameraOrigin;
-      const leafSet = g.peek(quadtreeUpdateTask);
-      const terrainUniforms = g.peek(updateTerrainUniformsTask);
-      const uniformRootSize = terrainUniforms?.uRootSize.value;
-      const uniformRootSizeLabel =
-        typeof uniformRootSize === "number"
-          ? uniformRootSize.toFixed(2)
-          : `${uniformRootSize ?? "—"}`;
-      const paramRootSize = rootSizeParam.get();
-      const html = `
-        <div>
-          <div class="text-white/70">run</div>
-          <div>${report.status ?? "—"}${typeof report.durationMs === "number" ? ` (${report.durationMs.toFixed(1)}ms)` : ""}</div>
-        </div>
-        <div>
-          <div class="text-white/70">tasks</div>
-          <div>${report.taskCount ?? "—"} executed / ${report.cacheHits ?? "—"} cached</div>
-        </div>
-        <div>
-          <div class="text-white/70">camera</div>
-          <div>${cameraOrigin.x.toFixed(2)}, ${cameraOrigin.y.toFixed(2)}, ${cameraOrigin.z.toFixed(2)}</div>
-        </div>
-        <div>
-          <div class="text-white/70">leaf count</div>
-          <div>${leafSet?.count ?? "—"}</div>
-        </div>
-        <div>
-          <div class="text-white/70">root size</div>
-          <div>param ${paramRootSize ?? "—"} / uniform ${uniformRootSizeLabel}</div>
-        </div>
-      `;
-      document.getElementById("report")!.innerHTML = html;
-    }
+    // Where the magic happens :)
+    await g.run();
   });
 
   return (
@@ -198,17 +166,15 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 };
 
 const TerrainMeshScene = () => {
-  const g = useMemo(createGraph, []);
+  const g = useMemo(() => terrainGraph(), []);
 
   return (
     <ExamplesCanvas>
-      {/* Stats */}
-      <div className="absolute bottom-2 left-2 right-2 md:bottom-4 md:left-4 md:right-auto z-20 bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2.5 py-2 text-white font-mono text-[10px] md:text-xs pointer-events-none">
-        <div className="flex flex-wrap gap-x-4 gap-y-2" id="report"></div>
+      {/* HUD overlays */}
+      <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
+        <RunTimingBars graph={g} />
+        <TerrainTileDebug graph={g} />
       </div>
-
-      {/* Timing HUD */}
-      <RunTimingBars graph={g} />
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
         shadows
@@ -235,9 +201,9 @@ const TerrainMeshScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        {/* <Bounds fit observe> */}
-        <TerrainMeshSceneImpl g={g} />
-        {/* </Bounds> */}
+        <Bounds fit observe>
+          <TerrainMeshSceneImpl g={g} />
+        </Bounds>
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>

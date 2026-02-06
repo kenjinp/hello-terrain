@@ -129,7 +129,6 @@ export type RunTimingBarsProps = {
   width?: number;
   barHeight?: number;
   maxTasks?: number;
-  corner?: "bottom-right" | "bottom-left" | "top-right" | "top-left";
 };
 
 export function RunTimingBars({
@@ -138,7 +137,6 @@ export function RunTimingBars({
   width = 240,
   barHeight = 8,
   maxTasks = 10,
-  corner = "bottom-right",
 }: RunTimingBarsProps) {
   const { showUI } = useExamplesCanvas();
   const [, forceRender] = useState(0);
@@ -250,17 +248,9 @@ export function RunTimingBars({
 
   const containerClass = useMemo(() => {
     const base =
-      "absolute z-30 pointer-events-auto select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5";
-    const pos =
-      corner === "bottom-right"
-        ? "bottom-2 right-2 md:bottom-4 md:right-4"
-        : corner === "bottom-left"
-          ? "bottom-2 left-2 md:bottom-4 md:left-4"
-          : corner === "top-right"
-            ? "top-2 right-2 md:top-4 md:right-4"
-            : "top-2 left-2 md:top-4 md:left-4";
-    return `${base} ${pos} ${className ?? ""}`;
-  }, [className, corner]);
+      "w-full pointer-events-auto select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5";
+    return `${base} ${className ?? ""}`;
+  }, [className]);
 
   if (!showUI) return null;
 

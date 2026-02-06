@@ -849,4 +849,188 @@ describe("graph()", () => {
     expect(inspected.nodes.length).toBe(0);
     expect(inspected.edges.length).toBe(0);
   });
+
+  describe("graph.set()", () => {
+    it("takes ownership and task reads the bound value, not the module-scope default", async () => {
+      const p = param(100);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, () => 42);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(42);
+      // Module-scope param is untouched.
+      expect(p.get()).toBe(100);
+    });
+
+    it("subsequent set() calls update the graph-local value", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, () => 1);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(1);
+
+      g.set(p, () => 2);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(2);
+    });
+
+    it("isolates two graphs sharing the same param token", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g1 = graph().add(t).set(p, () => 10);
+      const g2 = graph().add(t).set(p, () => 20);
+
+      await g1.run({ targets: [t] });
+      await g2.run({ targets: [t] });
+
+      expect(g1.get(t)).toBe(10);
+      expect(g2.get(t)).toBe(20);
+    });
+
+    it("takes over ownership from an existing subscription-based param", async () => {
+      const p = param(1);
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv;
+        });
+      });
+
+      const g = graph();
+      g.add(t);
+
+      // First run: param is auto-registered with external subscription.
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(1);
+      expect(calls).toBe(1);
+
+      // External set should dirty the graph (subscription is active).
+      p.set(() => 2);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(2);
+      expect(calls).toBe(2);
+
+      // Now take ownership via graph.set(). This detaches the subscription.
+      g.set(p, () => 99);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(99);
+      expect(calls).toBe(3);
+
+      // External p.set() should NOT affect the graph anymore.
+      const callsBefore = calls;
+      p.set(() => 999);
+      await g.run({ targets: [t] });
+      // Task should still see 99 (the graph-local value).
+      expect(g.get(t)).toBe(99);
+      // Task should not have recomputed since p.set() is detached.
+      expect(calls).toBe(callsBefore);
+    });
+
+    it("emits param:set event on each graph.set() call", () => {
+      const p = param(0);
+      const g = graph();
+      const events: any[] = [];
+
+      g.on("param:set", (e) => events.push(e));
+      g.set(p, () => 1);
+      g.set(p, () => 2);
+
+      expect(events.length).toBe(2);
+      expect(events[0]!.type).toBe("param:set");
+      expect(events[0]!.paramId).toBe(p.id);
+      expect(events[1]!.paramId).toBe(p.id);
+    });
+
+    it("param:* wildcard subscription receives param:set events", () => {
+      const p = param(0);
+      const g = graph();
+      const events: any[] = [];
+
+      g.on("param:*", (e) => events.push(e));
+      g.set(p, () => 5);
+
+      expect(events.length).toBe(1);
+      expect(events[0]!.type).toBe("param:set");
+    });
+
+    it("marks downstream tasks dirty after set()", async () => {
+      const p = param(10);
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv * 2;
+        });
+      });
+
+      const g = graph().add(t).set(p, () => 10);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(20);
+      expect(calls).toBe(1);
+
+      // set() should dirty t, causing recomputation.
+      g.set(p, () => 15);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(30);
+      expect(calls).toBe(2);
+    });
+
+    it("does not throw after dispose()", () => {
+      const p = param(0);
+      const g = graph();
+      g.set(p, () => 1);
+      g.dispose();
+
+      // After dispose, set should still not throw — it just re-registers.
+      expect(() => g.set(p, () => 2)).not.toThrow();
+    });
+
+    it("is chainable (fluent API)", () => {
+      const p = param(0);
+      const q = param("hello");
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph()
+        .add(t)
+        .set(p, () => 1)
+        .set(q, () => "world");
+
+      // Verify the chain returned the graph.
+      expect(g).toBeDefined();
+      expect(typeof g.run).toBe("function");
+    });
+
+    it("set() callback receives the previous bound value", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, () => 10);
+
+      // Increment using prev.
+      g.set(p, (prev) => prev + 5);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(15);
+    });
+  });
 });

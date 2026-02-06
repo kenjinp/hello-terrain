@@ -193,6 +193,68 @@ await g.run();
 console.log(g.get(totalPrice)); // 110
 ```
 
+## Graph-Scoped Params
+
+By default, a `param` holds a single shared value. When a task calls `get(param)`, it reads that
+shared value and the graph subscribes to changes via `param.set()`.
+
+For **multi-instance** use cases (e.g. two terrain meshes in the same scene), you need each graph
+to have its own copy of a param's value. `graph.set()` does exactly this — it takes **graph-local
+ownership** of a param, storing an isolated value that only that graph sees.
+
+### Declaring params at module scope
+
+```ts
+// params.ts — shared declarations with sensible defaults
+import { param } from "@hello-terrain/work";
+
+export const rootSize = param(256);
+export const maxLevel = param(16);
+```
+
+### Using `graph.set()` for per-instance values
+
+```ts
+import { graph, task } from "@hello-terrain/work";
+import { rootSize, maxLevel } from "./params";
+
+const configTask = task((get, work) => {
+  const size = get(rootSize);
+  const level = get(maxLevel);
+  return work(() => ({ size, level }));
+}).displayName("configTask");
+
+// Graph 1 — own values
+const g1 = graph()
+  .add(configTask)
+  .set(rootSize, () => 128)
+  .set(maxLevel, () => 12);
+
+// Graph 2 — different values, same param tokens
+const g2 = graph()
+  .add(configTask)
+  .set(rootSize, () => 512)
+  .set(maxLevel, () => 20);
+
+await g1.run();
+await g2.run();
+
+console.log(g1.get(configTask)); // { size: 128, level: 12 }
+console.log(g2.get(configTask)); // { size: 512, level: 20 }
+```
+
+### How ownership works
+
+- Before `graph.set()` is called, the graph subscribes to `param.subscribe()` — exactly like today.
+- The first `graph.set(param, cb)` call **detaches** the external subscription and stores a graph-local value.
+- Subsequent `graph.set()` calls update the graph-local value and mark downstream tasks dirty.
+- External `param.set()` calls no longer affect a graph that has taken ownership.
+
+<Callout type="note">
+  You can mix owned and unowned params in the same graph. Only params you explicitly
+  `graph.set()` become graph-local; the rest continue to use the shared subscription flow.
+</Callout>
+
 ## Type Safety
 
 Params are fully typed—the type is inferred from the initial value or can be explicitly specified:

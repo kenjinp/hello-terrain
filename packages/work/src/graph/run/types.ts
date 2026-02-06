@@ -19,6 +19,8 @@ export type TaskNodeRuntime<L extends Lane, Res> = {
 export type ParamNodeRuntime = {
   ref: ParamRef<any>;
   version: number;
+  /** When present, the graph owns the param value locally (set via `graph.set()`). */
+  bound?: { value: any };
 };
 
 export type RunState<L extends Lane, Res> = {

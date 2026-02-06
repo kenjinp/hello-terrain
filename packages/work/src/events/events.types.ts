@@ -22,6 +22,7 @@ export type Unsubscribe = () => void;
  * - "task:start": A task begins execution.
  * - "task:finish": A task completes successfully.
  * - "task:error": A task throws or rejects with an error.
+ * - "param:set": A param value was set via `graph.set()`.
  */
 export type GraphEvent =
   | { type: "run:start"; runId: string; at: number }
@@ -36,7 +37,8 @@ export type GraphEvent =
       at: number;
       durationMs: number;
       error: unknown;
-    };
+    }
+  | { type: "param:set"; paramId: string; at: number };
 
 export type GraphEventType = GraphEvent["type"];
 

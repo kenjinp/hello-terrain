@@ -1,7 +1,7 @@
 {
   "name": "@hello-terrain/work",
   "description": "A small reactive task graph library for scheduling dependent computations.",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "homepage": "http://hello-terrain.kenny.wtf/work",
   "repository": {
     "type": "git",

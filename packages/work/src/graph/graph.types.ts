@@ -1,3 +1,4 @@
+import type { ParamRef, ParamSetCallback } from "../param/param.types";
 import type { Task, TaskRef, TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
 
@@ -30,6 +31,7 @@ export type RunStatus = "ok" | "error" | "cancelled";
  * - "task:start": A task begins execution.
  * - "task:finish": A task completes successfully.
  * - "task:error": A task throws or rejects with an error.
+ * - "param:set": A param value was set via `graph.set()`.
  */
 export type GraphEvent =
   | { type: "run:start"; runId: string; at: number }
@@ -44,7 +46,8 @@ export type GraphEvent =
       at: number;
       durationMs: number;
       error: unknown;
-    };
+    }
+  | { type: "param:set"; paramId: string; at: number };
 
 export type GraphEventType = GraphEvent["type"];
 
@@ -103,6 +106,13 @@ export interface Graph<L extends Lane = Lane, Res = unknown> {
   get<T>(taskRef: TaskRef<T>): T;
   peek<T>(taskRef: TaskRef<T>): T | undefined;
   add<T>(task: Task<T, L, Res>): Graph<L, Res>;
+  /**
+   * Takes graph-local ownership of a param's value. After calling `set()`,
+   * the graph stores its own copy of the value and detaches from the
+   * external `param.subscribe()` flow. This enables multiple graphs to
+   * share the same module-scope `param()` token with isolated runtime values.
+   */
+  set<T>(param: ParamRef<T>, cb: ParamSetCallback<T>): Graph<L, Res>;
 }
 
 export type InspectNode =

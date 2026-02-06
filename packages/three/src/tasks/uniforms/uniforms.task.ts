@@ -1,58 +1,52 @@
 import { task } from "@hello-terrain/work";
 import { Vector3 } from "three";
-import {
-  heightmapScaleParam,
-  innerTileSegmentsParam,
-  originParam,
-  rootSizeParam,
-  skirtScaleParam,
-} from "../../params";
-import { terrainInstanceIdTask } from "../terrainInstance.task";
-import { TerrainUniformsParams, createTerrainUniforms } from "./terrainUniforms";
+import { instanceIdTask } from "../instanceId.task";
+import { heightmapScale, innerTileSegments, origin, rootSize, skirtScale } from "../params";
+import { type TerrainUniformsParams, createTerrainUniforms } from "./terrainUniforms";
 
 const scratchVector3 = new Vector3();
 
 /**
- * Creates the terrain uniform nodes once. Downstream cache("once") tasks
- * (like terrainVertextPositionNodeTask) capture references to these nodes
- * in shader graphs, so the same instances must persist across runs.
+ * Creates the terrain uniform nodes once. Downstream tasks capture
+ * references to these nodes in shader graphs, so the same instances
+ * must persist across runs.
  */
-export const createTerrainUniformsTask = task((get, work) => {
-  const params: TerrainUniformsParams = {
-    rootOrigin: get(originParam),
-    rootSize: get(rootSizeParam),
-    innerTileSegments: get(innerTileSegmentsParam),
-    skirtScale: get(skirtScaleParam),
-    heightmapScale: get(heightmapScaleParam),
-    instanceId: get(terrainInstanceIdTask),
+export const createUniformsTask = task((get, work) => {
+  const uniformParams: TerrainUniformsParams = {
+    rootOrigin: get(origin),
+    rootSize: get(rootSize),
+    innerTileSegments: get(innerTileSegments),
+    skirtScale: get(skirtScale),
+    heightmapScale: get(heightmapScale),
+    instanceId: get(instanceIdTask),
   };
-  return work(() => createTerrainUniforms(params));
+  return work(() => createTerrainUniforms(uniformParams));
 })
   .displayName("createTerrainUniformsTask")
   .cache("once");
 
 /**
  * Updates the terrain uniform values each run. Reads the persisted uniform
- * nodes from createTerrainUniformsTask and writes the latest param values.
+ * nodes from createUniformsTask and writes the latest param values.
  */
-export const updateTerrainUniformsTask = task((get, work) => {
-  const terrainUniformsContext = get(createTerrainUniformsTask);
-  const rootSize = get(rootSizeParam);
-  const rootOrigin = get(originParam);
-  const innerTileSegments = get(innerTileSegmentsParam);
-  const skirtScale = get(skirtScaleParam);
-  const heightmapScale = get(heightmapScaleParam);
+export const updateUniformsTask = task((get, work) => {
+  const terrainUniformsContext = get(createUniformsTask);
+  const rootSizeVal = get(rootSize);
+  const rootOrigin = get(origin);
+  const innerTileSegmentsVal = get(innerTileSegments);
+  const skirtScaleVal = get(skirtScale);
+  const heightmapScaleVal = get(heightmapScale);
 
   return work(() => {
-    terrainUniformsContext.uRootSize.value = rootSize;
+    terrainUniformsContext.uRootSize.value = rootSizeVal;
     terrainUniformsContext.uRootOrigin.value = scratchVector3.set(
       rootOrigin.x,
       rootOrigin.y,
       rootOrigin.z,
     );
-    terrainUniformsContext.uInnerTileSegments.value = innerTileSegments;
-    terrainUniformsContext.uSkirtScale.value = skirtScale;
-    terrainUniformsContext.uHeightmapScale.value = heightmapScale;
+    terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
+    terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
+    terrainUniformsContext.uHeightmapScale.value = heightmapScaleVal;
 
     return terrainUniformsContext;
   });

@@ -6,6 +6,7 @@ import { Banner } from "fumadocs-ui/components/banner";
 import { RootProvider } from "fumadocs-ui/provider";
 import type { Metadata } from "next";
 import { Lato, Lisu_Bosa } from "next/font/google";
+import Script from "next/script";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
@@ -31,6 +32,15 @@ const serif = Lisu_Bosa({
 export default function Layout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${sans.variable} ${serif.variable}`} suppressHydrationWarning>
+      <head>
+        <Script
+          src="https://plausible.io/js/pa-ba2GUGyQD-ursX_yCMA3E.js"
+          strategy="afterInteractive"
+        />
+        <Script id="plausible-init" strategy="afterInteractive">
+          {`window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init()`}
+        </Script>
+      </head>
       <body className="flex flex-col min-h-screen">
         <Banner
           variant="rainbow"

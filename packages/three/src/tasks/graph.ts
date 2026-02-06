@@ -1,23 +1,36 @@
 import { graph } from "@hello-terrain/work";
-import { terrainVertextPositionNodeTask } from "./positions.task";
+import { instanceIdTask } from "./instanceId.task";
+import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
   leafStorageTask,
   quadtreeConfigTask,
   quadtreeUpdateTask,
 } from "./quadtree.task";
-import { terrainInstanceIdTask } from "./terrainInstance.task";
-import { createTerrainUniformsTask, updateTerrainUniformsTask } from "./uniforms/uniforms.task";
+import { createUniformsTask, updateUniformsTask } from "./uniforms/uniforms.task";
 
-export function createGraph() {
-  const g = graph()
-    .add(terrainInstanceIdTask)
+export { instanceIdTask } from "./instanceId.task";
+
+export function terrainGraph() {
+  return graph()
+    .add(instanceIdTask)
     .add(quadtreeConfigTask)
     .add(quadtreeUpdateTask)
     .add(leafStorageTask)
     .add(leafGpuBufferTask)
-    .add(createTerrainUniformsTask)
-    .add(updateTerrainUniformsTask)
-    .add(terrainVertextPositionNodeTask);
-  return g;
+    .add(createUniformsTask)
+    .add(updateUniformsTask)
+    .add(positionNodeTask);
 }
+
+/** All terrain task refs for direct access. */
+export const terrainTasks = {
+  instanceId: instanceIdTask,
+  quadtreeConfig: quadtreeConfigTask,
+  quadtreeUpdate: quadtreeUpdateTask,
+  leafStorage: leafStorageTask,
+  leafGpuBuffer: leafGpuBufferTask,
+  createUniforms: createUniformsTask,
+  updateUniforms: updateUniformsTask,
+  positionNode: positionNodeTask,
+} as const;

@@ -1,6 +1,6 @@
 import { dag } from "../dag/dag";
 import { events } from "../events/events";
-import type { ParamRef, Unsubscribe } from "../param/param.types";
+import type { ParamRef, ParamSetCallback, Unsubscribe } from "../param/param.types";
 import { semaphore } from "../semaphore/semaphore";
 import { TASK_DEF, type Task, type TaskRef, type TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
@@ -33,6 +33,8 @@ type ParamNodeRuntime = {
   ref: ParamRef<any>;
   version: number;
   unsubscribe?: Unsubscribe;
+  /** When present, the graph owns the param value locally (set via `graph.set()`). */
+  bound?: { value: any };
 };
 
 type GraphState<L extends Lane, Res> = {
@@ -83,6 +85,23 @@ export function graph<L extends Lane = Lane, Res = unknown>(): Graph<L, Res> {
     compiledVersion = structureVersion;
   };
 
+  /** Mark all downstream tasks dirty starting from `nodeId`. */
+  function propagateDirty(nodeId: string) {
+    const stack = [...(d.getAdjacenciesId(nodeId) ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      const taskNode = tasksMap.get(id);
+      if (taskNode) {
+        const cache = taskNode.ref[TASK_DEF].options.cache;
+        if (cache === "once" && taskNode.state === "ready") continue;
+      }
+      if (dirtyTasks.has(id)) continue;
+      dirtyTasks.add(id);
+      const next = d.getAdjacenciesId(id);
+      if (next) for (const depId of next) stack.push(depId);
+    }
+  }
+
   function ensureParamRegistered(param: ParamRef<any>) {
     const existing = paramsMap.get(param.id);
     if (existing) return existing;
@@ -90,20 +109,7 @@ export function graph<L extends Lane = Lane, Res = unknown>(): Graph<L, Res> {
     const node: ParamNodeRuntime = { ref: param, version: 0 };
     node.unsubscribe = param.subscribe(() => {
       node.version += 1;
-      // Mark downstream tasks dirty without recursive scanning.
-      const stack = [...(d.getAdjacenciesId(param.id) ?? [])];
-      while (stack.length) {
-        const id = stack.pop()!;
-        const taskNode = tasksMap.get(id);
-        if (taskNode) {
-          const cache = taskNode.ref[TASK_DEF].options.cache;
-          if (cache === "once" && taskNode.state === "ready") continue;
-        }
-        if (dirtyTasks.has(id)) continue;
-        dirtyTasks.add(id);
-        const next = d.getAdjacenciesId(id);
-        if (next) for (const depId of next) stack.push(depId);
-      }
+      propagateDirty(param.id);
     });
     paramsMap.set(param.id, node);
     d.addNode(param);
@@ -180,6 +186,37 @@ export function graph<L extends Lane = Lane, Res = unknown>(): Graph<L, Res> {
 
   function addTask<T>(task: Task<T, L, Res>): Graph<L, Res> {
     ensureTaskRegistered(task);
+    return api;
+  }
+
+  function setParam<T>(paramRef: ParamRef<T>, cb: ParamSetCallback<T>): Graph<L, Res> {
+    let node = paramsMap.get(paramRef.id);
+
+    if (!node) {
+      // Auto-register with graph-local ownership (no external subscription).
+      node = { ref: paramRef, version: 0, bound: { value: paramRef.get() } };
+      paramsMap.set(paramRef.id, node);
+      d.addNode(paramRef);
+      markStructureChanged();
+    }
+
+    if (!node.bound) {
+      // Previously auto-registered by a task's get() with external subscription.
+      // Detach and switch to graph-local ownership.
+      node.unsubscribe?.();
+      node.unsubscribe = undefined;
+      node.bound = { value: paramRef.get() };
+    }
+
+    // Apply the update.
+    node.bound.value = cb(node.bound.value);
+    node.version += 1;
+    propagateDirty(paramRef.id);
+
+    if (hasListeners("param:set")) {
+      emit({ type: "param:set", paramId: paramRef.id, at: nowMs() });
+    }
+
     return api;
   }
 
@@ -299,6 +336,7 @@ export function graph<L extends Lane = Lane, Res = unknown>(): Graph<L, Res> {
     get: getTaskValue,
     peek: peekTaskValue,
     add: addTask,
+    set: setParam,
   };
   return api;
 }

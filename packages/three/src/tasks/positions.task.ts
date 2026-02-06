@@ -1,19 +1,18 @@
 import { task } from "@hello-terrain/work";
-import { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import { createTileWorldPosition } from "../nodes/worldPosition";
-import { leafGpuBufferTask } from "./quadtree.task";
-import { createTerrainUniformsTask } from "./uniforms/uniforms.task";
+import { leafStorageTask } from "./quadtree.task";
+import { createUniformsTask } from "./uniforms/uniforms.task";
 
-export const terrainVertextPositionNodeTask = task((get, work) => {
-  const leafSet = get(leafGpuBufferTask);
-  const terrainUniformsContext = get(createTerrainUniformsTask);
-  let worldPositionFn: ShaderCallNodeInternal | undefined = undefined;
-  return work(() => {
-    if (!worldPositionFn) {
-      worldPositionFn = createTileWorldPosition(leafSet, terrainUniformsContext);
-    }
-    return worldPositionFn;
-  });
-})
-  .displayName("terrainVertextPositionNodeTask")
-  .cache("once");
+/**
+ * Builds the TSL position node for the terrain shader.
+ *
+ * Depends on leafStorageTask (buffer objects) and createUniformsTask
+ * (uniform nodes). Both only change when their GPU resources are recreated
+ * (e.g. buffer resize), so this task stays cached during normal quadtree
+ * updates — no unnecessary shader rebuilds.
+ */
+export const positionNodeTask = task((get, work) => {
+  const leafStorage = get(leafStorageTask);
+  const terrainUniforms = get(createUniformsTask);
+  return work(() => createTileWorldPosition(leafStorage, terrainUniforms));
+}).displayName("terrainVertextPositionNodeTask");
