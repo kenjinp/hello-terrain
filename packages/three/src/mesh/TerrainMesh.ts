@@ -20,6 +20,7 @@ export class TerrainMesh extends InstancedMesh {
     const { innerTileSegments, maxNodes, material } = mergedParams;
     const geometry = new TerrainGeometry(innerTileSegments, true);
     super(geometry, material, maxNodes);
+    this.frustumCulled = false;
     this._innerTileSegments = innerTileSegments;
     this._maxNodes = maxNodes;
   }

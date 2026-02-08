@@ -1,15 +1,18 @@
-import { float, Fn, instanceIndex, int, positionLocal, pow, select, vec3 } from "three/tsl";
+import { float, Fn, instanceIndex, int, normalLocal, positionLocal, pow, select, unpackHalf2x16, vec3, vertexIndex } from "three/tsl";
 
+import type { Node } from "three/webgpu";
 import { StorageBufferNode } from "three/webgpu";
 import { LeafStorageState } from "../tasks/quadtree.task";
 import { TerrainUniformsContext } from "../tasks/uniforms/terrainUniforms";
 import { readHeightAtPositionLocal } from "./elevation/heights";
+import { deriveNormalZ } from "./materials";
 import { isSkirtVertex } from "./skirt";
 
 export function createTileWorldPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   heightmapStorageNode?: StorageBufferNode,
+  normalmapStorageNode?: Node,
 ) {
   return Fn(() => {
     const edgeVertexCount = terrainUniforms.uInnerTileSegments.add(3);
@@ -45,6 +48,20 @@ export function createTileWorldPosition(
 
     const skirtY = baseY.add(elevation).sub(terrainUniforms.uSkirtScale.toVar());
     const worldY = select(skirtVertex, skirtY, baseY.add(elevation));
+
+    // Read normal from normalmap buffer per-vertex and assign to normalLocal.
+    // The material's default pipeline transforms normalLocal → normalView for lighting.
+    // Uses vertexIndex (not positionLocal) for reliable grid-to-buffer mapping.
+    if (normalmapStorageNode) {
+      const intEdge = int(edgeVertexCount);
+      const verticesPerNode = intEdge.mul(intEdge);
+      const globalVertexIndex = nodeIndex.mul(verticesPerNode).add(int(vertexIndex));
+      const packed = normalmapStorageNode.element(globalVertexIndex);
+      const normalXZ = unpackHalf2x16(packed);
+      // deriveNormalZ returns vec3(X, Z, Y_derived); swizzle to Y-up convention
+      const reconstructed = deriveNormalZ(normalXZ);
+      normalLocal.assign(vec3(reconstructed.x, reconstructed.z, reconstructed.y));
+    }
 
     return vec3(worldX, worldY, worldZ);
   })();

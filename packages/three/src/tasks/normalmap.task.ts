@@ -1,11 +1,11 @@
 import { task } from "@hello-terrain/work";
 import { Fn, float, int, packHalf2x16, storage, vec2 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
-import { createComputeToBufferMap } from "../compute/gpu";
-import { createHeightmapContextTask } from "./heightmap.task";
+import { StorageBufferAttribute } from "three/webgpu";
+import type { ComputePipeline } from "../compute/gpu";
+import { heightmapStageTask, createHeightmapContextTask, createTileNodes } from "./heightmap.task";
 import { innerTileSegments, maxNodes } from "./params";
-import { leafGpuBufferTask } from "./quadtree.task";
+import { createUniformsTask } from "./uniforms/uniforms.task";
 
 // ── Storage buffer context ──────────────────────────────────────────────
 
@@ -15,8 +15,8 @@ export const createNormalmapContextTask = task((get, work) => {
   const totalElements = get(maxNodes) * verticesPerNode;
   return work(() => {
     const data = new Uint32Array(totalElements);
-    // Each element is a single u32 holding two packed f16 values (normal.x, normal.y).
-    // The Z component is reconstructed at read-time: nz = sqrt(1 - nx*nx - ny*ny).
+    // Each element is a single u32 holding two packed f16 values (normal.x, normal.z).
+    // The Y (up) component is reconstructed at read-time: ny = sqrt(1 - nx*nx - nz*nz).
     const attribute = new StorageBufferAttribute(data, 1);
     const node = storage(attribute, "uint", totalElements);
 
@@ -43,10 +43,13 @@ export const createNormalmapContextTask = task((get, work) => {
  */
 function createNormalFromHeightmap(heightmapNode: Node, edgeVertexCount: number) {
   /**
-   * Returns a TSL function `(nodeIndex, ix, iy) => vec2(nx, ny)` where
-   * nx/ny are the XY components of the unit surface normal.
+   * Returns a TSL function `(nodeIndex, ix, iy, verticalScale) => vec2(nx, nz)`
+   * where nx/nz are the horizontal components of the unit surface normal.
+   *
+   * `verticalScale` is `2 * texelWorldSpacing / heightmapScale`, accounting
+   * for the tile's world-space texel spacing and the heightmap vertical scale.
    */
-  return Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
+  return Fn(([nodeIndex, ix, iy, verticalScale]: [Node, Node, Node, Node]) => {
     const iEdge = int(edgeVertexCount);
     const last = iEdge.sub(int(1));
     const verticesPerNode = iEdge.mul(iEdge);
@@ -64,62 +67,72 @@ function createNormalFromHeightmap(heightmapNode: Node, edgeVertexCount: number)
     const hUp = heightmapNode.element(baseOffset.add(yUp.mul(iEdge).add(int(ix))));
     const hDown = heightmapNode.element(baseOffset.add(yDown.mul(iEdge).add(int(ix))));
 
-    // Central differences — dx/dz are in texel units so the spacing
-    // cancels when we normalise, but we keep the denominator (2.0) for
-    // correct magnitude when clamped at borders.
+    // Central differences: dhdx ≈ h(x+1) - h(x-1) over 2 texel spacings.
     const dhdx = float(hRight).sub(float(hLeft));
     const dhdz = float(hDown).sub(float(hUp));
 
-    // Tangent-space normal: n = normalize(-dh/dx, 2*texelSpacing, -dh/dz)
-    // We treat the texel spacing as 1.0 so the vertical component is 2.0.
-    // After normalisation only the direction matters.
+    // Surface normal: n = normalize(-dhdx, verticalScale, -dhdz)
+    // where verticalScale = 2 * texelWorldSpacing / heightmapScale
+    // correctly relates the horizontal grid spacing to the vertical height units.
     const nx = dhdx.negate();
     const nz = dhdz.negate();
-    const ny = float(2.0);
+    const ny = float(verticalScale);
     const len = nx.mul(nx).add(ny.mul(ny)).add(nz.mul(nz)).sqrt();
 
-    // Return normalised XY; Z is reconstructed at read-time.
-    return vec2(nx.div(len), ny.div(len));
+    // Return normalised XZ; Y (up) is reconstructed at read-time.
+    return vec2(nx.div(len), nz.div(len));
   });
 }
 
-// ── Compute tasks ───────────────────────────────────────────────────────
+// ── Compute stage ───────────────────────────────────────────────────────
 
-export const createComputeNormalMapTask = task((get, work) => {
+/**
+ * Normal-map compute stage — reads height neighbours from the heightmap
+ * buffer, computes surface normals via central differences, packs XZ
+ * components into a u32 via `packHalf2x16`, and writes to the normalmap
+ * storage buffer.
+ *
+ * The vertical scale accounts for each tile's world-space texel spacing
+ * and the heightmap scale uniform, so normals are correct at all LOD levels.
+ *
+ * Accumulates the upstream heightmap pipeline via `get(heightmapStageTask)`.
+ */
+export const normalmapStageTask = task((get, work) => {
+  const upstream = get(heightmapStageTask);
   const heightmapContext = get(createHeightmapContextTask);
   const normalmapContext = get(createNormalmapContextTask);
-  const leafState = get(leafGpuBufferTask);
   const tileEdgeVertexCount = get(innerTileSegments) + 3;
+  const tile = get(createTileNodes);
+  const uniforms = get(createUniformsTask);
+  const segments = get(innerTileSegments);
 
-  return work(() => {
-    const computeNormal = createNormalFromHeightmap(heightmapContext.node, tileEdgeVertexCount);
-
-    const { create } = createComputeToBufferMap(
+  return work((): ComputePipeline => {
+    const computeNormal = createNormalFromHeightmap(
+      heightmapContext.node,
+      tileEdgeVertexCount,
+    );
+    return [
+      ...upstream,
       (nodeIndex, globalVertexIndex, _uv, localCoordinates) => {
         const ix = int(localCoordinates.x);
         const iy = int(localCoordinates.y);
 
-        // Compute the XY normal components from the heightmap
-        const normalXY = computeNormal(nodeIndex, ix, iy);
+        // World-space texel spacing, adjusted for heightmap vertical scale.
+        // This ensures normals are correct regardless of tile LOD level.
+        const texelWorldSpacing = tile.tileSize(nodeIndex).div(float(segments));
+        const verticalScale = float(2).mul(texelWorldSpacing).div(uniforms.uHeightmapScale);
+
+        // Compute the XZ normal components from the heightmap
+        const normalXZ = computeNormal(nodeIndex, ix, iy, verticalScale);
 
         // Pack two f16 values into a single u32 and write to the buffer
-        normalmapContext.node.element(globalVertexIndex).assign(packHalf2x16(normalXY));
+        normalmapContext.node
+          .element(globalVertexIndex)
+          .assign(packHalf2x16(normalXZ));
       },
-      leafState.count,
-    );
-
-    return create(tileEdgeVertexCount);
+    ];
   });
-}).displayName("createComputeNormalMapTask");
-
-export const computeNormalMapTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
-    const { execute } = get(createComputeNormalMapTask);
-    return work(() => (resources?.renderer ? execute(resources?.renderer) : () => {}));
-  },
-)
-  .displayName("computeNormalMapTask")
-  .lane("gpu");
+}).displayName("normalmapStage");
 
 // ── Reading helpers (for use in vertex/fragment shaders) ────────────────
 //
@@ -127,11 +140,11 @@ export const computeNormalMapTask = task<{ renderer: WebGPURenderer }>(
 //
 //   import { unpackHalf2x16 } from "three/tsl";
 //
-//   const packed = normalmapStorage.element(globalIndex);
-//   const normalXY = unpackHalf2x16(packed);
-//   const nz = sqrt(float(1.0).sub(normalXY.x.mul(normalXY.x)).sub(normalXY.y.mul(normalXY.y)));
-//   const normal = vec3(normalXY.x, nz, normalXY.y);
+  // const packed = normalmapStorage.element(globalIndex);
+  // const normalXZ = unpackHalf2x16(packed);
+  // const ny = sqrt(float(1.0).sub(normalXZ.x.mul(normalXZ.x)).sub(normalXZ.y.mul(normalXZ.y)));
+  // const normal = vec3(normalXZ.x, ny, normalXZ.y);
 //
-// Note: the Y component stored is the *up* axis in tangent space, which
-// maps to the geometric Y axis. Adjust the swizzle if your coordinate
-// convention differs.
+// Note: the packed components are X and Z (horizontal derivatives).
+// The Y (up) component is always positive for outward-facing terrain
+// and is reconstructed via sqrt.

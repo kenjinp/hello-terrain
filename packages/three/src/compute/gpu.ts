@@ -1,90 +1,100 @@
-import { Fn, If, float, globalId, int, uint, vec2 } from "three/tsl";
+import { Fn, If, float, globalId, int, uint, uniform, vec2, workgroupBarrier } from "three/tsl";
 import type { Node, WebGPURenderer } from "three/webgpu";
 
-// A buffer map is an array-like representation of a texture with a width and height times number of nodes
+// ── Types ────────────────────────────────────────────────────────────────
+
+export type ComputeStageCallback = (
+  nodeIndex: Node,
+  globalVertexIndex: Node,
+  uv: Node,
+  localCoordinates: Node,
+  texelSize: Node,
+) => void;
+
+/** An ordered list of compute stage callbacks forming a fused pipeline. */
+export type ComputePipeline = ComputeStageCallback[];
+
+// ── Constants ────────────────────────────────────────────────────────────
+
 const WORKGROUP_X = 16;
 const WORKGROUP_Y = 16;
 
-function ceilPowerOfTwo(n: number): number {
-  if (n <= 1) return 1;
-  return 1 << Math.ceil(Math.log2(n));
-}
+// ── Pipeline compiler ────────────────────────────────────────────────────
 
 /**
- * Creates a 2D compute dispatch that iterates over a grid of vertices for
- * each active leaf node (Z-axis).
+ * Compiles an ordered list of compute stage callbacks into a single fused
+ * GPU kernel. Each stage is invoked sequentially with a `workgroupBarrier()`
+ * between consecutive stages so that earlier writes are visible to later reads.
  *
- * @param fn        Callback invoked per vertex with node/vertex indices, UV,
- *                  local coordinates, and texel size.
- * @param instanceCount  Number of active leaf nodes.
- * @param bindings  Optional array of TSL nodes (storage buffers, uniforms)
- *                  that must be included in the compute pipeline's bind
- *                  group. Use this when your `fn` callback calls helper
- *                  functions that use `.setLayout()` and capture resources
- *                  from closures — TSL cannot trace through `.setLayout()`
- *                  boundaries to discover those dependencies automatically.
- *                  Prefer writing compute helpers without `.setLayout()`
- *                  instead; this parameter is a safety net for edge cases.
+ * The kernel uses 2D workgroups (X/Y iterate over a tile's vertex grid) and
+ * the Z-axis iterates over active leaf nodes.
+ *
+ * The instance count (number of active leaves) is passed at dispatch time
+ * via a uniform — not baked into the shader — so the kernel is compiled once
+ * and reused regardless of how often the quadtree changes.
+ *
+ * @param stages    Ordered array of per-vertex callbacks.
+ * @param width     Edge vertex count (tile grid is width × width).
+ * @param bindings  Optional TSL nodes to force-bind (safety net for
+ *                  `.setLayout()` edge cases).
  */
-export function createComputeToBufferMap(
-  fn: (
-    nodeIndex: Node,
-    globalVertexIndex: Node,
-    uv: Node,
-    localCoordinates: Node,
-    texelSize: Node,
-  ) => void,
-  instanceCount: number,
+export function compileComputePipeline(
+  stages: ComputePipeline,
+  width: number,
   bindings?: Node[],
-) {
-  function create(width: number) {
-    // 2D workgroups for better occupancy, Z-axis iterates over active leaf nodes
-    const workgroupSize = [WORKGROUP_X, WORKGROUP_Y, 1];
-    const dispatchX = ceilPowerOfTwo(Math.ceil(width / WORKGROUP_X));
-    const dispatchY = ceilPowerOfTwo(Math.ceil(width / WORKGROUP_Y));
-    const dispatchZ = ceilPowerOfTwo(instanceCount);
-    const dispatchSize = [dispatchX, dispatchY, dispatchZ];
-    const computeShader = Fn(() => {
-      // Force-bind any external resources that TSL can't auto-discover
-      bindings?.forEach((b) => b.toVar());
+): { execute: (renderer: WebGPURenderer, instanceCount: number) => void } {
+  const workgroupSize: [number, number, number] = [WORKGROUP_X, WORKGROUP_Y, 1];
+  const dispatchX = Math.ceil(width / WORKGROUP_X);
+  const dispatchY = Math.ceil(width / WORKGROUP_Y);
 
-      const fWidth = float(width);
-      const activeIndex = globalId.z;
-      // Leaves are packed contiguously at indices 0..count-1, so activeIndex IS the nodeIndex
-      const nodeIndex = int(activeIndex).toVar();
-      const iWidth = int(width);
-      const ix = int(globalId.x);
-      const iy = int(globalId.y);
-      const iInstanceCount = int(instanceCount);
+  // Uniform so that changing the leaf count doesn't trigger shader recompilation
+  const uInstanceCount = uniform(0, "uint");
 
-      If(
-        ix
-          .lessThan(iWidth)
-          .and(iy.lessThan(iWidth))
-          .and(uint(activeIndex).lessThan(uint(iInstanceCount))),
-        () => {
-          const texelSize = vec2(1, 1).div(fWidth);
-          const localCoordinates = vec2(globalId.x, globalId.y);
-          const localUVCoords = localCoordinates.div(fWidth);
-          const verticesPerNode = iWidth.mul(iWidth);
-          const globalIndex = int(nodeIndex).mul(verticesPerNode).add(iy.mul(iWidth).add(ix));
-          fn(nodeIndex, globalIndex, localUVCoords, localCoordinates, texelSize);
-        },
-      );
-    })().computeKernel(workgroupSize);
+  const computeShader = Fn(() => {
+    // Force-bind any external resources that TSL can't auto-discover
+    bindings?.forEach((b) => b.toVar());
 
-    function execute(renderer: WebGPURenderer) {
-      const optimizedDispatchSize: [number, number, number] = [
-        dispatchSize[0],
-        dispatchSize[1],
-        ceilPowerOfTwo(instanceCount),
-      ];
+    const fWidth = float(width);
+    const activeIndex = globalId.z;
+    // Leaves are packed contiguously at indices 0..count-1,
+    // so activeIndex IS the nodeIndex.
+    const nodeIndex = int(activeIndex).toVar();
+    const iWidth = int(width);
+    const ix = int(globalId.x);
+    const iy = int(globalId.y);
 
-      renderer.compute(computeShader, optimizedDispatchSize);
+    // Compute shared per-thread values unconditionally (safe — just arithmetic)
+    const texelSize = vec2(1, 1).div(fWidth);
+    const localCoordinates = vec2(globalId.x, globalId.y);
+    const localUVCoords = localCoordinates.div(fWidth);
+    const verticesPerNode = iWidth.mul(iWidth);
+    const globalIndex = int(nodeIndex).mul(verticesPerNode).add(iy.mul(iWidth).add(ix));
+
+    // Bounds check — stored as a variable so each If reuses it.
+    // uInstanceCount is a uniform, so this adapts at dispatch time
+    // without recompiling the shader.
+    const inBounds = ix
+      .lessThan(iWidth)
+      .and(iy.lessThan(iWidth))
+      .and(uint(activeIndex).lessThan(uInstanceCount))
+      .toVar();
+
+    // Each stage gets its own If block; barriers sit at the top level
+    // where all threads reach them (uniform control flow).
+    for (let i = 0; i < stages.length; i++) {
+      if (i > 0) {
+        workgroupBarrier();
+      }
+      If(inBounds, () => {
+        stages[i](nodeIndex, globalIndex, localUVCoords, localCoordinates, texelSize);
+      });
     }
+  })().computeKernel(workgroupSize);
 
-    return { execute };
+  function execute(renderer: WebGPURenderer, instanceCount: number) {
+    uInstanceCount.value = instanceCount;
+    renderer.compute(computeShader, [dispatchX, dispatchY, instanceCount]);
   }
 
-  return { create };
+  return { execute };
 }

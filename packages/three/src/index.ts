@@ -3,6 +3,7 @@ export { TerrainMesh } from "./mesh/TerrainMesh";
 export * from "./nodes/library";
 export * from "./nodes/materials";
 export * from "./nodes/skirt";
+export * from "./nodes/varyings";
 export * from "./nodes/worldPosition";
 export * from "./quadtree";
 export * from "./tasks";

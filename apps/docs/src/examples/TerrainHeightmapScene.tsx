@@ -27,7 +27,14 @@ import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import { float, Fn, instanceIndex, int, vec2, vec3 } from "three/tsl";
+import {
+  float,
+  Fn,
+  instanceIndex,
+  int,
+  vec2,
+  vec3,
+} from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
@@ -168,6 +175,9 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     const positionNode = g.peek(positionNodeTask);
     if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
       materialRef.current.positionNode = positionNode;
+      // Normals are assigned to normalLocal inside the position node via
+      // normalLocal.assign(), so the material's default pipeline handles
+      // the normalLocal → normalView transformation for lighting automatically.
       materialRef.current.needsUpdate = true;
       postionNodeRef.current = positionNode;
     }

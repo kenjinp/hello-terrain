@@ -1,17 +1,9 @@
 import { graph } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
-import {
-  computeHeightmapTask,
-  createComputeHeightmapTask,
-  createHeightmapContextTask,
-  createTileNodes,
-} from "./heightmap.task";
+import { compileComputeTask, executeComputeTask } from "./compute.task";
+import { createHeightmapContextTask, createTileNodes, heightmapStageTask } from "./heightmap.task";
 import { instanceIdTask } from "./instanceId.task";
-import {
-  computeNormalMapTask,
-  createComputeNormalMapTask,
-  createNormalmapContextTask,
-} from "./normalmap.task";
+import { createNormalmapContextTask, normalmapStageTask } from "./normalmap.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
@@ -35,11 +27,11 @@ export function terrainGraph() {
     .add(positionNodeTask)
     .add(createHeightmapContextTask)
     .add(createTileNodes)
-    .add(createComputeHeightmapTask)
-    .add(computeHeightmapTask)
     .add(createNormalmapContextTask)
-    .add(createComputeNormalMapTask)
-    .add(computeNormalMapTask);
+    .add(heightmapStageTask)
+    .add(normalmapStageTask)
+    .add(compileComputeTask)
+    .add(executeComputeTask);
 }
 
 /** All terrain task refs for direct access. */

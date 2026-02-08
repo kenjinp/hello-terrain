@@ -1,3 +1,4 @@
+export * from "./compute.task";
 export * from "./graph";
 export * from "./graph.types";
 export * from "./heightmap.task";
