@@ -17,16 +17,22 @@ export default function Layout({ children }: LayoutProps<"/">) {
             url: "/docs",
             secondary: false,
           },
+          // {
+          //   on: "nav",
+          //   text: "Showcase",
+          //   url: "/showcase",
+          //   secondary: false,
+          // },
+          // {
+          //   on: "nav",
+          //   text: "Sponsors",
+          //   url: "/sponsors",
+          //   secondary: false,
+          // },
           {
             on: "nav",
-            text: "Showcase",
-            url: "/showcase",
-            secondary: false,
-          },
-          {
-            on: "nav",
-            text: "Sponsors",
-            url: "/sponsors",
+            text: "Blog",
+            url: "/blog",
             secondary: false,
           },
           {

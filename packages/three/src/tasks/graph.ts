@@ -1,5 +1,17 @@
 import { graph } from "@hello-terrain/work";
+import { WebGPURenderer } from "three/webgpu";
+import {
+  computeHeightmapTask,
+  createComputeHeightmapTask,
+  createHeightmapContextTask,
+  createTileNodes,
+} from "./heightmap.task";
 import { instanceIdTask } from "./instanceId.task";
+import {
+  computeNormalMapTask,
+  createComputeNormalMapTask,
+  createNormalmapContextTask,
+} from "./normalmap.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
@@ -12,7 +24,7 @@ import { createUniformsTask, updateUniformsTask } from "./uniforms/uniforms.task
 export { instanceIdTask } from "./instanceId.task";
 
 export function terrainGraph() {
-  return graph()
+  return graph<{ renderer: WebGPURenderer }>()
     .add(instanceIdTask)
     .add(quadtreeConfigTask)
     .add(quadtreeUpdateTask)
@@ -20,7 +32,14 @@ export function terrainGraph() {
     .add(leafGpuBufferTask)
     .add(createUniformsTask)
     .add(updateUniformsTask)
-    .add(positionNodeTask);
+    .add(positionNodeTask)
+    .add(createHeightmapContextTask)
+    .add(createTileNodes)
+    .add(createComputeHeightmapTask)
+    .add(computeHeightmapTask)
+    .add(createNormalmapContextTask)
+    .add(createComputeNormalMapTask)
+    .add(computeNormalMapTask);
 }
 
 /** All terrain task refs for direct access. */

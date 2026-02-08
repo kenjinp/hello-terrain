@@ -1,0 +1,24 @@
+---
+title: Heightmaps - Milestone 2
+description: Processing user-provided elevation for each terrain vertex
+publishDate: 2026-02-08
+authors: [Kenny]
+image: /assets/blog/hello-world.png
+---
+
+import TerrainHeightmapScene from "@/examples/TerrainHeightmapScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<TerrainHeightmapScene />
+</div>
+
+## Heightmaps
+
+We should allow users to pass in their own elavation function
+
+in most cases this might be a heightmap, so we can provide a heightmap Fn out of the box
+
+Otherwise they should be able to use the elevationFn to add noise or whatever. 
+
+the fn will provide nodes as input so they can figure out what vertex and tile they operate on
+

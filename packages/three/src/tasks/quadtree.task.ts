@@ -57,7 +57,7 @@ export const leafStorageTask = task((get, work) => {
   return work(() => {
     const data = new Int32Array(maxNodesVal * 4);
     const attribute = new StorageBufferAttribute(data, 4);
-    const node = storage(attribute, "i32", 1).toReadOnly();
+    const node = storage(attribute, "i32", 1).toReadOnly().setName("leafStorage");
     return { data, attribute, node };
   });
 }).displayName("leafStorageTask");

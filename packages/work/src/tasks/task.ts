@@ -24,8 +24,8 @@ import { TASK_DEF } from "./task.types";
  * definition under a private symbol so `graph.add(task)` can register and execute it.
  */
 export function task<
-  L extends Lane = Lane,
   Res = unknown,
+  L extends Lane = Lane,
   Compute extends TaskCompute<any, L, Res> = TaskCompute<any, L, Res>,
 >(
   /**

@@ -1,5 +1,6 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
 export { TerrainMesh } from "./mesh/TerrainMesh";
+export * from "./nodes/library";
 export * from "./nodes/materials";
 export * from "./nodes/skirt";
 export * from "./nodes/worldPosition";

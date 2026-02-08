@@ -59,7 +59,7 @@ type GraphState<L extends Lane, Res> = {
   isTaskDirty(task: TaskNodeRuntime<L, Res>): boolean;
 };
 
-export function graph<L extends Lane = Lane, Res = unknown>(): Graph<L, Res> {
+export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
   const { on, emit, hasListeners } = events();
   const tasksMap = new Map<string, TaskNodeRuntime<L, Res>>();
   const paramsMap = new Map<string, ParamNodeRuntime>();

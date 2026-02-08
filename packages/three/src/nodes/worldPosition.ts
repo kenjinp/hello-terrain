@@ -1,14 +1,18 @@
 import { float, Fn, instanceIndex, int, positionLocal, pow, select, vec3 } from "three/tsl";
 
+import { StorageBufferNode } from "three/webgpu";
 import { LeafStorageState } from "../tasks/quadtree.task";
 import { TerrainUniformsContext } from "../tasks/uniforms/terrainUniforms";
+import { readHeightAtPositionLocal } from "./elevation/heights";
 import { isSkirtVertex } from "./skirt";
 
 export function createTileWorldPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
+  heightmapStorageNode?: StorageBufferNode,
 ) {
   return Fn(() => {
+    const edgeVertexCount = terrainUniforms.uInnerTileSegments.add(3);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
     const nodeIndex = int(instanceIndex);
     const nodeOffset = nodeIndex.mul(int(4));
@@ -31,8 +35,16 @@ export function createTileWorldPosition(
     const worldX = centerX.add(clampedX.mul(size));
     const worldZ = centerZ.add(clampedZ.mul(size));
     const baseY = rootOrigin.y;
-    const skirtY = baseY.sub(terrainUniforms.uSkirtScale.toVar());
-    const worldY = select(skirtVertex, skirtY, baseY);
+
+    // Read elevation from heightmap buffer if available, scaled by uHeightmapScale
+    const elevation = heightmapStorageNode
+      ? readHeightAtPositionLocal(heightmapStorageNode, edgeVertexCount, positionLocal)().mul(
+          terrainUniforms.uHeightmapScale,
+        )
+      : float(0);
+
+    const skirtY = baseY.add(elevation).sub(terrainUniforms.uSkirtScale.toVar());
+    const worldY = select(skirtVertex, skirtY, baseY.add(elevation));
 
     return vec3(worldX, worldY, worldZ);
   })();

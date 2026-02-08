@@ -30,7 +30,8 @@
     "react-dom": "catalog:",
     "three": "catalog:",
     "three-stdlib": "^2.36.0",
-    "uuid": "^11.1.0"
+    "uuid": "^11.1.0",
+    "zod": "^4.3.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.12",

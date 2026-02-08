@@ -1,4 +1,6 @@
 import { param } from "@hello-terrain/work";
+import { float } from "three/tsl";
+import { ElevationCallback } from "../nodes/elevation/elevation.types";
 import type { UpdateParams } from "../quadtree";
 
 /** Root tile size in world units. */
@@ -30,3 +32,6 @@ export const quadtreeUpdate = param<UpdateParams>({
   mode: "distance",
   distanceFactor: 1.5,
 }).displayName("quadtreeUpdate");
+
+/** Terrain elevation control function (per vertex, in gpu compute) */
+export const elevationFn = param<ElevationCallback>(() => float(0));

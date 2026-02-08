@@ -4,32 +4,30 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
-  createUniformsTask,
+  elevationFn,
+  heightmapScale,
   innerTileSegments,
-  instanceIdTask,
-  leafGpuBufferTask,
-  leafStorageTask,
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeConfigTask,
   quadtreeUpdate,
   quadtreeUpdateTask,
   rootSize,
   skirtScale,
   TerrainGeometry,
+  terrainGraph,
   TerrainMesh,
-  updateUniformsTask,
+  voronoiCells,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { graph, Graph } from "@hello-terrain/work";
+import { Graph } from "@hello-terrain/work";
 import { Bounds, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import { float, Fn, instanceIndex, int, vec3 } from "three/tsl";
+import { float, Fn, instanceIndex, int, vec2, vec3 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
@@ -86,6 +84,13 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "skirt scale",
     },
+    heightmapScale: {
+      value: 1,
+      min: 1,
+      max: 1000,
+      step: 1,
+      label: "heightmap scale",
+    },
   });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -115,23 +120,23 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   }, [controls.skirtScale]);
 
   useEffect(() => {
-    return g.on("run:finish", () => {
-      const leafSet = g.peek(quadtreeUpdateTask);
-      const lastCount = meshRef.current?.count || 0;
-      if (leafSet?.count && leafSet?.count !== lastCount && meshRef.current) {
-        meshRef.current.count = leafSet.count;
-        meshRef.current.instanceMatrix.needsUpdate = true;
-      }
-      const positionNode = g.peek(positionNodeTask);
-      if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
-        materialRef.current.positionNode = positionNode;
-        materialRef.current.needsUpdate = true;
-        postionNodeRef.current = positionNode;
-      }
-    });
-  }, [g]);
+    g.set(heightmapScale, () => controls.heightmapScale);
+  }, [controls.heightmapScale]);
 
-  useFrame(async ({ camera }) => {
+  useEffect(() => {
+    g.set(elevationFn, () => ({ worldPosition }) => {
+      const noiseScale = float(1);
+      const noise = voronoiCells({
+        scale: float(1),
+        facet: 0,
+        seed: 0,
+        uv: vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
+      }).mul(float(0.5));
+      return noise;
+    });
+  }, []);
+
+  useFrame(async ({ camera, gl }) => {
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -147,7 +152,25 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     }
 
     // Where the magic happens :)
-    await g.run();
+    await g.run({
+      resources: {
+        renderer: gl,
+      },
+    });
+
+    const leafSet = g.peek(quadtreeUpdateTask);
+    const lastCount = meshRef.current?.count || 0;
+    if (leafSet?.count && leafSet?.count !== lastCount && meshRef.current) {
+      meshRef.current.count = leafSet.count;
+      meshRef.current.instanceMatrix.needsUpdate = true;
+    }
+
+    const positionNode = g.peek(positionNodeTask);
+    if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
+      materialRef.current.positionNode = positionNode;
+      materialRef.current.needsUpdate = true;
+      postionNodeRef.current = positionNode;
+    }
   });
 
   return (
@@ -159,7 +182,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       >
         <meshStandardNodeMaterial
           ref={materialRef}
-          wireframe
+          // wireframe
           colorNode={Fn(() => {
             const nodeIndex = int(instanceIndex);
             return u32ToColor(nodeIndex);
@@ -170,18 +193,8 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   );
 };
 
-const TerrainMeshScene = () => {
-  const g = useMemo(() => {
-    return graph()
-      .add(instanceIdTask)
-      .add(quadtreeConfigTask)
-      .add(quadtreeUpdateTask)
-      .add(leafStorageTask)
-      .add(leafGpuBufferTask)
-      .add(createUniformsTask)
-      .add(updateUniformsTask)
-      .add(positionNodeTask);
-  }, []);
+const TerrainHeightmapScene = () => {
+  const g = useMemo(() => terrainGraph(), []);
 
   return (
     <ExamplesCanvas>
@@ -224,5 +237,4 @@ const TerrainMeshScene = () => {
     </ExamplesCanvas>
   );
 };
-
-export default TerrainMeshScene;
+export default TerrainHeightmapScene;
