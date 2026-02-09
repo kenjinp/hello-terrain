@@ -25,13 +25,27 @@ import {
 } from "@hello-terrain/three";
 import { Graph } from "@hello-terrain/work";
 import { Bounds, Environment, OrbitControls } from "@react-three/drei";
-import { Canvas, extend, useFrame, useLoader, useThree } from "@react-three/fiber";
+import {
+  Canvas,
+  extend,
+  useFrame,
+  useLoader,
+  useThree,
+} from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import { float, Fn, normalMap, texture, vec2, vec3 } from "three/tsl";
+import {
+  float,
+  Fn,
+  normalMap,
+  positionWorld,
+  texture,
+  vec2,
+  vec3,
+} from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
@@ -101,7 +115,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     ],
     async (loader) => {
       loader.setTranscoderPath(
-        "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/",
+        "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/"
       );
       loader.detectSupport(gl);
       const adapter = await navigator.gpu.requestAdapter();
@@ -111,9 +125,13 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
           alert("Your device is not supported (no BCn compression)");
         }
       }
-    },
+    }
   );
   normal.colorSpace = THREE.LinearSRGBColorSpace;
+
+  albedo.wrapS = albedo.wrapT = THREE.RepeatWrapping;
+  normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
+  aorh.wrapS = aorh.wrapT = THREE.RepeatWrapping;
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
@@ -140,32 +158,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     g.set(heightmapScale, () => controls.heightmapScale);
   }, [controls.heightmapScale]);
 
-  const normalTex = texture(normal);
-  const aorhTex = texture(aorh);
-
-  const normalNode = Fn(() => {
-    // Remap from [0,1] to [-1,1]
-    const rg = normalTex.rg;
-    const xy = textureSpaceToVectorSpace(rg);
-    const reconstructedNormal = deriveNormalZ(xy);
-    return normalMap(vectorSpaceToTextureSpace(reconstructedNormal), vec2(1, 1));
-  })();
-
-  const aoNode = Fn(() => {
-    // Sample ambient occlusion from the R channel of the aorh texture
-    // Remap from [0,1] to [-1,1]
-    const blah = textureSpaceToVectorSpace(aorhTex.r).negate();
-    return blah;
-  })();
-
-  const roughnessNode = Fn(() => {
-    const blah = textureSpaceToVectorSpace(aorhTex.g).negate();
-    return blah;
-  })();
+  const materialNodesRef = useRef(false);
 
   useEffect(() => {
     g.set(elevationFn, () => ({ worldPosition }) => {
-      const noiseScale = float(1);
+      const noiseScale = float(0.5);
       const noise = voronoiCells({
         scale: float(1),
         facet: 0,
@@ -206,13 +203,52 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     }
 
     const positionNode = g.peek(positionNodeTask);
-    if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
+    if (
+      materialRef.current &&
+      positionNode &&
+      positionNode !== postionNodeRef.current
+    ) {
       materialRef.current.positionNode = positionNode;
       // Normals are assigned to normalLocal inside the position node via
       // normalLocal.assign(), so the material's default pipeline handles
       // the normalLocal → normalView transformation for lighting automatically.
       materialRef.current.needsUpdate = true;
       postionNodeRef.current = positionNode;
+    }
+
+    // Set all fragment material nodes together with positionNode so the
+    // shader compiles with everything in place (positionWorld depends on
+    // positionNode being set first).
+    if (materialRef.current && positionNode && !materialNodesRef.current) {
+      const worldUv = vec2(positionWorld.x, positionWorld.z);
+
+      // materialRef.current.colorNode = Fn(() => {
+      //   return texture(albedo, worldUv);
+      // })();
+
+      materialRef.current.normalNode = Fn(() => {
+        const normalSample = texture(normal, worldUv);
+        const rg = normalSample.rg;
+        const xy = textureSpaceToVectorSpace(rg);
+        const reconstructedNormal = deriveNormalZ(xy);
+        return normalMap(
+          vectorSpaceToTextureSpace(reconstructedNormal),
+          vec2(1, 1)
+        );
+      })();
+
+      materialRef.current.aoNode = Fn(() => {
+        const aorhSample = texture(aorh, worldUv);
+        return textureSpaceToVectorSpace(aorhSample.r).negate();
+      })();
+
+      materialRef.current.roughnessNode = Fn(() => {
+        const aorhSample = texture(aorh, worldUv);
+        return textureSpaceToVectorSpace(aorhSample.g).negate();
+      })();
+
+      materialRef.current.needsUpdate = true;
+      materialNodesRef.current = true;
     }
   });
 
@@ -226,18 +262,9 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       >
         <meshStandardNodeMaterial
           ref={materialRef}
-          // wireframe
-          // colorNode={Fn(() => {
-          //   const nodeIndex = int(instanceIndex);
-          //   return u32ToColor(nodeIndex);
-          // })()}
-
-          map={albedo}
-          normalNode={normalNode}
-          roughnessNode={roughnessNode}
-          aoNode={aoNode}
           metalness={0.1}
-          color={"#b9a686"}
+          // color={"#b9a686"}
+          color={"#000000"}
         />
       </terrainMesh>
     </>
@@ -261,7 +288,9 @@ const TerrainHeightmapScene = () => {
           props.alpha = true;
           props.antialias = true;
           // soft shadows
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+          const renderer = new THREE.WebGPURenderer(
+            props as WebGPURendererParameters
+          );
 
           renderer.logarithmicDepthBuffer = true;
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;
