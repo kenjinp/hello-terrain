@@ -4,6 +4,7 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
+  deriveNormalZ,
   elevationFn,
   heightmapScale,
   innerTileSegments,
@@ -17,24 +18,20 @@ import {
   TerrainGeometry,
   terrainGraph,
   TerrainMesh,
+  textureSpaceToVectorSpace,
+  vectorSpaceToTextureSpace,
   voronoiCells,
   type UpdateParams,
 } from "@hello-terrain/three";
 import { Graph } from "@hello-terrain/work";
-import { Bounds, OrbitControls } from "@react-three/drei";
-import { Canvas, extend, useFrame } from "@react-three/fiber";
+import { Bounds, Environment, OrbitControls } from "@react-three/drei";
+import { Canvas, extend, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
+import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import {
-  float,
-  Fn,
-  instanceIndex,
-  int,
-  vec2,
-  vec3,
-} from "three/tsl";
+import { float, Fn, normalMap, texture, vec2, vec3 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
@@ -70,13 +67,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 2,
       label: "max level",
     },
-    innerTileSegments: {
-      value: 14,
-      min: 2,
-      max: 64,
-      step: 2,
-      label: "inner segments",
-    },
     maxNodes: {
       value: 1028,
       min: 128,
@@ -100,15 +90,35 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     },
   });
 
+  const { gl } = useThree();
+
+  const [albedo, normal, aorh] = useLoader(
+    KTX2Loader,
+    [
+      "/assets/materials/sand-bright/sand_bright_albedo.ktx2",
+      "/assets/materials/sand-bright/sand_bright_normal.ktx2",
+      "/assets/materials/sand-bright/sand_bright_aorh.ktx2",
+    ],
+    async (loader) => {
+      loader.setTranscoderPath(
+        "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/",
+      );
+      loader.detectSupport(gl);
+      const adapter = await navigator.gpu.requestAdapter();
+      if (adapter) {
+        const hasBCCompression = adapter.features.has("texture-compression-bc");
+        if (!hasBCCompression) {
+          alert("Your device is not supported (no BCn compression)");
+        }
+      }
+    },
+  );
+  normal.colorSpace = THREE.LinearSRGBColorSpace;
+
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
-
-  useEffect(() => {
-    g.set(innerTileSegments, () => controls.innerTileSegments);
-    if (materialRef.current) materialRef.current.needsUpdate = true;
-  }, [controls.innerTileSegments]);
 
   useEffect(() => {
     g.set(maxNodes, () => controls.maxNodes);
@@ -129,6 +139,29 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   useEffect(() => {
     g.set(heightmapScale, () => controls.heightmapScale);
   }, [controls.heightmapScale]);
+
+  const normalTex = texture(normal);
+  const aorhTex = texture(aorh);
+
+  const normalNode = Fn(() => {
+    // Remap from [0,1] to [-1,1]
+    const rg = normalTex.rg;
+    const xy = textureSpaceToVectorSpace(rg);
+    const reconstructedNormal = deriveNormalZ(xy);
+    return normalMap(vectorSpaceToTextureSpace(reconstructedNormal), vec2(1, 1));
+  })();
+
+  const aoNode = Fn(() => {
+    // Sample ambient occlusion from the R channel of the aorh texture
+    // Remap from [0,1] to [-1,1]
+    const blah = textureSpaceToVectorSpace(aorhTex.r).negate();
+    return blah;
+  })();
+
+  const roughnessNode = Fn(() => {
+    const blah = textureSpaceToVectorSpace(aorhTex.g).negate();
+    return blah;
+  })();
 
   useEffect(() => {
     g.set(elevationFn, () => ({ worldPosition }) => {
@@ -185,18 +218,26 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 
   return (
     <>
+      <Environment preset="sunset" />
       <terrainMesh
         ref={meshRef}
-        innerTileSegments={controls.innerTileSegments}
+        innerTileSegments={innerTileSegments.get()}
         maxNodes={controls.maxNodes}
       >
         <meshStandardNodeMaterial
           ref={materialRef}
           // wireframe
-          colorNode={Fn(() => {
-            const nodeIndex = int(instanceIndex);
-            return u32ToColor(nodeIndex);
-          })()}
+          // colorNode={Fn(() => {
+          //   const nodeIndex = int(instanceIndex);
+          //   return u32ToColor(nodeIndex);
+          // })()}
+
+          map={albedo}
+          normalNode={normalNode}
+          roughnessNode={roughnessNode}
+          aoNode={aoNode}
+          metalness={0.1}
+          color={"#b9a686"}
         />
       </terrainMesh>
     </>
@@ -239,6 +280,7 @@ const TerrainHeightmapScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
+
         <Bounds fit observe>
           <TerrainMeshSceneImpl g={g} />
         </Bounds>

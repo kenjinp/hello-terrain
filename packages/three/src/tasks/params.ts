@@ -11,8 +11,11 @@ export const origin = param<{ x: number; y: number; z: number }>({ x: 0, y: 0, z
   "origin",
 );
 
-/** Number of segments per inner tile edge. */
-export const innerTileSegments = param(14).displayName("innerTileSegments");
+/**
+ * Number of segments per inner tile edge.
+ * 13 is the max tiles we can support for 256 workgroups (13 + 3 === 16.. 16x16)
+ */
+export const innerTileSegments = param(13).displayName("innerTileSegments");
 
 /** Skirt scale factor. */
 export const skirtScale = param(100).displayName("skirtScale");
