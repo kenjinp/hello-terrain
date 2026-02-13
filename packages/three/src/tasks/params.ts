@@ -1,7 +1,7 @@
 import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
-import { ElevationCallback } from "../nodes/elevation/elevation.types";
-import type { UpdateParams } from "../quadtree";
+import type { ElevationCallback } from "../tsl/elevation";
+import { createFlatSurface, type Surface, type UpdateParams } from "../quadtree";
 
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
@@ -20,11 +20,11 @@ export const innerTileSegments = param(13).displayName("innerTileSegments");
 /** Skirt scale factor. */
 export const skirtScale = param(100).displayName("skirtScale");
 
-/** Heightmap vertical scale. */
-export const heightmapScale = param(1).displayName("heightmapScale");
+/** Elevation vertical scale. */
+export const elevationScale = param(1).displayName("elevationScale");
 
 /** Maximum quadtree nodes. */
-export const maxNodes = param(1028).displayName("maxNodes");
+export const maxNodes = param(1024).displayName("maxNodes");
 
 /** Maximum quadtree subdivision level. */
 export const maxLevel = param(16).displayName("maxLevel");
@@ -35,6 +35,14 @@ export const quadtreeUpdate = param<UpdateParams>({
   mode: "distance",
   distanceFactor: 1.5,
 }).displayName("quadtreeUpdate");
+
+/** Terrain surface topology and bounds provider. */
+export const surface = param<Surface>(
+  createFlatSurface({
+    rootSize: rootSize.get(),
+    origin: origin.get(),
+  }),
+).displayName("surface");
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));

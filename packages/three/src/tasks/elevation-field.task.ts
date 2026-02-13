@@ -1,18 +1,18 @@
 import { task } from "@hello-terrain/work";
 import { storage } from "three/tsl";
 import { StorageBufferAttribute } from "three/webgpu";
-import type { ComputePipeline } from "../compute/gpu";
-import { createElevationFunction } from "../nodes/elevation/elevation";
-import { createElevation } from "../nodes/elevation/heights";
-import { createTileCompute } from "../nodes/tile";
+import type { ComputePipeline } from "../gpu/compute";
+import { createElevation } from "../gpu/elevation-field";
+import { createTileCompute } from "../gpu/tile";
 import { elevationFn, innerTileSegments, maxNodes } from "./params";
 import { leafStorageTask } from "./quadtree.task";
+import { createElevationFunction } from "../tsl/elevation";
 import { createUniformsTask } from "./uniforms/uniforms.task";
 
-export const createHeightmapContextTask = task((get, work) => {
+export const createElevationFieldContextTask = task((get, work) => {
   const edgeVertexCount = get(innerTileSegments) + 3;
   const verticesPerNode = edgeVertexCount * edgeVertexCount; // 289
-  const totalElements = get(maxNodes) * verticesPerNode; // 1028 * 289 = 297,092
+  const totalElements = get(maxNodes) * verticesPerNode;
   return work(() => {
     const data = new Float32Array(totalElements);
     const attribute = new StorageBufferAttribute(data, 1);
@@ -24,24 +24,24 @@ export const createHeightmapContextTask = task((get, work) => {
       node,
     };
   });
-}).displayName("createHeightmapContextTask");
+}).displayName("createElevationFieldContextTask");
 
-export const createTileNodes = task((get, work) => {
+export const tileNodesTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
   const uniforms = get(createUniformsTask);
   return work(() => {
     return createTileCompute(leafStorage, uniforms);
   });
-}).displayName("createTileNodes");
+}).displayName("tileNodesTask");
 
 /**
  * Root compute stage — generates elevation data and writes to the
- * heightmap storage buffer. Returns a single-element `ComputePipeline`.
+ * elevation field storage buffer. Returns a single-element `ComputePipeline`.
  */
-export const heightmapStageTask = task((get, work) => {
-  const tile = get(createTileNodes);
+export const elevationFieldStageTask = task((get, work) => {
+  const tile = get(tileNodesTask);
   const uniforms = get(createUniformsTask);
-  const heightmapContext = get(createHeightmapContextTask);
+  const elevationFieldContext = get(createElevationFieldContextTask);
   const userElevationFn = get(elevationFn);
 
   return work((): ComputePipeline => {
@@ -50,8 +50,8 @@ export const heightmapStageTask = task((get, work) => {
     return [
       (nodeIndex, globalVertexIndex, uv) => {
         const height = heightWriteFn(nodeIndex, uv);
-        heightmapContext.node.element(globalVertexIndex).assign(height);
+        elevationFieldContext.node.element(globalVertexIndex).assign(height);
       },
     ];
   });
-}).displayName("heightmapStage");
+}).displayName("elevationFieldStageTask");

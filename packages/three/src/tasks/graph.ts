@@ -1,9 +1,14 @@
 import { graph } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
 import { compileComputeTask, executeComputeTask } from "./compute.task";
-import { createHeightmapContextTask, createTileNodes, heightmapStageTask } from "./heightmap.task";
+import {
+  createElevationFieldContextTask,
+  tileNodesTask,
+  elevationFieldStageTask,
+} from "./elevation-field.task";
 import { instanceIdTask } from "./instanceId.task";
-import { createNormalmapContextTask, normalmapStageTask } from "./normalmap.task";
+import type { TerrainTasks } from "./graph.types";
+import { createNormalFieldContextTask, normalFieldStageTask } from "./normal-field.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
@@ -25,11 +30,11 @@ export function terrainGraph() {
     .add(createUniformsTask)
     .add(updateUniformsTask)
     .add(positionNodeTask)
-    .add(createHeightmapContextTask)
-    .add(createTileNodes)
-    .add(createNormalmapContextTask)
-    .add(heightmapStageTask)
-    .add(normalmapStageTask)
+    .add(createElevationFieldContextTask)
+    .add(tileNodesTask)
+    .add(createNormalFieldContextTask)
+    .add(elevationFieldStageTask)
+    .add(normalFieldStageTask)
     .add(compileComputeTask)
     .add(executeComputeTask);
 }
@@ -44,4 +49,11 @@ export const terrainTasks = {
   createUniforms: createUniformsTask,
   updateUniforms: updateUniformsTask,
   positionNode: positionNodeTask,
-} as const;
+  createElevationFieldContext: createElevationFieldContextTask,
+  createTileNodes: tileNodesTask,
+  createNormalFieldContext: createNormalFieldContextTask,
+  elevationFieldStage: elevationFieldStageTask,
+  normalFieldStage: normalFieldStageTask,
+  compileCompute: compileComputeTask,
+  executeCompute: executeComputeTask,
+} as const satisfies TerrainTasks;

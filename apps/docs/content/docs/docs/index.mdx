@@ -7,34 +7,41 @@ description: Introduction to Hello Terrain
   Work in progress, sorry about that.
 </Callout>
 
+## Overview
 
-Hello Terrain is for real-time rendering of large virtual worlds, using web technology (webgpu). 
+Hello Terrain is a library for rendering large open world terrains in real time, using browser technologies. 
 
-Displaying terrains for your virtual world requires two things. An instruction of what the terrain should be, the terrain data, and 
-then a performant way to render that terrain data onto the screen. Hello Terrain provides tools to help generating the terrain data instructions. 
-Your terrain data can come from real-life sources, or from special software used to generate heightmaps, but I find it most interesting when that data
-is produced at run-time, procedurally.
+It the core, it's an extensible work graph that executes and outputs data and shaders to render one or more Threejs Instanced Mesh, in the shape of your terrain. 
+The work graph can be amended via custom nodes or plugins to tweak the behavior for your game or world's use-case. 
 
-## Rendering
+Each core component, such as the normals calculation stage, just to pick an example, can be swapped out and easily replaced with your own implementation. 
 
-How can hello-terrain render a large world in realtime?
+{/* Example Goes here */}
 
-It does this by chopping up the world into tiles, of the same shape but different sizes (more on this later), 
-with the most detailed tile (highest LOD) situated near the observer/camera. This makes it easier for the GPU to handle, because rendering the whole world in the same detail would result in far too much data for the computer to crunch,
-and as the observer, we couldn't make out that detail anyways. 
+## Preparing Terrain Data
 
-(Quadtree diagram)
+Displaying terrains for your virtual world requires two things. 
 
+1. An instruction of what the terrain should be (the terrain data), and 
+2. a performant way to render that terrain data into your screen.
 
-There's a couple other tricks we can use, to limit the amount of terrain tiles we render and save some GPU crunch time. We can only
-render terrain that's in front of the camera, and hide what's behind it (Frustum Culling). 
+Your terrain data can come from real-life sources (like elevation data from satellites), or from special software used to generate heightmaps (like Gaea 2).
+You can also produce that data at run-time, procedurally. Or, my personal favorite, use a mixture of these techniques. 
+More examples of the techniques are to come in it's own article. 
 
-(FC Example)
+## How Rendering Works
 
-{/* We can also hide tiles that would be hidden by the terrain itself, such as a mountain standing in front of a lower plain (Occlusion Culling).
+### the Compute Graph
 
-(OC example) */}
+### Terrain Tiles
 
-## Quadtree
+### Shape
 
-...work in progress
+### Quadtree/Subdivision
+
+### Elevation
+
+### Normals
+
+### Texture Control
+

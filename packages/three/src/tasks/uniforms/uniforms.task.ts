@@ -1,8 +1,9 @@
 import { task } from "@hello-terrain/work";
 import { Vector3 } from "three";
+import { createTerrainUniforms } from "../../gpu/uniforms";
+import type { TerrainUniformsParams } from "../../types";
 import { instanceIdTask } from "../instanceId.task";
-import { heightmapScale, innerTileSegments, origin, rootSize, skirtScale } from "../params";
-import { type TerrainUniformsParams, createTerrainUniforms } from "./terrainUniforms";
+import { elevationScale, innerTileSegments, origin, rootSize, skirtScale } from "../params";
 
 const scratchVector3 = new Vector3();
 
@@ -17,12 +18,12 @@ export const createUniformsTask = task((get, work) => {
     rootSize: get(rootSize),
     innerTileSegments: get(innerTileSegments),
     skirtScale: get(skirtScale),
-    heightmapScale: get(heightmapScale),
+    elevationScale: get(elevationScale),
     instanceId: get(instanceIdTask),
   };
   return work(() => createTerrainUniforms(uniformParams));
 })
-  .displayName("createTerrainUniformsTask")
+  .displayName("createUniformsTask")
   .cache("once");
 
 /**
@@ -35,7 +36,7 @@ export const updateUniformsTask = task((get, work) => {
   const rootOrigin = get(origin);
   const innerTileSegmentsVal = get(innerTileSegments);
   const skirtScaleVal = get(skirtScale);
-  const heightmapScaleVal = get(heightmapScale);
+  const elevationScaleVal = get(elevationScale);
 
   return work(() => {
     terrainUniformsContext.uRootSize.value = rootSizeVal;
@@ -46,8 +47,8 @@ export const updateUniformsTask = task((get, work) => {
     );
     terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
     terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
-    terrainUniformsContext.uHeightmapScale.value = heightmapScaleVal;
+    terrainUniformsContext.uElevationScale.value = elevationScaleVal;
 
     return terrainUniformsContext;
   });
-}).displayName("updateTerrainUniformsTask");
+}).displayName("updateUniformsTask");

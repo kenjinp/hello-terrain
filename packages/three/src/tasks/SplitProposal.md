@@ -18,7 +18,7 @@ isProject: false
 
 ## Problem
 
-When `innerSegments > 13` (edgeVertexCount > 16), the 17x17 vertex grid requires multiple 16x16 workgroups per tile. The `workgroupBarrier()` between the heightmap and normalmap stages only synchronizes within a workgroup, so the normalmap stage can read stale heightmap values written by a neighboring workgroup.
+When `innerSegments > 13` (edgeVertexCount > 16), the 17x17 vertex grid requires multiple 16x16 workgroups per tile. The `workgroupBarrier()` between the elevation field and normal field stages only synchronizes within a workgroup, so the normal field stage can read stale elevation values written by a neighboring workgroup.
 
 ## Approach
 
@@ -82,7 +82,7 @@ function compileSplitPipeline(stages, width, bindings) {
 
 - `ComputePipeline` type stays `ComputeStageCallback[]`
 - `compileComputeTask`, `executeComputeTask`, `createComputePipelineTasks` -- unchanged
-- `heightmapStageTask`, `normalmapStageTask` -- unchanged
+- `elevationFieldStageTask`, `normalFieldStageTask` -- unchanged
 - The scene file -- unchanged
 - The accumulation pattern for user-extensible pipelines -- unchanged
 

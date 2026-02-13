@@ -6,7 +6,7 @@ import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
   deriveNormalZ,
   elevationFn,
-  heightmapScale,
+  elevationScale,
   innerTileSegments,
   maxLevel,
   maxNodes,
@@ -23,7 +23,7 @@ import {
   voronoiCells,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { Graph } from "@hello-terrain/work";
+import { Graph, task } from "@hello-terrain/work";
 import { Bounds, Environment, OrbitControls } from "@react-three/drei";
 import {
   Canvas,
@@ -95,12 +95,12 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "skirt scale",
     },
-    heightmapScale: {
+    elevationScale: {
       value: 1,
       min: 1,
       max: 1000,
       step: 1,
-      label: "heightmap scale",
+      label: "elevation scale",
     },
   });
 
@@ -139,6 +139,38 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
 
   useEffect(() => {
+    g.add(
+      task((get, work) => {
+        const leafSet = get(quadtreeUpdateTask);
+        const positionNode = get(positionNodeTask);
+        return work(() => {
+          const mesh = meshRef.current;
+          const material = materialRef.current;
+
+          if (
+            mesh &&
+            leafSet?.count !== undefined &&
+            leafSet.count !== mesh.count
+          ) {
+            mesh.count = leafSet.count;
+            mesh.instanceMatrix.needsUpdate = true;
+          }
+
+          if (
+            material &&
+            positionNode &&
+            positionNode !== postionNodeRef.current
+          ) {
+            material.positionNode = positionNode;
+            material.needsUpdate = true;
+            postionNodeRef.current = positionNode;
+          }
+        });
+      }).displayName("terrainApplyToMeshTask")
+    );
+  }, [g]);
+
+  useEffect(() => {
     g.set(maxNodes, () => controls.maxNodes);
   }, [controls.maxNodes]);
 
@@ -155,8 +187,8 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   }, [controls.skirtScale]);
 
   useEffect(() => {
-    g.set(heightmapScale, () => controls.heightmapScale);
-  }, [controls.heightmapScale]);
+    g.set(elevationScale, () => controls.elevationScale);
+  }, [controls.elevationScale]);
 
   const materialNodesRef = useRef(false);
 
@@ -194,37 +226,13 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         renderer: gl,
       },
     });
-
-    const leafSet = g.peek(quadtreeUpdateTask);
-    const lastCount = meshRef.current?.count || 0;
-    if (leafSet?.count && leafSet?.count !== lastCount && meshRef.current) {
-      meshRef.current.count = leafSet.count;
-      meshRef.current.instanceMatrix.needsUpdate = true;
-    }
-
     const positionNode = g.peek(positionNodeTask);
-    if (
-      materialRef.current &&
-      positionNode &&
-      positionNode !== postionNodeRef.current
-    ) {
-      materialRef.current.positionNode = positionNode;
-      // Normals are assigned to normalLocal inside the position node via
-      // normalLocal.assign(), so the material's default pipeline handles
-      // the normalLocal → normalView transformation for lighting automatically.
-      materialRef.current.needsUpdate = true;
-      postionNodeRef.current = positionNode;
-    }
 
     // Set all fragment material nodes together with positionNode so the
     // shader compiles with everything in place (positionWorld depends on
     // positionNode being set first).
     if (materialRef.current && positionNode && !materialNodesRef.current) {
       const worldUv = vec2(positionWorld.x, positionWorld.z);
-
-      // materialRef.current.colorNode = Fn(() => {
-      //   return texture(albedo, worldUv);
-      // })();
 
       materialRef.current.normalNode = Fn(() => {
         const normalSample = texture(normal, worldUv);
@@ -263,7 +271,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         <meshStandardNodeMaterial
           ref={materialRef}
           metalness={0.1}
-          // color={"#b9a686"}
           color={"#000000"}
         />
       </terrainMesh>
@@ -271,12 +278,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   );
 };
 
-const TerrainHeightmapScene = () => {
+const TerrainElevationScene = () => {
   const g = useMemo(() => terrainGraph(), []);
 
   return (
     <ExamplesCanvas>
-      {/* HUD overlays */}
       <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <TerrainTileDebug graph={g} />
@@ -287,15 +293,12 @@ const TerrainHeightmapScene = () => {
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
-          // soft shadows
           const renderer = new THREE.WebGPURenderer(
             props as WebGPURendererParameters
           );
-
           renderer.logarithmicDepthBuffer = true;
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;
           renderer.shadowMap.enabled = true;
-
           await renderer.init();
           return renderer;
         }}
@@ -309,7 +312,6 @@ const TerrainHeightmapScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-
         <Bounds fit observe>
           <TerrainMeshSceneImpl g={g} />
         </Bounds>
@@ -318,4 +320,4 @@ const TerrainHeightmapScene = () => {
     </ExamplesCanvas>
   );
 };
-export default TerrainHeightmapScene;
+export default TerrainElevationScene;

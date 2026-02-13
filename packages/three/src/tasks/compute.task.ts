@@ -1,14 +1,14 @@
 import type { TaskRef } from "@hello-terrain/work";
 import { task } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
-import { compileComputePipeline, type ComputePipeline } from "../compute/gpu";
-import { normalmapStageTask } from "./normalmap.task";
+import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
+import { normalFieldStageTask } from "./normal-field.task";
 import { innerTileSegments } from "./params";
 import { leafGpuBufferTask } from "./quadtree.task";
 
-/** Default compile task — uses normalmapStageTask as the leaf. */
+/** Default compile task — uses normalFieldStageTask as the leaf. */
 export const compileComputeTask = task((get, work) => {
-  const pipeline = get(normalmapStageTask);
+  const pipeline = get(normalFieldStageTask);
   const edgeVertexCount = get(innerTileSegments) + 3;
 
   return work(() => compileComputePipeline(pipeline, edgeVertexCount));
@@ -35,7 +35,7 @@ export const executeComputeTask = task<{ renderer: WebGPURenderer }>((get, work,
  * @example
  * ```ts
  * const erosionStageTask = task((get, work) => {
- *   const upstream = get(heightmapStageTask);
+ *   const upstream = get(elevationFieldStageTask);
  *   return work((): ComputePipeline => [
  *     ...upstream,
  *     (nodeIndex, globalVertexIndex, uv) => {

@@ -1,4 +1,9 @@
-import { InstancedMesh, MeshStandardNodeMaterial, NodeMaterial } from "three/webgpu";
+import {
+  InstancedBufferAttribute,
+  InstancedMesh,
+  MeshStandardNodeMaterial,
+  NodeMaterial,
+} from "three/webgpu";
 import { TerrainGeometry } from "../geometry/TerrainGeometry";
 
 export type TerrainMeshParams = {
@@ -9,7 +14,7 @@ export type TerrainMeshParams = {
 
 export const defaultTerrainMeshParams: TerrainMeshParams = {
   innerTileSegments: 14,
-  maxNodes: 2048,
+  maxNodes: 1024,
   material: new MeshStandardNodeMaterial(),
 };
 export class TerrainMesh extends InstancedMesh {
@@ -39,6 +44,32 @@ export class TerrainMesh extends InstancedMesh {
     return this._maxNodes;
   }
   set maxNodes(maxNodes: number) {
+    if (!Number.isInteger(maxNodes) || maxNodes < 1) {
+      throw new Error(`Invalid maxNodes: ${maxNodes}. Must be a positive integer.`);
+    }
+    if (maxNodes === this._maxNodes) return;
+
+    const oldMax = this._maxNodes;
+    const nextMatrix = new Float32Array(maxNodes * 16);
+    const oldMatrixArray = this.instanceMatrix.array as Float32Array;
+    nextMatrix.set(oldMatrixArray.subarray(0, Math.min(oldMatrixArray.length, nextMatrix.length)));
+    this.instanceMatrix = new InstancedBufferAttribute(nextMatrix, 16);
+
+    if (this.instanceColor) {
+      const itemSize = this.instanceColor.itemSize;
+      const nextColor = new Float32Array(maxNodes * itemSize);
+      const oldColorArray = this.instanceColor.array as Float32Array;
+      nextColor.set(oldColorArray.subarray(0, Math.min(oldColorArray.length, nextColor.length)));
+      this.instanceColor = new InstancedBufferAttribute(nextColor, itemSize);
+    }
+
     this._maxNodes = maxNodes;
+    this.count = Math.min(this.count, maxNodes);
+    this.instanceMatrix.needsUpdate = true;
+    if (this.instanceColor) this.instanceColor.needsUpdate = true;
+
+    if (maxNodes < oldMax && this.count >= maxNodes) {
+      this.count = maxNodes;
+    }
   }
 }

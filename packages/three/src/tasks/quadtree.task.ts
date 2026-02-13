@@ -1,30 +1,20 @@
 import { task } from "@hello-terrain/work";
-import { storage } from "three/tsl";
-import { StorageBufferAttribute, StorageBufferNode } from "three/webgpu";
-import { createFlatSurface, createState, LeafSet, update } from "../quadtree";
-import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize } from "./params";
-
-export interface LeafStorageState {
-  data: Int32Array<ArrayBuffer>;
-  attribute: StorageBufferAttribute;
-  node: StorageBufferNode;
-}
+import { createLeafStorage } from "../gpu/leafStorage";
+import { createState, update } from "../quadtree";
+import type { LeafSet } from "../quadtree";
+import type { LeafStorageState } from "../types";
+import { maxLevel, maxNodes, quadtreeUpdate, surface } from "./params";
 
 export const quadtreeConfigTask = task((get, work) => {
-  const rootSizeVal = get(rootSize);
-  const originVal = get(origin);
+  const surfaceVal = get(surface);
   const maxNodesVal = get(maxNodes);
   const maxLevelVal = get(maxLevel);
 
   return work(() => {
-    const surface = createFlatSurface({
-      rootSize: rootSizeVal,
-      origin: originVal,
-    });
-    const state = createState({ maxNodes: maxNodesVal, maxLevel: maxLevelVal }, surface);
+    const state = createState({ maxNodes: maxNodesVal, maxLevel: maxLevelVal }, surfaceVal);
     return {
       state,
-      surface,
+      surface: surfaceVal,
     };
   });
 }).displayName("quadtreeConfigTask");
@@ -48,18 +38,13 @@ export const quadtreeUpdateTask = task((get, work) => {
 /**
  * Creates the GPU storage buffer objects. Recreated when maxNodes changes.
  *
- * terrainVertextPositionNodeTask depends on this (not leafGpuBufferTask) so
+ * positionNodeTask depends on this (not leafGpuBufferTask) so
  * the shader is only rebuilt when the buffer is resized, not on every
  * quadtree update.
  */
 export const leafStorageTask = task((get, work) => {
   const maxNodesVal = get(maxNodes);
-  return work(() => {
-    const data = new Int32Array(maxNodesVal * 4);
-    const attribute = new StorageBufferAttribute(data, 4);
-    const node = storage(attribute, "i32", 1).toReadOnly().setName("leafStorage");
-    return { data, attribute, node };
-  });
+  return work(() => createLeafStorage(maxNodesVal));
 }).displayName("leafStorageTask");
 
 export const leafGpuBufferTask = task((get, work) => {
