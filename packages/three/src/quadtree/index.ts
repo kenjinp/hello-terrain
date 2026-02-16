@@ -4,5 +4,6 @@ export * from "./update";
 export * from "./leafIndex";
 export * from "./seams";
 export * from "./surface/flat";
+export * from "./surface/infiniteFlat";
 export * from "./surface/cubeSphere";
 

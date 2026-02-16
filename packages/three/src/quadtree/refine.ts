@@ -17,8 +17,8 @@ export function refineLeaves(state: QuadtreeState, surface: Surface, params: Upd
   const stack = state.stack;
   let sp = 0;
 
-  for (let s = 0; s < surface.spaceCount; s++) {
-    stack[sp++] = store.roots[s];
+  for (let i = 0; i < state.rootCount; i++) {
+    stack[sp++] = state.rootNodeIds[i];
   }
 
   while (sp > 0) {

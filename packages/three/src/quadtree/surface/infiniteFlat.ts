@@ -1,53 +1,45 @@
 import { Dir, type Surface, type TileBounds, type TileId } from "../types";
 
-export type FlatSurfaceConfig = {
-  /**
-   * World-space size of the root tile edge.
-   * The root tile covers [-rootSize/2, +rootSize/2] around origin in X/Z.
-   */
+export type InfiniteFlatSurfaceConfig = {
   rootSize: number;
   origin: { x: number; y: number; z: number };
   /** optional conservative vertical extent, included in bounds radius */
   maxHeight?: number;
+  /** half-width of root grid in root tiles (1 => 3x3 roots) */
+  rootGridRadius?: number;
 };
 
-export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
+export function createInfiniteFlatSurface(cfg: InfiniteFlatSurfaceConfig): Surface {
   const halfRoot = 0.5 * cfg.rootSize;
   const maxHeight = cfg.maxHeight ?? 0;
+  const rootGridRadius = Math.max(0, Math.floor(cfg.rootGridRadius ?? 1));
+  const rootWidth = rootGridRadius * 2 + 1;
 
-  const surface: Surface = {
+  return {
     spaceCount: 1,
-    maxRootCount: 1,
+    maxRootCount: rootWidth * rootWidth,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
-      const level = tile.level;
-      const x = tile.x;
-      const y = tile.y;
-
-      let nx = x;
-      let ny = y;
+      let nx = tile.x;
+      let ny = tile.y;
 
       switch (dir) {
         case Dir.LEFT:
-          nx = x - 1;
+          nx = tile.x - 1;
           break;
         case Dir.RIGHT:
-          nx = x + 1;
+          nx = tile.x + 1;
           break;
         case Dir.TOP:
-          ny = y - 1;
+          ny = tile.y - 1;
           break;
         case Dir.BOTTOM:
-          ny = y + 1;
+          ny = tile.y + 1;
           break;
       }
 
-      if (nx < 0 || ny < 0) return false;
-      const maxCoord = (1 << level) - 1;
-      if (nx > maxCoord || ny > maxCoord) return false;
-
-      out.space = 0;
-      out.level = level;
+      out.space = tile.space;
+      out.level = tile.level;
       out.x = nx;
       out.y = ny;
       return true;
@@ -68,21 +60,26 @@ export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
       out.cx = centerX - cameraOrigin.x;
       out.cy = centerY - cameraOrigin.y;
       out.cz = centerZ - cameraOrigin.z;
-
-      // Conservative: half-diagonal + vertical extent.
       out.r = 0.7071067811865476 * size + maxHeight;
     },
 
-    rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
-      const root = out[0];
-      root.space = 0;
-      root.level = 0;
-      root.x = 0;
-      root.y = 0;
-      return 1;
+    rootTiles(cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
+      const camRootX = Math.floor((cameraOrigin.x - cfg.origin.x + halfRoot) / cfg.rootSize);
+      const camRootY = Math.floor((cameraOrigin.z - cfg.origin.z + halfRoot) / cfg.rootSize);
+
+      let index = 0;
+      for (let dy = -rootGridRadius; dy <= rootGridRadius; dy++) {
+        for (let dx = -rootGridRadius; dx <= rootGridRadius; dx++) {
+          const root = out[index];
+          root.space = 0;
+          root.level = 0;
+          root.x = camRootX + dx;
+          root.y = camRootY + dy;
+          index++;
+        }
+      }
+
+      return index;
     },
   };
-
-  return surface;
 }
-

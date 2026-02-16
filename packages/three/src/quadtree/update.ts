@@ -14,7 +14,7 @@ export function update(
   params: UpdateParams,
   outLeaves?: LeafSet,
 ): LeafSet {
-  beginUpdate(state, surface);
+  beginUpdate(state, surface, params);
   const leaves = refineLeaves(state, surface, params, outLeaves);
   return balance2to1(state, surface, params, leaves);
 }

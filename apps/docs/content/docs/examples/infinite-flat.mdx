@@ -1,0 +1,34 @@
+---
+title: Infinite Flat Terrain
+description: Interactive demo of an infinite flat terrain surface using camera-centered root tiles
+---
+
+import InfiniteFlatScene from "@/examples/InfiniteFlatScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<InfiniteFlatScene />
+</div>
+
+## Overview
+
+This example demonstrates the `createInfiniteFlatSurface` API, which extends the terrain infinitely in all directions by placing a grid of root tiles around the camera.
+
+As the camera moves, the root grid re-centers so terrain is always present in every direction. Nearby roots are subdivided deeply by the LOD system while distant roots stay at level 0, keeping the node budget under control.
+
+### Key differences from bounded flat
+
+- **No terrain boundary** — `neighborSameLevel` always succeeds, so tiles at the edge of one root seamlessly connect to tiles in neighboring roots.
+- **Camera-centered roots** — `rootTiles` computes which level-0 tiles surround the camera each frame.
+- **Signed tile coordinates** — root tiles can have negative `(x, y)` positions (e.g. `(-1, -1)` when the camera is near the origin).
+
+### Controls
+
+| Control | Description |
+|:--|:--|
+| **root size** | World-space size of each root tile edge |
+| **root grid radius** | Half-width of the root grid (1 = 3x3, 2 = 5x5, etc.) |
+| **max level** | Maximum quadtree subdivision depth |
+| **max nodes** | Total node budget across all roots |
+| **elevation scale** | Vertical scale applied to the elevation function |
+| **skirt scale** | Skirt drop distance to hide tile seams |
+| **wireframe** | Toggle wireframe to visualize per-tile coloring |

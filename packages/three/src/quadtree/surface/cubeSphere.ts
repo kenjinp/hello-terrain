@@ -1,4 +1,4 @@
-import { type Surface, type TileBounds, type TileId, U32_EMPTY } from "../types";
+import { type Surface, type TileBounds, type TileId } from "../types";
 
 export type CubeSphereSurfaceConfig = {
   radius: number;
@@ -14,6 +14,7 @@ export type CubeSphereSurfaceConfig = {
 export function createCubeSphereSurface(_cfg: CubeSphereSurfaceConfig): Surface {
   return {
     spaceCount: 6,
+    maxRootCount: 6,
 
     neighborSameLevel(_tile: TileId, _dir: 0 | 1 | 2 | 3, _out: TileId): boolean {
       // TODO: implement face-edge remaps.
@@ -27,6 +28,17 @@ export function createCubeSphereSurface(_cfg: CubeSphereSurfaceConfig): Surface 
       out.cy = 0;
       out.cz = 0;
       out.r = Number.MAX_VALUE;
+    },
+
+    rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
+      for (let s = 0; s < 6; s++) {
+        const root = out[s];
+        root.space = s;
+        root.level = 0;
+        root.x = 0;
+        root.y = 0;
+      }
+      return 6;
     },
   };
 }

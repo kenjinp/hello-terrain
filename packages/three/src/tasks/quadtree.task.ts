@@ -2,7 +2,7 @@ import { task } from "@hello-terrain/work";
 import { createLeafStorage } from "../gpu/leafStorage";
 import { createFlatSurface, createState, update } from "../quadtree";
 import type { LeafSet } from "../quadtree";
-import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize } from "./params";
+import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, surface } from "./params";
 
 /**
  * Derives the terrain surface from `rootSize` and `origin`.
@@ -10,12 +10,14 @@ import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize } from "./params";
  * quadtree refinement in sync with the GPU-side tile positioning.
  */
 export const surfaceTask = task((get, work) => {
+  const customSurface = get(surface);
   const rootSizeVal = get(rootSize);
   const originVal = get(origin);
 
-  return work(() =>
-    createFlatSurface({ rootSize: rootSizeVal, origin: originVal }),
-  );
+  return work(() => {
+    if (customSurface) return customSurface;
+    return createFlatSurface({ rootSize: rootSizeVal, origin: originVal });
+  });
 }).displayName("surfaceTask");
 
 export const quadtreeConfigTask = task((get, work) => {
