@@ -123,7 +123,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         meshRef.current.instanceMatrix.needsUpdate = true;
       }
       const positionNode = g.peek(positionNodeTask);
-      if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
+      if (
+        materialRef.current &&
+        positionNode &&
+        positionNode !== postionNodeRef.current
+      ) {
         materialRef.current.positionNode = positionNode;
         materialRef.current.needsUpdate = true;
         postionNodeRef.current = positionNode;
@@ -197,7 +201,9 @@ const TerrainMeshScene = () => {
           props.alpha = true;
           props.antialias = true;
           // soft shadows
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+          const renderer = new THREE.WebGPURenderer(
+            props as WebGPURendererParameters,
+          );
 
           renderer.logarithmicDepthBuffer = true;
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;

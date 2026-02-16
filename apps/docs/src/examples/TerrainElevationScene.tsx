@@ -103,6 +103,9 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "elevation scale",
     },
+    wireframe: {
+      value: false,
+    },
   });
 
   const { gl } = useThree();
@@ -294,11 +297,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         maxNodes={controls.maxNodes}
       >
         <meshStandardNodeMaterial
-          // wireframe
+          wireframe={controls.wireframe}
           ref={materialRef}
           metalness={0.1}
           // color={"#000000"}
-          // color="red"
+          color={controls.wireframe ? "red" : undefined}
         />
       </terrainMesh>
     </>
