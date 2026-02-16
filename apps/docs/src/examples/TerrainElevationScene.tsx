@@ -139,6 +139,9 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
 
   useEffect(() => {
+    const bboxMin = new THREE.Vector3();
+    const bboxMax = new THREE.Vector3();
+
     g.add(
       task((get, work) => {
         const leafSet = get(quadtreeUpdateTask);
@@ -154,6 +157,23 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
           ) {
             mesh.count = leafSet.count;
             mesh.instanceMatrix.needsUpdate = true;
+          }
+
+          if (mesh) {
+            const halfRoot = controls.rootSize * 0.5;
+            if (!mesh.geometry.boundingBox) {
+              mesh.geometry.boundingBox = new THREE.Box3();
+            }
+            if (!mesh.geometry.boundingSphere) {
+              mesh.geometry.boundingSphere = new THREE.Sphere();
+            }
+
+            bboxMin.set(-halfRoot, 0, -halfRoot);
+            bboxMax.set(halfRoot, controls.elevationScale, halfRoot);
+            mesh.geometry.boundingBox.set(bboxMin, bboxMax);
+            mesh.geometry.boundingBox.getBoundingSphere(
+              mesh.geometry.boundingSphere,
+            );
           }
 
           if (material && positionNode) {
@@ -182,6 +202,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
                 vectorSpaceToTextureSpace(reconstructedNormal),
                 vec2(1, 1),
               );
+            })();
+
+            materialRef.current.colorNode = Fn(() => {
+              const tint = vec3(221, 145, 73).div(255);
+              return texture(albedo, worldUv).mul(tint);
             })();
 
             materialRef.current.aoNode = Fn(() => {
@@ -272,7 +297,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
           // wireframe
           ref={materialRef}
           metalness={0.1}
-          color={"#000000"}
+          // color={"#000000"}
           // color="red"
         />
       </terrainMesh>
@@ -316,7 +341,7 @@ const TerrainElevationScene = () => {
         performance={{ min: 0.5 }}
       >
         <ambientLight intensity={0.15} />
-        <directionalLight intensity={2} position={[1, 1, 1]} />
+        <directionalLight intensity={1} position={[1, 1, 1]} />
         <Bounds fit observe>
           <TerrainMeshSceneImpl g={g} />
         </Bounds>
