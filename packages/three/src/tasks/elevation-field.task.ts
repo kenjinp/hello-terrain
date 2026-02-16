@@ -3,8 +3,7 @@ import { storage } from "three/tsl";
 import { StorageBufferAttribute } from "three/webgpu";
 import type { ComputePipeline } from "../gpu/compute";
 import { createElevation } from "../gpu/elevation-field";
-import { createTileCompute } from "../gpu/tile";
-import { elevationFn, innerTileSegments, maxNodes } from "./params";
+import { elevationFn, innerTileSegments, maxNodes, surfaceProjection } from "./params";
 import { leafStorageTask } from "./quadtree.task";
 import { createElevationFunction } from "../tsl/elevation";
 import { createUniformsTask } from "./uniforms/uniforms.task";
@@ -29,8 +28,9 @@ export const createElevationFieldContextTask = task((get, work) => {
 export const tileNodesTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
   const uniforms = get(createUniformsTask);
+  const projection = get(surfaceProjection);
   return work(() => {
-    return createTileCompute(leafStorage, uniforms);
+    return projection.createTileCompute(leafStorage, uniforms);
   });
 }).displayName("tileNodesTask");
 

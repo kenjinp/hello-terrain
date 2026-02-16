@@ -1,4 +1,5 @@
 export * from "./compute.task";
+export * from "./cubeSphere.graph";
 export * from "./graph";
 export * from "./graph.types";
 export * from "./elevation-field.task";

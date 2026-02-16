@@ -45,7 +45,7 @@ export const createNormalFieldContextTask = task((get, work) => {
  * At grid edges the sample is clamped, producing an acceptable
  * approximation for the skirt ring.
  */
-function createNormalFromElevationField(
+export function createNormalFromElevationField(
   elevationFieldNode: Node,
   edgeVertexCount: number
 ) {
