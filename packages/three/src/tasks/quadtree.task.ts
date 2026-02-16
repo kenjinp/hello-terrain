@@ -2,14 +2,7 @@ import { task } from "@hello-terrain/work";
 import { createLeafStorage } from "../gpu/leafStorage";
 import { createFlatSurface, createState, update } from "../quadtree";
 import type { LeafSet } from "../quadtree";
-import {
-  maxLevel,
-  maxNodes,
-  origin,
-  quadtreeUpdate,
-  rootSize,
-  surface,
-} from "./params";
+import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, surface } from "./params";
 
 /**
  * Derives the terrain surface from `rootSize` and `origin`.
@@ -33,10 +26,7 @@ export const quadtreeConfigTask = task((get, work) => {
   const maxLevelVal = get(maxLevel);
 
   return work(() => {
-    const state = createState(
-      { maxNodes: maxNodesVal, maxLevel: maxLevelVal },
-      surfaceVal,
-    );
+    const state = createState({ maxNodes: maxNodesVal, maxLevel: maxLevelVal }, surfaceVal);
     return {
       state,
       surface: surfaceVal,
@@ -83,7 +73,7 @@ export const leafGpuBufferTask = task((get, work) => {
       leafStorage.data[offset] = leafSet.level[i] ?? 0;
       leafStorage.data[offset + 1] = leafSet.x[i] ?? 0;
       leafStorage.data[offset + 2] = leafSet.y[i] ?? 0;
-      leafStorage.data[offset + 3] = leafSet.space[i] ?? 0;
+      leafStorage.data[offset + 3] = 1;
     }
     leafStorage.attribute.needsUpdate = true;
     leafStorage.node.needsUpdate = true;

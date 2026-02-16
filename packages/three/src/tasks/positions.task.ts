@@ -1,7 +1,7 @@
 import { task } from "@hello-terrain/work";
+import { createTileWorldPosition } from "../gpu/worldPosition";
 import { createElevationFieldContextTask } from "./elevation-field.task";
 import { createNormalFieldContextTask } from "./normal-field.task";
-import { surfaceProjection } from "./params";
 import { leafStorageTask } from "./quadtree.task";
 import { createUniformsTask } from "./uniforms/uniforms.task";
 
@@ -25,9 +25,8 @@ export const positionNodeTask = task((get, work) => {
   const terrainUniforms = get(createUniformsTask);
   const elevationFieldContext = get(createElevationFieldContextTask);
   const normalFieldContext = get(createNormalFieldContextTask);
-  const projection = get(surfaceProjection);
   return work(() =>
-    projection.createWorldPosition(
+    createTileWorldPosition(
       leafStorage,
       terrainUniforms,
       elevationFieldContext.node,

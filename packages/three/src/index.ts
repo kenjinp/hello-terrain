@@ -2,7 +2,6 @@ export { TerrainGeometry } from "./geometry/TerrainGeometry";
 export { TerrainMesh } from "./mesh/TerrainMesh";
 export { terrainGraph, terrainTasks } from "./tasks/graph";
 export type { TerrainTasks } from "./tasks/graph.types";
-export { cubeSphereProjection } from "./gpu/cubeSphere";
 
 export {
   rootSize,
@@ -14,10 +13,8 @@ export {
   maxLevel,
   quadtreeUpdate,
   surface,
-  surfaceProjection,
   elevationFn,
 } from "./tasks/params";
-export type { SurfaceProjection } from "./tasks/params";
 
 export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
