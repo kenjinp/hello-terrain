@@ -8,15 +8,22 @@ import {
 } from "./elevation-field.task";
 import { instanceIdTask } from "./instanceId.task";
 import type { TerrainTasks } from "./graph.types";
-import { createNormalFieldContextTask, normalFieldStageTask } from "./normal-field.task";
+import {
+  createNormalFieldContextTask,
+  normalFieldStageTask,
+} from "./normal-field.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
   leafStorageTask,
   quadtreeConfigTask,
   quadtreeUpdateTask,
+  surfaceTask,
 } from "./quadtree.task";
-import { createUniformsTask, updateUniformsTask } from "./uniforms/uniforms.task";
+import {
+  createUniformsTask,
+  updateUniformsTask,
+} from "./uniforms/uniforms.task";
 
 export { instanceIdTask } from "./instanceId.task";
 
@@ -26,6 +33,7 @@ export function terrainGraph() {
     .add(quadtreeConfigTask)
     .add(quadtreeUpdateTask)
     .add(leafStorageTask)
+    .add(surfaceTask)
     .add(leafGpuBufferTask)
     .add(createUniformsTask)
     .add(updateUniformsTask)
@@ -45,6 +53,7 @@ export const terrainTasks = {
   quadtreeConfig: quadtreeConfigTask,
   quadtreeUpdate: quadtreeUpdateTask,
   leafStorage: leafStorageTask,
+  surface: surfaceTask,
   leafGpuBuffer: leafGpuBufferTask,
   createUniforms: createUniformsTask,
   updateUniforms: updateUniformsTask,

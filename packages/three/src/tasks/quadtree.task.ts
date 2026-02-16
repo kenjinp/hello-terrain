@@ -1,12 +1,25 @@
 import { task } from "@hello-terrain/work";
 import { createLeafStorage } from "../gpu/leafStorage";
-import { createState, update } from "../quadtree";
+import { createFlatSurface, createState, update } from "../quadtree";
 import type { LeafSet } from "../quadtree";
-import type { LeafStorageState } from "../types";
-import { maxLevel, maxNodes, quadtreeUpdate, surface } from "./params";
+import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize } from "./params";
+
+/**
+ * Derives the terrain surface from `rootSize` and `origin`.
+ * Automatically recomputes when either param changes, keeping the
+ * quadtree refinement in sync with the GPU-side tile positioning.
+ */
+export const surfaceTask = task((get, work) => {
+  const rootSizeVal = get(rootSize);
+  const originVal = get(origin);
+
+  return work(() =>
+    createFlatSurface({ rootSize: rootSizeVal, origin: originVal }),
+  );
+}).displayName("surfaceTask");
 
 export const quadtreeConfigTask = task((get, work) => {
-  const surfaceVal = get(surface);
+  const surfaceVal = get(surfaceTask);
   const maxNodesVal = get(maxNodes);
   const maxLevelVal = get(maxLevel);
 

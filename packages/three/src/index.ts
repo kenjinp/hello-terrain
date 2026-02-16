@@ -12,7 +12,6 @@ export {
   maxNodes,
   maxLevel,
   quadtreeUpdate,
-  surface,
   elevationFn,
 } from "./tasks/params";
 

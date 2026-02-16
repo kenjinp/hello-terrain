@@ -1,15 +1,17 @@
 import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
 import type { ElevationCallback } from "../tsl/elevation";
-import { createFlatSurface, type Surface, type UpdateParams } from "../quadtree";
+import type { UpdateParams } from "../quadtree";
 
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
 
 /** World-space origin of the terrain. */
-export const origin = param<{ x: number; y: number; z: number }>({ x: 0, y: 0, z: 0 }).displayName(
-  "origin",
-);
+export const origin = param<{ x: number; y: number; z: number }>({
+  x: 0,
+  y: 0,
+  z: 0,
+}).displayName("origin");
 
 /**
  * Number of segments per inner tile edge.
@@ -35,14 +37,6 @@ export const quadtreeUpdate = param<UpdateParams>({
   mode: "distance",
   distanceFactor: 1.5,
 }).displayName("quadtreeUpdate");
-
-/** Terrain surface topology and bounds provider. */
-export const surface = param<Surface>(
-  createFlatSurface({
-    rootSize: rootSize.get(),
-    origin: origin.get(),
-  }),
-).displayName("surface");
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));

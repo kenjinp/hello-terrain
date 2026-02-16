@@ -1,5 +1,9 @@
 import type { TaskRef } from "@hello-terrain/work";
-import type { StorageBufferAttribute, StorageBufferNode, WebGPURenderer } from "three/webgpu";
+import type {
+  StorageBufferAttribute,
+  StorageBufferNode,
+  WebGPURenderer,
+} from "three/webgpu";
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
@@ -32,6 +36,7 @@ export interface TerrainTasks {
   instanceId: TaskRef<string>;
   quadtreeConfig: TaskRef<QuadtreeConfigState>;
   quadtreeUpdate: TaskRef<LeafSet>;
+  surface: TaskRef<Surface>;
   leafStorage: TaskRef<LeafStorageState>;
   leafGpuBuffer: TaskRef<LeafGpuBufferState>;
   createUniforms: TaskRef<TerrainUniformsContext>;
@@ -42,6 +47,8 @@ export interface TerrainTasks {
   createNormalFieldContext: TaskRef<NormalFieldContext>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   normalFieldStage: TaskRef<ComputePipeline>;
-  compileCompute: TaskRef<{ execute: (renderer: WebGPURenderer, instanceCount: number) => void }>;
+  compileCompute: TaskRef<{
+    execute: (renderer: WebGPURenderer, instanceCount: number) => void;
+  }>;
   executeCompute: TaskRef<void | (() => void)>;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
+import { FpsDebug } from "@/components/FpsDebug";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
@@ -115,7 +116,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     ],
     async (loader) => {
       loader.setTranscoderPath(
-        "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/"
+        "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/",
       );
       loader.detectSupport(gl);
       const adapter = await navigator.gpu.requestAdapter();
@@ -125,7 +126,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
           alert("Your device is not supported (no BCn compression)");
         }
       }
-    }
+    },
   );
   normal.colorSpace = THREE.LinearSRGBColorSpace;
 
@@ -136,7 +137,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
-  const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
 
   useEffect(() => {
     g.add(
@@ -156,17 +156,49 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
             mesh.instanceMatrix.needsUpdate = true;
           }
 
-          if (
-            material &&
-            positionNode &&
-            positionNode !== postionNodeRef.current
-          ) {
+          if (material && positionNode) {
             material.positionNode = positionNode;
             material.needsUpdate = true;
-            postionNodeRef.current = positionNode;
           }
         });
-      }).displayName("terrainApplyToMeshTask")
+      }).displayName("materialPositionNodeApplyTask"),
+    );
+
+    g.add(
+      task((_get, work) => {
+        return work(() => {
+          // Set all fragment material nodes together with positionNode so the
+          // shader compiles with everything in place (positionWorld depends on
+          // positionNode being set first).
+          if (materialRef.current && !materialNodesRef.current) {
+            const worldUv = vec2(positionWorld.x, positionWorld.z);
+
+            materialRef.current.normalNode = Fn(() => {
+              const normalSample = texture(normal, worldUv);
+              const rg = normalSample.rg;
+              const xy = textureSpaceToVectorSpace(rg);
+              const reconstructedNormal = deriveNormalZ(xy);
+              return normalMap(
+                vectorSpaceToTextureSpace(reconstructedNormal),
+                vec2(1, 1),
+              );
+            })();
+
+            materialRef.current.aoNode = Fn(() => {
+              const aorhSample = texture(aorh, worldUv);
+              return textureSpaceToVectorSpace(aorhSample.r).negate();
+            })();
+
+            materialRef.current.roughnessNode = Fn(() => {
+              const aorhSample = texture(aorh, worldUv);
+              return textureSpaceToVectorSpace(aorhSample.g).negate();
+            })();
+
+            materialRef.current.needsUpdate = true;
+            materialNodesRef.current = true;
+          }
+        });
+      }).displayName("materialTextureNodesApplyTask"),
     );
   }, [g]);
 
@@ -226,38 +258,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         renderer: gl,
       },
     });
-    const positionNode = g.peek(positionNodeTask);
-
-    // Set all fragment material nodes together with positionNode so the
-    // shader compiles with everything in place (positionWorld depends on
-    // positionNode being set first).
-    if (materialRef.current && positionNode && !materialNodesRef.current) {
-      const worldUv = vec2(positionWorld.x, positionWorld.z);
-
-      materialRef.current.normalNode = Fn(() => {
-        const normalSample = texture(normal, worldUv);
-        const rg = normalSample.rg;
-        const xy = textureSpaceToVectorSpace(rg);
-        const reconstructedNormal = deriveNormalZ(xy);
-        return normalMap(
-          vectorSpaceToTextureSpace(reconstructedNormal),
-          vec2(1, 1)
-        );
-      })();
-
-      materialRef.current.aoNode = Fn(() => {
-        const aorhSample = texture(aorh, worldUv);
-        return textureSpaceToVectorSpace(aorhSample.r).negate();
-      })();
-
-      materialRef.current.roughnessNode = Fn(() => {
-        const aorhSample = texture(aorh, worldUv);
-        return textureSpaceToVectorSpace(aorhSample.g).negate();
-      })();
-
-      materialRef.current.needsUpdate = true;
-      materialNodesRef.current = true;
-    }
   });
 
   return (
@@ -269,9 +269,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         maxNodes={controls.maxNodes}
       >
         <meshStandardNodeMaterial
+          // wireframe
           ref={materialRef}
           metalness={0.1}
           color={"#000000"}
+          // color="red"
         />
       </terrainMesh>
     </>
@@ -285,7 +287,10 @@ const TerrainElevationScene = () => {
     <ExamplesCanvas>
       <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
-        <TerrainTileDebug graph={g} />
+        <div className="flex flex-row gap-1.5">
+          <TerrainTileDebug graph={g} />
+          <FpsDebug />
+        </div>
       </div>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
@@ -294,7 +299,7 @@ const TerrainElevationScene = () => {
           props.alpha = true;
           props.antialias = true;
           const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters
+            props as WebGPURendererParameters,
           );
           renderer.logarithmicDepthBuffer = true;
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -311,7 +316,7 @@ const TerrainElevationScene = () => {
         performance={{ min: 0.5 }}
       >
         <ambientLight intensity={0.15} />
-        <directionalLight intensity={1} position={[1, 1, 1]} />
+        <directionalLight intensity={2} position={[1, 1, 1]} />
         <Bounds fit observe>
           <TerrainMeshSceneImpl g={g} />
         </Bounds>
