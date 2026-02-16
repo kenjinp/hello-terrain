@@ -17,6 +17,7 @@ export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
 
   const surface: Surface = {
     spaceCount: 1,
+    maxRootCount: 1,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       const level = tile.level;
@@ -47,8 +48,8 @@ export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
 
       out.space = 0;
       out.level = level;
-      out.x = nx >>> 0;
-      out.y = ny >>> 0;
+      out.x = nx;
+      out.y = ny;
       return true;
     },
 
@@ -70,6 +71,15 @@ export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
 
       // Conservative: half-diagonal + vertical extent.
       out.r = 0.7071067811865476 * size + maxHeight;
+    },
+
+    rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
+      const root = out[0];
+      root.space = 0;
+      root.level = 0;
+      root.x = 0;
+      root.y = 0;
+      return 1;
     },
   };
 

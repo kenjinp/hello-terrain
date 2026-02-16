@@ -9,31 +9,19 @@ export class TerrainGeometry extends BufferGeometry {
     super();
 
     // Validate innerSegments parameter
-    if (
-      innerSegments < 1 ||
-      !Number.isFinite(innerSegments) ||
-      !Number.isInteger(innerSegments)
-    ) {
-      throw new Error(
-        `Invalid innerSegments: ${innerSegments}. Must be a positive integer.`
-      );
+    if (innerSegments < 1 || !Number.isFinite(innerSegments) || !Number.isInteger(innerSegments)) {
+      throw new Error(`Invalid innerSegments: ${innerSegments}. Must be a positive integer.`);
     }
 
     try {
       this.setIndex(this.generateIndices(innerSegments));
       this.setAttribute(
         "position",
-        new BufferAttribute(
-          new Float32Array(this.generatePositions(innerSegments)),
-          3
-        )
+        new BufferAttribute(new Float32Array(this.generatePositions(innerSegments)), 3),
       );
       this.setAttribute(
         "normal",
-        new BufferAttribute(
-          new Float32Array(this.generateNormals(innerSegments)),
-          3
-        )
+        new BufferAttribute(new Float32Array(this.generateNormals(innerSegments)), 3),
       );
       this.setAttribute(
         "uv",
@@ -41,10 +29,10 @@ export class TerrainGeometry extends BufferGeometry {
           new Float32Array(
             extendUV
               ? this.generateUvsExtended(innerSegments)
-              : this.generateUvsOnlyInner(innerSegments)
+              : this.generateUvsOnlyInner(innerSegments),
           ),
-          2
-        )
+          2,
+        ),
       );
     } catch (error) {
       console.error("Error creating TerrainGeometry:", error);
@@ -126,11 +114,7 @@ export class TerrainGeometry extends BufferGeometry {
         const d = c + 1;
 
         // Check if this cell is on the skirt (outer ring)
-        const isSkirtCell =
-          x === 0 ||
-          x === cellsPerEdge - 1 ||
-          y === 0 ||
-          y === cellsPerEdge - 1;
+        const isSkirtCell = x === 0 || x === cellsPerEdge - 1 || y === 0 || y === cellsPerEdge - 1;
 
         let useDefaultDiagonal: boolean;
 

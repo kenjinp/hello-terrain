@@ -1,8 +1,16 @@
 import { Logo } from "@/components/Logo/Logo";
 import type { BaseLayoutProps, LinkItemType } from "fumadocs-ui/layouts/shared";
-import { Award, Github, Heart, Info } from "lucide-react";
+import { Award, Github, Heart, Info, Rss } from "lucide-react";
 
 export const sharedLinkItems: LinkItemType[] = [
+  {
+    on: "menu",
+    text: "Blog",
+    url: "/blog",
+    active: "url",
+    icon: <Rss />,
+    secondary: false,
+  },
   {
     on: "menu",
     text: "Showcase",

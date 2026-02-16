@@ -1,5 +1,7 @@
+import { BlogPostCard } from "@/components/Blog";
 import { Logo } from "@/components/Logo/Logo";
 import { getHomePageImage, homePages } from "@/lib/home-pages";
+import { getBlogPosts } from "@/lib/source";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -22,6 +24,8 @@ export const metadata: Metadata = {
 };
 
 export default function HomePage() {
+  const [latestPost] = getBlogPosts();
+
   return (
     <main className="flex flex-1 flex-col justify-center text-center px-4">
       <div className="flex flex-col items-center justify-center gap-2">
@@ -87,14 +91,21 @@ export default function HomePage() {
             to see the documentation.
           </p>
           <p className="text-fd-muted-foreground">
-            Check out the{" "}
-            <Link href="/examples" className="text-fd-foreground font-semibold underline">
-              /examples
+            Visit the{" "}
+            <Link href="/blog" className="text-fd-foreground font-semibold underline">
+              /blog
             </Link>{" "}
-            to see some examples.
+            to see project updates.
           </p>
         </div>
       </div>
+
+      {latestPost && (
+        <section className="mt-12 mx-auto w-full max-w-md text-left">
+          <h2 className="text-sm font-semibold text-center">Latest post</h2>
+          <BlogPostCard page={latestPost} />
+        </section>
+      )}
     </main>
   );
 }

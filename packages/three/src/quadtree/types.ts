@@ -13,7 +13,9 @@ export type TileId = {
   /** 0 for flat terrain; 0..5 for cube-sphere faces */
   space: number;
   level: number;
+  /** tile coordinate at this level (signed to support infinite surfaces) */
   x: number;
+  /** tile coordinate at this level (signed to support infinite surfaces) */
   y: number;
 };
 
@@ -28,6 +30,8 @@ export type TileBounds = {
 
 export type Surface = {
   spaceCount: number;
+  /** maximum number of roots returned by `rootTiles` */
+  maxRootCount: number;
 
   /**
    * Compute the same-level neighbor TileId in the requested direction.
@@ -42,6 +46,12 @@ export type Surface = {
    * Avoids absolute world coordinates so Earth-scale worlds remain stable.
    */
   tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void;
+
+  /**
+   * Fill root tiles for the current frame and return the count.
+   * Implementations should write level-0 tiles into `out[0..count)`.
+   */
+  rootTiles(cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number;
 };
 
 export type LeafSet = {
@@ -52,8 +62,8 @@ export type LeafSet = {
 
   space: Uint8Array;
   level: Uint8Array;
-  x: Uint32Array;
-  y: Uint32Array;
+  x: Int32Array;
+  y: Int32Array;
 };
 
 export function allocLeafSet(capacity: number): LeafSet {
@@ -62,8 +72,8 @@ export function allocLeafSet(capacity: number): LeafSet {
     count: 0,
     space: new Uint8Array(capacity),
     level: new Uint8Array(capacity),
-    x: new Uint32Array(capacity),
-    y: new Uint32Array(capacity),
+    x: new Int32Array(capacity),
+    y: new Int32Array(capacity),
   };
 }
 

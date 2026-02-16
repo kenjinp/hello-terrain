@@ -4,20 +4,25 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
+  createUniformsTask,
   innerTileSegments,
+  instanceIdTask,
+  leafGpuBufferTask,
+  leafStorageTask,
   maxLevel,
   maxNodes,
   positionNodeTask,
+  quadtreeConfigTask,
   quadtreeUpdate,
   quadtreeUpdateTask,
   rootSize,
   skirtScale,
   TerrainGeometry,
-  terrainGraph,
   TerrainMesh,
+  updateUniformsTask,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { Graph } from "@hello-terrain/work";
+import { graph, Graph } from "@hello-terrain/work";
 import { Bounds, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
@@ -118,7 +123,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         meshRef.current.instanceMatrix.needsUpdate = true;
       }
       const positionNode = g.peek(positionNodeTask);
-      if (materialRef.current && positionNode && positionNode !== postionNodeRef.current) {
+      if (
+        materialRef.current &&
+        positionNode &&
+        positionNode !== postionNodeRef.current
+      ) {
         materialRef.current.positionNode = positionNode;
         materialRef.current.needsUpdate = true;
         postionNodeRef.current = positionNode;
@@ -166,7 +175,17 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 };
 
 const TerrainMeshScene = () => {
-  const g = useMemo(() => terrainGraph(), []);
+  const g = useMemo(() => {
+    return graph()
+      .add(instanceIdTask)
+      .add(quadtreeConfigTask)
+      .add(quadtreeUpdateTask)
+      .add(leafStorageTask)
+      .add(leafGpuBufferTask)
+      .add(createUniformsTask)
+      .add(updateUniformsTask)
+      .add(positionNodeTask);
+  }, []);
 
   return (
     <ExamplesCanvas>
@@ -182,7 +201,9 @@ const TerrainMeshScene = () => {
           props.alpha = true;
           props.antialias = true;
           // soft shadows
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+          const renderer = new THREE.WebGPURenderer(
+            props as WebGPURendererParameters,
+          );
 
           renderer.logarithmicDepthBuffer = true;
           renderer.shadowMap.type = THREE.PCFSoftShadowMap;

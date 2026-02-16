@@ -1,4 +1,5 @@
 import { GlossaryListServer, GlossaryTerm } from "@/components/Glossary";
+import { Sandpack } from "@/components/Sandpack/Sandpack";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
 
@@ -8,6 +9,7 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     ...defaultMdxComponents,
     GlossaryList: GlossaryListServer,
     GlossaryTerm,
+    Sandpack,
     ...components,
   };
 }

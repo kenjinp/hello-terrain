@@ -1,6 +1,6 @@
 # @hello-terrain/work
 
-[![npm version](https://img.shields.io/npm/v/@hello-terrain/three?style=for-the-badge&colorA=000000&colorB=000000)](https://www.npmjs.com/package/@hello-terrain/work)
+[![npm version](https://img.shields.io/npm/v/@hello-terrain/work?style=for-the-badge&colorA=000000&colorB=000000)](https://www.npmjs.com/package/@hello-terrain/work)
 
 
 A small reactive task graph for typed async computations.

@@ -14,8 +14,8 @@ export type NodeStore = {
 
   space: Uint8Array;
   level: Uint8Array;
-  x: Uint32Array;
-  y: Uint32Array;
+  x: Int32Array;
+  y: Int32Array;
 
   /** sentinel U32_EMPTY means no children; otherwise children are [firstChild..firstChild+3] */
   firstChild: Uint32Array;
@@ -33,8 +33,8 @@ export function createNodeStore(maxNodes: number, spaceCount: number): NodeStore
     gen: new Uint16Array(maxNodes),
     space: new Uint8Array(maxNodes),
     level: new Uint8Array(maxNodes),
-    x: new Uint32Array(maxNodes),
-    y: new Uint32Array(maxNodes),
+    x: new Int32Array(maxNodes),
+    y: new Int32Array(maxNodes),
     firstChild: new Uint32Array(maxNodes),
     flags: new Uint8Array(maxNodes),
     roots: new Uint32Array(spaceCount),
@@ -61,8 +61,8 @@ export function allocNode(store: NodeStore, tile: TileId): number {
   store.gen[id] = store.currentGen;
   store.space[id] = tile.space;
   store.level[id] = tile.level;
-  store.x[id] = tile.x >>> 0;
-  store.y[id] = tile.y >>> 0;
+  store.x[id] = tile.x;
+  store.y[id] = tile.y;
   store.firstChild[id] = U32_EMPTY;
   store.flags[id] = 0;
 

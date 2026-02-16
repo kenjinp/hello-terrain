@@ -1,0 +1,9 @@
+{
+  "title": "Blog",
+  "description": "Development updates and notes",
+  "root": true,
+  "pages": [
+    "index",
+    "...posts"
+  ]
+}

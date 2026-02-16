@@ -1,0 +1,79 @@
+---
+title: Elevation - Milestone 2 
+description: Processing user-provided elevation for each terrain vertex - 0.0.0-alpha.5 update
+publishDate: 2026-02-16
+authors: [Kenny]
+image: /assets/blog/hello-world.png
+---
+
+import TerrainElevationScene from "@/examples/TerrainElevationScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<TerrainElevationScene />
+</div>
+
+## How to Elevate Your Terrain!
+
+<Callout>
+This update makes the terrain library plausible useful for people who want to render make large terrains. 
+It is still missing many features, most especially the texturing system. 
+</Callout>
+
+
+With this milestone, it is now possible to provide an elevation function to Hello Terrain. 
+This will be used by the graph to create an "elevation-field" (here I use the term elevation instead of heightmap, to distinguish from textures or images containing elevation data). 
+
+The elevation field is a buffer of floats that determines how vertices will be offset in the vertex shader, and from that we can derive normals for lighting as well. 
+
+### Procedural Terrain
+
+An simple sin-wave example of an elevationFn:
+```ts title="sin-wave-terrain.ts"
+import { float, vec2 } from "three/tsl";
+import { ...blah, elevationFn } from "@hello-terrain/three";
+
+
+const elevation: ElevationCallback = ({ worldPosition }) => {
+  const frequency = float(0.3);
+  const pos = vec2(worldPosition.x, worldPosition.z).mul(frequency);
+  return pos.x.sin().add(pos.y.sin()).mul(float(0.5));
+};
+
+// you must pass your elevation function to the elevationFn param
+// of the terrain graph
+myTerrainGraph.set(elevationFn, () => elevation);
+```
+
+The ElevationCallback will be passed some handy params for you to use in your elevation function.
+The one you will probably most often use is `worldPosition`. The others can be situationally useful, or for debugging. 
+Notice these are all simply typed as Node (because I don't know how to strictly type TSL...)
+
+```ts
+
+interface ElevationParams {
+    worldPosition: Node; // the vertex position in global coordinates
+    rootSize: Node; // the root size passed as a param to the graph
+    rootUV: Node; // the 2D xy coordinate of this vertex
+    tileUV: Node; // the 2D xy coordinate inside this terrain tile
+    tileLevel: Node; // subdivision level of this tile (smaller number is larger / lower resolution)
+    tileSize: Node; // size or width of the tile's edge
+    tileOriginVec2: Node; // the 2D xy coordinate of the center of the tile in relation to the root tile
+    nodeIndex: Node; // the index of the tile in the nodeBuffer
+}
+```
+
+### Creating terrain from heightmaps
+
+The elevation function API makes it trivial to use heightmaps. 
+
+...TODO
+
+### Blending the two approaches together
+
+...TODO
+
+### Next steps, shortfalls
+
+Currently the mesh that is generated right now has some issues. 
+- Apparent pop-in, which will be later resolved with some form of geomorphing (animating in the LODs)
+- Non-contiguous normals at the tile edges, which makes lighting change abruptly (to be fixed later with stitching tiles)

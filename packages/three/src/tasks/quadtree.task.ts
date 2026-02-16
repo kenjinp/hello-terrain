@@ -1,30 +1,35 @@
 import { task } from "@hello-terrain/work";
-import { storage } from "three/tsl";
-import { StorageBufferAttribute, StorageBufferNode } from "three/webgpu";
-import { createFlatSurface, createState, LeafSet, update } from "../quadtree";
-import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize } from "./params";
+import { createLeafStorage } from "../gpu/leafStorage";
+import { createFlatSurface, createState, update } from "../quadtree";
+import type { LeafSet } from "../quadtree";
+import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, surface } from "./params";
 
-export interface LeafStorageState {
-  data: Int32Array<ArrayBuffer>;
-  attribute: StorageBufferAttribute;
-  node: StorageBufferNode;
-}
-
-export const quadtreeConfigTask = task((get, work) => {
+/**
+ * Derives the terrain surface from `rootSize` and `origin`.
+ * Automatically recomputes when either param changes, keeping the
+ * quadtree refinement in sync with the GPU-side tile positioning.
+ */
+export const surfaceTask = task((get, work) => {
+  const customSurface = get(surface);
   const rootSizeVal = get(rootSize);
   const originVal = get(origin);
+
+  return work(() => {
+    if (customSurface) return customSurface;
+    return createFlatSurface({ rootSize: rootSizeVal, origin: originVal });
+  });
+}).displayName("surfaceTask");
+
+export const quadtreeConfigTask = task((get, work) => {
+  const surfaceVal = get(surfaceTask);
   const maxNodesVal = get(maxNodes);
   const maxLevelVal = get(maxLevel);
 
   return work(() => {
-    const surface = createFlatSurface({
-      rootSize: rootSizeVal,
-      origin: originVal,
-    });
-    const state = createState({ maxNodes: maxNodesVal, maxLevel: maxLevelVal }, surface);
+    const state = createState({ maxNodes: maxNodesVal, maxLevel: maxLevelVal }, surfaceVal);
     return {
       state,
-      surface,
+      surface: surfaceVal,
     };
   });
 }).displayName("quadtreeConfigTask");
@@ -48,18 +53,13 @@ export const quadtreeUpdateTask = task((get, work) => {
 /**
  * Creates the GPU storage buffer objects. Recreated when maxNodes changes.
  *
- * terrainVertextPositionNodeTask depends on this (not leafGpuBufferTask) so
+ * positionNodeTask depends on this (not leafGpuBufferTask) so
  * the shader is only rebuilt when the buffer is resized, not on every
  * quadtree update.
  */
 export const leafStorageTask = task((get, work) => {
   const maxNodesVal = get(maxNodes);
-  return work(() => {
-    const data = new Int32Array(maxNodesVal * 4);
-    const attribute = new StorageBufferAttribute(data, 4);
-    const node = storage(attribute, "i32", 1).toReadOnly();
-    return { data, attribute, node };
-  });
+  return work(() => createLeafStorage(maxNodesVal));
 }).displayName("leafStorageTask");
 
 export const leafGpuBufferTask = task((get, work) => {
