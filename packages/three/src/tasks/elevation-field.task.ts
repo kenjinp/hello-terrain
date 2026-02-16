@@ -48,8 +48,8 @@ export const elevationFieldStageTask = task((get, work) => {
     const heightFn = createElevationFunction(userElevationFn);
     const heightWriteFn = createElevation(tile, uniforms, heightFn);
     return [
-      (nodeIndex, globalVertexIndex, uv) => {
-        const height = heightWriteFn(nodeIndex, uv);
+      (nodeIndex, globalVertexIndex, _uv, localCoordinates) => {
+        const height = heightWriteFn(nodeIndex, localCoordinates);
         elevationFieldContext.node.element(globalVertexIndex).assign(height);
       },
     ];

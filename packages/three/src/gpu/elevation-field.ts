@@ -9,11 +9,15 @@ export const createElevation = (
   uniforms: TerrainUniformsContext,
   elevationFn: ElevationReturn,
 ) => {
-  return function perVertexElevation(nodeIndex: Node, localUV: Node) {
-    const rootUV = tile.rootUVCompute(nodeIndex, localUV);
+  return function perVertexElevation(nodeIndex: Node, localCoordinates: Node) {
+    const ix = int(localCoordinates.x);
+    const iy = int(localCoordinates.y);
+    const edgeVertexCount = uniforms.uInnerTileSegments.toVar().add(int(3));
+    const tileUV = localCoordinates.toFloat().div(edgeVertexCount.toFloat());
+    const rootUV = tile.rootUVCompute(nodeIndex, ix, iy);
 
     const worldPosition = tile
-      .tileVertexWorldPositionCompute(nodeIndex, localUV)
+      .tileVertexWorldPositionCompute(nodeIndex, ix, iy)
       .setName("worldPositionWithSkirt");
 
     const rootSize = uniforms.uRootSize.toVar();
@@ -25,7 +29,7 @@ export const createElevation = (
       tileSize: tile.tileSize(nodeIndex),
       tileLevel: tile.tileLevel(nodeIndex),
       nodeIndex: int(nodeIndex),
-      tileUV: localUV,
+      tileUV,
     });
   };
 };

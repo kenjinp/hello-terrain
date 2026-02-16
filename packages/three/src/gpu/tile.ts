@@ -2,7 +2,10 @@ import { Fn, float, int, positionWorld, pow, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
-export function createTileCompute(leafStorage: LeafStorageState, uniforms: TerrainUniformsContext) {
+export function createTileCompute(
+  leafStorage: LeafStorageState,
+  uniforms: TerrainUniformsContext,
+) {
   const tileLevel = Fn(([nodeIndex]: [Node]) => {
     const nodeOffset = nodeIndex.mul(int(4));
     return leafStorage.node.element(nodeOffset).toInt();
@@ -21,7 +24,7 @@ export function createTileCompute(leafStorage: LeafStorageState, uniforms: Terra
     return float(rootSize).div(pow(float(2), level.toFloat()));
   });
 
-  const rootUVCompute = Fn(([nodeIndex, localUV]: [Node, Node]) => {
+  const rootUVCompute = Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
     const nodeVec2 = tileOriginVec2(nodeIndex);
     const nodeX = nodeVec2.x;
     const nodeY = nodeVec2.y;
@@ -31,20 +34,16 @@ export function createTileCompute(leafStorage: LeafStorageState, uniforms: Terra
 
     const half = float(0.5);
     const halfRoot = float(rootSize).mul(half);
-    const centerX = rootOrigin.x.add(nodeX.add(half).mul(size)).sub(halfRoot);
-    const centerZ = rootOrigin.z.add(nodeY.add(half).mul(size)).sub(halfRoot);
-
-    const fS = uniforms.uInnerTileSegments.toVar().toFloat();
-    const fEdge = fS.add(float(3.0));
-    const ix = localUV.x.mul(fEdge).floor();
-    const iy = localUV.y.mul(fEdge).floor();
-    const uExpanded = ix.sub(float(1.0)).div(fS);
-    const vExpanded = iy.sub(float(1.0)).div(fS);
-
-    const localX = uExpanded.sub(half);
-    const localZ = vExpanded.sub(half);
-    const worldX = centerX.add(localX.mul(size));
-    const worldZ = centerZ.add(localZ.mul(size));
+    const fInnerSegments = uniforms.uInnerTileSegments.toVar().toFloat();
+    const texelSpacing = size.div(fInnerSegments);
+    const absX = nodeX
+      .mul(fInnerSegments)
+      .add(int(ix).toFloat().sub(float(1.0)));
+    const absY = nodeY
+      .mul(fInnerSegments)
+      .add(int(iy).toFloat().sub(float(1.0)));
+    const worldX = rootOrigin.x.add(absX.mul(texelSpacing)).sub(halfRoot);
+    const worldZ = rootOrigin.z.add(absY.mul(texelSpacing)).sub(halfRoot);
 
     const centeredX = worldX.sub(rootOrigin.x);
     const centeredZ = worldZ.sub(rootOrigin.z);
@@ -54,15 +53,29 @@ export function createTileCompute(leafStorage: LeafStorageState, uniforms: Terra
     );
   });
 
-  const tileVertexWorldPositionCompute = Fn(([nodeIndex, localUV]: [Node, Node]) => {
-    const half = float(0.5);
-    const rootSize = uniforms.uRootSize.toVar();
-    const rootOrigin = uniforms.uRootOrigin.toVar();
-    const uvVal = rootUVCompute(nodeIndex, localUV);
-    const worldX = rootOrigin.x.add(uvVal.x.sub(half).mul(rootSize));
-    const worldZ = rootOrigin.z.add(half.sub(uvVal.y).mul(rootSize));
-    return vec3(worldX, rootOrigin.y, worldZ);
-  });
+  const tileVertexWorldPositionCompute = Fn(
+    ([nodeIndex, ix, iy]: [Node, Node, Node]) => {
+      const rootOrigin = uniforms.uRootOrigin.toVar();
+      const nodeVec2 = tileOriginVec2(nodeIndex);
+      const nodeX = nodeVec2.x;
+      const nodeY = nodeVec2.y;
+      const rootSize = uniforms.uRootSize.toVar();
+      const size = tileSize(nodeIndex);
+      const half = float(0.5);
+      const halfRoot = float(rootSize).mul(half);
+      const fInnerSegments = uniforms.uInnerTileSegments.toVar().toFloat();
+      const texelSpacing = size.div(fInnerSegments);
+      const absX = nodeX
+        .mul(fInnerSegments)
+        .add(int(ix).toFloat().sub(float(1.0)));
+      const absY = nodeY
+        .mul(fInnerSegments)
+        .add(int(iy).toFloat().sub(float(1.0)));
+      const worldX = rootOrigin.x.add(absX.mul(texelSpacing)).sub(halfRoot);
+      const worldZ = rootOrigin.z.add(absY.mul(texelSpacing)).sub(halfRoot);
+      return vec3(worldX, rootOrigin.y, worldZ);
+    },
+  );
 
   return {
     tileLevel,
