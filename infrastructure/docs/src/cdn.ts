@@ -62,6 +62,35 @@ export function createCdn(
     },
   });
 
+  // Response headers policy for external assets — enables CORS so assets can be
+  // fetched cross-origin (e.g. from localhost during development)
+  const externalHeadersPolicy = new aws.cloudfront.ResponseHeadersPolicy(
+    "cdnExternalHeaders",
+    {
+      name: `hello-terrain-external-headers-${environment}`,
+      comment: `Response headers for external assets - ${environment}`,
+      corsConfig: {
+        accessControlAllowCredentials: false,
+        accessControlAllowHeaders: { items: ["*"] },
+        accessControlAllowMethods: { items: ["GET", "HEAD"] },
+        accessControlAllowOrigins: {
+          items: [
+            "https://*.kenny.wtf",
+            "http://localhost:*",
+            "https://localhost:*",
+            "https://*.codesandbox.io",
+            "https://*.csb.app",
+          ],
+        },
+        accessControlExposeHeaders: {
+          items: ["ETag", "Content-Length", "Content-Type"],
+        },
+        accessControlMaxAgeSec: 86400,
+        originOverride: true,
+      },
+    },
+  );
+
   // Create CloudFront Function to rewrite URLs for Next.js static export
   const urlRewriteFunction = new aws.cloudfront.Function(
     "url-rewrite-function",
@@ -144,6 +173,7 @@ export function createCdn(
           cachedMethods: ["GET", "HEAD"],
           targetOriginId: "main",
           cachePolicyId: cachePolicy.id,
+          responseHeadersPolicyId: externalHeadersPolicy.id,
           viewerProtocolPolicy: "redirect-to-https",
           compress: true,
           // No URL rewrite function — assets are served directly by their S3 key
