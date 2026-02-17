@@ -101,4 +101,9 @@ h1 {
 .terrain-logo {
   filter: drop-shadow( 3px 3px 2px rgba(0, 0, 0, .7));
 }
+
+/* Sandpack mobile: unloaded preview uses same background as blog */
+.sp-mobile-preview-wrapper .sp-preview-container {
+  background: var(--color-fd-background) !important;
+}
   
