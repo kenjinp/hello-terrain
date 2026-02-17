@@ -9,19 +9,31 @@ export class TerrainGeometry extends BufferGeometry {
     super();
 
     // Validate innerSegments parameter
-    if (innerSegments < 1 || !Number.isFinite(innerSegments) || !Number.isInteger(innerSegments)) {
-      throw new Error(`Invalid innerSegments: ${innerSegments}. Must be a positive integer.`);
+    if (
+      innerSegments < 1 ||
+      !Number.isFinite(innerSegments) ||
+      !Number.isInteger(innerSegments)
+    ) {
+      throw new Error(
+        `Invalid innerSegments: ${innerSegments}. Must be a positive integer.`,
+      );
     }
 
     try {
       this.setIndex(this.generateIndices(innerSegments));
       this.setAttribute(
         "position",
-        new BufferAttribute(new Float32Array(this.generatePositions(innerSegments)), 3),
+        new BufferAttribute(
+          new Float32Array(this.generatePositions(innerSegments)),
+          3,
+        ),
       );
       this.setAttribute(
         "normal",
-        new BufferAttribute(new Float32Array(this.generateNormals(innerSegments)), 3),
+        new BufferAttribute(
+          new Float32Array(this.generateNormals(innerSegments)),
+          3,
+        ),
       );
       this.setAttribute(
         "uv",
@@ -60,17 +72,19 @@ export class TerrainGeometry extends BufferGeometry {
    *  | / | \ | / | \ |
    *  o---o---o---o---o
    *
-   * INNER GRID (consistent diagonal, no rotational symmetry):
-   *        o---o---o
-   *        | \ | \ |
-   *        o---o---o
-   *        | \ | \ |
-   *        o---o---o
+   * INNER GRID (alternating diagonals — checkerboard pattern):
+   *        o---o---o---o---o
+   *        | \ | / | \ | / |
+   *        o---o---o---o---o
+   *        | / | \ | / | \ |
+   *        o---o---o---o---o
+   *        | \ | / | \ | / |
+   *        o---o---o---o---o
    *
    * Where o = vertex
    * Each square cell is split into 2 triangles.
    * - Skirt cells (outer ring): diagonal flip based on quadrant for corner correctness
-   * - Inner cells: consistent diagonal direction (all triangles "point" the same way)
+   * - Inner cells: alternating diagonal via (x+y)%2 to reduce interpolation artifacts
    *
    * Vertex layout (for innerSegments = 2):
    *
@@ -114,7 +128,11 @@ export class TerrainGeometry extends BufferGeometry {
         const d = c + 1;
 
         // Check if this cell is on the skirt (outer ring)
-        const isSkirtCell = x === 0 || x === cellsPerEdge - 1 || y === 0 || y === cellsPerEdge - 1;
+        const isSkirtCell =
+          x === 0 ||
+          x === cellsPerEdge - 1 ||
+          y === 0 ||
+          y === cellsPerEdge - 1;
 
         let useDefaultDiagonal: boolean;
 
@@ -124,8 +142,10 @@ export class TerrainGeometry extends BufferGeometry {
           const topHalf = y < mid;
           useDefaultDiagonal = (leftHalf && topHalf) || (!leftHalf && !topHalf);
         } else {
-          // For inner cells, always use the same diagonal (no rotational symmetry)
-          useDefaultDiagonal = true;
+          // For inner cells, alternate diagonals in a checkerboard pattern
+          // to distribute interpolation artifacts evenly and prevent visible
+          // criss-cross grid patterns in the lighting/normals.
+          useDefaultDiagonal = (x + y) % 2 === 0;
         }
 
         if (useDefaultDiagonal) {

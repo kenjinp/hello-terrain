@@ -1,5 +1,8 @@
 {
   "title": "Core",
   "description": "Core utilities and building blocks",
-  "pages": ["...nodes"]
+  "pages": [
+    "elevation-function",
+    "...nodes"
+  ]
 }

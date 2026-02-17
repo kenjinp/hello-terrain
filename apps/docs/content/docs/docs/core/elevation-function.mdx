@@ -1,0 +1,225 @@
+---
+title: Elevation Function
+description: Define terrain height with a GPU-evaluated callback using TSL
+---
+
+import FbmTerrainScene from "@/examples/FbmTerrainScene"
+
+<div className="h-[500px] rounded overflow-hidden">
+<FbmTerrainScene />
+</div>
+
+## Overview
+
+The **elevation function** is the core mechanism for defining terrain height in Hello Terrain. It is a user-provided callback written in [TSL (Three.js Shading Language)](https://github.com/mrdoob/three.js/wiki/Three.js-Shading-Language) that runs on the GPU to compute elevation for every terrain vertex.
+
+The function receives contextual parameters about each vertex — its world position, UV coordinates, tile metadata — and returns a scalar TSL `Node` representing the height at that point.
+
+```ts
+import { elevationFn, elevationScale } from "@hello-terrain/three";
+import { float, vec2 } from "three/tsl";
+import type { ElevationCallback } from "@hello-terrain/three";
+
+const elevation: ElevationCallback = ({ worldPosition }) => {
+  return float(0); // flat terrain
+};
+
+graph.set(elevationFn, () => elevation);
+graph.set(elevationScale, () => 10);
+```
+
+## API Reference
+
+### `elevationFn`
+
+A `Param<ElevationCallback>` that holds the elevation callback function. Set it on the terrain graph to define how terrain height is computed.
+
+| Property | Value |
+|:--|:--|
+| **Type** | `Param<ElevationCallback>` |
+| **Default** | `() => float(0)` (flat terrain) |
+| **Module** | `@hello-terrain/three` |
+
+```ts
+import { elevationFn } from "@hello-terrain/three";
+
+graph.set(elevationFn, () => myElevationCallback);
+```
+
+### `elevationScale`
+
+A `Param<number>` that controls the vertical scale multiplier applied to the elevation function output.
+
+| Property | Value |
+|:--|:--|
+| **Type** | `Param<number>` |
+| **Default** | `1` |
+| **Module** | `@hello-terrain/three` |
+
+```ts
+import { elevationScale } from "@hello-terrain/three";
+
+// Amplify elevation by 15x
+graph.set(elevationScale, () => 15);
+```
+
+### `ElevationCallback`
+
+The type signature for the elevation function.
+
+```ts
+type ElevationCallback = (params: ElevationParams) => Node;
+```
+
+### `ElevationParams`
+
+The parameters passed to the elevation callback. All values are TSL `Node` objects, usable in GPU shader expressions.
+
+| Parameter | Type | Description |
+|:--|:--|:--|
+| `worldPosition` | `Node` (vec3) | World-space position of the vertex |
+| `rootSize` | `Node` (float) | Size of the root tile in world units |
+| `rootUV` | `Node` (vec2) | UV coordinates relative to the root tile `[0, 1]` |
+| `tileUV` | `Node` (vec2) | UV coordinates relative to the current tile `[0, 1]` |
+| `tileLevel` | `Node` (float) | Quadtree depth level of the tile |
+| `tileSize` | `Node` (float) | World-space size of the current tile |
+| `tileOriginVec2` | `Node` (vec2) | World-space origin of the current tile |
+| `nodeIndex` | `Node` (uint) | Index of the tile node in the quadtree |
+
+## Examples
+
+### Flat terrain
+
+The simplest elevation function returns a constant. Combined with `elevationScale`, this shifts the entire terrain up or down.
+
+```ts
+import { elevationFn } from "@hello-terrain/three";
+import { float } from "three/tsl";
+
+graph.set(elevationFn, () => ({ worldPosition }) => {
+  return float(0);
+});
+```
+
+### Sin wave
+
+Use `worldPosition` to create a basic wave pattern across the terrain.
+
+```ts
+import { elevationFn } from "@hello-terrain/three";
+import { float, sin, vec2 } from "three/tsl";
+
+graph.set(elevationFn, () => ({ worldPosition }) => {
+  const frequency = float(0.1);
+  const px = sin(worldPosition.x.mul(frequency));
+  const pz = sin(worldPosition.z.mul(frequency));
+  return px.add(pz).mul(float(0.5));
+});
+```
+
+### Fractal Brownian Motion (fBm)
+
+Layer multiple octaves of noise for natural-looking terrain. This is the technique used in the interactive demo at the top of this page.
+
+```ts
+import { elevationFn, elevationScale } from "@hello-terrain/three";
+import {
+  cos, dot, float, Fn, floor, fract, Loop,
+  mix, sin, vec2,
+} from "three/tsl";
+import type { ElevationCallback } from "@hello-terrain/three";
+
+// Pseudo-random gradient from a 2D lattice point
+const randomGradient = Fn(([p]) => {
+  const angle = fract(
+    sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)
+  ).mul(Math.PI * 2);
+  return vec2(cos(angle), sin(angle));
+});
+
+// Classic 2D Perlin noise
+const perlinNoise = Fn(([p]) => {
+  const i = floor(p).toVar();
+  const f = fract(p).toVar();
+  const u = f.mul(f).mul(float(3).sub(f.mul(2)));
+
+  const g00 = randomGradient(i);
+  const g10 = randomGradient(i.add(vec2(1, 0)));
+  const g01 = randomGradient(i.add(vec2(0, 1)));
+  const g11 = randomGradient(i.add(vec2(1, 1)));
+
+  const d00 = dot(g00, f);
+  const d10 = dot(g10, f.sub(vec2(1, 0)));
+  const d01 = dot(g01, f.sub(vec2(0, 1)));
+  const d11 = dot(g11, f.sub(vec2(1, 1)));
+
+  return mix(mix(d00, d10, u.x), mix(d01, d11, u.x), u.y).add(0.5);
+});
+
+// Fractal Brownian Motion — 6 octaves of Perlin noise
+const fbm = Fn(([pos_immutable]) => {
+  const p = vec2(pos_immutable).toVar();
+  const total = float(0).toVar();
+  const amp = float(0.5).toVar();
+  const freq = float(1).toVar();
+
+  Loop(6, () => {
+    total.addAssign(perlinNoise(p.mul(freq)).mul(amp));
+    freq.mulAssign(2.03);
+    amp.mulAssign(0.5);
+  });
+
+  return total;
+});
+
+// Use FBM as the elevation function
+const elevation: ElevationCallback = ({ worldPosition }) => {
+  const p = vec2(worldPosition.x, worldPosition.z).mul(float(0.05));
+  return fbm(p).sub(float(0.3));
+};
+
+graph.set(elevationFn, () => elevation);
+graph.set(elevationScale, () => 15);
+```
+
+### Using tile metadata
+
+The elevation callback receives tile-level metadata that can be useful for LOD-aware effects or debugging.
+
+```ts
+import { elevationFn } from "@hello-terrain/three";
+import { float, sin, vec2 } from "three/tsl";
+
+graph.set(elevationFn, () => ({ worldPosition, tileLevel, rootUV }) => {
+  // Use rootUV for globally continuous patterns
+  const base = sin(rootUV.x.mul(float(20))).mul(
+    sin(rootUV.y.mul(float(20)))
+  );
+
+  // Attenuate detail based on tile LOD level
+  const detail = sin(worldPosition.x.mul(float(2)))
+    .mul(float(0.1))
+    .div(tileLevel.add(float(1)));
+
+  return base.add(detail);
+});
+```
+
+## How it works
+
+1. **You provide** an `ElevationCallback` and set it on the terrain graph via `elevationFn`.
+2. **The task graph** compiles your callback into a GPU compute shader that evaluates for every vertex in the active quadtree tiles.
+3. **The output** populates the elevation field — a per-vertex scalar dataset stored in GPU buffers.
+4. **Derived data** (world positions, normals) is computed from the elevation field automatically.
+5. **`elevationScale`** is applied as a multiplier during the position stage, scaling the raw elevation values vertically.
+
+<Callout>
+  The elevation function runs entirely on the GPU via WebGPU compute shaders. All parameters are TSL nodes, not JavaScript numbers. Use TSL math functions (`float`, `sin`, `vec2`, etc.) instead of `Math.*`.
+</Callout>
+
+## Related
+
+- [Terrain Geometry](/docs/advanced/terrain-geometry) — The geometry unit that elevation is applied to
+- [Material Nodes](/docs/core/nodes/materials) — TSL node functions for materials and normals
+- [Graph](/work/graph) — The reactive task graph that coordinates elevation computation
+- [Param](/work/param) — The `Param` type used by `elevationFn` and `elevationScale`
