@@ -20,24 +20,27 @@ export function createCdn(
   const { domain, environment } = config;
 
   // Create CloudFront cache policy
-  const cachePolicy = new aws.cloudfront.CachePolicy("hello-terrain-cache-policy", {
-    name: `hello-terrain-cache-${environment}`,
-    comment: `Cache policy for ${domain} ${environment}`,
-    defaultTtl: 86400, // 24 hours
-    maxTtl: 31536000, // 1 year
-    minTtl: 0,
-    parametersInCacheKeyAndForwardedToOrigin: {
-      cookiesConfig: {
-        cookieBehavior: "none",
-      },
-      headersConfig: {
-        headerBehavior: "none",
-      },
-      queryStringsConfig: {
-        queryStringBehavior: "none",
+  const cachePolicy = new aws.cloudfront.CachePolicy(
+    "hello-terrain-cache-policy",
+    {
+      name: `hello-terrain-cache-${environment}`,
+      comment: `Cache policy for ${domain} ${environment}`,
+      defaultTtl: 86400, // 24 hours
+      maxTtl: 31536000, // 1 year
+      minTtl: 0,
+      parametersInCacheKeyAndForwardedToOrigin: {
+        cookiesConfig: {
+          cookieBehavior: "none",
+        },
+        headersConfig: {
+          headerBehavior: "none",
+        },
+        queryStringsConfig: {
+          queryStringBehavior: "none",
+        },
       },
     },
-  });
+  );
 
   // Create CloudFront response headers policy
   const headersPolicy = new aws.cloudfront.ResponseHeadersPolicy("cdnHeaders", {
@@ -60,16 +63,23 @@ export function createCdn(
   });
 
   // Create CloudFront Function to rewrite URLs for Next.js static export
-  const urlRewriteFunction = new aws.cloudfront.Function("url-rewrite-function", {
-    name: `hello-terrain-url-rewrite-${environment}`,
-    runtime: "cloudfront-js-2.0",
-    comment: `URL rewrite function for Next.js static export - ${environment}`,
-    code: `function handler(event) {
+  const urlRewriteFunction = new aws.cloudfront.Function(
+    "url-rewrite-function",
+    {
+      name: `hello-terrain-url-rewrite-${environment}`,
+      runtime: "cloudfront-js-2.0",
+      comment: `URL rewrite function for Next.js static export - ${environment}`,
+      code: `function handler(event) {
           var request = event.request;
           var uri = request.uri;
 
           // Skip rewriting for /api/ paths (e.g., /api/search is a static JSON file)
           if (uri.startsWith('/api/')) {
+            return request;
+          }
+
+          // Skip rewriting for /external/ paths (direct asset serving)
+          if (uri.startsWith('/external/')) {
             return request;
           }
 
@@ -84,82 +94,97 @@ export function createCdn(
 
           return request;
       }`,
-    publish: true,
-  });
+      publish: true,
+    },
+  );
 
   // Create CloudFront distribution
-  const distribution = new aws.cloudfront.Distribution("hello-terrain-distribution", {
-    enabled: true,
-    isIpv6Enabled: true,
-    defaultRootObject: "index.html",
-    aliases: [domain],
+  const distribution = new aws.cloudfront.Distribution(
+    "hello-terrain-distribution",
+    {
+      enabled: true,
+      isIpv6Enabled: true,
+      defaultRootObject: "index.html",
+      aliases: [domain],
 
-    origins: [
-      {
-        domainName: buckets.mainBucket.bucketDomainName,
-        originId: "main",
-        s3OriginConfig: {
-          originAccessIdentity: mainOai.cloudfrontAccessIdentityPath,
-        },
-      },
-    ],
-
-    // "All" is the most broad distribution, and also the most expensive.
-    // "100" is the least broad, and also the least expensive.
-    priceClass: "PriceClass_100",
-
-    defaultCacheBehavior: {
-      responseHeadersPolicyId: headersPolicy.id,
-      allowedMethods: ["GET", "HEAD", "OPTIONS"],
-      cachedMethods: ["GET", "HEAD"],
-      targetOriginId: "main",
-      cachePolicyId: cachePolicy.id,
-      viewerProtocolPolicy: "redirect-to-https",
-      compress: true,
-      functionAssociations: [
+      origins: [
         {
-          eventType: "viewer-request",
-          functionArn: urlRewriteFunction.arn,
+          domainName: buckets.mainBucket.bucketDomainName,
+          originId: "main",
+          s3OriginConfig: {
+            originAccessIdentity: mainOai.cloudfrontAccessIdentityPath,
+          },
         },
       ],
-    },
 
-    orderedCacheBehaviors: [],
+      // "All" is the most broad distribution, and also the most expensive.
+      // "100" is the least broad, and also the least expensive.
+      priceClass: "PriceClass_100",
 
-    // Serve SPA index on missing objects so deep links work on refresh
-    customErrorResponses: [
-      {
-        errorCode: 403,
-        responseCode: 200,
-        responsePagePath: "/index.html",
-        errorCachingMinTtl: 0,
+      defaultCacheBehavior: {
+        responseHeadersPolicyId: headersPolicy.id,
+        allowedMethods: ["GET", "HEAD", "OPTIONS"],
+        cachedMethods: ["GET", "HEAD"],
+        targetOriginId: "main",
+        cachePolicyId: cachePolicy.id,
+        viewerProtocolPolicy: "redirect-to-https",
+        compress: true,
+        functionAssociations: [
+          {
+            eventType: "viewer-request",
+            functionArn: urlRewriteFunction.arn,
+          },
+        ],
       },
-      {
-        errorCode: 404,
-        responseCode: 200,
-        responsePagePath: "/index.html",
-        errorCachingMinTtl: 0,
+
+      orderedCacheBehaviors: [
+        {
+          pathPattern: "external/*",
+          allowedMethods: ["GET", "HEAD", "OPTIONS"],
+          cachedMethods: ["GET", "HEAD"],
+          targetOriginId: "main",
+          cachePolicyId: cachePolicy.id,
+          viewerProtocolPolicy: "redirect-to-https",
+          compress: true,
+          // No URL rewrite function — assets are served directly by their S3 key
+        },
+      ],
+
+      // Serve SPA index on missing objects so deep links work on refresh
+      customErrorResponses: [
+        {
+          errorCode: 403,
+          responseCode: 200,
+          responsePagePath: "/index.html",
+          errorCachingMinTtl: 0,
+        },
+        {
+          errorCode: 404,
+          responseCode: 200,
+          responsePagePath: "/index.html",
+          errorCachingMinTtl: 0,
+        },
+      ],
+
+      viewerCertificate: {
+        acmCertificateArn: certificateArn,
+        sslSupportMethod: "sni-only",
+        minimumProtocolVersion: "TLSv1.2_2021",
       },
-    ],
 
-    viewerCertificate: {
-      acmCertificateArn: certificateArn,
-      sslSupportMethod: "sni-only",
-      minimumProtocolVersion: "TLSv1.2_2021",
-    },
+      restrictions: {
+        geoRestriction: {
+          restrictionType: "none",
+        },
+      },
 
-    restrictions: {
-      geoRestriction: {
-        restrictionType: "none",
+      tags: {
+        Environment: environment,
+        Project: "hello-terrain",
+        Domain: domain,
       },
     },
-
-    tags: {
-      Environment: environment,
-      Project: "hello-terrain",
-      Domain: domain,
-    },
-  });
+  );
 
   return {
     mainOai,

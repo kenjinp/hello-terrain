@@ -8,13 +8,14 @@ export interface BucketResources {
   mainBucketAcl: aws.s3.BucketAcl;
   mainBucketCors: aws.s3.BucketCorsConfiguration;
   mainBucketPolicy: aws.s3.BucketPolicy;
+  externalFolder: aws.s3.BucketObject;
 }
 
 // Configure ACL for buckets with proper ownership controls and public access block
 function configureACL(
   bucketName: string,
   bucket: aws.s3.Bucket,
-  acl: string
+  acl: string,
 ): aws.s3.BucketAcl {
   const ownership = new aws.s3.BucketOwnershipControls(
     `${bucketName}-ownership`,
@@ -23,7 +24,7 @@ function configureACL(
       rule: {
         objectOwnership: "BucketOwnerPreferred",
       },
-    }
+    },
   );
   const publicAccessBlock = new aws.s3.BucketPublicAccessBlock(
     `${bucketName}-public-access`,
@@ -33,7 +34,7 @@ function configureACL(
       blockPublicPolicy: false,
       ignorePublicAcls: false,
       restrictPublicBuckets: false,
-    }
+    },
   );
   const bucketACL = new aws.s3.BucketAcl(
     `${bucketName}-acl`,
@@ -43,14 +44,14 @@ function configureACL(
     },
     {
       dependsOn: [ownership, publicAccessBlock],
-    }
+    },
   );
   return bucketACL;
 }
 
 export function createBuckets(
   config: InfrastructureConfig,
-  mainOai: aws.cloudfront.OriginAccessIdentity
+  mainOai: aws.cloudfront.OriginAccessIdentity,
 ): BucketResources {
   const { domain, environment } = config;
 
@@ -78,14 +79,14 @@ export function createBuckets(
       versioningConfiguration: {
         status: "Enabled",
       },
-    }
+    },
   );
 
   // Configure ACL for main bucket
   const mainBucketAcl = configureACL(
     "hello-terrain-main",
     mainBucket,
-    "private"
+    "private",
   );
 
   // Configure CORS for main bucket
@@ -102,7 +103,7 @@ export function createBuckets(
           maxAgeSeconds: 3000,
         },
       ],
-    }
+    },
   );
 
   // Create bucket policies for CloudFront access
@@ -124,7 +125,20 @@ export function createBuckets(
           },
         ],
       }),
-    }
+    },
+  );
+
+  // Create an `external/` folder placeholder in S3.
+  // Large assets can be uploaded directly via the S3 console into this prefix.
+  // They are not managed by Pulumi or stored in git, but are served by CloudFront.
+  const externalFolder = new aws.s3.BucketObject(
+    "hello-terrain-external-folder",
+    {
+      bucket: mainBucket.bucket,
+      key: "external/",
+      content: "",
+      contentType: "application/x-directory",
+    },
   );
 
   return {
@@ -133,5 +147,6 @@ export function createBuckets(
     mainBucketAcl,
     mainBucketCors,
     mainBucketPolicy,
+    externalFolder,
   };
 }
