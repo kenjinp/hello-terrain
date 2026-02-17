@@ -217,6 +217,41 @@ graph.set(elevationFn, () => ({ worldPosition, tileLevel, rootUV }) => {
   The elevation function runs entirely on the GPU via WebGPU compute shaders. All parameters are TSL nodes, not JavaScript numbers. Use TSL math functions (`float`, `sin`, `vec2`, etc.) instead of `Math.*`.
 </Callout>
 
+### When does the Elevation Fn run?
+
+The elevation function is part of the compute graph, which dispatches compute tasks only when their inputs change. 
+The elevation function will be ran when it's upstream dependencies change, which are (broadly):
+ 1. the `quadtreeUpdateTask` output changes, which fires when you set `quadtreeUpdate` on the graph.  
+ 2. configuration params such as `maxNodes` or `rootSize`, for example.
+ 3. your `elevationFn` itself changes.
+
+You should update the `quadtreeUpdate` function whenever your camera changes position. 
+However, there is no equality checking inside `.set()`, so doing this always triggers the quadtree tasks to run. 
+Also, because position floats are noisy, it's likely that position would not be exactly the same anyways. 
+
+I recommend adding some hysteresis factor or checking in your animation frame, and only `set()`-ing the `quadtreeUpdate` param when there are large changes. 
+```ts
+useFrame(async ({ camera, gl }) => {
+    const cameraHysteresis = 0.05;
+    if (
+      lastCameraRef.current.distanceToSquared(camera.position) >=
+      cameraHysteresis * cameraHysteresis
+    ) {
+      g.set(quadtreeUpdate, (prev: UpdateParams) => {
+        prev.cameraOrigin.x = camera.position.x;
+        prev.cameraOrigin.y = camera.position.y;
+        prev.cameraOrigin.z = camera.position.z;
+        return prev;
+      });
+      lastCameraRef.current.copy(camera.position);
+    }
+
+    await g.run()
+])
+```
+This way, if you stay still, the elevationFn will not be re-ran, and the values would be cached. 
+
+
 ## Related
 
 - [Terrain Geometry](/docs/advanced/terrain-geometry) — The geometry unit that elevation is applied to

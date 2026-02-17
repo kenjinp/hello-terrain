@@ -202,7 +202,7 @@ export function SinWaveTerrainSandpack() {
         three: "0.182.0",
         "@react-three/fiber": "9.5.0",
         "@react-three/drei": "10.7.7",
-        "@hello-terrain/three": "0.0.0-alpha.5",
+        "@hello-terrain/three": "0.0.0-alpha.6",
         "@hello-terrain/work": "0.1.1",
       }}
       files={{

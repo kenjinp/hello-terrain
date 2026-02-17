@@ -2,6 +2,10 @@
 
 import {
   Sandpack as SandpackRoot,
+  SandpackCodeEditor,
+  SandpackFileExplorer,
+  SandpackLayout,
+  SandpackProvider,
   type SandpackFiles,
   type SandpackPredefinedTemplate,
 } from "@codesandbox/sandpack-react";
@@ -18,7 +22,7 @@ interface SandpackProps {
   showFileExplorer?: boolean;
   /** Whether the code editor is read-only */
   readOnly?: boolean;
-  /** Which panels to show: "preview", "console", or both */
+  /** Whether to show the console panel */
   showConsole?: boolean;
   /** Whether to show line numbers in the editor */
   showLineNumbers?: boolean;
@@ -26,6 +30,8 @@ interface SandpackProps {
   editorHeight?: number;
   /** The file to open by default (e.g. "/App.tsx") */
   activeFile?: string;
+  /** Hide the preview panel and show only the code editor */
+  codeOnly?: boolean;
   /** Additional class name for the container */
   className?: string;
 }
@@ -62,15 +68,41 @@ export function Sandpack({
   showLineNumbers = true,
   editorHeight = 350,
   activeFile,
+  codeOnly = false,
   className,
 }: SandpackProps) {
   const isDark = useIsDarkMode();
+  const theme = isDark ? "dark" : "light";
+
+  if (codeOnly) {
+    return (
+      <div className={`not-prose my-6 [&_.sp-wrapper]:rounded-lg! ${className ?? ""}`}>
+        <SandpackProvider
+          template={template}
+          theme={theme}
+          files={files}
+          customSetup={dependencies ? { dependencies } : undefined}
+          options={{ activeFile: activeFile ?? undefined }}
+        >
+          <SandpackLayout>
+            {showFileExplorer && <SandpackFileExplorer />}
+            <SandpackCodeEditor
+              showLineNumbers={showLineNumbers}
+              showReadOnly={false}
+              readOnly={readOnly}
+              style={{ height: editorHeight }}
+            />
+          </SandpackLayout>
+        </SandpackProvider>
+      </div>
+    );
+  }
 
   return (
     <div className={`not-prose my-6 [&_.sp-wrapper]:rounded-lg! ${className ?? ""}`}>
       <SandpackRoot
         template={template}
-        theme={isDark ? "dark" : "light"}
+        theme={theme}
         files={files}
         customSetup={dependencies ? { dependencies } : undefined}
         options={{

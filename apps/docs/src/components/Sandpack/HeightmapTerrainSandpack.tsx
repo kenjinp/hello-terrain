@@ -45,14 +45,14 @@ const STYLES_CODE = `html, body, #root {
 `;
 
 const APP_CODE = `import { useRef, useMemo, useEffect } from "react";
-import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, extend, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three/webgpu";
 import {
-  float, vec2, vec3, vec4, Fn, Loop,
+  float, vec2, vec3, vec4, Fn, texture,
   normalize, max, dot, normalWorld,
-  floor, fract, mix, sin, cos,
 } from "three/tsl";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import {
   terrainGraph,
   TerrainGeometry,
@@ -73,51 +73,6 @@ extend({
   MeshBasicNodeMaterial: THREE.MeshBasicNodeMaterial,
 });
 
-// ── TSL noise helpers ──────────────────────────────────────
-
-// Pseudo-random gradient from a 2D lattice point
-const randomGradient = Fn(([p]) => {
-  const angle = fract(
-    sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)
-  ).mul(Math.PI * 2);
-  return vec2(cos(angle), sin(angle));
-});
-
-// Classic 2D Perlin noise
-const perlinNoise = Fn(([p]) => {
-  const i = floor(p).toVar();
-  const f = fract(p).toVar();
-  const u = f.mul(f).mul(float(3).sub(f.mul(2)));
-
-  const g00 = randomGradient(i);
-  const g10 = randomGradient(i.add(vec2(1, 0)));
-  const g01 = randomGradient(i.add(vec2(0, 1)));
-  const g11 = randomGradient(i.add(vec2(1, 1)));
-
-  const d00 = dot(g00, f);
-  const d10 = dot(g10, f.sub(vec2(1, 0)));
-  const d01 = dot(g01, f.sub(vec2(0, 1)));
-  const d11 = dot(g11, f.sub(vec2(1, 1)));
-
-  return mix(mix(d00, d10, u.x), mix(d01, d11, u.x), u.y).add(0.5);
-});
-
-// Fractal Brownian Motion — 6 octaves of Perlin noise using TSL Loop
-const fbm = Fn(([pos_immutable]) => {
-  const p = vec2(pos_immutable).toVar();
-  const total = float(0).toVar();
-  const amp = float(0.5).toVar();
-  const freq = float(1).toVar();
-
-  Loop(6, () => {
-    total.addAssign(perlinNoise(p.mul(freq)).mul(amp));
-    freq.mulAssign(2.03);
-    amp.mulAssign(0.5);
-  });
-
-  return total;
-});
-
 // ── Scene ──────────────────────────────────────────────────
 
 function SceneSetup() {
@@ -133,15 +88,24 @@ function Terrain({ graph }) {
   const materialRef = useRef(null);
   const materialReadyRef = useRef(false);
 
+  // Load the EXR heightmap
+  const heightmap = useLoader(
+    EXRLoader,
+    "https://hello-terrain.kenny.wtf/external/everest-2.exr",
+  );
+  heightmap.wrapS = heightmap.wrapT = THREE.ClampToEdgeWrapping;
+  heightmap.minFilter = THREE.LinearFilter;
+  heightmap.magFilter = THREE.LinearFilter;
+
+  // Sample the heightmap in the elevation function using rootUV
   useEffect(() => {
-    const elevation: ElevationCallback = ({ worldPosition }) => {
-      const p = vec2(worldPosition.x, worldPosition.z).mul(float(0.05));
-      return fbm(p).sub(float(0.3));
+    const elevation: ElevationCallback = ({ rootUV }) => {
+      return texture(heightmap, rootUV).x;
     };
 
     graph.set(elevationFn, () => elevation);
-    graph.set(elevationScale, () => 15);
-  }, [graph]);
+    graph.set(elevationScale, () => 30);
+  }, [graph, heightmap]);
 
   useEffect(() => {
     graph.add(
@@ -223,7 +187,7 @@ export default function App() {
 }
 `;
 
-export function FbmTerrainSandpack() {
+export function HeightmapTerrainSandpack() {
   return (
     <Sandpack
       template="react-ts"

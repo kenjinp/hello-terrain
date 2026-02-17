@@ -26,7 +26,7 @@ import {
   type UpdateParams,
 } from "@hello-terrain/three";
 import { Graph, task } from "@hello-terrain/work";
-import { Bounds, Environment, OrbitControls } from "@react-three/drei";
+import { Environment, OrbitControls } from "@react-three/drei";
 import {
   Canvas,
   extend,
@@ -36,12 +36,14 @@ import {
 } from "@react-three/fiber";
 import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
+import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   float,
   Fn,
+  max,
   normalMap,
   positionWorld,
   texture,
@@ -70,7 +72,7 @@ function u32ToColor(indexNode: Node) {
 const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   const controls = useControls("TerrainGeometry", {
     rootSize: {
-      value: 128,
+      value: 1024,
       min: 2,
       max: 4092 * 2,
       step: 2,
@@ -107,9 +109,24 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     wireframe: {
       value: false,
     },
+    heightmapStrength: {
+      value: 25,
+      min: 0,
+      max: 100,
+      step: 1,
+      label: "heightmap strength",
+    },
   });
 
   const { gl } = useThree();
+
+  const heightmapTexture = useLoader(
+    EXRLoader,
+    "https://hello-terrain.kenny.wtf/external/badian-dessert.exr",
+  );
+  heightmapTexture.wrapS = heightmapTexture.wrapT = THREE.ClampToEdgeWrapping;
+  heightmapTexture.minFilter = THREE.LinearFilter;
+  heightmapTexture.magFilter = THREE.LinearFilter;
 
   const [albedo, normal, aorh] = useLoader(
     KTX2Loader,
@@ -254,7 +271,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
   const materialNodesRef = useRef(false);
 
   useEffect(() => {
-    const elevation: ElevationCallback = ({ worldPosition }) => {
+    const elevation: ElevationCallback = ({ worldPosition, rootUV }) => {
       const noiseScale = float(0.5);
       const noise = voronoiCells({
         scale: float(1),
@@ -262,10 +279,14 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
         seed: 0,
         uv: vec2(worldPosition.x, worldPosition.z).mul(noiseScale),
       }).mul(float(0.5));
-      return noise;
+
+      const heightSample = texture(heightmapTexture, rootUV).x.mul(
+        float(controls.heightmapStrength),
+      );
+      return max(noise, heightSample);
     };
     g.set(elevationFn, () => elevation);
-  }, []);
+  }, [heightmapTexture, controls.heightmapStrength]);
 
   useFrame(async ({ camera, gl }) => {
     const cameraHysteresis = 0.05;
@@ -292,7 +313,10 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 
   return (
     <>
-      <Environment preset="sunset" />
+      <Environment
+        files={["https://hello-terrain.kenny.wtf/external/night-glow.exr"]}
+        background
+      />
       <terrainMesh
         ref={meshRef}
         innerTileSegments={innerTileSegments.get()}
@@ -302,7 +326,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
           wireframe={controls.wireframe}
           ref={materialRef}
           metalness={0.1}
-          // color={"#000000"}
           color={controls.wireframe ? "red" : undefined}
         />
       </terrainMesh>
@@ -347,10 +370,8 @@ const TerrainElevationScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <Bounds fit observe>
-          <TerrainMeshSceneImpl g={g} />
-        </Bounds>
-        <OrbitControls makeDefault />
+        <TerrainMeshSceneImpl g={g} />
+        <OrbitControls makeDefault target={[0, 3, 100]} />
       </Canvas>
     </ExamplesCanvas>
   );

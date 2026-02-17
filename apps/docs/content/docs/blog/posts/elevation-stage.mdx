@@ -3,7 +3,7 @@ title: Elevation - Milestone 2
 description: Processing user-provided elevation for each terrain vertex - 0.0.0-alpha.5 update
 publishDate: 2026-02-16
 authors: [Kenny]
-image: /assets/blog/hello-world.png
+image: /assets/blog/dessert.png
 ---
 
 import TerrainElevationScene from "@/examples/TerrainElevationScene"
@@ -14,35 +14,76 @@ import TerrainElevationScene from "@/examples/TerrainElevationScene"
 
 ## How to Elevate Your Terrain!
 
-<Callout>
-This update makes the terrain library plausible useful for people who want to render make large terrains. 
-It is still missing many features, most especially the texturing system. 
-</Callout>
+It's now possible to make non-flat terrains! This is the first plausibly useful update, although it's still missing some essential functionality, 
+such as the texturing system, and querying the terrain for the purposes of placing objects or physics. 
 
+## The Elevation Function
 
-With this milestone, it is now possible to provide an elevation function to Hello Terrain. 
+With this milestone, it is now possible to provide an [elevation function](/docs/core/elevation-function) to Hello Terrain.
+This function is dispatched to the GPU and is called for every vertex. The output should be a simple float representing the elevation at that particular point. 
 This will be used by the graph to create an "elevation-field" (here I use the term elevation instead of heightmap, to distinguish from textures or images containing elevation data). 
 
-The elevation field is a buffer of floats that determines how vertices will be offset in the vertex shader, and from that we can derive normals for lighting as well. 
+The elevation field is a buffer of floats that determines how vertices will be offset in the vertex shader, and from that we can derive normals for lighting as well.
 
-### Procedural Terrain
+### When does the Elevation Fn run?
 
-An simple sin-wave example of an elevationFn:
-```ts title="sin-wave-terrain.ts"
-import { float, vec2 } from "three/tsl";
-import { ...blah, elevationFn } from "@hello-terrain/three";
+The elevation function is part of hello-terrain's compute graph, which dispatches compute tasks only when their inputs change. 
+The elevation function will be ran when it's upstream dependencies change, which are (broadly):
+ 1. the `quadtreeUpdateTask` output changes, which fires when you set `quadtreeUpdate` on the graph.  
+ 2. configuration params such as `maxNodes` or `rootSize`, for example.
+ 3. your `elevationFn` itself changes.
 
+You should update the `quadtreeUpdate` function whenever your camera changes position. 
+However, there is no equality checking inside `.set()`, so doing this always triggers the quadtree tasks to run. 
+Also, because position floats are noisy, it's likely that position would not be exactly the same anyways. 
 
+I recommend adding some hysteresis factor or checking in your animation frame, and only `set()`-ing the `quadtreeUpdate` param when there are large changes. 
+```ts
+useFrame(async ({ camera, gl }) => {
+    const cameraHysteresis = 0.05;
+    if (
+      lastCameraRef.current.distanceToSquared(camera.position) >=
+      cameraHysteresis * cameraHysteresis
+    ) {
+      g.set(quadtreeUpdate, (prev: UpdateParams) => {
+        prev.cameraOrigin.x = camera.position.x;
+        prev.cameraOrigin.y = camera.position.y;
+        prev.cameraOrigin.z = camera.position.z;
+        return prev;
+      });
+      lastCameraRef.current.copy(camera.position);
+    }
+
+    await g.run()
+])
+```
+This way, if you stay still, the elevationFn will not be re-ran, and the values would be cached. 
+
+### Simple Procedural Terrain
+
+A simple sin-wave example of an elevation function. It takes the worldPosition as an input to modulate the elevation with a sin wave:
+
+```ts
 const elevation: ElevationCallback = ({ worldPosition }) => {
   const frequency = float(0.3);
   const pos = vec2(worldPosition.x, worldPosition.z).mul(frequency);
   return pos.x.sin().add(pos.y.sin()).mul(float(0.5));
 };
-
-// you must pass your elevation function to the elevationFn param
-// of the terrain graph
-myTerrainGraph.set(elevationFn, () => elevation);
 ```
+
+And here's the example integrated in a scene:
+
+<SinWaveTerrainSandpack />
+
+### Noise-based Elevation
+
+You can implement any noise function as part of the elevation Fn (encouraged!). 
+
+A great resource for noises implemented in TSL is [threejsroadmap.com](https://threejsroadmap.com/blog/10-noise-functions-for-threejs-tsl-shaders)
+
+<FbmTerrainSandpack />
+
+### Elevation Function Inputs
 
 The ElevationCallback will be passed some handy params for you to use in your elevation function.
 The one you will probably most often use is `worldPosition`. The others can be situationally useful, or for debugging. 
@@ -51,29 +92,41 @@ Notice these are all simply typed as Node (because I don't know how to strictly 
 ```ts
 
 interface ElevationParams {
-    worldPosition: Node; // the vertex position in global coordinates
-    rootSize: Node; // the root size passed as a param to the graph
-    rootUV: Node; // the 2D xy coordinate of this vertex
-    tileUV: Node; // the 2D xy coordinate inside this terrain tile
-    tileLevel: Node; // subdivision level of this tile (smaller number is larger / lower resolution)
-    tileSize: Node; // size or width of the tile's edge
-    tileOriginVec2: Node; // the 2D xy coordinate of the center of the tile in relation to the root tile
-    nodeIndex: Node; // the index of the tile in the nodeBuffer
+    worldPosition: Node; // vec3: the vertex position in global coordinates
+    rootSize: Node; // int: the root size passed as a param to the graph
+    rootUV: Node; // vec2: the 2D xy coordinate of this vertex
+    tileUV: Node; // vec2: the 2D xy coordinate inside this terrain tile
+    tileLevel: Node; // int: subdivision level of this tile (smaller number is larger / lower resolution)
+    tileSize: Node; // float: size or width of the tile's edge
+    tileOriginVec2: Node; // vec2:  the 2D xy coordinate of the center of the tile in relation to the root tile
+    nodeIndex: Node; // int: the index of the tile in the nodeBuffer
 }
 ```
 
 ### Creating terrain from heightmaps
 
 The elevation function API makes it trivial to use heightmaps. 
+Load an image and sample it in your elevation callback using `rootUV` — which maps `[0, 1]` across the entire root terrain node.
+It is recommended to use a 16-bit precision format, such EXR or r16 for height data. 
 
-...TODO
+```ts
+const elevation: ElevationCallback = ({ rootUV }) => {
+  return texture(heightmap, rootUV).x;
+};
+```
 
-### Blending the two approaches together
+<HeightmapTerrainSandpack />
 
-...TODO
 
-### Next steps, shortfalls
+## Sources
+- heightmaps generated from https://manticorp.github.io/unrealheightmap
+  locations - Badan Jilin Dessert (巴丹吉林沙漠) and Mt. Everest.
+- sand texture (with modifications) and night sky from https://ambientcg.com/
+
+## Next steps, shortfalls
 
 Currently the mesh that is generated right now has some issues. 
 - Apparent pop-in, which will be later resolved with some form of geomorphing (animating in the LODs)
 - Non-contiguous normals at the tile edges, which makes lighting change abruptly (to be fixed later with stitching tiles)
+- Perhaps it will be better to hash the quadtree in someway, that way even if the camera position changes, the downstream tasks will not
+be asked to run if the quadtree resolves to the same shape. 
