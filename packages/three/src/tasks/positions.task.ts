@@ -3,6 +3,7 @@ import { createTileWorldPosition } from "../gpu/worldPosition";
 import { createElevationFieldContextTask } from "./elevation-field.task";
 import { createNormalFieldContextTask } from "./normal-field.task";
 import { leafStorageTask } from "./quadtree.task";
+import { createSeamFieldContextTask } from "./seam.task";
 import { createUniformsTask } from "./uniforms/uniforms.task";
 
 /**
@@ -25,12 +26,14 @@ export const positionNodeTask = task((get, work) => {
   const terrainUniforms = get(createUniformsTask);
   const elevationFieldContext = get(createElevationFieldContextTask);
   const normalFieldContext = get(createNormalFieldContextTask);
+  const seamFieldContext = get(createSeamFieldContextTask);
   return work(() =>
     createTileWorldPosition(
       leafStorage,
       terrainUniforms,
       elevationFieldContext.node,
       normalFieldContext.node,
+      seamFieldContext.node,
     ),
   );
 }).displayName("positionNodeTask");

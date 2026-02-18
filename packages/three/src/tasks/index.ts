@@ -7,5 +7,6 @@ export * from "./normal-field.task";
 export * from "./params";
 export * from "./positions.task";
 export * from "./quadtree.task";
+export * from "./seam.task";
 export * from "./uniforms/terrainUniforms";
 export * from "./uniforms/uniforms.task";

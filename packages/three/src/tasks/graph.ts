@@ -20,6 +20,7 @@ import {
   quadtreeUpdateTask,
   surfaceTask,
 } from "./quadtree.task";
+import { createSeamFieldContextTask, seamGpuBufferTask } from "./seam.task";
 import {
   createUniformsTask,
   updateUniformsTask,
@@ -35,6 +36,8 @@ export function terrainGraph() {
     .add(leafStorageTask)
     .add(surfaceTask)
     .add(leafGpuBufferTask)
+    .add(createSeamFieldContextTask)
+    .add(seamGpuBufferTask)
     .add(createUniformsTask)
     .add(updateUniformsTask)
     .add(positionNodeTask)
@@ -61,6 +64,8 @@ export const terrainTasks = {
   createElevationFieldContext: createElevationFieldContextTask,
   createTileNodes: tileNodesTask,
   createNormalFieldContext: createNormalFieldContextTask,
+  createSeamFieldContext: createSeamFieldContextTask,
+  seamGpuBuffer: seamGpuBufferTask,
   elevationFieldStage: elevationFieldStageTask,
   normalFieldStage: normalFieldStageTask,
   compileCompute: compileComputeTask,

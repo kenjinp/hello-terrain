@@ -52,9 +52,9 @@ extend({ TerrainGeometry, TerrainMesh });
 // ── TSL noise helpers ──────────────────────────────────────
 
 const randomGradient = Fn(([p]: [any]) => {
-  const angle = fract(
-    sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453),
-  ).mul(Math.PI * 2);
+  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
+    Math.PI * 2,
+  );
   return vec2(cos(angle), sin(angle));
 });
 
@@ -90,6 +90,17 @@ const fbm = Fn(([pos_immutable]: [any]) => {
 
   return total;
 });
+
+function createTerrainOutputNode() {
+  return Fn(() => {
+    const baseColor = vec3(0.42, 0.55, 0.33);
+    const lightDir = normalize(vec3(0.5, 0.8, 0.3));
+    const ambient = float(0.3);
+    const diff = max(dot(normalWorld, lightDir), float(0));
+    const litColor = baseColor.mul(ambient.add(diff.mul(float(0.7))));
+    return vec4(litColor, float(1));
+  })();
+}
 
 // ── Scene Implementation ───────────────────────────────────
 
@@ -134,6 +145,13 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
       step: 1,
       label: "elevation scale",
     },
+    innerTileSegments: {
+      value: 32,
+      min: 2,
+      max: 64,
+      step: 1,
+      label: "inner segments",
+    },
     noiseScale: {
       value: 0.05,
       min: 0.001,
@@ -150,16 +168,14 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const materialRef = useRef<THREE.MeshBasicNodeMaterial | null>(null);
   const materialReadyRef = useRef(false);
+  const lastPositionNodeRef = useRef<any>(null);
 
   useEffect(() => {
     g.add(
       task((get, work) => {
         const leafSet = get(quadtreeUpdateTask);
-        const positionNode = get(positionNodeTask);
         return work(() => {
           const mesh = meshRef.current;
-          const material = materialRef.current;
-
           if (
             mesh &&
             leafSet?.count !== undefined &&
@@ -168,28 +184,34 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
             mesh.count = leafSet.count;
             mesh.instanceMatrix.needsUpdate = true;
           }
+        });
+      }).displayName("syncMeshCountTask"),
+    );
+  }, [g]);
 
-          if (material && positionNode) {
+  useEffect(() => {
+    g.add(
+      task((get, work) => {
+        const positionNode = get(positionNodeTask);
+        return work(() => {
+          const material = materialRef.current;
+          if (
+            material &&
+            positionNode &&
+            lastPositionNodeRef.current !== positionNode
+          ) {
             material.positionNode = positionNode;
+            lastPositionNodeRef.current = positionNode;
 
             if (!materialReadyRef.current) {
-              material.outputNode = Fn(() => {
-                const baseColor = vec3(0.42, 0.55, 0.33);
-                const lightDir = normalize(vec3(0.5, 0.8, 0.3));
-                const ambient = float(0.3);
-                const diff = max(dot(normalWorld, lightDir), float(0));
-                return vec4(
-                  baseColor.mul(ambient.add(diff.mul(float(0.7)))),
-                  float(1),
-                );
-              })();
+              material.outputNode = createTerrainOutputNode();
               materialReadyRef.current = true;
             }
 
             material.needsUpdate = true;
           }
         });
-      }).displayName("applyPositionNodeTask"),
+      }).displayName("applyPositionNodeTaskOncePerNode"),
     );
   }, [g]);
 
@@ -205,8 +227,9 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
   }, [g, controls.noiseScale]);
 
   useEffect(() => {
+    g.set(innerTileSegments, () => controls.innerTileSegments);
     g.set(elevationScale, () => controls.elevationScale);
-  }, [controls.elevationScale]);
+  }, [g, controls.innerTileSegments, controls.elevationScale]);
 
   useEffect(() => {
     g.set(maxNodes, () => controls.maxNodes);
@@ -250,7 +273,7 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
     <>
       <terrainMesh
         ref={meshRef}
-        innerTileSegments={innerTileSegments.get()}
+        innerTileSegments={controls.innerTileSegments}
         maxNodes={controls.maxNodes}
       >
         <meshBasicNodeMaterial

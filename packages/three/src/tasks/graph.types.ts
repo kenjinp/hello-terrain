@@ -31,6 +31,16 @@ export interface NormalFieldContext {
   node: StorageBufferNode;
 }
 
+export interface SeamFieldContext {
+  data: Uint32Array<ArrayBuffer>;
+  attribute: StorageBufferAttribute;
+  node: StorageBufferNode;
+}
+
+export interface SeamGpuBufferState extends SeamFieldContext {
+  count: number;
+}
+
 /** Task refs for the standard terrain pipeline. */
 export interface TerrainTasks {
   instanceId: TaskRef<string>;
@@ -45,6 +55,8 @@ export interface TerrainTasks {
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
   createNormalFieldContext: TaskRef<NormalFieldContext>;
+  createSeamFieldContext: TaskRef<SeamFieldContext>;
+  seamGpuBuffer: TaskRef<SeamGpuBufferState>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   normalFieldStage: TaskRef<ComputePipeline>;
   compileCompute: TaskRef<{

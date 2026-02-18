@@ -5,29 +5,16 @@ import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
 import { normalFieldStageTask } from "./normal-field.task";
 import { innerTileSegments } from "./params";
 import { leafGpuBufferTask } from "./quadtree.task";
+import { seamGpuBufferTask } from "./seam.task";
 
-/** Default compile task — uses normalFieldStageTask as the leaf. */
-export const compileComputeTask = task((get, work) => {
-  const pipeline = get(normalFieldStageTask);
-  const edgeVertexCount = get(innerTileSegments) + 3;
-
-  return work(() => compileComputePipeline(pipeline, edgeVertexCount, {}));
-}).displayName("compileComputeTask");
-
-/** Default execute task — dispatches the compiled kernel. */
-export const executeComputeTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
-    const { execute } = get(compileComputeTask);
-    const leafState = get(leafGpuBufferTask);
-    return work(() =>
-      resources?.renderer
-        ? execute(resources.renderer, leafState.count)
-        : () => {},
-    );
-  },
-)
-  .displayName("executeComputeTask")
-  .lane("gpu");
+type ComputePipelineTaskOptions = {
+  /**
+   * Tasks that must be pulled before dispatching compute.
+   * Useful for resource uploads (e.g. seam buffers) not directly referenced
+   * by compute stages.
+   */
+  preExecuteTaskRefs?: TaskRef<unknown>[];
+};
 
 /**
  * Factory for user-extensible pipelines.
@@ -53,7 +40,10 @@ export const executeComputeTask = task<{ renderer: WebGPURenderer }>(
  */
 export function createComputePipelineTasks(
   leafStageTask: TaskRef<ComputePipeline>,
+  options?: ComputePipelineTaskOptions,
 ) {
+  const preExecuteTaskRefs = options?.preExecuteTaskRefs ?? [];
+
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
     const edgeVertexCount = get(innerTileSegments) + 3;
@@ -64,6 +54,9 @@ export function createComputePipelineTasks(
     (get, work, { resources }) => {
       const { execute: run } = get(compile);
       const leafState = get(leafGpuBufferTask);
+      for (const dep of preExecuteTaskRefs) {
+        get(dep);
+      }
       return work(() =>
         resources?.renderer
           ? run(resources.renderer, leafState.count)
@@ -76,3 +69,9 @@ export function createComputePipelineTasks(
 
   return { compile, execute };
 }
+
+/** Default compile/execute tasks for the built-in terrain pipeline. */
+export const { compile: compileComputeTask, execute: executeComputeTask } =
+  createComputePipelineTasks(normalFieldStageTask, {
+    preExecuteTaskRefs: [seamGpuBufferTask],
+  });
