@@ -7,6 +7,7 @@ import type {
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
+import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
@@ -25,12 +26,6 @@ export interface ElevationFieldContext {
   node: StorageBufferNode;
 }
 
-export interface NormalFieldContext {
-  data: Uint32Array<ArrayBuffer>;
-  attribute: StorageBufferAttribute;
-  node: StorageBufferNode;
-}
-
 /** Task refs for the standard terrain pipeline. */
 export interface TerrainTasks {
   instanceId: TaskRef<string>;
@@ -44,9 +39,9 @@ export interface TerrainTasks {
   positionNode: TaskRef<ShaderCallNodeInternal>;
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
-  createNormalFieldContext: TaskRef<NormalFieldContext>;
+  createTerrainFieldTexture: TaskRef<TerrainFieldStorage>;
   elevationFieldStage: TaskRef<ComputePipeline>;
-  normalFieldStage: TaskRef<ComputePipeline>;
+  terrainFieldStage: TaskRef<ComputePipeline>;
   compileCompute: TaskRef<{
     execute: (renderer: WebGPURenderer, instanceCount: number) => void;
   }>;

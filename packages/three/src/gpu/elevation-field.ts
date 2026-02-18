@@ -3,6 +3,8 @@ import type { Node } from "three/webgpu";
 import type { TerrainUniformsContext } from "../types";
 import type { createTileCompute } from "./tile";
 import type { ElevationReturn } from "../tsl/elevation";
+import type { TerrainFieldStorage } from "./terrainFieldStorage";
+import { loadTerrainFieldElevation } from "./terrainFieldStorage";
 
 export const createElevation = (
   tile: ReturnType<typeof createTileCompute>,
@@ -34,19 +36,20 @@ export const createElevation = (
   };
 };
 
-export const readElevationFieldVertex = (elevationFieldBuffer: Node, edgeVertexCount: number) =>
+export const readElevationFieldVertex = (
+  terrainFieldStorage: TerrainFieldStorage,
+  edgeVertexCount: number,
+) =>
   Fn(() => {
-    const nodeIndex = int(instanceIndex);
     const intEdgeVertexCount = int(edgeVertexCount);
-
-    const verticesPerNode = intEdgeVertexCount.mul(intEdgeVertexCount);
-    const globalVertexIndex = nodeIndex.mul(verticesPerNode).add(int(vertexIndex));
-
-    return elevationFieldBuffer.element(globalVertexIndex);
+    const localVertexIndex = int(vertexIndex);
+    const ix = localVertexIndex.mod(intEdgeVertexCount);
+    const iy = localVertexIndex.div(intEdgeVertexCount);
+    return loadTerrainFieldElevation(terrainFieldStorage, ix, iy, int(instanceIndex));
   });
 
 export const readElevationFieldAtPositionLocal = (
-  elevationFieldBuffer: Node,
+  terrainFieldStorage: TerrainFieldStorage,
   edgeVertexCount: Node,
   positionLocal: Node,
 ) =>
@@ -65,9 +68,10 @@ export const readElevationFieldAtPositionLocal = (
     const xClamped = min(max(x, int(0)), last);
     const yClamped = min(max(y, int(0)), last);
 
-    const verticesPerNode = intEdge.mul(intEdge);
-    const perNodeVertexIndex = yClamped.mul(intEdge).add(xClamped);
-    const globalVertexIndex = nodeIndex.mul(verticesPerNode).add(perNodeVertexIndex);
-
-    return elevationFieldBuffer.element(globalVertexIndex);
+    return loadTerrainFieldElevation(
+      terrainFieldStorage,
+      xClamped,
+      yClamped,
+      nodeIndex,
+    );
   });
