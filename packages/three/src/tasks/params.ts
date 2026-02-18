@@ -15,7 +15,7 @@ export const origin = param<{ x: number; y: number; z: number }>({
 
 /**
  * Number of segments per inner tile edge.
- * 13 is the max tiles we can support for 256 workgroups (13 + 3 === 16.. 16x16)
+ * Effective edge vertex count is `innerTileSegments + 3`.
  */
 export const innerTileSegments = param(13).displayName("innerTileSegments");
 

@@ -11,17 +11,21 @@ export const compileComputeTask = task((get, work) => {
   const pipeline = get(normalFieldStageTask);
   const edgeVertexCount = get(innerTileSegments) + 3;
 
-  return work(() => compileComputePipeline(pipeline, edgeVertexCount));
+  return work(() => compileComputePipeline(pipeline, edgeVertexCount, {}));
 }).displayName("compileComputeTask");
 
 /** Default execute task — dispatches the compiled kernel. */
-export const executeComputeTask = task<{ renderer: WebGPURenderer }>((get, work, { resources }) => {
-  const { execute } = get(compileComputeTask);
-  const leafState = get(leafGpuBufferTask);
-  return work(() =>
-    resources?.renderer ? execute(resources.renderer, leafState.count) : () => {},
-  );
-})
+export const executeComputeTask = task<{ renderer: WebGPURenderer }>(
+  (get, work, { resources }) => {
+    const { execute } = get(compileComputeTask);
+    const leafState = get(leafGpuBufferTask);
+    return work(() =>
+      resources?.renderer
+        ? execute(resources.renderer, leafState.count)
+        : () => {},
+    );
+  },
+)
   .displayName("executeComputeTask")
   .lane("gpu");
 
@@ -47,18 +51,26 @@ export const executeComputeTask = task<{ renderer: WebGPURenderer }>((get, work,
  * const { compile, execute } = createComputePipelineTasks(erosionStageTask);
  * ```
  */
-export function createComputePipelineTasks(leafStageTask: TaskRef<ComputePipeline>) {
+export function createComputePipelineTasks(
+  leafStageTask: TaskRef<ComputePipeline>,
+) {
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
     const edgeVertexCount = get(innerTileSegments) + 3;
-    return work(() => compileComputePipeline(pipeline, edgeVertexCount));
+    return work(() => compileComputePipeline(pipeline, edgeVertexCount, {}));
   }).displayName("compileComputeTask");
 
-  const execute = task<{ renderer: WebGPURenderer }>((get, work, { resources }) => {
-    const { execute: run } = get(compile);
-    const leafState = get(leafGpuBufferTask);
-    return work(() => (resources?.renderer ? run(resources.renderer, leafState.count) : () => {}));
-  })
+  const execute = task<{ renderer: WebGPURenderer }>(
+    (get, work, { resources }) => {
+      const { execute: run } = get(compile);
+      const leafState = get(leafGpuBufferTask);
+      return work(() =>
+        resources?.renderer
+          ? run(resources.renderer, leafState.count)
+          : () => {},
+      );
+    },
+  )
     .displayName("executeComputeTask")
     .lane("gpu");
 
