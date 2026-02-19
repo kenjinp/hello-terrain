@@ -2,7 +2,7 @@ import type { TaskRef } from "@hello-terrain/work";
 import { task } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
 import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
-import { terrainFieldStageTask } from "./normal-field.task";
+import { terrainFieldStageTask } from "./terrain-field.task";
 import { innerTileSegments } from "./params";
 import { leafGpuBufferTask } from "./quadtree.task";
 

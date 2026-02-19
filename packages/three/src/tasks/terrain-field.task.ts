@@ -19,7 +19,7 @@ import { createUniformsTask } from "./uniforms/uniforms.task";
 
 export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
-  const edgeVertexCount = get(innerTileSegments) + 3;
+    const edgeVertexCount = get(innerTileSegments) + 3;
     const maxNodesValue = get(maxNodes);
     return work(() =>
       createTerrainFieldStorage(
@@ -138,7 +138,3 @@ export const terrainFieldStageTask = task((get, work) => {
     ];
   });
 }).displayName("terrainFieldStageTask");
-
-// Backward-compatible exports while consumers migrate.
-export const createNormalFieldContextTask = createTerrainFieldTextureTask;
-export const normalFieldStageTask = terrainFieldStageTask;

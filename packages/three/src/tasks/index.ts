@@ -3,7 +3,7 @@ export * from "./graph";
 export * from "./graph.types";
 export * from "./elevation-field.task";
 export * from "./instanceId.task";
-export * from "./normal-field.task";
+export * from "./terrain-field.task";
 export * from "./params";
 export * from "./positions.task";
 export * from "./quadtree.task";

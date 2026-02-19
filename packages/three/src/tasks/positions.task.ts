@@ -1,6 +1,6 @@
 import { task } from "@hello-terrain/work";
 import { createTileWorldPosition } from "../gpu/worldPosition";
-import { createTerrainFieldTextureTask } from "./normal-field.task";
+import { createTerrainFieldTextureTask } from "./terrain-field.task";
 import { leafStorageTask } from "./quadtree.task";
 import { createUniformsTask } from "./uniforms/uniforms.task";
 

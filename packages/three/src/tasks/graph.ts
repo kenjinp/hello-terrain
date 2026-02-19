@@ -11,7 +11,7 @@ import type { TerrainTasks } from "./graph.types";
 import {
   createTerrainFieldTextureTask,
   terrainFieldStageTask,
-} from "./normal-field.task";
+} from "./terrain-field.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
