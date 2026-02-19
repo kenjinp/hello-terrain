@@ -34,8 +34,8 @@ export interface TerrainFieldStorage {
   readonly edgeVertexCount: number;
   readonly tileCount: number;
   readonly texture: StorageArrayTexture | StorageTexture;
-  coords(ix: Node, iy: Node, tileIndex: Node): Node;
-  coordsI(ix: Node, iy: Node, tileIndex: Node): Node;
+  uv(ix: Node, iy: Node, tileIndex: Node): Node;
+  texel(ix: Node, iy: Node, tileIndex: Node): Node;
   resize(width: number, height: number, tileCount: number): void;
 }
 
@@ -84,10 +84,10 @@ export function ArrayTextureBackend(
       return currentTileCount;
     },
     texture,
-    coords(ix: Node, iy: Node, _tileIndex: Node): Node {
+    uv(ix: Node, iy: Node, _tileIndex: Node): Node {
       return vec2(ix.toFloat(), iy.toFloat());
     },
-    coordsI(ix: Node, iy: Node, tileIndex: Node): Node {
+    texel(ix: Node, iy: Node, tileIndex: Node): Node {
       return ivec3(ix, iy, tileIndex);
     },
     resize(width: number, height: number, nextTileCount: number): void {
@@ -137,7 +137,7 @@ export function AtlasBackend(
       return currentTileCount;
     },
     texture,
-    coords(ix: Node, iy: Node, tileIndex: Node): Node {
+    uv(ix: Node, iy: Node, tileIndex: Node): Node {
       const { atlasX, atlasY } = atlasCoord(
         tilesPerRow,
         currentEdgeVertexCount,
@@ -151,7 +151,7 @@ export function AtlasBackend(
         atlasY.toFloat().add(0.5).div(currentAtlasSize),
       );
     },
-    coordsI(ix: Node, iy: Node, tileIndex: Node): Node {
+    texel(ix: Node, iy: Node, tileIndex: Node): Node {
       const { atlasX, atlasY } = atlasCoord(
         tilesPerRow,
         currentEdgeVertexCount,
@@ -198,10 +198,10 @@ export function Texture3DBackend(
       return currentTileCount;
     },
     texture,
-    coords(ix: Node, iy: Node, _tileIndex: Node): Node {
+    uv(ix: Node, iy: Node, _tileIndex: Node): Node {
       return vec2(ix.toFloat(), iy.toFloat());
     },
-    coordsI(ix: Node, iy: Node, tileIndex: Node): Node {
+    texel(ix: Node, iy: Node, tileIndex: Node): Node {
       return ivec3(ix, iy, tileIndex);
     },
     resize(width: number, height: number, nextTileCount: number): void {
@@ -275,7 +275,7 @@ export function storeTerrainField(
   }
   return textureStore(
     storage.texture,
-    storage.coordsI(ix, iy, tileIndex),
+    storage.texel(ix, iy, tileIndex),
     value,
   );
 }
@@ -289,7 +289,7 @@ export function loadTerrainField(
   if (storage.backendType === "array-texture" || storage.backendType === "texture-3d") {
     return textureLoad(storage.texture, ivec3(int(ix), int(iy), int(tileIndex)), int(0));
   }
-  return textureLoad(storage.texture, storage.coordsI(ix, iy, tileIndex), int(0));
+  return textureLoad(storage.texture, storage.texel(ix, iy, tileIndex), int(0));
 }
 
 export function loadTerrainFieldElevation(
