@@ -1,7 +1,7 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
 export { TerrainMesh } from "./mesh/TerrainMesh";
 export { terrainGraph, terrainTasks } from "./tasks/graph";
-export type { TerrainTasks } from "./tasks/graph.types";
+export type { TerrainTasks, TerrainGraph } from "./tasks/graph.types";
 
 export {
   rootSize,

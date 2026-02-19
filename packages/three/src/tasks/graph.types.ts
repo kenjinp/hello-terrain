@@ -1,4 +1,4 @@
-import type { TaskRef } from "@hello-terrain/work";
+import type { Graph, TaskRef } from "@hello-terrain/work";
 import type {
   StorageBufferAttribute,
   StorageBufferNode,
@@ -47,3 +47,10 @@ export interface TerrainTasks {
   }>;
   executeCompute: TaskRef<void | (() => void)>;
 }
+
+export type TerrainGraph = Graph<
+  string,
+  {
+    renderer: WebGPURenderer;
+  }
+>;

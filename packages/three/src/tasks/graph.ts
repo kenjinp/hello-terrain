@@ -7,7 +7,7 @@ import {
   elevationFieldStageTask,
 } from "./elevation-field.task";
 import { instanceIdTask } from "./instanceId.task";
-import type { TerrainTasks } from "./graph.types";
+import type { TerrainGraph, TerrainTasks } from "./graph.types";
 import {
   createTerrainFieldTextureTask,
   terrainFieldStageTask,
@@ -27,7 +27,7 @@ import {
 
 export { instanceIdTask } from "./instanceId.task";
 
-export function terrainGraph() {
+export function terrainGraph(): TerrainGraph {
   return graph<{ renderer: WebGPURenderer }>()
     .add(instanceIdTask)
     .add(quadtreeConfigTask)

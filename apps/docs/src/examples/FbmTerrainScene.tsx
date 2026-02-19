@@ -3,6 +3,7 @@
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { RunTimingBars } from "@/components/RunTimingBars";
+import { TerrainFieldTextureDebug } from "@/components/TerrainFieldTextureDebug";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
   elevationFn,
@@ -95,9 +96,10 @@ const fbm = Fn(([pos_immutable]: [any]) => {
 
 type FbmTerrainSceneImplProps = {
   g: Graph;
+  onRenderer?: (renderer: THREE.WebGPURenderer) => void;
 };
 
-const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
+const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
   const controls = useControls("FBM Terrain", {
     rootSize: {
       value: 128,
@@ -114,7 +116,7 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
       label: "max level",
     },
     maxNodes: {
-      value: 1028,
+      value: 512,
       min: 128,
       max: 2048,
       step: 1,
@@ -133,6 +135,13 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
       max: 100,
       step: 1,
       label: "elevation scale",
+    },
+    innerTileSegments: {
+      value: 13,
+      min: 3,
+      max: 64,
+      step: 1,
+      label: "inner tile segments",
     },
     noiseScale: {
       value: 0.05,
@@ -224,7 +233,12 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
     g.set(skirtScale, () => controls.skirtScale);
   }, [controls.skirtScale]);
 
+  useEffect(() => {
+    g.set(innerTileSegments, () => controls.innerTileSegments);
+  }, [controls.innerTileSegments]);
+
   useFrame(async ({ camera, gl }) => {
+    onRenderer?.(gl as unknown as THREE.WebGPURenderer);
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -250,7 +264,7 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
     <>
       <terrainMesh
         ref={meshRef}
-        innerTileSegments={innerTileSegments.get()}
+        innerTileSegments={controls.innerTileSegments}
         maxNodes={controls.maxNodes}
       >
         <meshBasicNodeMaterial
@@ -264,10 +278,12 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
 
 const FbmTerrainScene = () => {
   const g = useMemo(() => terrainGraph(), []);
+  const rendererRef = useRef<THREE.WebGPURenderer | null>(null);
 
   return (
     <ExamplesCanvas>
       <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
+        <TerrainFieldTextureDebug graph={g} rendererRef={rendererRef} />
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
           <TerrainTileDebug graph={g} />
@@ -293,7 +309,12 @@ const FbmTerrainScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <FbmTerrainSceneImpl g={g} />
+        <FbmTerrainSceneImpl
+          g={g}
+          onRenderer={(renderer) => {
+            rendererRef.current = renderer;
+          }}
+        />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>
