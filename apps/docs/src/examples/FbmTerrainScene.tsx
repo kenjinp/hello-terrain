@@ -3,7 +3,6 @@
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { RunTimingBars } from "@/components/RunTimingBars";
-import { TerrainFieldTextureDebug } from "@/components/TerrainFieldTextureDebug";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
   elevationFn,
@@ -22,7 +21,7 @@ import {
   type ElevationCallback,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { Graph, task } from "@hello-terrain/work";
+import { Graph, task, type TaskRef } from "@hello-terrain/work";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
@@ -53,9 +52,9 @@ extend({ TerrainGeometry, TerrainMesh });
 // ── TSL noise helpers ──────────────────────────────────────
 
 const randomGradient = Fn(([p]: [any]) => {
-  const angle = fract(
-    sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453),
-  ).mul(Math.PI * 2);
+  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
+    Math.PI * 2,
+  );
   return vec2(cos(angle), sin(angle));
 });
 
@@ -96,10 +95,10 @@ const fbm = Fn(([pos_immutable]: [any]) => {
 
 type FbmTerrainSceneImplProps = {
   g: Graph;
-  onRenderer?: (renderer: THREE.WebGPURenderer) => void;
+  rendererTask: TaskRef<THREE.WebGPURenderer | null>;
 };
 
-const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
+const FbmTerrainSceneImpl = ({ g, rendererTask }: FbmTerrainSceneImplProps) => {
   const controls = useControls("FBM Terrain", {
     rootSize: {
       value: 128,
@@ -164,10 +163,8 @@ const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
     g.add(
       task((get, work) => {
         const leafSet = get(quadtreeUpdateTask);
-        const positionNode = get(positionNodeTask);
         return work(() => {
           const mesh = meshRef.current;
-          const material = materialRef.current;
 
           if (
             mesh &&
@@ -177,7 +174,14 @@ const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
             mesh.count = leafSet.count;
             mesh.instanceMatrix.needsUpdate = true;
           }
-
+        });
+      }).displayName("applyCount"),
+    );
+    g.add(
+      task((get, work) => {
+        const positionNode = get(positionNodeTask);
+        return work(() => {
+          const material = materialRef.current;
           if (material && positionNode) {
             material.positionNode = positionNode;
 
@@ -200,7 +204,7 @@ const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
         });
       }).displayName("applyPositionNodeTask"),
     );
-  }, [g]);
+  }, [g, rendererTask]);
 
   useEffect(() => {
     const noiseScaleValue = controls.noiseScale;
@@ -238,7 +242,6 @@ const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
   }, [controls.innerTileSegments]);
 
   useFrame(async ({ camera, gl }) => {
-    onRenderer?.(gl as unknown as THREE.WebGPURenderer);
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -278,15 +281,24 @@ const FbmTerrainSceneImpl = ({ g, onRenderer }: FbmTerrainSceneImplProps) => {
 
 const FbmTerrainScene = () => {
   const g = useMemo(() => terrainGraph(), []);
-  const rendererRef = useRef<THREE.WebGPURenderer | null>(null);
+  const rendererTask = useMemo(
+    () =>
+      task<{ renderer: THREE.WebGPURenderer }>((_get, work, { resources }) =>
+        work(() => resources?.renderer ?? null),
+      ).displayName("debugRendererTask"),
+    [],
+  );
+
+  useEffect(() => {
+    g.add(rendererTask);
+  }, [g, rendererTask]);
 
   return (
     <ExamplesCanvas>
       <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
-        <TerrainFieldTextureDebug graph={g} rendererRef={rendererRef} />
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
-          <TerrainTileDebug graph={g} />
+          <TerrainTileDebug graph={g} rendererTask={rendererTask} />
           <FpsDebug />
         </div>
       </div>
@@ -309,12 +321,7 @@ const FbmTerrainScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <FbmTerrainSceneImpl
-          g={g}
-          onRenderer={(renderer) => {
-            rendererRef.current = renderer;
-          }}
-        />
+        <FbmTerrainSceneImpl g={g} rendererTask={rendererTask} />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>
