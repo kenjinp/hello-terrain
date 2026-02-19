@@ -12,52 +12,51 @@
  */
 export const levaTheme = {
   colors: {
-    // Panel backgrounds - matches fd-card/fd-secondary
-    elevation1: "#191919", // fd-card - main panel background
-    elevation2: "#121212", // fd-background - input backgrounds
-    elevation3: "#2a2a2a", // slightly lighter for hover states
+    // Panel backgrounds - transparent to let container backdrop-blur show through
+    elevation1: "transparent", // main panel background
+    elevation2: "transparent", // input backgrounds
+    elevation3: "rgba(255, 255, 255, 0.08)", // hover states
     // Accent colors - neutral grays to match fumadocs neutral theme
     accent1: "#404040", // inactive/default
     accent2: "#525252", // hover
     accent3: "#6b6b6b", // active
-    // Text colors - matches fd-muted-foreground to fd-foreground
-    highlight1: "#666666", // very muted text
-    highlight2: "#8c8c8c", // secondary text (fd-muted-foreground)
-    highlight3: "#ebebeb", // primary text (fd-foreground)
+    highlight1: "rgba(255, 255, 255, 0.5)",
+    highlight2: "rgba(255, 255, 255, 0.7)",
+    highlight3: "rgba(255, 255, 255, 0.85)",
     // Warning/special color
     vivid1: "#f5a623",
   },
   radii: {
-    xs: "4px",
-    sm: "6px", // matches fumadocs rounded-md
-    lg: "12px", // matches fumadocs rounded-xl
+    xs: "2px",
+    sm: "4px",
+    lg: "6px",
   },
   space: {
-    sm: "6px",
-    md: "10px",
-    rowGap: "7px",
-    colGap: "7px",
+    sm: "4px",
+    md: "6px",
+    rowGap: "4px",
+    colGap: "4px",
   },
   fontSizes: {
-    root: "13px", // matches fumadocs code block text size
+    root: "9px",
   },
   sizes: {
-    rootWidth: "280px",
-    controlWidth: "160px",
-    scrubberWidth: "8px",
-    scrubberHeight: "16px",
-    rowHeight: "24px",
-    folderHeight: "20px",
-    checkboxSize: "16px",
-    joystickWidth: "100px",
-    joystickHeight: "100px",
-    colorPickerWidth: "160px",
-    colorPickerHeight: "100px",
-    monitorHeight: "60px",
-    titleBarHeight: "39px",
+    rootWidth: "220px",
+    controlWidth: "130px",
+    scrubberWidth: "6px",
+    scrubberHeight: "12px",
+    rowHeight: "18px",
+    folderHeight: "16px",
+    checkboxSize: "12px",
+    joystickWidth: "80px",
+    joystickHeight: "80px",
+    colorPickerWidth: "130px",
+    colorPickerHeight: "80px",
+    monitorHeight: "40px",
+    titleBarHeight: "28px",
   },
   borderWidths: {
-    root: "1px", // fumadocs code block has border
+    root: "0px",
     input: "1px",
     focus: "1px",
     hover: "1px",

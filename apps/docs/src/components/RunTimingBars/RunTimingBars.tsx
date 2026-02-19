@@ -138,7 +138,7 @@ export function RunTimingBars({
   barHeight = 8,
   maxTasks = 10,
 }: RunTimingBarsProps) {
-  const { showUI } = useExamplesCanvas();
+  const { showUI, showControls } = useExamplesCanvas();
   const [, forceRender] = useState(0);
 
   const nameByIdRef = useRef<Map<string, string>>(new Map());
@@ -246,13 +246,13 @@ export function RunTimingBars({
     return () => unsub();
   }, [graph, maxTasks]);
 
+  const visible = showUI && !showControls;
+
   const containerClass = useMemo(() => {
     const base =
-      "w-full pointer-events-auto select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5";
+      "w-full select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5 transition-opacity duration-200";
     return `${base} ${className ?? ""}`;
   }, [className]);
-
-  if (!showUI) return null;
 
   const bars: Array<{ label: string; bar: Bar }> = [
     { label: "now", bar: curBarRef.current },
@@ -267,8 +267,8 @@ export function RunTimingBars({
   const svgH = bars.length * barHeight + (bars.length - 1) * 3;
 
   return (
-    <div className={containerClass}>
-      <svg width={svgW} height={svgH} role="img" aria-label="Task timings">
+    <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto" role="img" aria-label="Task timings">
         {bars.map(({ label, bar }, i) => {
           const y = i * (barHeight + 3);
           const total = Math.max(1e-6, bar.totalMs);

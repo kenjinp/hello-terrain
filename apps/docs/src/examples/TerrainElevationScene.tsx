@@ -335,13 +335,24 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 
 const TerrainElevationScene = () => {
   const g = useMemo(() => terrainGraph(), []);
+  const rendererTask = useMemo(
+    () =>
+      task<{ renderer: THREE.WebGPURenderer }>((_get, work, { resources }) =>
+        work(() => resources?.renderer ?? null),
+      ).displayName("debugRendererTask"),
+    [],
+  );
+
+  useEffect(() => {
+    g.add(rendererTask);
+  }, [g, rendererTask]);
 
   return (
     <ExamplesCanvas>
-      <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
+      <div className="absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
-          <TerrainTileDebug graph={g} />
+          <TerrainTileDebug graph={g} rendererTask={rendererTask} />
           <FpsDebug />
         </div>
       </div>

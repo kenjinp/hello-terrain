@@ -39,9 +39,10 @@ export function TerrainTileDebug({
   rendererTask,
   className,
 }: TerrainTileDebugProps) {
-  const { showUI } = useExamplesCanvas();
+  const { showUI, showControls } = useExamplesCanvas();
   const [, forceRender] = useState(0);
   const [textureDebugOpen, setTextureDebugOpen] = useState(false);
+  const [texturePanelPos, setTexturePanelPos] = useState({ x: 18, y: 18 });
 
   const statsRef = useRef<TileStats>({
     tilesRendered: 0,
@@ -94,13 +95,13 @@ export function TerrainTileDebug({
     return () => unsub();
   }, [graph]);
 
+  const visible = showUI && !showControls;
+
   const containerClass = useMemo(() => {
     const base =
-      "w-full pointer-events-auto select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5";
+      "w-full select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5 transition-opacity duration-200";
     return `${base} ${className ?? ""}`;
   }, [className]);
-
-  if (!showUI) return null;
 
   const { tilesRendered, maxTilesRendered, currentLevel, maxLevel, bufferCapacity } =
     statsRef.current;
@@ -128,9 +129,9 @@ export function TerrainTileDebug({
 
   return (
     <>
-      <div className={containerClass}>
+      <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
         <div className="flex items-start gap-1">
-          <svg width={svgW} height={svgH} role="img" aria-label="Terrain tile debug" className="flex-1 min-w-0">
+          <svg viewBox={`0 0 ${svgW} ${svgH}`} role="img" aria-label="Terrain tile debug" className="w-full h-auto flex-1 min-w-0">
             {rows.map(({ label, value }, i) => {
               const y = i * rowH;
               return (
@@ -175,7 +176,7 @@ export function TerrainTileDebug({
           {rendererTask && (
             <button
               type="button"
-              className="hidden md:flex items-center justify-center w-5 h-5 rounded hover:bg-white/15 text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5"
+              className="cursor-pointer hidden md:flex items-center justify-center w-5 h-5 rounded hover:bg-white/15 text-white/40 hover:text-white/80 transition-colors shrink-0 mt-0.5"
               onClick={() => setTextureDebugOpen(true)}
               aria-label="Open terrain field texture debug"
               title="Terrain field texture"
@@ -195,6 +196,8 @@ export function TerrainTileDebug({
           graph={graph}
           rendererTask={rendererTask}
           onClose={() => setTextureDebugOpen(false)}
+          panelPos={texturePanelPos}
+          onPanelPosChange={setTexturePanelPos}
         />
       )}
     </>

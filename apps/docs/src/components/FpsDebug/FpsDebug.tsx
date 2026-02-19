@@ -20,7 +20,7 @@ export function FpsDebug({
   className,
   historySize = 60,
 }: FpsDebugProps) {
-  const { showUI } = useExamplesCanvas();
+  const { showUI, showControls } = useExamplesCanvas();
   const [, forceRender] = useState(0);
 
   const fpsRef = useRef(0);
@@ -79,13 +79,13 @@ export function FpsDebug({
     };
   }, [historySize]);
 
+  const visible = showUI && !showControls;
+
   const containerClass = useMemo(() => {
     const base =
-      "w-full pointer-events-auto select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5";
+      "w-full select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5 transition-opacity duration-200";
     return `${base} ${className ?? ""}`;
   }, [className]);
-
-  if (!showUI) return null;
 
   const fps = fpsRef.current;
   const minFps = Number.isFinite(minFpsRef.current) ? minFpsRef.current : 0;
@@ -113,8 +113,8 @@ export function FpsDebug({
     fps >= 55 ? "#22c55e" : fps >= 30 ? "#f59e0b" : fps > 0 ? "#ef4444" : "rgba(255,255,255,0.85)";
 
   return (
-    <div className={containerClass}>
-      <svg width={svgW} height={svgH} role="img" aria-label="FPS debug">
+    <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto" role="img" aria-label="FPS debug">
         {rows.map(({ label, value }, i) => {
           const y = i * rowH;
           const valueFill = label === "fps" ? fpsColor : "rgba(255,255,255,0.85)";

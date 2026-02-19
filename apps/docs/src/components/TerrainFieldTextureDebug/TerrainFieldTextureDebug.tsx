@@ -31,6 +31,8 @@ export type TerrainFieldTextureDebugProps = {
   rendererTask?: TaskRef<WebGPURenderer | null>;
   onClose?: () => void;
   className?: string;
+  panelPos?: { x: number; y: number };
+  onPanelPosChange?: (pos: { x: number; y: number }) => void;
 };
 
 type ChannelTab = "all" | "height" | "normal";
@@ -54,8 +56,10 @@ export function TerrainFieldTextureDebug({
   rendererTask,
   onClose,
   className,
+  panelPos: panelPosProp,
+  onPanelPosChange,
 }: TerrainFieldTextureDebugProps) {
-  const { showUI } = useExamplesCanvas();
+  const { showUI, showControls } = useExamplesCanvas();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const infoRef = useRef<DebugInfo>({
     backend: "n/a",
@@ -72,7 +76,9 @@ export function TerrainFieldTextureDebug({
   const [selectedTileIndex, setSelectedTileIndex] = useState<number | null>(
     null,
   );
-  const [panelPos, setPanelPos] = useState({ x: 18, y: 18 });
+  const [panelPosLocal, setPanelPosLocal] = useState({ x: 18, y: 18 });
+  const panelPos = panelPosProp ?? panelPosLocal;
+  const setPanelPos = onPanelPosChange ?? setPanelPosLocal;
   const [canvasSize, setCanvasSize] = useState(360);
   const [modalPos, setModalPos] = useState<{ x: number; y: number } | null>(
     null,
@@ -355,8 +361,16 @@ export function TerrainFieldTextureDebug({
         });
       } else if (draggingRef.current.target === "resize") {
         const delta = Math.max(dx, dy);
-        const maxSize = Math.min(window.innerWidth * 0.8, window.innerHeight * 0.8);
-        setCanvasSize(Math.max(120, Math.min(maxSize, draggingRef.current.startSize + delta)));
+        const maxSize = Math.min(
+          window.innerWidth * 0.8,
+          window.innerHeight * 0.8,
+        );
+        setCanvasSize(
+          Math.max(
+            120,
+            Math.min(maxSize, draggingRef.current.startSize + delta),
+          ),
+        );
       }
     }
 
@@ -554,7 +568,8 @@ export function TerrainFieldTextureDebug({
     return tileIndex;
   }
 
-  if (!showUI) return null;
+  const visible = showUI && !showControls;
+  if (!visible) return null;
 
   const info = infoRef.current;
 
@@ -590,7 +605,7 @@ export function TerrainFieldTextureDebug({
           {onClose && (
             <button
               type="button"
-              className="flex items-center justify-center w-4 h-4 rounded hover:bg-white/15 text-white/50 hover:text-white/90 transition-colors"
+              className="cursor-pointer flex items-center justify-center w-4 h-4 rounded hover:bg-white/15 text-white/50 hover:text-white/90 transition-colors"
               onClick={(e) => {
                 e.stopPropagation();
                 onClose();
@@ -618,7 +633,7 @@ export function TerrainFieldTextureDebug({
         <button
           type="button"
           onClick={() => setTab("all")}
-          className={`px-2 py-0.5 text-[10px] rounded border ${
+          className={`cursor-pointer px-2 py-0.5 text-[10px] rounded border ${
             tab === "all"
               ? "bg-white/20 border-white/25 text-white"
               : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
@@ -629,7 +644,7 @@ export function TerrainFieldTextureDebug({
         <button
           type="button"
           onClick={() => setTab("height")}
-          className={`px-2 py-0.5 text-[10px] rounded border ${
+          className={`cursor-pointer px-2 py-0.5 text-[10px] rounded border ${
             tab === "height"
               ? "bg-white/20 border-white/25 text-white"
               : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
@@ -640,7 +655,7 @@ export function TerrainFieldTextureDebug({
         <button
           type="button"
           onClick={() => setTab("normal")}
-          className={`px-2 py-0.5 text-[10px] rounded border ${
+          className={`cursor-pointer px-2 py-0.5 text-[10px] rounded border ${
             tab === "normal"
               ? "bg-white/20 border-white/25 text-white"
               : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
@@ -718,7 +733,7 @@ export function TerrainFieldTextureDebug({
     </div>
   );
   const modal =
-    selectedTileIndex != null ? (
+    selectedTileIndex != null && modalPos != null ? (
       <div
         className="fixed inset-0 z-50 bg-black/70"
         onClick={() => setSelectedTileIndex(null)}
@@ -751,10 +766,22 @@ export function TerrainFieldTextureDebug({
             </div>
             <button
               type="button"
-              className="px-2 py-0.5 text-[10px] rounded border bg-white/5 border-white/15 text-white/75 hover:bg-white/10"
+              className="cursor-pointer flex items-center justify-center w-4 h-4 rounded hover:bg-white/15 text-white/50 hover:text-white/90 transition-colors"
               onClick={() => setSelectedTileIndex(null)}
+              aria-label="Close"
             >
-              close
+              <svg
+                width="8"
+                height="8"
+                viewBox="0 0 8 8"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
+                <line x1="1" y1="1" x2="7" y2="7" />
+                <line x1="7" y1="1" x2="1" y2="7" />
+              </svg>
             </button>
           </div>
 
@@ -769,15 +796,27 @@ export function TerrainFieldTextureDebug({
           <div className="flex items-center justify-between mt-2">
             <button
               type="button"
-              className="px-2 py-1 text-[10px] rounded border bg-white/5 border-white/15 text-white/75 hover:bg-white/10"
+              className="cursor-pointer flex items-center justify-center w-6 h-6 rounded hover:bg-white/15 text-white/50 hover:text-white/90 transition-colors"
               onClick={() => {
                 const total = Math.max(1, info.tileCount);
                 setSelectedTileIndex((prev) =>
                   prev == null ? 0 : (prev - 1 + total) % total,
                 );
               }}
+              aria-label="Previous tile"
             >
-              prev
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="7,1 3,5 7,9" />
+              </svg>
             </button>
             <div
               className="text-[10px] text-white/70"
@@ -787,26 +826,40 @@ export function TerrainFieldTextureDebug({
             </div>
             <button
               type="button"
-              className="px-2 py-1 text-[10px] rounded border bg-white/5 border-white/15 text-white/75 hover:bg-white/10"
+              className="cursor-pointer flex items-center justify-center w-6 h-6 rounded hover:bg-white/15 text-white/50 hover:text-white/90 transition-colors"
               onClick={() => {
                 const total = Math.max(1, info.tileCount);
                 setSelectedTileIndex((prev) =>
                   prev == null ? 0 : (prev + 1) % total,
                 );
               }}
+              aria-label="Next tile"
             >
-              next
+              <svg
+                width="10"
+                height="10"
+                viewBox="0 0 10 10"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="3,1 7,5 3,9" />
+              </svg>
             </button>
           </div>
         </div>
       </div>
     ) : null;
 
-  const content = (
+  if (!portalTarget) return null;
+
+  return createPortal(
     <>
       {panel}
       {modal}
-    </>
+    </>,
+    portalTarget,
   );
-  return portalTarget ? createPortal(content, portalTarget) : content;
 }

@@ -1,7 +1,15 @@
 "use client";
 
 import { LoadingBar } from "@/components/LoadingBar/LoadingBar";
-import { Eye, EyeOff, Maximize, Minimize } from "lucide-react";
+import { levaTheme } from "@/lib/leva.theme";
+import { Leva } from "leva";
+import {
+  Eye,
+  EyeOff,
+  Maximize,
+  Minimize,
+  SlidersHorizontal,
+} from "lucide-react";
 import {
   createContext,
   useCallback,
@@ -17,11 +25,14 @@ interface ExamplesCanvasContextValue {
   showUI: boolean;
   /** Whether the canvas is in fullscreen mode */
   isFullscreen: boolean;
+  /** Whether the controls panel is open */
+  showControls: boolean;
 }
 
 const ExamplesCanvasContext = createContext<ExamplesCanvasContextValue>({
   showUI: true,
   isFullscreen: false,
+  showControls: false,
 });
 
 /**
@@ -46,10 +57,14 @@ interface ExamplesCanvasProps {
  * - Fullscreen toggle button
  * - UI visibility toggle button (for hiding example overlays)
  */
-export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps) {
+export function ExamplesCanvas({
+  children,
+  className = "",
+}: ExamplesCanvasProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isFakeFullscreen, setIsFakeFullscreen] = useState(false);
   const [showUI, setShowUI] = useState(true);
+  const [showControls, setShowControls] = useState(false);
   const [fullscreenSupported, setFullscreenSupported] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -142,6 +157,10 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
     setShowUI((prev) => !prev);
   }, []);
 
+  const toggleControls = useCallback(() => {
+    setShowControls((prev) => !prev);
+  }, []);
+
   // Listen for fullscreen changes (with vendor prefixes)
   useEffect(() => {
     const handleFullscreenChange = () => {
@@ -163,9 +182,18 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
 
     return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
-      document.removeEventListener("webkitfullscreenchange", handleFullscreenChange);
-      document.removeEventListener("mozfullscreenchange", handleFullscreenChange);
-      document.removeEventListener("MSFullscreenChange", handleFullscreenChange);
+      document.removeEventListener(
+        "webkitfullscreenchange",
+        handleFullscreenChange,
+      );
+      document.removeEventListener(
+        "mozfullscreenchange",
+        handleFullscreenChange,
+      );
+      document.removeEventListener(
+        "MSFullscreenChange",
+        handleFullscreenChange,
+      );
     };
   }, []);
 
@@ -173,7 +201,10 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Only handle shortcuts when the container is focused or in fullscreen
-      if (!containerRef.current?.contains(document.activeElement) && !isInFullscreen) {
+      if (
+        !containerRef.current?.contains(document.activeElement) &&
+        !isInFullscreen
+      ) {
         return;
       }
 
@@ -189,6 +220,12 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
         toggleUI();
       }
 
+      // 'C' for controls toggle
+      if (e.key === "c" || e.key === "C") {
+        e.preventDefault();
+        toggleControls();
+      }
+
       // Escape to exit fake fullscreen
       if (e.key === "Escape" && isFakeFullscreen) {
         setIsFakeFullscreen(false);
@@ -199,11 +236,18 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isInFullscreen, isFakeFullscreen, toggleFullscreen, toggleUI]);
+  }, [
+    isInFullscreen,
+    isFakeFullscreen,
+    toggleFullscreen,
+    toggleUI,
+    toggleControls,
+  ]);
 
   const contextValue: ExamplesCanvasContextValue = {
     showUI,
     isFullscreen: isInFullscreen,
+    showControls,
   };
 
   const fakeFullscreenStyles: React.CSSProperties = isFakeFullscreen
@@ -242,7 +286,7 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
           <button
             type="button"
             onClick={toggleUI}
-            className={`p-1.5 md:p-2 rounded-md md:rounded-lg transition-all backdrop-blur-sm border ${
+            className={`cursor-pointer p-1.5 md:p-2 rounded-md md:rounded-lg transition-all backdrop-blur-sm border ${
               showUI
                 ? "bg-black/50 hover:bg-black/70 text-white border-white/10"
                 : "bg-white/90 hover:bg-white text-black border-black/10"
@@ -261,7 +305,7 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
           <button
             type="button"
             onClick={toggleFullscreen}
-            className="p-1.5 md:p-2 rounded-md md:rounded-lg bg-black/50 hover:bg-black/70 text-white transition-colors backdrop-blur-sm border border-white/10"
+            className="cursor-pointer p-1.5 md:p-2 rounded-md md:rounded-lg bg-black/50 hover:bg-black/70 text-white transition-colors backdrop-blur-sm border border-white/10"
             aria-label={isInFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
             title={isInFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}
           >
@@ -271,6 +315,31 @@ export function ExamplesCanvas({ children, className = "" }: ExamplesCanvasProps
               <Maximize className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
             )}
           </button>
+        </div>
+
+        {/* Controls panel - top right */}
+        <div className="absolute top-2 right-2 md:top-4 md:right-4 z-20 flex flex-col items-end gap-1.5">
+          <button
+            type="button"
+            onClick={toggleControls}
+            className="cursor-pointer p-1.5 md:p-2 rounded-md md:rounded-lg bg-black/50 hover:bg-black/70 text-white transition-colors backdrop-blur-sm border border-white/10"
+            aria-label={showControls ? "Hide controls" : "Show controls"}
+            title={showControls ? "Hide controls (C)" : "Show controls (C)"}
+          >
+            <SlidersHorizontal
+              className="w-4 h-4 md:w-5 md:h-5"
+              aria-hidden="true"
+            />
+          </button>
+          <div
+            className={`w-[220px] overflow-hidden rounded-md border bg-black/45 backdrop-blur-sm transition-all duration-200 ease-in-out ${
+              showControls
+                ? "max-h-[70vh] opacity-100 border-white/10"
+                : "max-h-0 opacity-0 border-transparent pointer-events-none"
+            }`}
+          >
+            <Leva fill flat theme={levaTheme} titleBar={false} hideCopyButton />
+          </div>
         </div>
       </div>
     </ExamplesCanvasContext.Provider>
