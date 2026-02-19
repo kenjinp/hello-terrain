@@ -11,6 +11,7 @@ import {
   int,
   ivec2,
   ivec3,
+  texture,
   textureLoad,
   textureStore,
   uvec3,
@@ -39,6 +40,8 @@ export interface TerrainFieldStorage {
   readonly texture: StorageArrayTexture | StorageTexture;
   uv(ix: Node, iy: Node, tileIndex: Node): Node;
   texel(ix: Node, iy: Node, tileIndex: Node): Node;
+  /** UV-based filtered sample. `u, v` in [0, 1] tile-local space. */
+  sample(u: Node, v: Node, tileIndex: Node): Node;
   resize(width: number, height: number, tileCount: number): void;
 }
 
@@ -75,12 +78,12 @@ export function ArrayTextureBackend(
 ): TerrainFieldStorage {
   let currentEdgeVertexCount = edgeVertexCount;
   let currentTileCount = tileCount;
-  const texture = new StorageArrayTexture(
+  const tex = new StorageArrayTexture(
     edgeVertexCount,
     edgeVertexCount,
     tileCount,
   );
-  configureStorageTexture(texture, options.format, options.filter);
+  configureStorageTexture(tex, options.format, options.filter);
 
   return {
     backendType: "array-texture",
@@ -90,18 +93,21 @@ export function ArrayTextureBackend(
     get tileCount() {
       return currentTileCount;
     },
-    texture,
+    texture: tex,
     uv(ix: Node, iy: Node, _tileIndex: Node): Node {
       return vec2(ix.toFloat(), iy.toFloat());
     },
     texel(ix: Node, iy: Node, tileIndex: Node): Node {
       return ivec3(ix, iy, tileIndex);
     },
+    sample(u: Node, v: Node, tileIndex: Node): Node {
+      return texture(tex, vec2(u, v)).depth(int(tileIndex));
+    },
     resize(width: number, height: number, nextTileCount: number): void {
       currentEdgeVertexCount = width;
       currentTileCount = nextTileCount;
-      texture.setSize(width, height, nextTileCount);
-      texture.needsUpdate = true;
+      tex.setSize(width, height, nextTileCount);
+      tex.needsUpdate = true;
     },
   };
 }
@@ -132,8 +138,8 @@ export function AtlasBackend(
   let currentTileCount = tileCount;
   let tilesPerRow = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
   const atlasSize = tilesPerRow * edgeVertexCount;
-  const texture = new StorageTexture(atlasSize, atlasSize);
-  configureStorageTexture(texture, options.format, options.filter);
+  const tex = new StorageTexture(atlasSize, atlasSize);
+  configureStorageTexture(tex, options.format, options.filter);
 
   return {
     backendType: "atlas",
@@ -143,7 +149,7 @@ export function AtlasBackend(
     get tileCount() {
       return currentTileCount;
     },
-    texture,
+    texture: tex,
     uv(ix: Node, iy: Node, tileIndex: Node): Node {
       const { atlasX, atlasY } = atlasCoord(
         tilesPerRow,
@@ -168,15 +174,25 @@ export function AtlasBackend(
       );
       return ivec2(atlasX, atlasY);
     },
+    sample(u: Node, v: Node, tileIndex: Node): Node {
+      const tile = int(tileIndex);
+      const tilesPerRowNode = int(tilesPerRow);
+      const col = tile.mod(tilesPerRowNode);
+      const row = tile.div(tilesPerRowNode);
+      const invTilesPerRow = float(1 / tilesPerRow);
+      const atlasU = col.toFloat().add(u).mul(invTilesPerRow);
+      const atlasV = row.toFloat().add(v).mul(invTilesPerRow);
+      return texture(tex, vec2(atlasU, atlasV));
+    },
     resize(width: number, height: number, nextTileCount: number): void {
       currentEdgeVertexCount = width;
       currentTileCount = nextTileCount;
       tilesPerRow = Math.max(1, Math.ceil(Math.sqrt(nextTileCount)));
       const nextAtlasSize = tilesPerRow * width;
-      const image = texture.image as { width: number; height: number };
+      const image = tex.image as { width: number; height: number };
       image.width = nextAtlasSize;
       image.height = nextAtlasSize;
-      texture.needsUpdate = true;
+      tex.needsUpdate = true;
     },
   };
 }
@@ -192,13 +208,12 @@ export function Texture3DBackend(
 ): TerrainFieldStorage {
   let currentEdgeVertexCount = edgeVertexCount;
   let currentTileCount = tileCount;
-  // Temporary implementation: map to array-texture backend semantics.
-  const texture = new StorageArrayTexture(
+  const tex = new StorageArrayTexture(
     edgeVertexCount,
     edgeVertexCount,
     tileCount,
   );
-  configureStorageTexture(texture, options.format, options.filter);
+  configureStorageTexture(tex, options.format, options.filter);
 
   return {
     backendType: "texture-3d",
@@ -208,18 +223,21 @@ export function Texture3DBackend(
     get tileCount() {
       return currentTileCount;
     },
-    texture,
+    texture: tex,
     uv(ix: Node, iy: Node, _tileIndex: Node): Node {
       return vec2(ix.toFloat(), iy.toFloat());
     },
     texel(ix: Node, iy: Node, tileIndex: Node): Node {
       return ivec3(ix, iy, tileIndex);
     },
+    sample(u: Node, v: Node, tileIndex: Node): Node {
+      return texture(tex, vec2(u, v)).depth(int(tileIndex));
+    },
     resize(width: number, height: number, nextTileCount: number): void {
       currentEdgeVertexCount = width;
       currentTileCount = nextTileCount;
-      texture.setSize(width, height, nextTileCount);
-      texture.needsUpdate = true;
+      tex.setSize(width, height, nextTileCount);
+      tex.needsUpdate = true;
     },
   };
 }
@@ -323,8 +341,40 @@ export function loadTerrainFieldNormal(
   iy: Node,
   tileIndex: Node,
 ): Node {
-  const sample = loadTerrainField(storage, ix, iy, tileIndex);
-  return vec2(sample.g, sample.b);
+  const raw = loadTerrainField(storage, ix, iy, tileIndex);
+  return vec2(raw.g, raw.b);
+}
+
+/**
+ * UV-based filtered sample. `u, v` are in [0, 1] tile-local space.
+ * Respects the filter mode (nearest / linear) set on the storage.
+ */
+export function sampleTerrainField(
+  storage: TerrainFieldStorage,
+  u: Node,
+  v: Node,
+  tileIndex: Node,
+): Node {
+  return storage.sample(u, v, tileIndex);
+}
+
+export function sampleTerrainFieldElevation(
+  storage: TerrainFieldStorage,
+  u: Node,
+  v: Node,
+  tileIndex: Node,
+): Node {
+  return sampleTerrainField(storage, u, v, tileIndex).r;
+}
+
+export function sampleTerrainFieldNormal(
+  storage: TerrainFieldStorage,
+  u: Node,
+  v: Node,
+  tileIndex: Node,
+): Node {
+  const raw = sampleTerrainField(storage, u, v, tileIndex);
+  return vec2(raw.g, raw.b);
 }
 
 export function packTerrainFieldSample(
