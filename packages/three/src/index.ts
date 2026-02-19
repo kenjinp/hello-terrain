@@ -1,7 +1,7 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
 export { TerrainMesh } from "./mesh/TerrainMesh";
 export { terrainGraph, terrainTasks } from "./tasks/graph";
-export type { TerrainTasks } from "./tasks/graph.types";
+export type { TerrainTasks, TerrainGraph } from "./tasks/graph.types";
 
 export {
   rootSize,
@@ -19,6 +19,7 @@ export {
 export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
 export { getDeviceComputeLimits } from "./gpu/deviceLimits";
+export * from "./gpu/terrainFieldStorage";
 export { createComputePipelineTasks } from "./tasks/compute.task";
 
 export * from "./tsl/materials";

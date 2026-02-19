@@ -1,8 +1,12 @@
 import { task } from "@hello-terrain/work";
-import { Fn, float, int, packHalf2x16, storage, vec2, vec3 } from "three/tsl";
-import type { Node } from "three/webgpu";
-import { StorageBufferAttribute } from "three/webgpu";
+import { Fn, float, int, vec2, vec3 } from "three/tsl";
+import type { Node, WebGPURenderer } from "three/webgpu";
 import type { ComputePipeline } from "../gpu/compute";
+import {
+  createTerrainFieldStorage,
+  packTerrainFieldSample,
+  storeTerrainField,
+} from "../gpu/terrainFieldStorage";
 import {
   elevationFieldStageTask,
   createElevationFieldContextTask,
@@ -13,24 +17,19 @@ import { createUniformsTask } from "./uniforms/uniforms.task";
 
 // ── Storage buffer context ──────────────────────────────────────────────
 
-export const createNormalFieldContextTask = task((get, work) => {
-  const edgeVertexCount = get(innerTileSegments) + 3;
-  const verticesPerNode = edgeVertexCount * edgeVertexCount;
-  const totalElements = get(maxNodes) * verticesPerNode;
-  return work(() => {
-    const data = new Uint32Array(totalElements);
-    // Each element is a single u32 holding two packed f16 values (normal.x, normal.z).
-    // The Y (up) component is reconstructed at read-time: ny = sqrt(1 - nx*nx - nz*nz).
-    const attribute = new StorageBufferAttribute(data, 1);
-    const node = storage(attribute, "uint", totalElements);
-
-    return {
-      data,
-      attribute,
-      node,
-    };
-  });
-}).displayName("createNormalFieldContextTask");
+export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
+  (get, work, { resources }) => {
+    const edgeVertexCount = get(innerTileSegments) + 3;
+    const maxNodesValue = get(maxNodes);
+    return work(() =>
+      createTerrainFieldStorage(
+        edgeVertexCount,
+        maxNodesValue,
+        resources?.renderer,
+      ),
+    );
+  },
+).displayName("createTerrainFieldTextureTask");
 
 /**
  * Build a TSL function that computes the surface normal at a grid point
@@ -98,14 +97,13 @@ function createNormalFromElevationField(
  *
  * Accumulates the upstream elevation pipeline via `get(elevationFieldStageTask)`.
  */
-export const normalFieldStageTask = task((get, work) => {
+export const terrainFieldStageTask = task((get, work) => {
   const upstream = get(elevationFieldStageTask);
   const elevationFieldContext = get(createElevationFieldContextTask);
-  const normalFieldContext = get(createNormalFieldContextTask);
+  const terrainFieldStorage = get(createTerrainFieldTextureTask);
   const tileEdgeVertexCount = get(innerTileSegments) + 3;
   const tile = get(tileNodesTask);
   const uniforms = get(createUniformsTask);
-  // const segments = get(innerTileSegments);
 
   return work((): ComputePipeline => {
     const computeNormal = createNormalFromElevationField(
@@ -118,8 +116,9 @@ export const normalFieldStageTask = task((get, work) => {
         const ix = int(localCoordinates.x);
         const iy = int(localCoordinates.y);
         const tileSize = tile.tileSize(nodeIndex);
+        const height = elevationFieldContext.node.element(globalVertexIndex);
 
-        // Compute the XZ normal components from the elevation field
+        // Compute normal components from the elevation field and pack into RGBA.
         const normalXZ = computeNormal(
           nodeIndex,
           tileSize,
@@ -128,11 +127,14 @@ export const normalFieldStageTask = task((get, work) => {
           uniforms.uElevationScale,
         );
 
-        // Pack two f16 values into a single u32 and write to the buffer
-        normalFieldContext.node
-          .element(globalVertexIndex)
-          .assign(packHalf2x16(normalXZ));
+        storeTerrainField(
+          terrainFieldStorage,
+          ix,
+          iy,
+          nodeIndex,
+          packTerrainFieldSample(height, normalXZ),
+        );
       },
     ];
   });
-}).displayName("normalFieldStageTask");
+}).displayName("terrainFieldStageTask");

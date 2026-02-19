@@ -18,11 +18,12 @@ import {
   rootSize,
   skirtScale,
   TerrainGeometry,
+  TerrainGraph,
   TerrainMesh,
   updateUniformsTask,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { graph, Graph } from "@hello-terrain/work";
+import { graph } from "@hello-terrain/work";
 import { Bounds, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
@@ -36,7 +37,7 @@ extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
 type TerrainMeshSceneImplProps = {
-  g: Graph;
+  g: TerrainGraph;
 };
 
 function u32ToColor(indexNode: Node) {
@@ -135,7 +136,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     });
   }, [g]);
 
-  useFrame(async ({ camera }) => {
+  useFrame(async ({ camera, gl }) => {
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -151,7 +152,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     }
 
     // Where the magic happens :)
-    await g.run();
+    await g.run({
+      resources: {
+        renderer: gl as unknown as THREE.WebGPURenderer,
+      },
+    });
   });
 
   return (

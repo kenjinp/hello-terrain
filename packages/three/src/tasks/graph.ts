@@ -7,11 +7,11 @@ import {
   elevationFieldStageTask,
 } from "./elevation-field.task";
 import { instanceIdTask } from "./instanceId.task";
-import type { TerrainTasks } from "./graph.types";
+import type { TerrainGraph, TerrainTasks } from "./graph.types";
 import {
-  createNormalFieldContextTask,
-  normalFieldStageTask,
-} from "./normal-field.task";
+  createTerrainFieldTextureTask,
+  terrainFieldStageTask,
+} from "./terrain-field.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
@@ -27,7 +27,7 @@ import {
 
 export { instanceIdTask } from "./instanceId.task";
 
-export function terrainGraph() {
+export function terrainGraph(): TerrainGraph {
   return graph<{ renderer: WebGPURenderer }>()
     .add(instanceIdTask)
     .add(quadtreeConfigTask)
@@ -40,9 +40,9 @@ export function terrainGraph() {
     .add(positionNodeTask)
     .add(createElevationFieldContextTask)
     .add(tileNodesTask)
-    .add(createNormalFieldContextTask)
+    .add(createTerrainFieldTextureTask)
     .add(elevationFieldStageTask)
-    .add(normalFieldStageTask)
+    .add(terrainFieldStageTask)
     .add(compileComputeTask)
     .add(executeComputeTask);
 }
@@ -60,9 +60,9 @@ export const terrainTasks = {
   positionNode: positionNodeTask,
   createElevationFieldContext: createElevationFieldContextTask,
   createTileNodes: tileNodesTask,
-  createNormalFieldContext: createNormalFieldContextTask,
+  createTerrainFieldTexture: createTerrainFieldTextureTask,
   elevationFieldStage: elevationFieldStageTask,
-  normalFieldStage: normalFieldStageTask,
+  terrainFieldStage: terrainFieldStageTask,
   compileCompute: compileComputeTask,
   executeCompute: executeComputeTask,
 } as const satisfies TerrainTasks;

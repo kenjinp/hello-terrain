@@ -37,8 +37,20 @@ export type GraphEvent =
   | { type: "run:start"; runId: string; at: number }
   | { type: "run:finish"; runId: string; at: number; status: RunStatus }
   | { type: "task:cacheHit"; runId: string; taskId: string; at: number }
-  | { type: "task:start"; runId: string; taskId: string; at: number; lane: Lane }
-  | { type: "task:finish"; runId: string; taskId: string; at: number; durationMs: number }
+  | {
+      type: "task:start";
+      runId: string;
+      taskId: string;
+      at: number;
+      lane: Lane;
+    }
+  | {
+      type: "task:finish";
+      runId: string;
+      taskId: string;
+      at: number;
+      durationMs: number;
+    }
   | {
       type: "task:error";
       runId: string;
@@ -51,7 +63,9 @@ export type GraphEvent =
 
 export type GraphEventType = GraphEvent["type"];
 
-export type GraphEventPrefix = GraphEventType extends `${infer P}:${string}` ? P : never;
+export type GraphEventPrefix = GraphEventType extends `${infer P}:${string}`
+  ? P
+  : never;
 
 /** Wildcard subscription like `"task:*"` */
 export type GraphEventPattern = `${GraphEventPrefix}:*`;
@@ -59,13 +73,17 @@ export type GraphEventPattern = `${GraphEventPrefix}:*`;
 /** Exact event type or wildcard subscription like `"task:*"` */
 export type GraphEventSelector = GraphEventType | GraphEventPattern;
 
-export type GraphEventOfType<T extends GraphEventType> = Extract<GraphEvent, { type: T }>;
+export type GraphEventOfType<T extends GraphEventType> = Extract<
+  GraphEvent,
+  { type: T }
+>;
 
-export type GraphEventOfSelector<S extends GraphEventSelector> = S extends GraphEventType
-  ? GraphEventOfType<S>
-  : S extends `${infer P}:*`
-    ? Extract<GraphEvent, { type: `${P}:${string}` }>
-    : GraphEvent;
+export type GraphEventOfSelector<S extends GraphEventSelector> =
+  S extends GraphEventType
+    ? GraphEventOfType<S>
+    : S extends `${infer P}:*`
+      ? Extract<GraphEvent, { type: `${P}:${string}` }>
+      : GraphEvent;
 
 /**
  * Report summarizing the outcome of a graph run.
@@ -87,12 +105,11 @@ export interface RunReport {
   cacheHits: number;
 }
 
-export interface RunOptions<L extends string, Res> {
+export type RunOptions<L extends string, Res> = {
   targets?: readonly TaskRef<any>[];
   laneConcurrency?: Partial<Record<L, number>>;
   signal?: AbortSignal;
-  resources?: Res;
-}
+} & (unknown extends Res ? { resources?: Res } : { resources: Res });
 
 export interface Graph<L extends Lane = Lane, Res = unknown> {
   on(cb: GraphEventCallback): Unsubscribe;
@@ -100,7 +117,11 @@ export interface Graph<L extends Lane = Lane, Res = unknown> {
     selector: S,
     cb: (e: GraphEventOfSelector<S>) => void,
   ): Unsubscribe;
-  run(options?: RunOptions<L, Res>): Promise<RunReport>;
+  run(
+    ...args: unknown extends Res
+      ? [options?: RunOptions<L, Res>]
+      : [options: RunOptions<L, Res>]
+  ): Promise<RunReport>;
   dispose(): void;
   inspect(options?: InspectOptions): InspectResult;
   get<T>(taskRef: TaskRef<T>): T;

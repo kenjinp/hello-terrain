@@ -2,16 +2,20 @@ import type { TaskRef } from "@hello-terrain/work";
 import { task } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
 import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
-import { normalFieldStageTask } from "./normal-field.task";
+import { terrainFieldStageTask } from "./terrain-field.task";
 import { innerTileSegments } from "./params";
 import { leafGpuBufferTask } from "./quadtree.task";
 
-/** Default compile task — uses normalFieldStageTask as the leaf. */
+/** Default compile task — uses terrainFieldStageTask as the leaf. */
 export const compileComputeTask = task((get, work) => {
-  const pipeline = get(normalFieldStageTask);
+  const pipeline = get(terrainFieldStageTask);
   const edgeVertexCount = get(innerTileSegments) + 3;
 
-  return work(() => compileComputePipeline(pipeline, edgeVertexCount, {}));
+  return work(() =>
+    compileComputePipeline(pipeline, edgeVertexCount, {
+      preferSingleKernelWhenPossible: false,
+    }),
+  );
 }).displayName("compileComputeTask");
 
 /** Default execute task — dispatches the compiled kernel. */
@@ -57,7 +61,11 @@ export function createComputePipelineTasks(
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
     const edgeVertexCount = get(innerTileSegments) + 3;
-    return work(() => compileComputePipeline(pipeline, edgeVertexCount, {}));
+    return work(() =>
+      compileComputePipeline(pipeline, edgeVertexCount, {
+        preferSingleKernelWhenPossible: false,
+      }),
+    );
   }).displayName("compileComputeTask");
 
   const execute = task<{ renderer: WebGPURenderer }>(

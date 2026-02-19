@@ -21,7 +21,7 @@ import {
   type ElevationCallback,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { Graph, task } from "@hello-terrain/work";
+import { Graph, task, type TaskRef } from "@hello-terrain/work";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls } from "leva";
@@ -52,9 +52,9 @@ extend({ TerrainGeometry, TerrainMesh });
 // ── TSL noise helpers ──────────────────────────────────────
 
 const randomGradient = Fn(([p]: [any]) => {
-  const angle = fract(
-    sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453),
-  ).mul(Math.PI * 2);
+  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
+    Math.PI * 2,
+  );
   return vec2(cos(angle), sin(angle));
 });
 
@@ -95,9 +95,10 @@ const fbm = Fn(([pos_immutable]: [any]) => {
 
 type FbmTerrainSceneImplProps = {
   g: Graph;
+  rendererTask: TaskRef<THREE.WebGPURenderer | null>;
 };
 
-const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
+const FbmTerrainSceneImpl = ({ g, rendererTask }: FbmTerrainSceneImplProps) => {
   const controls = useControls("FBM Terrain", {
     rootSize: {
       value: 128,
@@ -114,7 +115,7 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
       label: "max level",
     },
     maxNodes: {
-      value: 1028,
+      value: 512,
       min: 128,
       max: 2048,
       step: 1,
@@ -133,6 +134,13 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
       max: 100,
       step: 1,
       label: "elevation scale",
+    },
+    innerTileSegments: {
+      value: 13,
+      min: 3,
+      max: 64,
+      step: 1,
+      label: "inner tile segments",
     },
     noiseScale: {
       value: 0.05,
@@ -155,10 +163,8 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
     g.add(
       task((get, work) => {
         const leafSet = get(quadtreeUpdateTask);
-        const positionNode = get(positionNodeTask);
         return work(() => {
           const mesh = meshRef.current;
-          const material = materialRef.current;
 
           if (
             mesh &&
@@ -168,7 +174,14 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
             mesh.count = leafSet.count;
             mesh.instanceMatrix.needsUpdate = true;
           }
-
+        });
+      }).displayName("applyCount"),
+    );
+    g.add(
+      task((get, work) => {
+        const positionNode = get(positionNodeTask);
+        return work(() => {
+          const material = materialRef.current;
           if (material && positionNode) {
             material.positionNode = positionNode;
 
@@ -191,7 +204,7 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
         });
       }).displayName("applyPositionNodeTask"),
     );
-  }, [g]);
+  }, [g, rendererTask]);
 
   useEffect(() => {
     const noiseScaleValue = controls.noiseScale;
@@ -224,6 +237,10 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
     g.set(skirtScale, () => controls.skirtScale);
   }, [controls.skirtScale]);
 
+  useEffect(() => {
+    g.set(innerTileSegments, () => controls.innerTileSegments);
+  }, [controls.innerTileSegments]);
+
   useFrame(async ({ camera, gl }) => {
     const cameraHysteresis = 0.05;
     if (
@@ -250,7 +267,7 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
     <>
       <terrainMesh
         ref={meshRef}
-        innerTileSegments={innerTileSegments.get()}
+        innerTileSegments={controls.innerTileSegments}
         maxNodes={controls.maxNodes}
       >
         <meshBasicNodeMaterial
@@ -264,13 +281,24 @@ const FbmTerrainSceneImpl = ({ g }: FbmTerrainSceneImplProps) => {
 
 const FbmTerrainScene = () => {
   const g = useMemo(() => terrainGraph(), []);
+  const rendererTask = useMemo(
+    () =>
+      task<{ renderer: THREE.WebGPURenderer }>((_get, work, { resources }) =>
+        work(() => resources?.renderer ?? null),
+      ).displayName("debugRendererTask"),
+    [],
+  );
+
+  useEffect(() => {
+    g.add(rendererTask);
+  }, [g, rendererTask]);
 
   return (
     <ExamplesCanvas>
       <div className="absolute z-30 bottom-2 right-2 md:bottom-4 md:right-4 flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
-          <TerrainTileDebug graph={g} />
+          <TerrainTileDebug graph={g} rendererTask={rendererTask} />
           <FpsDebug />
         </div>
       </div>
@@ -293,7 +321,7 @@ const FbmTerrainScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <FbmTerrainSceneImpl g={g} />
+        <FbmTerrainSceneImpl g={g} rendererTask={rendererTask} />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>
