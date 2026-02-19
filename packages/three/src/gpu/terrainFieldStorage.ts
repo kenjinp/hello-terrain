@@ -20,7 +20,10 @@ import {
 import type { Node, WebGPURenderer } from "three/webgpu";
 import { StorageArrayTexture, StorageTexture } from "three/webgpu";
 
-export type TerrainFieldStorageBackendType = "array-texture" | "atlas" | "texture-3d";
+export type TerrainFieldStorageBackendType =
+  | "array-texture"
+  | "atlas"
+  | "texture-3d";
 export type TerrainFieldStorageFormat = "rgba16float" | "rgba32float";
 
 export type TerrainFieldStorageOptions = {
@@ -72,7 +75,11 @@ export function ArrayTextureBackend(
 ): TerrainFieldStorage {
   let currentEdgeVertexCount = edgeVertexCount;
   let currentTileCount = tileCount;
-  const texture = new StorageArrayTexture(edgeVertexCount, edgeVertexCount, tileCount);
+  const texture = new StorageArrayTexture(
+    edgeVertexCount,
+    edgeVertexCount,
+    tileCount,
+  );
   configureStorageTexture(texture, options.format, options.filter);
 
   return {
@@ -186,7 +193,11 @@ export function Texture3DBackend(
   let currentEdgeVertexCount = edgeVertexCount;
   let currentTileCount = tileCount;
   // Temporary implementation: map to array-texture backend semantics.
-  const texture = new StorageArrayTexture(edgeVertexCount, edgeVertexCount, tileCount);
+  const texture = new StorageArrayTexture(
+    edgeVertexCount,
+    edgeVertexCount,
+    tileCount,
+  );
   configureStorageTexture(texture, options.format, options.filter);
 
   return {
@@ -250,7 +261,8 @@ export function createTerrainFieldStorage(
 
   const DEFAULT_MAX_TEXTURE_ARRAY_LAYERS = 256;
   const maxLayers = renderer
-    ? (tryGetDeviceLimits(renderer).maxTextureArrayLayers ?? DEFAULT_MAX_TEXTURE_ARRAY_LAYERS)
+    ? (tryGetDeviceLimits(renderer).maxTextureArrayLayers ??
+      DEFAULT_MAX_TEXTURE_ARRAY_LAYERS)
     : DEFAULT_MAX_TEXTURE_ARRAY_LAYERS;
   if (tileCount > maxLayers) {
     return AtlasBackend(edgeVertexCount, tileCount, { filter, format });
@@ -276,11 +288,7 @@ export function storeTerrainField(
       value,
     );
   }
-  return textureStore(
-    storage.texture,
-    storage.texel(ix, iy, tileIndex),
-    value,
-  );
+  return textureStore(storage.texture, storage.texel(ix, iy, tileIndex), value);
 }
 
 export function loadTerrainField(
@@ -289,8 +297,13 @@ export function loadTerrainField(
   iy: Node,
   tileIndex: Node,
 ): Node {
-  if (storage.backendType === "array-texture" || storage.backendType === "texture-3d") {
-    return textureLoad(storage.texture, ivec2(int(ix), int(iy)), int(0)).depth(int(tileIndex));
+  if (
+    storage.backendType === "array-texture" ||
+    storage.backendType === "texture-3d"
+  ) {
+    return textureLoad(storage.texture, ivec2(int(ix), int(iy)), int(0)).depth(
+      int(tileIndex),
+    );
   }
   return textureLoad(storage.texture, storage.texel(ix, iy, tileIndex), int(0));
 }
@@ -314,6 +327,10 @@ export function loadTerrainFieldNormal(
   return vec2(sample.g, sample.b);
 }
 
-export function packTerrainFieldSample(height: Node, normalXZ: Node, extra: Node = float(0)): Node {
+export function packTerrainFieldSample(
+  height: Node,
+  normalXZ: Node,
+  extra: Node = float(0),
+): Node {
   return vec4(height, normalXZ.x, normalXZ.y, extra);
 }
