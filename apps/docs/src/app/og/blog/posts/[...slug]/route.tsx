@@ -6,9 +6,12 @@ import { notFound } from "next/navigation";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-export const revalidate = false;
+export const revalidate = 86400;
 
-export async function GET(_req: Request, { params }: RouteContext<"/og/blog/posts/[...slug]">) {
+export async function GET(
+  _req: Request,
+  { params }: RouteContext<"/og/blog/posts/[...slug]">,
+) {
   const { slug } = await params;
   // slug = ["hello-world", "image.webp"] → page slugs = ["blog", "posts", "hello-world"]
   const pageSlugs = ["blog", "posts", ...slug.slice(0, -1)];
