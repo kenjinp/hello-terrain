@@ -245,7 +245,7 @@ export function createTerrainFieldStorage(
   renderer?: WebGPURenderer,
   options: TerrainFieldStorageOptions = {},
 ): TerrainFieldStorage {
-  const filter = options.filter ?? "nearest";
+  const filter = options.filter ?? "linear";
   const format = options.format ?? "rgba16float";
   const forcedBackend = options.backend;
 

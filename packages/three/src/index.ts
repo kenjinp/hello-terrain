@@ -13,6 +13,7 @@ export {
   maxLevel,
   quadtreeUpdate,
   surface,
+  terrainFieldFilter,
   elevationFn,
 } from "./tasks/params";
 

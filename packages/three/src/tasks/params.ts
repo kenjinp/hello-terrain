@@ -41,5 +41,8 @@ export const quadtreeUpdate = param<UpdateParams>({
 /** Optional custom terrain surface; defaults to bounded flat surface when null. */
 export const surface = param<Surface | null>(null).displayName("surface");
 
+/** Terrain field texture filter mode. */
+export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayName("terrainFieldFilter");
+
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));

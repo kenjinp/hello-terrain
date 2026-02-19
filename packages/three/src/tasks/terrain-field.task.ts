@@ -12,7 +12,7 @@ import {
   createElevationFieldContextTask,
   tileNodesTask,
 } from "./elevation-field.task";
-import { innerTileSegments, maxNodes } from "./params";
+import { innerTileSegments, maxNodes, terrainFieldFilter } from "./params";
 import { createUniformsTask } from "./uniforms/uniforms.task";
 
 // ── Storage buffer context ──────────────────────────────────────────────
@@ -21,11 +21,13 @@ export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
     const edgeVertexCount = get(innerTileSegments) + 3;
     const maxNodesValue = get(maxNodes);
+    const filter = get(terrainFieldFilter);
     return work(() =>
       createTerrainFieldStorage(
         edgeVertexCount,
         maxNodesValue,
         resources?.renderer,
+        { filter },
       ),
     );
   },
