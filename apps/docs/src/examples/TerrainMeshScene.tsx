@@ -135,7 +135,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     });
   }, [g]);
 
-  useFrame(async ({ camera }) => {
+  useFrame(async ({ camera, gl }) => {
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -151,7 +151,11 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
     }
 
     // Where the magic happens :)
-    await g.run();
+    await g.run({
+      resources: {
+        renderer: gl,
+      },
+    });
   });
 
   return (

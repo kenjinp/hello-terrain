@@ -248,8 +248,11 @@ export function createTerrainFieldStorage(
     return ArrayTextureBackend(edgeVertexCount, tileCount, { filter, format });
   }
 
-  const maxLayers = renderer ? tryGetDeviceLimits(renderer).maxTextureArrayLayers : undefined;
-  if (typeof maxLayers === "number" && tileCount > maxLayers) {
+  const DEFAULT_MAX_TEXTURE_ARRAY_LAYERS = 256;
+  const maxLayers = renderer
+    ? (tryGetDeviceLimits(renderer).maxTextureArrayLayers ?? DEFAULT_MAX_TEXTURE_ARRAY_LAYERS)
+    : DEFAULT_MAX_TEXTURE_ARRAY_LAYERS;
+  if (tileCount > maxLayers) {
     return AtlasBackend(edgeVertexCount, tileCount, { filter, format });
   }
 
@@ -287,7 +290,7 @@ export function loadTerrainField(
   tileIndex: Node,
 ): Node {
   if (storage.backendType === "array-texture" || storage.backendType === "texture-3d") {
-    return textureLoad(storage.texture, ivec3(int(ix), int(iy), int(tileIndex)), int(0));
+    return textureLoad(storage.texture, ivec2(int(ix), int(iy)), int(0)).depth(int(tileIndex));
   }
   return textureLoad(storage.texture, storage.texel(ix, iy, tileIndex), int(0));
 }
