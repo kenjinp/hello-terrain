@@ -16,6 +16,7 @@ import type { ParamRef, ParamSetCallback, ParamSetInput, ParamSubscribeCallback 
  * foo.subscribe((next, prev) => console.log({ next, prev }));
  */
 export function param<T>(initial: T): ParamRef<T> {
+  const initialValue = initial;
   let value = initial;
   let name: string | undefined = undefined;
   const subscriptions = new Set<ParamSubscribeCallback<T>>();
@@ -48,6 +49,16 @@ export function param<T>(initial: T): ParamRef<T> {
           : valueOrCb;
       value = next;
       for (const sub of subscriptions) sub(next, prev);
+      return ref;
+    },
+
+    /**
+     * Resets the parameter back to its initial value and notifies subscribers.
+     */
+    reset() {
+      const prev = value;
+      value = initialValue;
+      for (const sub of subscriptions) sub(value, prev);
       return ref;
     },
 

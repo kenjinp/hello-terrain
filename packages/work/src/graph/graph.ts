@@ -34,7 +34,7 @@ type ParamNodeRuntime = {
   version: number;
   unsubscribe?: Unsubscribe;
   /** When present, the graph owns the param value locally (set via `graph.set()`). */
-  bound?: { value: any };
+  bound?: { value: any; initial: any };
 };
 
 type GraphState<L extends Lane, Res> = {
@@ -194,7 +194,8 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
 
     if (!node) {
       // Auto-register with graph-local ownership (no external subscription).
-      node = { ref: paramRef, version: 0, bound: { value: paramRef.get() } };
+      const initial = paramRef.get();
+      node = { ref: paramRef, version: 0, bound: { value: initial, initial } };
       paramsMap.set(paramRef.id, node);
       d.addNode(paramRef);
       markStructureChanged();
@@ -205,7 +206,8 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
       // Detach and switch to graph-local ownership.
       node.unsubscribe?.();
       node.unsubscribe = undefined;
-      node.bound = { value: paramRef.get() };
+      const initial = paramRef.get();
+      node.bound = { value: initial, initial };
     }
 
     // Apply the update.
@@ -220,6 +222,28 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
       emit({ type: "param:set", paramId: paramRef.id, at: nowMs() });
     }
 
+    return api;
+  }
+
+  function resetBoundParam(node: ParamNodeRuntime) {
+    if (!node.bound) return;
+    node.bound.value = node.bound.initial;
+    node.version += 1;
+    propagateDirty(node.ref.id);
+    if (hasListeners("param:set")) {
+      emit({ type: "param:set", paramId: node.ref.id, at: nowMs() });
+    }
+  }
+
+  function resetParam<T>(paramRef?: ParamRef<T>): Graph<L, Res> {
+    if (paramRef) {
+      const node = paramsMap.get(paramRef.id);
+      if (!node) throw new UnknownNodeError(paramRef.id);
+      resetBoundParam(node);
+      return api;
+    }
+
+    for (const node of paramsMap.values()) resetBoundParam(node);
     return api;
   }
 
@@ -340,6 +364,7 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     peek: peekTaskValue,
     add: addTask,
     set: setParam,
+    reset: resetParam,
   };
   return api;
 }

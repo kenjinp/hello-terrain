@@ -1061,4 +1061,101 @@ describe("graph()", () => {
       expect(g.get(t)).toBe(15);
     });
   });
+
+  describe("graph.reset()", () => {
+    it("resets a graph-owned param to its owned baseline", async () => {
+      const p = param(100);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, 20);
+      g.set(p, 40);
+      g.reset(p);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(100);
+      expect(p.get()).toBe(100);
+    });
+
+    it("resets all graph-owned params when called without arguments", async () => {
+      const a = param(1);
+      const b = param(2);
+      const t = task((get, work) => {
+        const av = get(a);
+        const bv = get(b);
+        return work(() => av + bv);
+      });
+
+      const g = graph().add(t).set(a, 10).set(b, 20);
+      g.set(a, 30).set(b, 40);
+      g.reset();
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(3);
+    });
+
+    it("throws when resetting a param unknown to the graph", () => {
+      const p = param(1);
+      const g = graph();
+      expect(() => g.reset(p)).toThrow(`Requested Unknown Node Id: ${p.id}`);
+    });
+
+    it("does not mutate subscription-only params when resetting all", async () => {
+      const p = param(1);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t);
+      await g.run({ targets: [t] });
+      p.set(5);
+      g.reset();
+      await g.run({ targets: [t] });
+
+      expect(p.get()).toBe(5);
+      expect(g.get(t)).toBe(5);
+    });
+
+    it("marks downstream tasks dirty and emits param:set on reset", async () => {
+      const p = param(2);
+      let calls = 0;
+      const events: any[] = [];
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv * 2;
+        });
+      });
+
+      const g = graph().add(t).set(p, 5);
+      g.on("param:set", (e) => events.push(e));
+      await g.run({ targets: [t] });
+
+      g.reset(p);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(4);
+      expect(calls).toBe(2);
+      expect(events.length).toBe(1);
+      expect(events[0]!.type).toBe("param:set");
+      expect(events[0]!.paramId).toBe(p.id);
+    });
+
+    it("is chainable (fluent API)", async () => {
+      const p = param(1);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, 10).reset(p);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(1);
+    });
+  });
 });

@@ -6,6 +6,7 @@ description: Reactive parameters for the task graph
 A `Param` is a small reactive container you can:
 - read (`get()`)
 - update (`set(valueOrCb)`)
+- reset (`reset()`)
 - observe (`subscribe(cb)`)
 
 Params are usually the **inputs** to tasks. When a param changes, dependent tasks become **dirty** and will recompute on the next `g.run()`.
@@ -70,6 +71,22 @@ count
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `valueOrCallback` | `T \| ((prev: T) => T)` | Direct value or updater callback |
+
+**Returns:** `ParamRef<T>` (for chaining)
+
+### reset()
+
+Resets the parameter back to the original `initial` value passed to `param(initial)`.
+
+```ts
+const count = param(10);
+
+count.set(42);
+console.log(count.get()); // 42
+
+count.reset();
+console.log(count.get()); // 10
+```
 
 **Returns:** `ParamRef<T>` (for chaining)
 
@@ -231,13 +248,15 @@ const configTask = task((get, work) => {
 const g1 = graph()
   .add(configTask)
   .set(rootSize, 128)
-  .set(maxLevel, 12);
+  .set(maxLevel, 12)
+  .reset(maxLevel);
 
 // Graph 2 — different values, same param tokens
 const g2 = graph()
   .add(configTask)
   .set(rootSize, 512)
-  .set(maxLevel, 20);
+  .set(maxLevel, 20)
+  .reset();
 
 await g1.run();
 await g2.run();
@@ -252,10 +271,17 @@ console.log(g2.get(configTask)); // { size: 512, level: 20 }
 - The first `graph.set(param, valueOrCb)` call **detaches** the external subscription and stores a graph-local value.
 - Subsequent `graph.set()` calls update the graph-local value and mark downstream tasks dirty.
 - External `param.set()` calls no longer affect a graph that has taken ownership.
+- `graph.reset(param)` resets one graph-owned param back to its owned baseline.
+- `graph.reset()` resets all graph-owned params in the graph.
 
 <Callout type="note">
   You can mix owned and unowned params in the same graph. Only params you explicitly
   `graph.set()` become graph-local; the rest continue to use the shared subscription flow.
+</Callout>
+
+<Callout type="note">
+  `graph.reset()` is graph-local. It does not reset shared/global params that are only
+  tracked through the normal `param.subscribe()` flow.
 </Callout>
 
 ## Type Safety

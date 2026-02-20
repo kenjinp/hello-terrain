@@ -21,6 +21,7 @@ import {
   terrainGraph,
   TerrainMesh,
   voronoiCells,
+  type ElevationParams,
   type UpdateParams,
 } from "@hello-terrain/three";
 import { Graph, task } from "@hello-terrain/work";
@@ -30,7 +31,15 @@ import { useControls } from "leva";
 import { useEffect, useMemo, useRef } from "react";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import { float, Fn, instanceIndex, int, positionWorld, vec2, vec3 } from "three/tsl";
+import {
+  float,
+  Fn,
+  instanceIndex,
+  int,
+  positionWorld,
+  vec2,
+  vec3,
+} from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
@@ -132,14 +141,12 @@ const InfiniteFlatSceneImpl = ({ g }: InfiniteFlatSceneImplProps) => {
   }, [g]);
 
   useEffect(() => {
-    g.set(
-      surface,
-      () =>
-        createInfiniteFlatSurface({
-          rootSize: controls.rootSize,
-          origin: { x: 0, y: 0, z: 0 },
-          rootGridRadius: controls.rootGridRadius,
-        }),
+    g.set(surface, () =>
+      createInfiniteFlatSurface({
+        rootSize: controls.rootSize,
+        origin: { x: 0, y: 0, z: 0 },
+        rootGridRadius: controls.rootGridRadius,
+      }),
     );
   }, [controls.rootSize, controls.rootGridRadius]);
 
@@ -164,7 +171,7 @@ const InfiniteFlatSceneImpl = ({ g }: InfiniteFlatSceneImplProps) => {
   }, [controls.elevationScale]);
 
   useEffect(() => {
-    g.set(elevationFn, () => ({ worldPosition }) => {
+    g.set(elevationFn, ({ worldPosition }: ElevationParams) => {
       const noiseScale = float(0.5);
       const noise = voronoiCells({
         scale: float(1),
