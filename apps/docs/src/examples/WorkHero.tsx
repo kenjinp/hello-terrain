@@ -1083,7 +1083,7 @@ function WorkHeroInner() {
           </div>
 
           {/* Stats + timing HUD */}
-          <div className="absolute bottom-2 right-2 md:bottom-4 md:right-4 z-20 flex flex-col gap-1.5">
+          <div className="pointer-events-none absolute bottom-2 right-2 md:bottom-4 md:right-4 md:max-w-xs z-20 flex flex-col gap-1.5">
             <div className="w-full bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2.5 py-2 text-white font-mono text-[10px] md:text-xs pointer-events-none">
               <div className="flex flex-wrap gap-x-4 gap-y-2">
                 <div>

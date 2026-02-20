@@ -195,7 +195,7 @@ const TerrainMeshScene = () => {
   return (
     <ExamplesCanvas>
       {/* HUD overlays */}
-      <div className="absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 flex flex-col gap-1.5">
+      <div className="pointer-events-none absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <TerrainTileDebug graph={g} />
       </div>
