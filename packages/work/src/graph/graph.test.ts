@@ -851,6 +851,21 @@ describe("graph()", () => {
   });
 
   describe("graph.set()", () => {
+    it("accepts a direct value when taking ownership", async () => {
+      const p = param(100);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, 42);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(42);
+      // Module-scope param is untouched.
+      expect(p.get()).toBe(100);
+    });
+
     it("takes ownership and task reads the bound value, not the module-scope default", async () => {
       const p = param(100);
       const t = task((get, work) => {
@@ -880,6 +895,19 @@ describe("graph()", () => {
       g.set(p, () => 2);
       await g.run({ targets: [t] });
       expect(g.get(t)).toBe(2);
+    });
+
+    it("supports mixing direct values and callback updaters", async () => {
+      const p = param(0);
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => pv);
+      });
+
+      const g = graph().add(t).set(p, 2);
+      g.set(p, (prev) => prev * 3);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(6);
     });
 
     it("isolates two graphs sharing the same param token", async () => {

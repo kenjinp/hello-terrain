@@ -1,5 +1,5 @@
 import { createNodeId } from "../utils";
-import type { ParamRef, ParamSetCallback, ParamSubscribeCallback } from "./param.types";
+import type { ParamRef, ParamSetCallback, ParamSetInput, ParamSubscribeCallback } from "./param.types";
 
 /**
  * Creates a new reactive parameter node.
@@ -38,11 +38,14 @@ export function param<T>(initial: T): ParamRef<T> {
 
     /**
      * Sets the parameter to a new value and notifies subscribers.
-     * @param {T} next - The new value to set.
+     * @param {T | ((prev: T) => T)} valueOrCb - A new value or updater callback.
      */
-    set(cb: ParamSetCallback<T>) {
+    set(valueOrCb: ParamSetInput<T>) {
       const prev = value;
-      const next = cb(value);
+      const next =
+        typeof valueOrCb === "function"
+          ? (valueOrCb as ParamSetCallback<T>)(value)
+          : valueOrCb;
       value = next;
       for (const sub of subscriptions) sub(next, prev);
       return ref;

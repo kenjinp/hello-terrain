@@ -1,6 +1,6 @@
 import { dag } from "../dag/dag";
 import { events } from "../events/events";
-import type { ParamRef, ParamSetCallback, Unsubscribe } from "../param/param.types";
+import type { ParamRef, ParamSetCallback, ParamSetInput, Unsubscribe } from "../param/param.types";
 import { semaphore } from "../semaphore/semaphore";
 import { TASK_DEF, type Task, type TaskRef, type TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
@@ -189,7 +189,7 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     return api;
   }
 
-  function setParam<T>(paramRef: ParamRef<T>, cb: ParamSetCallback<T>): Graph<L, Res> {
+  function setParam<T>(paramRef: ParamRef<T>, valueOrCb: ParamSetInput<T>): Graph<L, Res> {
     let node = paramsMap.get(paramRef.id);
 
     if (!node) {
@@ -209,7 +209,10 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     }
 
     // Apply the update.
-    node.bound.value = cb(node.bound.value);
+    node.bound.value =
+      typeof valueOrCb === "function"
+        ? (valueOrCb as ParamSetCallback<T>)(node.bound.value)
+        : valueOrCb;
     node.version += 1;
     propagateDirty(paramRef.id);
 

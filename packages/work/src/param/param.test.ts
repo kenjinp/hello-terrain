@@ -22,6 +22,12 @@ describe("param()", () => {
     expect(p.get()).toBe(2);
   });
 
+  it("set() accepts a direct value and updates get()", () => {
+    const p = param(1);
+    p.set(7);
+    expect(p.get()).toBe(7);
+  });
+
   it("set() notifies subscribers with (next, prev)", () => {
     const p = param(10);
     const sub = vi.fn<(next: number, prev: number) => void>();
@@ -31,6 +37,17 @@ describe("param()", () => {
 
     expect(sub).toHaveBeenCalledTimes(1);
     expect(sub).toHaveBeenCalledWith(15, 10);
+  });
+
+  it("set(value) notifies subscribers with (next, prev)", () => {
+    const p = param(10);
+    const sub = vi.fn<(next: number, prev: number) => void>();
+    p.subscribe(sub);
+
+    p.set(25);
+
+    expect(sub).toHaveBeenCalledTimes(1);
+    expect(sub).toHaveBeenCalledWith(25, 10);
   });
 
   it("unsubscribe() stops notifications", () => {

@@ -1,4 +1,4 @@
-import type { ParamRef, ParamSetCallback } from "../param/param.types";
+import type { ParamRef, ParamSetInput } from "../param/param.types";
 import type { Task, TaskRef, TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
 
@@ -133,7 +133,7 @@ export interface Graph<L extends Lane = Lane, Res = unknown> {
    * external `param.subscribe()` flow. This enables multiple graphs to
    * share the same module-scope `param()` token with isolated runtime values.
    */
-  set<T>(param: ParamRef<T>, cb: ParamSetCallback<T>): Graph<L, Res>;
+  set<T>(param: ParamRef<T>, valueOrCb: ParamSetInput<T>): Graph<L, Res>;
 }
 
 export type InspectNode =
