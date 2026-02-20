@@ -134,6 +134,10 @@ export interface Graph<L extends Lane = Lane, Res = unknown> {
    * share the same module-scope `param()` token with isolated runtime values.
    */
   set<T>(param: ParamRef<T>, valueOrCb: ParamSetInput<T>): Graph<L, Res>;
+  /** Resets graph-owned params to the value captured when ownership was taken. */
+  reset(): Graph<L, Res>;
+  /** Resets one graph-owned param; throws if the param is unknown to this graph. */
+  reset<T>(param: ParamRef<T>): Graph<L, Res>;
 }
 
 export type InspectNode =

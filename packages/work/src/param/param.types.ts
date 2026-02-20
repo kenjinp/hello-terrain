@@ -10,6 +10,7 @@ export interface ParamRef<T> {
   readonly name?: string;
   get(): T;
   set(valueOrCb: ParamSetInput<T>): ParamRef<T>;
+  reset(): ParamRef<T>;
   subscribe(cb: ParamSubscribeCallback<T>): Unsubscribe;
   displayName(name: string): ParamRef<T>;
 }

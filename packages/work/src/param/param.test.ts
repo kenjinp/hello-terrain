@@ -50,6 +50,32 @@ describe("param()", () => {
     expect(sub).toHaveBeenCalledWith(25, 10);
   });
 
+  it("reset() restores the initial value", () => {
+    const p = param(3);
+    p.set(9);
+    expect(p.get()).toBe(9);
+    p.reset();
+    expect(p.get()).toBe(3);
+  });
+
+  it("reset() notifies subscribers with (next, prev)", () => {
+    const p = param(10);
+    const sub = vi.fn<(next: number, prev: number) => void>();
+    p.subscribe(sub);
+
+    p.set(20);
+    p.reset();
+
+    expect(sub).toHaveBeenCalledTimes(2);
+    expect(sub).toHaveBeenNthCalledWith(2, 10, 20);
+  });
+
+  it("reset() is chainable", () => {
+    const p = param(1);
+    p.set(5).reset().set(2);
+    expect(p.get()).toBe(2);
+  });
+
   it("unsubscribe() stops notifications", () => {
     const p = param(0);
     const sub = vi.fn<(next: number, prev: number) => void>();
