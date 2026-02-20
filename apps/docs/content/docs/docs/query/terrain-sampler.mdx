@@ -1,0 +1,82 @@
+---
+title: Terrain Sampler TSL Nodes
+description: GPU/TSL terrain sampling with createTerrainSamplerTask
+---
+
+## Overview
+
+`createTerrainSamplerTask` returns TSL sampling functions you can use directly in shader-node code.
+
+Get it from the graph:
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const g = terrainGraph();
+await g.run({ resources: { renderer } });
+
+const sampler = g.get(terrainTasks.createTerrainSampler);
+```
+
+The sampler object provides:
+
+- `sampleElevation(worldX, worldZ)`
+- `sampleNormal(worldX, worldZ)`
+- `sampleTerrain(worldX, worldZ)` // packed `(elevation, nx, ny, nz)`
+- `sampleValidity(worldX, worldZ)` // `1` if hit, else `0`
+- `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation (full accuracy)
+- `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from evaluated elevation
+
+## Example: snow line material
+
+```ts
+import { color, mix, positionWorld, step } from "three/tsl";
+
+const sampler = g.get(terrainTasks.createTerrainSampler);
+
+const snowLine = 120.0;
+const grass = color(0x4a7c2f);
+const snow = color(0xffffff);
+
+material.colorNode = mix(
+  grass,
+  snow,
+  step(snowLine, sampler.sampleElevation(positionWorld.x, positionWorld.z)),
+);
+```
+
+## Example: slope-aware blending
+
+```ts
+import { float, mix, positionWorld, vec3 } from "three/tsl";
+
+const sampler = g.get(terrainTasks.createTerrainSampler);
+
+const n = sampler.sampleNormal(positionWorld.x, positionWorld.z);
+const up = vec3(0, 1, 0);
+const slope = float(1).sub(n.dot(up)); // 0 flat, higher on steeper surfaces
+
+material.colorNode = mix(grassColor, rockColor, slope);
+```
+
+## Example: validity-gated sampling
+
+Perhaps for a battlemap which extends past your terrain, or an ocean shader. I'm not sure. 
+
+```ts
+const sampler = g.get(terrainTasks.createTerrainSampler);
+const valid = sampler.sampleValidity(positionWorld.x, positionWorld.z);
+
+// Use fallback color outside active tiles
+material.colorNode = valid.greaterThan(0.5).select(mainColor, fallbackColor);
+```
+
+## Example: exact elevation path
+
+Use this when you need full-accuracy height from the authored `elevationFn` instead of the terrain field texture.
+
+```ts
+const sampler = g.get(terrainTasks.createTerrainSampler);
+const exactHeight = sampler.evaluateElevation(positionWorld.x, positionWorld.z);
+const exactNormal = sampler.evaluateNormal(positionWorld.x, positionWorld.z);
+```

@@ -30,4 +30,5 @@ export * from "./tsl/voronoi";
 
 export * from "./quadtree";
 export * from "./tasks";
+export * from "./query";
 export * from "./types";

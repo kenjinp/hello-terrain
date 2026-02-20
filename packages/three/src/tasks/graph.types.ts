@@ -10,6 +10,13 @@ import type { ComputePipeline } from "../gpu/compute";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type { GpuBatchQueryRunner } from "../query/gpuBatchQuery";
+import type {
+  GpuSpatialIndexContext,
+  TerrainQuery,
+  TerrainReadbackResult,
+  TerrainSampler,
+} from "../query/types";
 
 export interface QuadtreeConfigState {
   state: QuadtreeState;
@@ -40,6 +47,11 @@ export interface TerrainTasks {
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
   createTerrainFieldTexture: TaskRef<TerrainFieldStorage>;
+  terrainReadback: TaskRef<TerrainReadbackResult>;
+  terrainQuery: TaskRef<TerrainQuery | undefined>;
+  gpuSpatialIndex: TaskRef<GpuSpatialIndexContext>;
+  createTerrainSampler: TaskRef<TerrainSampler>;
+  gpuBatchQuery: TaskRef<GpuBatchQueryRunner>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   terrainFieldStage: TaskRef<ComputePipeline>;
   compileCompute: TaskRef<{

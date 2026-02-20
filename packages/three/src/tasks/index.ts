@@ -4,6 +4,8 @@ export * from "./graph.types";
 export * from "./elevation-field.task";
 export * from "./instanceId.task";
 export * from "./terrain-field.task";
+export * from "./readback.task";
+export * from "./query.task";
 export * from "./params";
 export * from "./positions.task";
 export * from "./quadtree.task";

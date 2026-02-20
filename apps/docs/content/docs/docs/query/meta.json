@@ -1,0 +1,9 @@
+{
+  "title": "Query",
+  "description": "Terrain query APIs for CPU and GPU sampling",
+  "pages": [
+    "terrain-query",
+    "terrain-sampler",
+    "gpu-batch-query"
+  ]
+}

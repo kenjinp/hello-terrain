@@ -1,0 +1,75 @@
+---
+title: GPU Batch Query
+description: Run GPU terrain batch queries through terrainTasks.gpuBatchQuery
+---
+
+## Overview
+
+`terrainTasks.gpuBatchQuery` exposes an async callable for running terrain batch queries on the GPU.
+It comes in two flavors: `sample` and `evaluate`, just like in [Terrain Sampler]('./terrain-sampler).
+
+For most cases, `sample` is best (and fastest). However, this will be impacted by the resolution of the tile LODs. 
+This might be preferable anyways, because it corresponds to how the terrain is actually rendered in the scene.  
+If you need the exact terrain elevation/normals output, you should use the `evaluate` method. 
+This will calculate the exact authored position as described by the [Elevation Function]('/docs/core/elevation-function').
+
+## Basic usage
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const g = terrainGraph();
+await g.run({ resources: { renderer } });
+
+const runGpuBatchQuery = g.get(terrainTasks.gpuBatchQuery);
+
+const positions = new Float32Array([
+  0, 0,
+  10, 20,
+  -25, 8,
+]);
+
+const { elevations, normals, valid } = await runGpuBatchQuery(positions);
+```
+
+By default, the runner uses terrain-field sampling (`method: "sample"`).
+
+## Explicit output buffers
+
+```ts
+const count = positions.length / 2;
+const outElevations = new Float32Array(count);
+const outNormals = new Float32Array(count * 3);
+const outValid = new Uint8Array(count);
+
+const runGpuBatchQuery = g.get(terrainTasks.gpuBatchQuery);
+
+await runGpuBatchQuery(positions, {
+  outElevations,
+  outNormals,
+  outValid,
+});
+```
+
+## Exact evaluation mode
+
+If you want full-accuracy heights from the authored `elevationFn`, run with `method: "evaluate"`:
+
+```ts
+const { elevations, normals, valid } = await runGpuBatchQuery(positions, {
+  method: "evaluate",
+  normalEpsilon: 0.1, // optional finite-difference step for evaluated normals
+});
+```
+
+## Reading results
+
+```ts
+for (let i = 0; i < valid.length; i++) {
+  if (valid[i] !== 1) continue;
+  const h = elevations[i];
+  const nx = normals[i * 3];
+  const ny = normals[i * 3 + 1];
+  const nz = normals[i * 3 + 2];
+}
+```

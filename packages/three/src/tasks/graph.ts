@@ -24,6 +24,17 @@ import {
   createUniformsTask,
   updateUniformsTask,
 } from "./uniforms/uniforms.task";
+import {
+  createTerrainQueryContextTask,
+  createTerrainSamplerTask,
+  gpuBatchQueryTask,
+  gpuSpatialIndexTask,
+  terrainQueryTask,
+} from "./query.task";
+import {
+  createTerrainReadbackContextTask,
+  terrainReadbackTask,
+} from "./readback.task";
 
 export { instanceIdTask } from "./instanceId.task";
 
@@ -44,7 +55,14 @@ export function terrainGraph(): TerrainGraph {
     .add(elevationFieldStageTask)
     .add(terrainFieldStageTask)
     .add(compileComputeTask)
-    .add(executeComputeTask);
+    .add(executeComputeTask)
+    .add(createTerrainReadbackContextTask)
+    .add(terrainReadbackTask)
+    .add(terrainQueryTask)
+    .add(createTerrainQueryContextTask)
+    .add(gpuSpatialIndexTask)
+    .add(createTerrainSamplerTask)
+    .add(gpuBatchQueryTask);
 }
 
 /** All terrain task refs for direct access. */
@@ -61,6 +79,11 @@ export const terrainTasks = {
   createElevationFieldContext: createElevationFieldContextTask,
   createTileNodes: tileNodesTask,
   createTerrainFieldTexture: createTerrainFieldTextureTask,
+  terrainReadback: terrainReadbackTask,
+  terrainQuery: terrainQueryTask,
+  gpuSpatialIndex: gpuSpatialIndexTask,
+  createTerrainSampler: createTerrainSamplerTask,
+  gpuBatchQuery: gpuBatchQueryTask,
   elevationFieldStage: elevationFieldStageTask,
   terrainFieldStage: terrainFieldStageTask,
   compileCompute: compileComputeTask,

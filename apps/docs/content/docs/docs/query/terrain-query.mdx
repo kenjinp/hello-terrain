@@ -1,0 +1,107 @@
+---
+title: Terrain Query
+description: CPU-side terrain elevation and normal queries via terrainQueryTask
+---
+
+## Overview
+
+Once you create a terrain, you probably need to figure out where it is. 
+
+These queries return terrain values originally calculated on the GPU
+to the CPU so you can use it for collision or placement. 
+
+For sampling terrain elevations (and normals) in shader code, see [Terrain Sampler](./terrain-sampler). And for fetching
+large numbers of elevations (and normals), see [Gpu Batch Query](./gpu-batch-query).
+
+`terrainQueryTask` exposes CPU query methods for terrain elevation and normals after compute + readback:
+
+- `getElevation(worldX, worldZ)`
+- `getNormal(worldX, worldZ)`
+- `sample(worldX, worldZ)`
+- `sampleAtRootUV(u, v)`
+- `sampleBatch(positions, outElevations, outNormals?, outValid?)`
+
+The batch API uses an explicit validity mask (`Uint8Array`) for tiles misses.
+
+<Callout type="warning">
+CPU results are based on readback terrain field data and can lag by a frame.
+</Callout>
+
+## Terrain Sample 
+The return type of the sample functions
+
+```ts
+export interface TerrainNormal {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface TerrainSample {
+  elevation: number;
+  normal: TerrainNormal;
+}
+```
+
+## Getting the query handle
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const g = terrainGraph();
+await g.run({ resources: { renderer } });
+
+const query = g.peek(terrainTasks.terrainQuery);
+if (!query) return;
+```
+
+<Callout type="warning">
+`g.peek(terrainTasks.terrainQuery)` returns `undefined` until query readback is ready.
+</Callout>
+
+## Single-point queries
+
+```ts
+const elevation = query.getElevation(player.position.x, player.position.z);
+if (elevation !== null) {
+  player.position.y = elevation;
+}
+
+// sampled may be null if the position is outside the root tile / terrain
+const sampled = query.sample(vehicle.position.x, vehicle.position.z);
+
+if (sampled) {
+  vehicle.position.y = sampled.elevation;
+  vehicle.up.set(sampled.normal.x, sampled.normal.y, sampled.normal.z);
+}
+```
+
+## Batch queries with validity mask
+
+<Callout type="info">
+Misses are represented by `null` (single queries) or `valid[i] = 0` (batch queries).
+</Callout>
+
+```ts
+const count = 1_000;
+const positions = new Float32Array(count * 2); // [x0,z0, x1,z1, ...]
+const elevations = new Float32Array(count);
+const normals = new Float32Array(count * 3); // [nx,ny,nz, ...]
+const valid = new Uint8Array(count); // 1 = hit, 0 = miss
+
+const hits = query.sampleBatch(positions, elevations, normals, valid);
+
+for (let i = 0; i < count; i++) {
+  if (valid[i] !== 1) continue;
+  // Use positions/elevations/normals for accepted points
+}
+
+console.log("hit count", hits);
+```
+
+## Root-UV queries
+
+```ts
+// Root UV range is [0, 1] for both u and v
+const sample = query.sampleAtRootUV(0.5, 0.5);
+```
