@@ -34,7 +34,9 @@ import {
   useLoader,
   useThree,
 } from "@react-three/fiber";
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
+
+type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
@@ -57,6 +59,7 @@ extend({ TerrainGeometry, TerrainMesh });
 
 type TerrainMeshSceneImplProps = {
   g: Graph;
+  store: LevaStore;
 };
 
 function u32ToColor(indexNode: Node) {
@@ -69,7 +72,7 @@ function u32ToColor(indexNode: Node) {
   return vec3(r, g, b).sin().mul(43758.5453123).fract();
 }
 
-const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
+const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   const controls = useControls("TerrainGeometry", {
     rootSize: {
       value: 1024,
@@ -116,7 +119,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "heightmap strength",
     },
-  });
+  }, { store });
 
   const { gl } = useThree();
 
@@ -303,7 +306,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       lastCameraRef.current.copy(camera.position);
     }
 
-    // Where the magic happens :)
     await g.run({
       resources: {
         renderer: gl,
@@ -334,6 +336,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 };
 
 const TerrainElevationScene = () => {
+  const store = useCreateStore();
   const g = useMemo(() => terrainGraph(), []);
   const rendererTask = useMemo(
     () =>
@@ -348,7 +351,7 @@ const TerrainElevationScene = () => {
   }, [g, rendererTask]);
 
   return (
-    <ExamplesCanvas>
+    <ExamplesCanvas store={store}>
       <div className="pointer-events-none absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
@@ -381,7 +384,7 @@ const TerrainElevationScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <TerrainMeshSceneImpl g={g} />
+        <TerrainMeshSceneImpl g={g} store={store} />
         <OrbitControls makeDefault target={[0, 3, 100]} />
       </Canvas>
     </ExamplesCanvas>

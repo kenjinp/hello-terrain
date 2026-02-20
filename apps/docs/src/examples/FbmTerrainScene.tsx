@@ -24,7 +24,9 @@ import {
 import { Graph, task, type TaskRef } from "@hello-terrain/work";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
+
+type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
@@ -96,9 +98,10 @@ const fbm = Fn(([pos_immutable]: [any]) => {
 type FbmTerrainSceneImplProps = {
   g: Graph;
   rendererTask: TaskRef<THREE.WebGPURenderer | null>;
+  store: LevaStore;
 };
 
-const FbmTerrainSceneImpl = ({ g, rendererTask }: FbmTerrainSceneImplProps) => {
+const FbmTerrainSceneImpl = ({ g, rendererTask, store }: FbmTerrainSceneImplProps) => {
   const controls = useControls("FBM Terrain", {
     rootSize: {
       value: 128,
@@ -152,7 +155,7 @@ const FbmTerrainSceneImpl = ({ g, rendererTask }: FbmTerrainSceneImplProps) => {
     wireframe: {
       value: false,
     },
-  });
+  }, { store });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
@@ -280,6 +283,7 @@ const FbmTerrainSceneImpl = ({ g, rendererTask }: FbmTerrainSceneImplProps) => {
 };
 
 const FbmTerrainScene = () => {
+  const store = useCreateStore();
   const g = useMemo(() => terrainGraph(), []);
   const rendererTask = useMemo(
     () =>
@@ -294,7 +298,7 @@ const FbmTerrainScene = () => {
   }, [g, rendererTask]);
 
   return (
-    <ExamplesCanvas>
+    <ExamplesCanvas store={store}>
       <div className="pointer-events-none absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
@@ -321,7 +325,7 @@ const FbmTerrainScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <FbmTerrainSceneImpl g={g} rendererTask={rendererTask} />
+        <FbmTerrainSceneImpl g={g} rendererTask={rendererTask} store={store} />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>

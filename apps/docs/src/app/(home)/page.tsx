@@ -85,14 +85,20 @@ export default function HomePage() {
           </div>
           <p className="text-fd-muted-foreground">
             You can open{" "}
-            <Link href="/docs" className="text-fd-foreground font-semibold underline">
+            <Link
+              href="/docs"
+              className="text-fd-foreground font-semibold underline"
+            >
               /docs
             </Link>{" "}
             to see the documentation.
           </p>
           <p className="text-fd-muted-foreground">
             Visit the{" "}
-            <Link href="/blog" className="text-fd-foreground font-semibold underline">
+            <Link
+              href="/blog"
+              className="text-fd-foreground font-semibold underline"
+            >
               /blog
             </Link>{" "}
             to see project updates.
@@ -102,7 +108,6 @@ export default function HomePage() {
 
       {latestPost && (
         <section className="mt-12 mx-auto w-full max-w-md text-left">
-          <h2 className="text-sm font-semibold text-center">Latest post</h2>
           <BlogPostCard page={latestPost} />
         </section>
       )}

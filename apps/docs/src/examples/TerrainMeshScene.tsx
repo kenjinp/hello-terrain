@@ -26,7 +26,9 @@ import {
 import { graph } from "@hello-terrain/work";
 import { Bounds, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
+
+type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
@@ -38,6 +40,7 @@ extend({ TerrainGeometry, TerrainMesh });
 
 type TerrainMeshSceneImplProps = {
   g: TerrainGraph;
+  store: LevaStore;
 };
 
 function u32ToColor(indexNode: Node) {
@@ -50,7 +53,7 @@ function u32ToColor(indexNode: Node) {
   return vec3(r, g, b).sin().mul(43758.5453123).fract();
 }
 
-const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
+const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   const controls = useControls("TerrainGeometry", {
     rootSize: {
       value: 128,
@@ -87,7 +90,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "skirt scale",
     },
-  });
+  }, { store });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
@@ -151,7 +154,6 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
       lastCameraRef.current.copy(camera.position);
     }
 
-    // Where the magic happens :)
     await g.run({
       resources: {
         renderer: gl as unknown as THREE.WebGPURenderer,
@@ -180,6 +182,7 @@ const TerrainMeshSceneImpl = ({ g }: TerrainMeshSceneImplProps) => {
 };
 
 const TerrainMeshScene = () => {
+  const store = useCreateStore();
   const g = useMemo(() => {
     return graph()
       .add(instanceIdTask)
@@ -193,7 +196,7 @@ const TerrainMeshScene = () => {
   }, []);
 
   return (
-    <ExamplesCanvas>
+    <ExamplesCanvas store={store}>
       {/* HUD overlays */}
       <div className="pointer-events-none absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
@@ -228,7 +231,7 @@ const TerrainMeshScene = () => {
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
         <Bounds fit observe>
-          <TerrainMeshSceneImpl g={g} />
+          <TerrainMeshSceneImpl g={g} store={store} />
         </Bounds>
         <OrbitControls makeDefault />
       </Canvas>

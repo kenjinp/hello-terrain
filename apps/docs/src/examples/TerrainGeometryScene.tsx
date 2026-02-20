@@ -4,7 +4,9 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { isSkirtUV, isSkirtVertex, TerrainGeometry } from "@hello-terrain/three";
 import { Bounds, Html, OrbitControls, useTexture } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
+
+type LevaStore = ReturnType<typeof useCreateStore>;
 import { useMemo } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
@@ -24,7 +26,7 @@ import * as THREE from "three/webgpu";
 extend(THREE as any);
 extend({ TerrainGeometry });
 
-const TerrainPlane = () => {
+const TerrainPlane = ({ store }: { store: LevaStore }) => {
   const terrainGeometryControls = useControls("TerrainGeometry", {
     segments: {
       value: 10,
@@ -52,7 +54,7 @@ const TerrainPlane = () => {
       value: false,
       label: "Paint Skirts",
     },
-  });
+  }, { store });
 
   const uvMap = useTexture("/assets/uv-12x12.png");
   uvMap.wrapS = THREE.RepeatWrapping;
@@ -185,8 +187,10 @@ const TerrainPlane = () => {
 };
 
 const TerrainGeometryScene = () => {
+  const store = useCreateStore();
+
   return (
-    <ExamplesCanvas>
+    <ExamplesCanvas store={store}>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
         shadows
@@ -214,7 +218,7 @@ const TerrainGeometryScene = () => {
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
         <Bounds fit observe>
-          <TerrainPlane />
+          <TerrainPlane store={store} />
         </Bounds>
         <OrbitControls makeDefault />
       </Canvas>

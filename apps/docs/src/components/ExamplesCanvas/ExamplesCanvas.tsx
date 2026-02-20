@@ -2,7 +2,7 @@
 
 import { LoadingBar } from "@/components/LoadingBar/LoadingBar";
 import { levaTheme } from "@/lib/leva.theme";
-import { Leva } from "leva";
+import { LevaPanel, type useCreateStore as UseCreateStore } from "leva";
 import {
   Eye,
   EyeOff,
@@ -20,6 +20,8 @@ import {
   type ReactNode,
 } from "react";
 
+type LevaStore = ReturnType<typeof UseCreateStore>;
+
 interface ExamplesCanvasContextValue {
   /** Whether UI overlays should be visible */
   showUI: boolean;
@@ -27,13 +29,13 @@ interface ExamplesCanvasContextValue {
   isFullscreen: boolean;
   /** Whether the controls panel is open */
   showControls: boolean;
+  /** Isolated leva store for this scene (when provided) */
+  store?: LevaStore;
 }
 
-const ExamplesCanvasContext = createContext<ExamplesCanvasContextValue>({
-  showUI: true,
-  isFullscreen: false,
-  showControls: false,
-});
+const ExamplesCanvasContext = createContext<ExamplesCanvasContextValue>(
+  null as unknown as ExamplesCanvasContextValue,
+);
 
 /**
  * Hook to access the ExamplesCanvas context.
@@ -48,6 +50,8 @@ interface ExamplesCanvasProps {
   children: ReactNode;
   /** Additional class names for the container */
   className?: string;
+  /** Isolated leva store for this scene's controls */
+  store?: LevaStore;
 }
 
 /**
@@ -60,6 +64,7 @@ interface ExamplesCanvasProps {
 export function ExamplesCanvas({
   children,
   className = "",
+  store,
 }: ExamplesCanvasProps) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isFakeFullscreen, setIsFakeFullscreen] = useState(false);
@@ -248,6 +253,7 @@ export function ExamplesCanvas({
     showUI,
     isFullscreen: isInFullscreen,
     showControls,
+    store,
   };
 
   const fakeFullscreenStyles: React.CSSProperties = isFakeFullscreen
@@ -338,7 +344,7 @@ export function ExamplesCanvas({
                 : "max-h-0 opacity-0 border-transparent pointer-events-none"
             }`}
           >
-            <Leva fill flat theme={levaTheme} titleBar={false} hideCopyButton />
+            {store && <LevaPanel store={store} fill flat theme={levaTheme} titleBar={false} hideCopyButton />}
           </div>
         </div>
       </div>

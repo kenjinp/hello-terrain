@@ -27,7 +27,9 @@ import {
 import { Graph, task } from "@hello-terrain/work";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
-import { useControls } from "leva";
+import { useControls, useCreateStore } from "leva";
+
+type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
 import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
@@ -47,6 +49,7 @@ extend({ TerrainGeometry, TerrainMesh });
 
 type InfiniteFlatSceneImplProps = {
   g: Graph;
+  store: LevaStore;
 };
 
 function u32ToColor(indexNode: Node) {
@@ -59,7 +62,7 @@ function u32ToColor(indexNode: Node) {
   return vec3(r, g, b).sin().mul(43758.5453123).fract();
 }
 
-const InfiniteFlatSceneImpl = ({ g }: InfiniteFlatSceneImplProps) => {
+const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   const controls = useControls("Infinite Flat Terrain", {
     rootSize: {
       value: 128,
@@ -107,7 +110,7 @@ const InfiniteFlatSceneImpl = ({ g }: InfiniteFlatSceneImplProps) => {
       value: false,
       label: "wireframe",
     },
-  });
+  }, { store });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
@@ -171,7 +174,7 @@ const InfiniteFlatSceneImpl = ({ g }: InfiniteFlatSceneImplProps) => {
   }, [controls.elevationScale]);
 
   useEffect(() => {
-    g.set(elevationFn, ({ worldPosition }: ElevationParams) => {
+    g.set(elevationFn, () => ({ worldPosition }: ElevationParams) => {
       const noiseScale = float(0.5);
       const noise = voronoiCells({
         scale: float(1),
@@ -235,10 +238,11 @@ const InfiniteFlatSceneImpl = ({ g }: InfiniteFlatSceneImplProps) => {
 };
 
 const InfiniteFlatScene = () => {
+  const store = useCreateStore();
   const g = useMemo(() => terrainGraph(), []);
 
   return (
-    <ExamplesCanvas>
+    <ExamplesCanvas store={store}>
       <div className="pointer-events-none absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
@@ -271,7 +275,7 @@ const InfiniteFlatScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <InfiniteFlatSceneImpl g={g} />
+        <InfiniteFlatSceneImpl g={g} store={store} />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>
