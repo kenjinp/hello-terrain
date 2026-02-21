@@ -1,5 +1,5 @@
 config:
   aws:region: us-east-1
-  hello-terrain-infrastructure:domain: hello-terrain.kenny.wtf
+  hello-terrain-infrastructure:domain: dev.hello-terrain.kenny.wtf
   hello-terrain-infrastructure:environment: dev
-  route53:domainName: hello-terrain.kenny.wtf
+  route53:domainName: dev.hello-terrain.kenny.wtf
