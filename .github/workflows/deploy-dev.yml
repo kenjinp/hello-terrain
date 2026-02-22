@@ -28,6 +28,12 @@ jobs:
           echo "ref=$(echo "$PR_DATA" | jq -r '.head.ref')" >> "$GITHUB_OUTPUT"
           echo "sha=$(echo "$PR_DATA" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
 
+      - name: Comment deploy acknowledgement
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" -R "${{ github.repository }}" --body "Acknowledged \`/deploy\`. Preview deployment started: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -104,4 +110,4 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh pr comment "${{ github.event.issue.number }}" --body "Preview deployed to https://dev.hello-terrain.kenny.wtf"
+          gh pr comment "${{ github.event.issue.number }}" -R "${{ github.repository }}" --body "Preview deployed to https://dev.hello-terrain.kenny.wtf"
