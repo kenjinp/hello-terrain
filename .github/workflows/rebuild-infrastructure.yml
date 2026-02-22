@@ -1,0 +1,141 @@
+name: Rebuild Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type DESTROY to confirm full destroy and rebuild"
+        required: true
+        type: string
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.27.0"
+  PROD_STACK: "kenjinp/hello-terrain-infrastructure/prod"
+  DEV_STACK: "kenjinp/hello-terrain-infrastructure/dev"
+  PROD_DOMAIN: "hello-terrain.kenny.wtf"
+  DEV_DOMAIN: "dev.hello-terrain.kenny.wtf"
+
+jobs:
+  rebuild:
+    if: ${{ inputs.confirm == 'DESTROY' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build workspace packages
+        run: pnpm -r --filter './packages/**' build
+
+      - name: Build docs (prod URL)
+        env:
+          NEXT_PUBLIC_SITE_URL: https://hello-terrain.kenny.wtf
+        run: |
+          cd apps/docs
+          pnpm build
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Install infrastructure dependencies
+        working-directory: infrastructure
+        run: pnpm install --frozen-lockfile
+
+      - name: Destroy dev stack
+        uses: pulumi/actions@v6
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        with:
+          command: destroy
+          stack-name: ${{ env.DEV_STACK }}
+          work-dir: infrastructure/docs
+
+      - name: Destroy prod stack
+        id: destroy_prod_first
+        continue-on-error: true
+        uses: pulumi/actions@v6
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        with:
+          command: destroy
+          stack-name: ${{ env.PROD_STACK }}
+          work-dir: infrastructure/docs
+
+      - name: Wait before retrying prod destroy
+        if: steps.destroy_prod_first.outcome == 'failure'
+        run: sleep 90
+
+      - name: Retry destroy prod stack
+        if: steps.destroy_prod_first.outcome == 'failure'
+        uses: pulumi/actions@v6
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        with:
+          command: destroy
+          stack-name: ${{ env.PROD_STACK }}
+          work-dir: infrastructure/docs
+
+      - name: Rebuild prod stack
+        uses: pulumi/actions@v6
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        with:
+          command: up
+          stack-name: ${{ env.PROD_STACK }}
+          work-dir: infrastructure/docs
+          config-map: |
+            aws:region=us-east-1
+            domain=${{ env.PROD_DOMAIN }}
+            environment=prod
+            route53:domainName=${{ env.PROD_DOMAIN }}
+
+      - name: Rebuild dev stack
+        uses: pulumi/actions@v6
+        env:
+          PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+        with:
+          command: up
+          stack-name: ${{ env.DEV_STACK }}
+          work-dir: infrastructure/docs
+          config-map: |
+            aws:region=us-east-1
+            domain=${{ env.DEV_DOMAIN }}
+            environment=dev
+            route53:domainName=${{ env.DEV_DOMAIN }}
+
+      - name: Rebuild status
+        run: |
+          echo "Infrastructure rebuild completed."
+          echo "Prod: https://hello-terrain.kenny.wtf"
+          echo "Dev: https://dev.hello-terrain.kenny.wtf"

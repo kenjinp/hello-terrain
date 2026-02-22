@@ -1,21 +1,37 @@
-name: Deploy to Development
+name: Deploy PR Preview
 
 on:
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  pull-requests: write
 
 env:
   NODE_VERSION: "24"
   PNPM_VERSION: "10.27.0"
 
 jobs:
-  build-and-deploy-dev:
+  deploy-preview:
+    if: >-
+      github.event.issue.pull_request &&
+      contains(github.event.comment.body, '/deploy')
     runs-on: ubuntu-latest
-
     steps:
+      - name: Get PR head ref
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_DATA="$(gh api repos/${{ github.repository }}/pulls/${{ github.event.issue.number }})"
+          echo "ref=$(echo "$PR_DATA" | jq -r '.head.ref')" >> "$GITHUB_OUTPUT"
+          echo "sha=$(echo "$PR_DATA" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
+
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr.outputs.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -48,7 +64,7 @@ jobs:
 
       - name: Build docs
         env:
-          NEXT_PUBLIC_SITE_URL: https://hello-terrain.kenny.wtf
+          NEXT_PUBLIC_SITE_URL: https://dev.hello-terrain.kenny.wtf
         run: |
           cd apps/docs
           pnpm build
@@ -70,17 +86,22 @@ jobs:
           PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
         with:
           command: up
-          stack-name: hello-terrain/dev
+          stack-name: kenjinp/hello-terrain-infrastructure/dev
           work-dir: infrastructure/docs
           config-map: |
             aws:region=us-east-1
-            domain=${{ secrets.DOMAIN || 'hello-terrain.kenny.wtf' }}
+            domain=dev.hello-terrain.kenny.wtf
             environment=dev
-            route53:domainName=${{ secrets.DOMAIN_NAME || 'hello-terrain.kenny.wtf' }}
+            route53:domainName=dev.hello-terrain.kenny.wtf
 
       - name: Deploy status (dev)
         run: |
-          echo "✅ Development deployment completed successfully!"
-          echo "🌐 Main site: https://hello-terrain.kenny.wtf"
-          echo "🎮 Examples: https://hello-terrain.kenny.wtf/examples"
-          echo "⚠️  This is a development deployment"
+          echo "Development preview deployment completed successfully."
+          echo "Preview site: https://dev.hello-terrain.kenny.wtf"
+          echo "Examples: https://dev.hello-terrain.kenny.wtf/examples"
+
+      - name: Comment preview URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr comment "${{ github.event.issue.number }}" --body "Preview deployed to https://dev.hello-terrain.kenny.wtf"
