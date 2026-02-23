@@ -58,6 +58,7 @@ export function createBuckets(
   // Create S3 bucket for the main site (docs)
   const mainBucket = new aws.s3.Bucket("hello-terrain-main", {
     bucket: `${domain}-${environment}`,
+    forceDestroy: environment === "dev",
     tags: {
       Environment: environment,
       Project: "hello-terrain",
