@@ -54,10 +54,13 @@ export function createBuckets(
   mainOai: aws.cloudfront.OriginAccessIdentity,
 ): BucketResources {
   const { domain, environment } = config;
-
+  const bucketName =
+    environment === "dev"
+      ? "hello-terrain.kenny.wtf-dev"
+      : `${domain}-${environment}`;
   // Create S3 bucket for the main site (docs)
   const mainBucket = new aws.s3.Bucket("hello-terrain-main", {
-    bucket: `${domain}-${environment}`,
+    bucket: bucketName,
     forceDestroy: environment === "dev",
     tags: {
       Environment: environment,
