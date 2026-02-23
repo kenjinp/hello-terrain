@@ -104,3 +104,19 @@ export function createTileRender(uniforms: TerrainUniformsContext) {
 
   return { rootUV };
 }
+
+/**
+ * Remap a tile-local coordinate from inner-grid `[0, 1]` to full-texture UV,
+ * offsetting past the 1-texel skirt border on each side and centering on
+ * inner texels.
+ *
+ * `localCoord` is `0` at the first inner vertex and `1` at the last.
+ * `innerSegments` is `uInnerTileSegments` (edgeVertexCount − 3).
+ */
+export function tileLocalToFieldUV(
+  localCoord: Node,
+  innerSegments: Node,
+): Node {
+  const edge = float(innerSegments).add(float(3));
+  return float(localCoord).mul(float(innerSegments)).add(float(1.5)).div(edge);
+}

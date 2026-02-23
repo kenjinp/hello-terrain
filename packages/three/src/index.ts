@@ -21,6 +21,8 @@ export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
 export { getDeviceComputeLimits } from "./gpu/deviceLimits";
 export * from "./gpu/terrainFieldStorage";
+export * from "./query/terrain-sampler";
+export * from "./query/types";
 export { createComputePipelineTasks } from "./tasks/compute.task";
 
 export * from "./tsl/materials";

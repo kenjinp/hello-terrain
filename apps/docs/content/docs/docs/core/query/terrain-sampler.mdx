@@ -1,0 +1,96 @@
+---
+title: Terrain Sampler TSL Nodes
+description: GPU/TSL terrain sampling for arbitrary scene objects
+---
+
+import TerrainSamplerScatterScene from "@/examples/TerrainSamplerScatterScene"
+
+<div className="h-[560px] rounded overflow-hidden">
+<TerrainSamplerScatterScene />
+</div>
+
+## Overview
+
+`createTerrainSamplerTask` builds reusable TSL sampling nodes from terrain graph resources.  
+Use this when you need **non-terrain objects** (scatter meshes, effects, decals, projectiles, etc.) to query the terrain field directly on GPU.
+
+Get the sampler directly from the graph:
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const g = terrainGraph();
+await g.run({ resources: { renderer } });
+
+const sampler = g.get(terrainTasks.createTerrainSampler);
+```
+
+The sampler object provides:
+
+- `sampleElevation(worldX, worldZ)`
+- `sampleNormal(worldX, worldZ)`
+- `sampleTerrain(worldX, worldZ)` // packed `(elevation, nx, ny, nz)`
+- `sampleValidity(worldX, worldZ)` // `1` if hit, else `0`
+- `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation (full accuracy, slow)
+- `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from evaluated elevation (slowest)
+
+## Example: scatter instances aligned to terrain
+
+```ts
+import { Fn, float, instanceIndex, positionLocal, vec3 } from "three/tsl";
+
+const positionNode = Fn(() => {
+  const i = float(instanceIndex);
+  const worldX = i.mod(32).sub(16).mul(6.5);
+  const worldZ = i.div(32).floor().sub(16).mul(6.5);
+
+  // returns vec4(elevation, normalX, normalY, normalZ)
+  const sample = sampler.sampleTerrain(worldX, worldZ);
+  const normal = vec3(sample.y, sample.z, sample.w).normalize();
+  const y = sample.x.mul(elevationScale);
+
+  // orient local up-axis by sampled terrain normal
+  const tangent = vec3(0, 1, 0).cross(normal).normalize();
+  const bitangent = normal.cross(tangent).normalize();
+  const local = positionLocal;
+  const oriented = tangent.mul(local.x).add(normal.mul(local.y)).add(bitangent.mul(local.z));
+
+  return vec3(worldX, y, worldZ).add(oriented);
+})();
+```
+
+This page’s interactive canvas above uses this pattern to render terrain + a secondary instanced scatter layer driven by sampler queries.
+
+## Example: snow line material
+
+```ts
+import { color, mix, positionWorld, step } from "three/tsl";
+
+const snowLine = 120.0;
+const grass = color(0x4a7c2f);
+const snow = color(0xffffff);
+
+material.colorNode = mix(
+  grass,
+  snow,
+  step(snowLine, sampler.sampleElevation(positionWorld.x, positionWorld.z)),
+);
+```
+
+## Example: validity-gated sampling
+
+```ts
+const valid = sampler.sampleValidity(positionWorld.x, positionWorld.z);
+
+// Use fallback color outside active tiles
+material.colorNode = valid.greaterThan(0.5).select(mainColor, fallbackColor);
+```
+
+## Example: exact elevation path
+
+Use this when you need full-accuracy height from the authored `elevationFn` instead of the tiled terrain field texture.
+
+```ts
+const exactHeight = sampler.evaluateElevation(positionWorld.x, positionWorld.z);
+const exactNormal = sampler.evaluateNormal(positionWorld.x, positionWorld.z);
+```

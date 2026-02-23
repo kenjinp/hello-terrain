@@ -352,7 +352,7 @@ const TerrainElevationScene = () => {
 
   return (
     <ExamplesCanvas store={store}>
-      <div className="pointer-events-none absolute z-30 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
+      <div className="pointer-events-none absolute z-10 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
         <RunTimingBars graph={g} />
         <div className="flex flex-row gap-1.5">
           <TerrainTileDebug graph={g} rendererTask={rendererTask} />
