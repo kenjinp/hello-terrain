@@ -31,8 +31,8 @@ The sampler object provides:
 - `sampleNormal(worldX, worldZ)`
 - `sampleTerrain(worldX, worldZ)` // packed `(elevation, nx, ny, nz)`
 - `sampleValidity(worldX, worldZ)` // `1` if hit, else `0`
-- `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation (full accuracy)
-- `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from evaluated elevation
+- `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation (full accuracy, slow)
+- `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from evaluated elevation (slowest)
 
 ## Example: scatter instances aligned to terrain
 
@@ -44,6 +44,7 @@ const positionNode = Fn(() => {
   const worldX = i.mod(32).sub(16).mul(6.5);
   const worldZ = i.div(32).floor().sub(16).mul(6.5);
 
+  // returns vec4(elevation, normalX, normalY, normalZ)
   const sample = sampler.sampleTerrain(worldX, worldZ);
   const normal = vec3(sample.y, sample.z, sample.w).normalize();
   const y = sample.x.mul(elevationScale);
