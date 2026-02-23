@@ -3,6 +3,8 @@
   "description": "Core utilities and building blocks",
   "pages": [
     "elevation-function",
-    "...nodes"
+    "...nodes",
+    "---Query API---",
+    "...query"
   ]
 }

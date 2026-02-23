@@ -12,9 +12,12 @@ import {
 } from "three/tsl";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import { isSkirtVertex } from "../tsl/skirt";
-import { readElevationFieldAtPositionLocal } from "./elevation-field";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
-import { loadTerrainFieldNormal } from "./terrainFieldStorage";
+import {
+  loadTerrainFieldNormal,
+  sampleTerrainFieldElevation,
+} from "./terrainFieldStorage";
+import { tileLocalToFieldUV } from "./tile";
 
 export function createTileBaseWorldPosition(
   leafStorage: LeafStorageState,
@@ -49,14 +52,15 @@ export function createTileElevation(
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
   if (!terrainFieldStorage) return float(0);
-  const edgeVertexCount = terrainUniforms.uInnerTileSegments.add(3);
-  return readElevationFieldAtPositionLocal(
+  const innerSegs = terrainUniforms.uInnerTileSegments;
+  const u = tileLocalToFieldUV(positionLocal.x.add(float(0.5)), innerSegs);
+  const v = tileLocalToFieldUV(positionLocal.z.add(float(0.5)), innerSegs);
+  return sampleTerrainFieldElevation(
     terrainFieldStorage,
-    edgeVertexCount,
-    positionLocal,
-  )().mul(
-    terrainUniforms.uElevationScale,
-  );
+    u,
+    v,
+    int(instanceIndex),
+  ).mul(terrainUniforms.uElevationScale);
 }
 
 export function createNormalAssignment(
@@ -69,7 +73,12 @@ export function createNormalAssignment(
   const localVertexIndex = int(vertexIndex);
   const ix = localVertexIndex.mod(edgeVertexCount);
   const iy = localVertexIndex.div(edgeVertexCount);
-  const normalXZ = loadTerrainFieldNormal(terrainFieldStorage, ix, iy, nodeIndex);
+  const normalXZ = loadTerrainFieldNormal(
+    terrainFieldStorage,
+    ix,
+    iy,
+    nodeIndex,
+  );
   const nx = normalXZ.x;
   const nz = normalXZ.y;
   const nySq = float(1).sub(nx.mul(nx)).sub(nz.mul(nz)).max(float(0));
@@ -82,13 +91,21 @@ export function createTileWorldPosition(
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
-  const baseWorldPosition = createTileBaseWorldPosition(leafStorage, terrainUniforms);
+  const baseWorldPosition = createTileBaseWorldPosition(
+    leafStorage,
+    terrainUniforms,
+  );
 
   return Fn(() => {
     const base = baseWorldPosition();
-    const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
+    const yElevation = createTileElevation(
+      terrainUniforms,
+      terrainFieldStorage,
+    );
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
-    const skirtY = base.y.add(yElevation).sub(terrainUniforms.uSkirtScale.toVar());
+    const skirtY = base.y
+      .add(yElevation)
+      .sub(terrainUniforms.uSkirtScale.toVar());
     const worldY = select(skirtVertex, skirtY, base.y.add(yElevation));
     createNormalAssignment(terrainUniforms, terrainFieldStorage);
     return vec3(base.x, worldY, base.z);

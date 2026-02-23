@@ -9,9 +9,14 @@ import {
 import { instanceIdTask } from "./instanceId.task";
 import type { TerrainGraph, TerrainTasks } from "./graph.types";
 import {
+  gpuSpatialIndexStorageTask,
+  gpuSpatialIndexUploadTask,
+} from "./gpuSpatialIndex.task";
+import {
   createTerrainFieldTextureTask,
   terrainFieldStageTask,
 } from "./terrain-field.task";
+import { createTerrainSamplerTask } from "./terrain-sampler.task";
 import { positionNodeTask } from "./positions.task";
 import {
   leafGpuBufferTask,
@@ -35,12 +40,15 @@ export function terrainGraph(): TerrainGraph {
     .add(leafStorageTask)
     .add(surfaceTask)
     .add(leafGpuBufferTask)
+    .add(gpuSpatialIndexStorageTask)
+    .add(gpuSpatialIndexUploadTask)
     .add(createUniformsTask)
     .add(updateUniformsTask)
     .add(positionNodeTask)
     .add(createElevationFieldContextTask)
     .add(tileNodesTask)
     .add(createTerrainFieldTextureTask)
+    .add(createTerrainSamplerTask)
     .add(elevationFieldStageTask)
     .add(terrainFieldStageTask)
     .add(compileComputeTask)
@@ -55,12 +63,15 @@ export const terrainTasks = {
   leafStorage: leafStorageTask,
   surface: surfaceTask,
   leafGpuBuffer: leafGpuBufferTask,
+  gpuSpatialIndexStorage: gpuSpatialIndexStorageTask,
+  gpuSpatialIndexUpload: gpuSpatialIndexUploadTask,
   createUniforms: createUniformsTask,
   updateUniforms: updateUniformsTask,
   positionNode: positionNodeTask,
   createElevationFieldContext: createElevationFieldContextTask,
   createTileNodes: tileNodesTask,
   createTerrainFieldTexture: createTerrainFieldTextureTask,
+  createTerrainSampler: createTerrainSamplerTask,
   elevationFieldStage: elevationFieldStageTask,
   terrainFieldStage: terrainFieldStageTask,
   compileCompute: compileComputeTask,
