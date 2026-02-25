@@ -1,0 +1,68 @@
+---
+title: Terrain Raycasting API
+description: High-performance terrain picking with sync CPU raycasting and async GPU-backed entrypoint
+---
+
+## Overview
+
+`terrainTasks.terrainRaycast` provides terrain hit testing with two paths:
+
+- `pick(ray, options?)` for synchronous CPU raycasts (great for pointer events)
+- `pickAsync(ray, options?)` for an async entrypoint that can use GPU-backed infrastructure when available
+
+Both paths are built on the same terrain query foundation, so elevation sampling and ray intersections stay consistent.
+
+## Get the raycast context
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const graph = terrainGraph();
+await graph.run({ resources: { renderer } });
+
+const terrainRaycast = graph.get(terrainTasks.terrainRaycast);
+if (!terrainRaycast) {
+  // Query cache is not ready yet.
+  return;
+}
+```
+
+## Direct raycasting
+
+```ts
+import { Ray } from "three";
+
+const ray = new Ray(camera.position.clone(), camera.getWorldDirection(new Vector3()));
+
+const hit = terrainRaycast.pick(ray, {
+  maxSteps: 128,
+  refinementSteps: 8,
+  maxDistance: 5000,
+});
+
+if (hit) {
+  marker.position.copy(hit.position);
+  marker.lookAt(hit.position.clone().add(hit.normal));
+}
+```
+
+## Three.js Raycaster integration
+
+`TerrainMesh` supports standard Three.js / React Three Fiber ray interactions once a terrain raycast context is attached.
+
+```ts
+terrainMesh.terrainRaycast = terrainRaycast;
+```
+
+After this, default raycasting pipelines can hit the terrain mesh and receive terrain-aware intersection data.
+
+## Options
+
+`RaycastOptions`:
+
+- `maxSteps` (default `128`): linear march steps along the clipped ray segment
+- `refinementSteps` (default `8`): binary search iterations after a sign change
+- `maxDistance` (default infinite): far clip for terrain intersection distance
+
+Higher values improve precision on steep/complex terrain but increase query cost.
+

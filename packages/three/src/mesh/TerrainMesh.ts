@@ -4,7 +4,9 @@ import {
   MeshStandardNodeMaterial,
   NodeMaterial,
 } from "three/webgpu";
+import type { Intersection, Raycaster } from "three";
 import { TerrainGeometry } from "../geometry/TerrainGeometry";
+import type { TerrainRaycast } from "../query/types";
 
 export type TerrainMeshParams = {
   innerTileSegments: number;
@@ -20,6 +22,7 @@ export const defaultTerrainMeshParams: TerrainMeshParams = {
 export class TerrainMesh extends InstancedMesh {
   private _innerTileSegments: number;
   private _maxNodes: number;
+  terrainRaycast: TerrainRaycast | null = null;
   constructor(params: Partial<TerrainMeshParams> = defaultTerrainMeshParams) {
     const mergedParams = { ...defaultTerrainMeshParams, ...params };
     const { innerTileSegments, maxNodes, material } = mergedParams;
@@ -71,5 +74,19 @@ export class TerrainMesh extends InstancedMesh {
     if (maxNodes < oldMax && this.count >= maxNodes) {
       this.count = maxNodes;
     }
+  }
+
+  raycast(raycaster: Raycaster, intersects: Intersection[]): void {
+    if (!this.terrainRaycast) return;
+    const result = this.terrainRaycast.pick(raycaster.ray);
+    if (!result) return;
+    intersects.push({
+      distance: result.distance,
+      point: result.position.clone(),
+      normal: result.normal.clone(),
+      object: this,
+      face: null,
+      faceIndex: -1,
+    });
   }
 }

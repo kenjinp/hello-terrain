@@ -8,3 +8,7 @@ After priming, read the terrain specs in `packages/three/spec/` before making de
 - `packages/three/spec/concepts.md`
 
 When naming or refactoring terrain APIs, follow `packages/three/spec/naming-conventions.md` as the source of truth.
+
+Prefer functions over classes. 
+
+In library internals, don't use three.js. Only expose three.js for consumer level methods. 

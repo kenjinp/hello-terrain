@@ -1,0 +1,76 @@
+---
+title: Terrain Query API
+description: Synchronous CPU terrain sampling from the shared elevation readback cache
+---
+
+## Overview
+
+`terrainTasks.terrainQuery` exposes a synchronous CPU query API for:
+
+- `getElevation(worldX, worldZ)`
+- `getNormal(worldX, worldZ)`
+- `sampleTerrain(worldX, worldZ)`
+- `sampleTerrainBatch(positions)`
+
+The query path reads from a shared CPU cache populated by async GPU readback of the elevation field buffer. This keeps point queries fast while avoiding any duplicate CPU `elevationFn` implementation.
+
+## Get the query context
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const graph = terrainGraph();
+await graph.run({ resources: { renderer } });
+
+const terrainQuery = graph.get(terrainTasks.terrainQuery);
+if (!terrainQuery) {
+  // Cache is not ready yet (no successful readback).
+  return;
+}
+```
+
+## Single-point queries
+
+```ts
+const elevation = terrainQuery.getElevation(player.position.x, player.position.z);
+const normal = terrainQuery.getNormal(player.position.x, player.position.z);
+
+const sample = terrainQuery.sampleTerrain(player.position.x, player.position.z);
+if (sample.valid) {
+  player.position.y = sample.elevation;
+  player.up.copy(sample.normal);
+}
+```
+
+## Batch queries
+
+Use batch mode when you need many samples per frame (physics probes, AI paths, crowds).
+
+```ts
+// Interleaved x,z pairs.
+const positions = new Float32Array([
+  0, 0,
+  8, 0,
+  16, 0,
+  24, 0,
+]);
+
+const batch = terrainQuery.sampleTerrainBatch(positions);
+
+for (let i = 0; i < batch.elevations.length; i++) {
+  if (!batch.valid[i]) continue;
+  const y = batch.elevations[i];
+  const nx = batch.normals[i * 3];
+  const ny = batch.normals[i * 3 + 1];
+  const nz = batch.normals[i * 3 + 2];
+  // ...consume y / normal...
+}
+```
+
+## Freshness and startup behavior
+
+- Before the first successful readback, `graph.get(terrainTasks.terrainQuery)` returns `null`.
+- Once non-null, per-sample `valid` still indicates whether the queried point maps to an active tile.
+- Use `terrainQuery.generation` to detect when cache content changes between frames.
+- Values are frame-coherent snapshots: tile lookup and elevation data are paired from the same readback generation.
+

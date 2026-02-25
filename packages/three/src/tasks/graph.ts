@@ -29,6 +29,8 @@ import {
   createUniformsTask,
   updateUniformsTask,
 } from "./uniforms/uniforms.task";
+import { terrainQueryTask } from "./terrain-query.task";
+import { terrainRaycastTask } from "./terrain-raycast.task";
 
 export { instanceIdTask } from "./instanceId.task";
 
@@ -52,7 +54,9 @@ export function terrainGraph(): TerrainGraph {
     .add(elevationFieldStageTask)
     .add(terrainFieldStageTask)
     .add(compileComputeTask)
-    .add(executeComputeTask);
+    .add(executeComputeTask)
+    .add(terrainQueryTask)
+    .add(terrainRaycastTask);
 }
 
 /** All terrain task refs for direct access. */
@@ -76,4 +80,6 @@ export const terrainTasks = {
   terrainFieldStage: terrainFieldStageTask,
   compileCompute: compileComputeTask,
   executeCompute: executeComputeTask,
+  terrainQuery: terrainQueryTask,
+  terrainRaycast: terrainRaycastTask,
 } as const satisfies TerrainTasks;
