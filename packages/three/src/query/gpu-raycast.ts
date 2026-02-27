@@ -5,7 +5,7 @@ import type { RaycastOptions, TerrainRaycastResult } from "./types";
 
 type RendererWithAsyncCompute = WebGPURenderer & {
   computeAsync?: (kernel: unknown, dispatch?: [number, number, number]) => Promise<void>;
-  readStorageBufferAttribute?: (attribute: unknown) => Promise<Float32Array | ArrayBuffer>;
+  getArrayBufferAsync?: (attribute: unknown) => Promise<ArrayBuffer>;
 };
 
 export type GpuRaycastRunner = {
@@ -31,7 +31,7 @@ export function createGpuRaycastRunner(
   const renderer = params.renderer as RendererWithAsyncCompute;
   const supportsAsyncCompute =
     typeof renderer.computeAsync === "function" &&
-    typeof renderer.readStorageBufferAttribute === "function";
+    typeof renderer.getArrayBufferAsync === "function";
 
   // Keep sampler captured so the runner's contract stays aligned with
   // TerrainSampler-based GPU implementation even when using fallback mode.

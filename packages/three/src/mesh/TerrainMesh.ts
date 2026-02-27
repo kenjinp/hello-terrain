@@ -77,7 +77,10 @@ export class TerrainMesh extends InstancedMesh {
   }
 
   raycast(raycaster: Raycaster, intersects: Intersection[]): void {
-    if (!this.terrainRaycast) return;
+    if (!this.terrainRaycast) {
+      super.raycast(raycaster, intersects);
+      return;
+    }
     const result = this.terrainRaycast.pick(raycaster.ray);
     if (!result) return;
     intersects.push({

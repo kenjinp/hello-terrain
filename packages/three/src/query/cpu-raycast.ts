@@ -15,6 +15,13 @@ type RaySegment = {
   tMax: number;
 };
 
+type TerrainBounds = {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+};
+
 function intersectRayAabb(
   ray: Ray,
   minX: number,
@@ -62,6 +69,16 @@ function intersectRayAabb(
   return { tMin, tMax };
 }
 
+function getTerrainBounds(config: CpuRaycastConfig): TerrainBounds {
+  const halfRoot = config.rootSize * 0.5;
+  return {
+    minX: config.originX - halfRoot,
+    maxX: config.originX + halfRoot,
+    minZ: config.originZ - halfRoot,
+    maxZ: config.originZ + halfRoot,
+  };
+}
+
 function terrainSignedDistance(
   query: TerrainQuery,
   worldX: number,
@@ -79,19 +96,15 @@ export function cpuRaycast(
   config: CpuRaycastConfig,
   options?: RaycastOptions,
 ): TerrainRaycastResult | null {
-  const halfRoot = config.rootSize * 0.5;
-  const minX = config.originX - halfRoot;
-  const maxX = config.originX + halfRoot;
-  const minZ = config.originZ - halfRoot;
-  const maxZ = config.originZ + halfRoot;
+  const bounds = getTerrainBounds(config);
   const segment = intersectRayAabb(
     ray,
-    minX,
+    bounds.minX,
     config.minY,
-    minZ,
-    maxX,
+    bounds.minZ,
+    bounds.maxX,
     config.maxY,
-    maxZ,
+    bounds.maxZ,
   );
   if (!segment) return null;
 
@@ -169,4 +182,34 @@ export function cpuRaycast(
   }
 
   return null;
+}
+
+export function cpuRaycastBoundsOnly(
+  ray: Ray,
+  config: CpuRaycastConfig,
+  options?: RaycastOptions,
+): TerrainRaycastResult | null {
+  const bounds = getTerrainBounds(config);
+  const planeY = (config.minY + config.maxY) * 0.5;
+  const dirY = ray.direction.y;
+  if (Math.abs(dirY) < 1e-8) return null;
+  const t = (planeY - ray.origin.y) / dirY;
+  if (t < 0) return null;
+  const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
+  if (t > maxDistance) return null;
+  const point = new Vector3();
+  ray.at(t, point);
+  if (
+    point.x < bounds.minX ||
+    point.x > bounds.maxX ||
+    point.z < bounds.minZ ||
+    point.z > bounds.maxZ
+  ) {
+    return null;
+  }
+  return {
+    position: point,
+    normal: new Vector3(0, 1, 0),
+    distance: ray.origin.distanceTo(point),
+  };
 }

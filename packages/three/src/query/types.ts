@@ -42,9 +42,17 @@ export interface TerrainSampleBatch {
   generation: number;
 }
 
+export interface TerrainTile {
+  level: number;
+  x: number;
+  y: number;
+  index: number;
+}
+
 export interface TerrainQuery {
   getElevation(worldX: number, worldZ: number): number;
   getNormal(worldX: number, worldZ: number): Vector3;
+  getTile(worldX: number, worldZ: number): TerrainTile | null;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   readonly generation: number;

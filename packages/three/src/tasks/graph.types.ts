@@ -55,8 +55,8 @@ export interface TerrainTasks {
     execute: (renderer: WebGPURenderer, instanceCount: number) => void;
   }>;
   executeCompute: TaskRef<void | (() => void)>;
-  terrainQuery: TaskRef<TerrainQuery | null>;
-  terrainRaycast: TaskRef<TerrainRaycast | null>;
+  terrainQuery: TaskRef<TerrainQuery>;
+  terrainRaycast: TaskRef<TerrainRaycast>;
 }
 
 export type TerrainGraph = Graph<

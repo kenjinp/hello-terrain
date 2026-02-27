@@ -1,7 +1,7 @@
 import { task } from "@hello-terrain/work";
 import type { WebGPURenderer } from "three/webgpu";
 import { createTerrainRaycast } from "../query/terrain-raycast";
-import type { TerrainRaycast } from "../query/types";
+import type { TerrainQuery, TerrainRaycast } from "../query/types";
 import { elevationScale, origin, rootSize } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
 import { createTerrainSamplerTask } from "./terrain-sampler.task";
@@ -9,6 +9,7 @@ import { createTerrainSamplerTask } from "./terrain-sampler.task";
 const terrainRaycastTaskState: {
   raycast?: TerrainRaycast;
   renderer?: WebGPURenderer;
+  terrainQuery: TerrainQuery | null;
   bounds: {
     rootSize: number;
     originX: number;
@@ -17,6 +18,7 @@ const terrainRaycastTaskState: {
     maxY: number;
   };
 } = {
+  terrainQuery: null,
   bounds: {
     rootSize: 0,
     originX: 0,
@@ -35,9 +37,9 @@ export const terrainRaycastTask = task<{ renderer: WebGPURenderer }>(
     const elevationScaleValue = get(elevationScale);
 
     return work(() => {
-      if (!terrainQuery) return null;
       const state = terrainRaycastTaskState;
-      const verticalExtent = rootSizeValue * Math.max(1, Math.abs(elevationScaleValue));
+      state.terrainQuery = terrainQuery;
+      const verticalExtent = Math.max(1, Math.abs(elevationScaleValue) * 2);
       state.bounds.rootSize = rootSizeValue;
       state.bounds.originX = originValue.x;
       state.bounds.originZ = originValue.z;
@@ -48,7 +50,7 @@ export const terrainRaycastTask = task<{ renderer: WebGPURenderer }>(
         state.renderer = resources.renderer;
         state.raycast = createTerrainRaycast({
           renderer: resources.renderer,
-          terrainQuery,
+          getTerrainQuery: () => state.terrainQuery,
           terrainSampler,
           getConfig: () => state.bounds,
         });
@@ -58,7 +60,7 @@ export const terrainRaycastTask = task<{ renderer: WebGPURenderer }>(
         state.renderer = resources.renderer;
         state.raycast = createTerrainRaycast({
           renderer: resources.renderer,
-          terrainQuery,
+          getTerrainQuery: () => state.terrainQuery,
           terrainSampler,
           getConfig: () => state.bounds,
         });

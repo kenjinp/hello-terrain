@@ -20,7 +20,6 @@ import { createElevationFieldContextTask } from "./elevation-field.task";
 
 export const terrainQueryTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
-    // Ensure readback is scheduled after compute dispatch.
     get(executeComputeTask);
 
     const elevationFieldContext = get(createElevationFieldContextTask);
@@ -32,7 +31,7 @@ export const terrainQueryTask = task<{ renderer: WebGPURenderer }>(
     const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);
 
-    return work((): TerrainQuery | null => {
+    return work((): TerrainQuery => {
       const state = terrainQueryTaskState;
       const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}`;
       if (!state.cache || state.shapeKey !== shapeKey) {
@@ -67,7 +66,6 @@ export const terrainQueryTask = task<{ renderer: WebGPURenderer }>(
         );
       }
 
-      if (!state.cache.ready) return null;
       return state.query!;
     });
   },

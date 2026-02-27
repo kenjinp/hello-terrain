@@ -3,7 +3,7 @@ import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex, U32_EMPTY } from "../quadtree";
 import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
-import type { TerrainSample, TerrainSampleBatch } from "./types";
+import type { TerrainSample, TerrainSampleBatch, TerrainTile } from "./types";
 
 type TerrainQueryConfig = {
   rootSize: number;
@@ -18,15 +18,16 @@ type TerrainQueryConfig = {
 type TileLookupResult = {
   found: boolean;
   leafIndex: number;
+  level: number;
+  tileX: number;
+  tileY: number;
   tileSize: number;
   localU: number;
   localV: number;
 };
 
 type RendererReadback = WebGPURenderer & {
-  readStorageBufferAttribute?: (
-    attribute: StorageBufferAttribute,
-  ) => Promise<Float32Array | ArrayBuffer>;
+  getArrayBufferAsync?: (attribute: StorageBufferAttribute) => Promise<ArrayBuffer>;
 };
 
 export interface CpuTerrainCache {
@@ -40,6 +41,7 @@ export interface CpuTerrainCache {
   ): void;
   getElevation(worldX: number, worldZ: number): number;
   getNormal(worldX: number, worldZ: number): Vector3;
+  getTile(worldX: number, worldZ: number): TerrainTile | null;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
 }
@@ -136,6 +138,9 @@ export function createCpuTerrainCache(
         return {
           found: true,
           leafIndex,
+          level,
+          tileX,
+          tileY,
           tileSize,
           localU: (worldX - tileMinX) / tileSize,
           localV: (worldZ - tileMinZ) / tileSize,
@@ -145,6 +150,9 @@ export function createCpuTerrainCache(
     return {
       found: false,
       leafIndex: -1,
+      level: -1,
+      tileX: -1,
+      tileY: -1,
       tileSize: 0,
       localU: 0,
       localV: 0,
@@ -190,14 +198,13 @@ export function createCpuTerrainCache(
       if (readbackPending) return;
       cloneSpatialIndex(backIndex, spatialIndex);
       const withReadback = renderer as RendererReadback;
-      if (!withReadback.readStorageBufferAttribute) return;
+      if (!withReadback.getArrayBufferAsync) return;
 
       readbackPending = true;
       withReadback
-        .readStorageBufferAttribute(attribute)
+        .getArrayBufferAsync(attribute)
         .then((result) => {
-          const data =
-            result instanceof Float32Array ? result : new Float32Array(result);
+          const data = new Float32Array(result);
           backElevation.fill(0);
           backElevation.set(data.subarray(0, totalElements));
           const oldFrontElevation = frontElevation;
@@ -218,6 +225,17 @@ export function createCpuTerrainCache(
     },
     getNormal(worldX, worldZ) {
       return sampleTerrain(worldX, worldZ).normal;
+    },
+    getTile(worldX, worldZ) {
+      if (!hasSnapshot) return null;
+      const lookup = lookupTile(worldX, worldZ);
+      if (!lookup.found) return null;
+      return {
+        level: lookup.level,
+        x: lookup.tileX,
+        y: lookup.tileY,
+        index: lookup.leafIndex,
+      };
     },
     sampleTerrainBatch(positions) {
       const count = Math.floor(positions.length / 2);
