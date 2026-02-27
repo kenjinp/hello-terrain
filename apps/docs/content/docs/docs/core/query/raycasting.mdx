@@ -1,6 +1,6 @@
 ---
 title: Terrain Raycasting API
-description: High-performance terrain picking with sync CPU raycasting and async GPU-backed entrypoint
+description: High-performance terrain picking with CPU raycasting
 ---
 
 import TerrainRaycastHoverScene from "@/examples/TerrainRaycastHoverScene"
@@ -11,12 +11,7 @@ import TerrainRaycastHoverScene from "@/examples/TerrainRaycastHoverScene"
 
 ## Overview
 
-`terrainTasks.terrainRaycast` provides terrain hit testing with two paths:
-
-- `pick(ray, options?)` for synchronous CPU raycasts (great for pointer events)
-- `pickAsync(ray, options?)` for an async entrypoint that can use GPU-backed infrastructure when available
-
-Both paths are built on the same terrain query foundation, so elevation sampling and ray intersections stay consistent.
+`terrainTasks.terrainRaycast` provides terrain hit testing via `pick(ray, options?)` — a synchronous CPU raycast built on the terrain query foundation, so elevation sampling and ray intersections stay consistent.
 
 ## Get the raycast context
 

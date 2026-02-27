@@ -3,7 +3,12 @@ import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex, U32_EMPTY } from "../quadtree";
 import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
-import type { TerrainSample, TerrainSampleBatch, TerrainTile } from "./types";
+import type {
+  TerrainElevationSample,
+  TerrainSample,
+  TerrainSampleBatch,
+  TerrainTile,
+} from "./types";
 
 type TerrainQueryConfig = {
   rootSize: number;
@@ -27,7 +32,9 @@ type TileLookupResult = {
 };
 
 type RendererReadback = WebGPURenderer & {
-  getArrayBufferAsync?: (attribute: StorageBufferAttribute) => Promise<ArrayBuffer>;
+  getArrayBufferAsync?: (
+    attribute: StorageBufferAttribute,
+  ) => Promise<ArrayBuffer>;
 };
 
 export interface CpuTerrainCache {
@@ -39,8 +46,8 @@ export interface CpuTerrainCache {
     attribute: StorageBufferAttribute,
     spatialIndex: SpatialIndex,
   ): void;
-  getElevation(worldX: number, worldZ: number): number;
-  getNormal(worldX: number, worldZ: number): Vector3;
+  getElevation(worldX: number, worldZ: number): number | null;
+  getNormal(worldX: number, worldZ: number): Vector3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
@@ -88,7 +95,11 @@ export function createCpuTerrainCache(
     return frontElevation[base + iy * edgeVertexCount + ix] ?? 0;
   };
 
-  const sampleGridBilinear = (leafIndex: number, gx: number, gy: number): number => {
+  const sampleGridBilinear = (
+    leafIndex: number,
+    gx: number,
+    gy: number,
+  ): number => {
     const max = edgeVertexCount - 1;
     const x = Math.max(0, Math.min(max, gx));
     const y = Math.max(0, Math.min(max, gy));
@@ -131,7 +142,13 @@ export function createCpuTerrainCache(
       const tileSize = config.rootSize / scale;
       const tileX = Math.floor((worldX - config.originX + halfRoot) / tileSize);
       const tileY = Math.floor((worldZ - config.originZ + halfRoot) / tileSize);
-      const leafIndex = lookupSpatialIndexRaw(frontIndex, 0, level, tileX, tileY);
+      const leafIndex = lookupSpatialIndexRaw(
+        frontIndex,
+        0,
+        level,
+        tileX,
+        tileY,
+      );
       if (leafIndex !== U32_EMPTY) {
         const tileMinX = config.originX + tileX * tileSize - halfRoot;
         const tileMinZ = config.originZ + tileY * tileSize - halfRoot;
@@ -170,6 +187,16 @@ export function createCpuTerrainCache(
     return { elevation: scaledHeight, normal, valid: true };
   };
 
+  const sampleElevationFromLookup = (lookup: TileLookupResult) => {
+    const fieldU = tileLocalToFieldUV(lookup.localU, config.innerTileSegments);
+    const fieldV = tileLocalToFieldUV(lookup.localV, config.innerTileSegments);
+    const gx = fieldU * (edgeVertexCount - 1);
+    const gy = fieldV * (edgeVertexCount - 1);
+    const height = sampleGridBilinear(lookup.leafIndex, gx, gy);
+    const scaledHeight = config.originY + height * config.elevationScale;
+    return { elevation: scaledHeight, valid: true };
+  };
+
   const sampleTerrain = (worldX: number, worldZ: number): TerrainSample => {
     if (!hasSnapshot) {
       return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false };
@@ -179,6 +206,20 @@ export function createCpuTerrainCache(
       return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false };
     }
     return sampleFromLookup(lookup);
+  };
+
+  const getElevation = (
+    worldX: number,
+    worldZ: number,
+  ): TerrainElevationSample => {
+    if (!hasSnapshot) {
+      return { elevation: 0, valid: false };
+    }
+    const lookup = lookupTile(worldX, worldZ);
+    if (!lookup.found) {
+      return { elevation: 0, valid: false };
+    }
+    return sampleElevationFromLookup(lookup);
   };
 
   const api: CpuTerrainCache = {
@@ -221,7 +262,8 @@ export function createCpuTerrainCache(
         });
     },
     getElevation(worldX, worldZ) {
-      return sampleTerrain(worldX, worldZ).elevation;
+      const sample = getElevation(worldX, worldZ);
+      return sample.valid ? sample.elevation : null;
     },
     getNormal(worldX, worldZ) {
       return sampleTerrain(worldX, worldZ).normal;
@@ -249,6 +291,9 @@ export function createCpuTerrainCache(
       let lastTile:
         | {
             leafIndex: number;
+            level: number;
+            tileX: number;
+            tileY: number;
             tileSize: number;
             tileMinX: number;
             tileMinZ: number;
@@ -268,6 +313,9 @@ export function createCpuTerrainCache(
           lookup = {
             found: true,
             leafIndex: lastTile.leafIndex,
+            level: lastTile.level,
+            tileX: lastTile.tileX,
+            tileY: lastTile.tileY,
             tileSize: lastTile.tileSize,
             localU: (worldX - lastTile.tileMinX) / lastTile.tileSize,
             localV: (worldZ - lastTile.tileMinZ) / lastTile.tileSize,
@@ -277,6 +325,9 @@ export function createCpuTerrainCache(
           if (lookup.found) {
             lastTile = {
               leafIndex: lookup.leafIndex,
+              level: lookup.level,
+              tileX: lookup.tileX,
+              tileY: lookup.tileY,
               tileSize: lookup.tileSize,
               tileMinX: worldX - lookup.localU * lookup.tileSize,
               tileMinZ: worldZ - lookup.localV * lookup.tileSize,
@@ -286,7 +337,7 @@ export function createCpuTerrainCache(
           }
         }
 
-        if (!lookup.found) {
+        if (!lookup?.found) {
           normals[i * 3 + 1] = 1;
           continue;
         }

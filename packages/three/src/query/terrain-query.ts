@@ -1,4 +1,9 @@
-import type { TerrainQuery, TerrainSample, TerrainSampleBatch, TerrainTile } from "./types";
+import type {
+  TerrainQuery,
+  TerrainSample,
+  TerrainSampleBatch,
+  TerrainTile,
+} from "./types";
 import type { CpuTerrainCache } from "./cpu-terrain-cache";
 
 export function createTerrainQuery(cache: CpuTerrainCache): TerrainQuery {
@@ -6,7 +11,7 @@ export function createTerrainQuery(cache: CpuTerrainCache): TerrainQuery {
     get generation() {
       return cache.generation;
     },
-    getElevation(worldX: number, worldZ: number): number {
+    getElevation(worldX: number, worldZ: number): number | null {
       return cache.getElevation(worldX, worldZ);
     },
     getNormal(worldX: number, worldZ: number) {

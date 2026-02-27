@@ -1,6 +1,10 @@
 import { Vector3 } from "three";
 import type { Ray } from "three";
-import type { RaycastOptions, TerrainQuery, TerrainRaycastResult } from "./types";
+import type {
+  RaycastOptions,
+  TerrainQuery,
+  TerrainRaycastResult,
+} from "./types";
 
 export type CpuRaycastConfig = {
   rootSize: number;
@@ -85,9 +89,9 @@ function terrainSignedDistance(
   worldY: number,
   worldZ: number,
 ): number | undefined {
-  const sample = query.sampleTerrain(worldX, worldZ);
-  if (!sample.valid) return undefined;
-  return worldY - sample.elevation;
+  const elevation = query.getElevation(worldX, worldZ);
+  if (!Number.isFinite(elevation)) return undefined;
+  return worldY - (elevation as number);
 }
 
 export function cpuRaycast(
@@ -140,7 +144,12 @@ export function cpuRaycast(
   for (let i = 1; i <= maxSteps; i += 1) {
     const t = startT + ((endT - startT) * i) / maxSteps;
     ray.at(t, point);
-    const signedDistance = terrainSignedDistance(query, point.x, point.y, point.z);
+    const signedDistance = terrainSignedDistance(
+      query,
+      point.x,
+      point.y,
+      point.z,
+    );
     if (signedDistance === undefined) {
       prevSignedDistance = undefined;
       prevT = t;
@@ -157,7 +166,12 @@ export function cpuRaycast(
       for (let r = 0; r < refinementSteps; r += 1) {
         const mid = (lo + hi) * 0.5;
         ray.at(mid, point);
-        const midDistance = terrainSignedDistance(query, point.x, point.y, point.z);
+        const midDistance = terrainSignedDistance(
+          query,
+          point.x,
+          point.y,
+          point.z,
+        );
         if (midDistance === undefined) {
           lo = mid;
           continue;

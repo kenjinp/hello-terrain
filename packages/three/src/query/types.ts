@@ -2,7 +2,12 @@ import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { ElevationCallback } from "../tsl/elevation";
 import type { TerrainUniformsContext } from "../types";
 import type { Ray, Vector3 } from "three";
-import type { Node, StorageBufferAttribute, StorageBufferNode, UniformNode } from "three/webgpu";
+import type {
+  Node,
+  StorageBufferAttribute,
+  StorageBufferNode,
+  UniformNode,
+} from "three/webgpu";
 
 export interface GpuSpatialIndexContext {
   data: Uint32Array<ArrayBuffer>;
@@ -34,7 +39,10 @@ export interface TerrainSample {
   normal: Vector3;
   valid: boolean;
 }
-
+export interface TerrainElevationSample {
+  elevation: number;
+  valid: boolean;
+}
 export interface TerrainSampleBatch {
   elevations: Float32Array;
   normals: Float32Array;
@@ -50,8 +58,8 @@ export interface TerrainTile {
 }
 
 export interface TerrainQuery {
-  getElevation(worldX: number, worldZ: number): number;
-  getNormal(worldX: number, worldZ: number): Vector3;
+  getElevation(worldX: number, worldZ: number): number | null;
+  getNormal(worldX: number, worldZ: number): Vector3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
@@ -72,5 +80,4 @@ export interface TerrainRaycastResult {
 
 export interface TerrainRaycast {
   pick(ray: Ray, options?: RaycastOptions): TerrainRaycastResult | null;
-  pickAsync(ray: Ray, options?: RaycastOptions): Promise<TerrainRaycastResult | null>;
 }

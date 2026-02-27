@@ -1,5 +1,5 @@
 {
   "title": "Query",
   "description": "Terrain query and raycasting APIs",
-  "pages": ["terrain-sampler", "terrain-query", "raycasting"]
+  "pages": ["terrain-sampler", "terrain-query", "raycasting", "how-it-works"]
 }
