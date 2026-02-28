@@ -31,6 +31,10 @@ import {
 } from "./uniforms/uniforms.task";
 import { terrainQueryTask } from "./terrain-query.task";
 import { terrainRaycastTask } from "./terrain-raycast.task";
+import {
+  tileBoundsContextTask,
+  tileBoundsReductionTask,
+} from "./tile-bounds.task";
 
 export { instanceIdTask } from "./instanceId.task";
 
@@ -55,6 +59,8 @@ export function terrainGraph(): TerrainGraph {
     .add(terrainFieldStageTask)
     .add(compileComputeTask)
     .add(executeComputeTask)
+    .add(tileBoundsContextTask)
+    .add(tileBoundsReductionTask)
     .add(terrainQueryTask)
     .add(terrainRaycastTask);
 }
@@ -80,6 +86,8 @@ export const terrainTasks = {
   terrainFieldStage: terrainFieldStageTask,
   compileCompute: compileComputeTask,
   executeCompute: executeComputeTask,
+  tileBoundsContext: tileBoundsContextTask,
+  tileBoundsReduction: tileBoundsReductionTask,
   terrainQuery: terrainQueryTask,
   terrainRaycast: terrainRaycastTask,
 } as const satisfies TerrainTasks;

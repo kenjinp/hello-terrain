@@ -57,10 +57,22 @@ export interface TerrainTile {
   index: number;
 }
 
+export interface TerrainTileBounds extends TerrainTile {
+  minElevation: number;
+  maxElevation: number;
+}
+
+export interface ElevationRange {
+  min: number;
+  max: number;
+}
+
 export interface TerrainQuery {
   getElevation(worldX: number, worldZ: number): number | null;
   getNormal(worldX: number, worldZ: number): Vector3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
+  getTileBounds(worldX: number, worldZ: number): TerrainTileBounds | null;
+  getGlobalElevationRange(): ElevationRange | null;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   readonly generation: number;

@@ -4,10 +4,12 @@ import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex, U32_EMPTY } from "../quadtree";
 import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
 import type {
+  ElevationRange,
   TerrainElevationSample,
   TerrainSample,
   TerrainSampleBatch,
   TerrainTile,
+  TerrainTileBounds,
 } from "./types";
 
 type TerrainQueryConfig = {
@@ -45,10 +47,14 @@ export interface CpuTerrainCache {
     renderer: WebGPURenderer,
     attribute: StorageBufferAttribute,
     spatialIndex: SpatialIndex,
+    boundsAttribute?: StorageBufferAttribute,
+    activeLeafCount?: number,
   ): void;
   getElevation(worldX: number, worldZ: number): number | null;
   getNormal(worldX: number, worldZ: number): Vector3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
+  getTileBounds(worldX: number, worldZ: number): TerrainTileBounds | null;
+  getGlobalElevationRange(): ElevationRange | null;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
 }
@@ -86,6 +92,10 @@ export function createCpuTerrainCache(
   let backElevation = new Float32Array(totalElements);
   let frontIndex = createSpatialIndex(maxNodes);
   let backIndex = createSpatialIndex(maxNodes);
+  let frontTileBounds = new Float32Array(maxNodes * 2);
+  let backTileBounds = new Float32Array(maxNodes * 2);
+  let frontLeafCount = 0;
+  let globalRange: ElevationRange | null = null;
   let hasSnapshot = false;
   let readbackPending = false;
   let generationCount = 0;
@@ -235,31 +245,93 @@ export function createCpuTerrainCache(
       verticesPerNode = edgeVertexCount * edgeVertexCount;
       totalElements = maxNodes * verticesPerNode;
     },
-    triggerReadback(renderer, attribute, spatialIndex) {
+    triggerReadback(
+      renderer,
+      attribute,
+      spatialIndex,
+      boundsAttribute,
+      activeLeafCount,
+    ) {
       if (readbackPending) return;
       cloneSpatialIndex(backIndex, spatialIndex);
       const withReadback = renderer as RendererReadback;
       if (!withReadback.getArrayBufferAsync) return;
 
+      const capturedLeafCount = activeLeafCount ?? 0;
+      const capturedScale = config.elevationScale;
+      const capturedOriginY = config.originY;
+
       readbackPending = true;
-      withReadback
-        .getArrayBufferAsync(attribute)
-        .then((result) => {
-          const data = new Float32Array(result);
-          backElevation.fill(0);
-          backElevation.set(data.subarray(0, totalElements));
-          const oldFrontElevation = frontElevation;
-          const oldFrontIndex = frontIndex;
-          frontElevation = backElevation;
-          frontIndex = backIndex;
-          backElevation = oldFrontElevation;
-          backIndex = oldFrontIndex;
-          hasSnapshot = true;
-          generationCount += 1;
-        })
-        .finally(() => {
-          readbackPending = false;
-        });
+      const elevationPromise = withReadback.getArrayBufferAsync(attribute);
+      const boundsPromise = boundsAttribute
+        ? withReadback.getArrayBufferAsync(boundsAttribute)
+        : null;
+
+      const onComplete = (
+        elevResult: ArrayBuffer,
+        boundsResult: ArrayBuffer | null,
+      ) => {
+        const data = new Float32Array(elevResult);
+        backElevation.fill(0);
+        backElevation.set(data.subarray(0, totalElements));
+
+        let boundsValid = capturedLeafCount === 0;
+        if (boundsResult) {
+          const rawBounds = new Float32Array(boundsResult);
+          backTileBounds.fill(0);
+          backTileBounds.set(rawBounds.subarray(0, capturedLeafCount * 2));
+          for (let i = 0; i < capturedLeafCount; i += 1) {
+            if ((rawBounds[i * 2 + 1] ?? 0) !== 0) {
+              boundsValid = true;
+              break;
+            }
+          }
+        }
+
+        const oldFrontElevation = frontElevation;
+        const oldFrontIndex = frontIndex;
+        frontElevation = backElevation;
+        frontIndex = backIndex;
+        frontLeafCount = capturedLeafCount;
+        backElevation = oldFrontElevation;
+        backIndex = oldFrontIndex;
+        if (boundsResult && boundsValid) {
+          const oldFrontBounds = frontTileBounds;
+          frontTileBounds = backTileBounds;
+          backTileBounds = oldFrontBounds;
+        }
+
+        if (boundsResult && boundsValid && capturedLeafCount > 0) {
+          let gMin = Infinity;
+          let gMax = -Infinity;
+          for (let i = 0; i < capturedLeafCount; i++) {
+            const rawMin = frontTileBounds[i * 2]!;
+            const rawMax = frontTileBounds[i * 2 + 1]!;
+            const a = capturedOriginY + rawMin * capturedScale;
+            const b = capturedOriginY + rawMax * capturedScale;
+            gMin = Math.min(gMin, a, b);
+            gMax = Math.max(gMax, a, b);
+          }
+          globalRange = { min: gMin, max: gMax };
+        }
+
+        hasSnapshot = true;
+        generationCount += 1;
+      };
+
+      if (boundsPromise) {
+        Promise.all([elevationPromise, boundsPromise])
+          .then(([elev, bounds]) => onComplete(elev, bounds))
+          .finally(() => {
+            readbackPending = false;
+          });
+      } else {
+        elevationPromise
+          .then((elev) => onComplete(elev, null))
+          .finally(() => {
+            readbackPending = false;
+          });
+      }
     },
     getElevation(worldX, worldZ) {
       const sample = getElevation(worldX, worldZ);
@@ -278,6 +350,26 @@ export function createCpuTerrainCache(
         y: lookup.tileY,
         index: lookup.leafIndex,
       };
+    },
+    getTileBounds(worldX, worldZ) {
+      if (!hasSnapshot) return null;
+      const lookup = lookupTile(worldX, worldZ);
+      if (!lookup.found || lookup.leafIndex >= frontLeafCount) return null;
+      const rawMin = frontTileBounds[lookup.leafIndex * 2]!;
+      const rawMax = frontTileBounds[lookup.leafIndex * 2 + 1]!;
+      const a = config.originY + rawMin * config.elevationScale;
+      const b = config.originY + rawMax * config.elevationScale;
+      return {
+        level: lookup.level,
+        x: lookup.tileX,
+        y: lookup.tileY,
+        index: lookup.leafIndex,
+        minElevation: Math.min(a, b),
+        maxElevation: Math.max(a, b),
+      };
+    },
+    getGlobalElevationRange() {
+      return globalRange;
     },
     sampleTerrainBatch(positions) {
       const count = Math.floor(positions.length / 2);

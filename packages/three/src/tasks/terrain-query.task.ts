@@ -14,16 +14,16 @@ import {
   origin,
   rootSize,
 } from "./params";
-import { quadtreeConfigTask } from "./quadtree.task";
-import { executeComputeTask } from "./compute.task";
+import { leafGpuBufferTask, quadtreeConfigTask } from "./quadtree.task";
 import { createElevationFieldContextTask } from "./elevation-field.task";
+import { tileBoundsReductionTask } from "./tile-bounds.task";
 
 export const terrainQueryTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
-    get(executeComputeTask);
-
+    const boundsContext = get(tileBoundsReductionTask);
     const elevationFieldContext = get(createElevationFieldContextTask);
     const quadtreeConfig = get(quadtreeConfigTask);
+    const leafState = get(leafGpuBufferTask);
     const maxNodesValue = get(maxNodes);
     const innerTileSegmentsValue = get(innerTileSegments);
     const maxLevelValue = get(maxLevel);
@@ -63,6 +63,8 @@ export const terrainQueryTask = task<{ renderer: WebGPURenderer }>(
           resources.renderer,
           elevationFieldContext.attribute,
           quadtreeConfig.state.leafIndex,
+          boundsContext.attribute,
+          leafState.count,
         );
       }
 

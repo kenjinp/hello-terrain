@@ -15,6 +15,7 @@ import type {
   TerrainRaycast,
   TerrainSampler,
 } from "../query/types";
+import type { TileBoundsContext } from "./tile-bounds.task";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
 export interface QuadtreeConfigState {
@@ -55,6 +56,8 @@ export interface TerrainTasks {
     execute: (renderer: WebGPURenderer, instanceCount: number) => void;
   }>;
   executeCompute: TaskRef<void | (() => void)>;
+  tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
+  tileBoundsReduction: TaskRef<TileBoundsContext>;
   terrainQuery: TaskRef<TerrainQuery>;
   terrainRaycast: TaskRef<TerrainRaycast>;
 }

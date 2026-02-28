@@ -4,6 +4,8 @@ import type { TerrainQuery, TerrainRaycast } from "../query/types";
 import { elevationScale, origin, rootSize } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
 
+const BOUNDS_PADDING = 1;
+
 const terrainRaycastTaskState: {
   raycast?: TerrainRaycast;
   terrainQuery: TerrainQuery | null;
@@ -35,12 +37,19 @@ export const terrainRaycastTask = task(
     return work(() => {
       const state = terrainRaycastTaskState;
       state.terrainQuery = terrainQuery;
-      const verticalExtent = Math.max(1, Math.abs(elevationScaleValue) * 2);
       state.bounds.rootSize = rootSizeValue;
       state.bounds.originX = originValue.x;
       state.bounds.originZ = originValue.z;
-      state.bounds.minY = originValue.y - verticalExtent;
-      state.bounds.maxY = originValue.y + verticalExtent;
+
+      const range = terrainQuery.getGlobalElevationRange();
+      if (range) {
+        state.bounds.minY = range.min - BOUNDS_PADDING;
+        state.bounds.maxY = range.max + BOUNDS_PADDING;
+      } else {
+        const verticalExtent = Math.max(1, Math.abs(elevationScaleValue) * 2);
+        state.bounds.minY = originValue.y - verticalExtent;
+        state.bounds.maxY = originValue.y + verticalExtent;
+      }
 
       if (!state.raycast) {
         state.raycast = createTerrainRaycast({

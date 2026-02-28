@@ -83,7 +83,40 @@ function getTerrainBounds(config: CpuRaycastConfig): TerrainBounds {
   };
 }
 
-function terrainSignedDistance(
+/**
+ * Compute signed distance from a point to the terrain surface.
+ * Returns positive when above, negative when below, undefined when
+ * no valid tile covers the XZ position.
+ *
+ * When tile bounds are available, points that are clearly above the
+ * tile's max elevation or below its min elevation return a conservative
+ * signed distance without performing the expensive bilinear sample.
+ */
+function terrainSignedDistanceFromBounds(
+  query: TerrainQuery,
+  worldX: number,
+  worldY: number,
+  worldZ: number,
+): number | undefined {
+  const tileBounds = query.getTileBounds(worldX, worldZ);
+  if (tileBounds) {
+    if (worldY > tileBounds.maxElevation) {
+      return worldY - tileBounds.maxElevation;
+    }
+    if (worldY < tileBounds.minElevation) {
+      return worldY - tileBounds.minElevation;
+    }
+  }
+  const elevation = query.getElevation(worldX, worldZ);
+  if (!Number.isFinite(elevation)) return undefined;
+  return worldY - (elevation as number);
+}
+
+/**
+ * Full-precision signed distance using bilinear interpolation.
+ * Used during binary refinement where we need exact elevation, not bounds.
+ */
+function terrainSignedDistancePrecise(
   query: TerrainQuery,
   worldX: number,
   worldY: number,
@@ -123,7 +156,7 @@ export function cpuRaycast(
   const point = new Vector3();
   let prevT = startT;
   ray.at(prevT, point);
-  let prevSignedDistance = terrainSignedDistance(
+  let prevSignedDistance = terrainSignedDistanceFromBounds(
     query,
     point.x,
     point.y,
@@ -144,7 +177,7 @@ export function cpuRaycast(
   for (let i = 1; i <= maxSteps; i += 1) {
     const t = startT + ((endT - startT) * i) / maxSteps;
     ray.at(t, point);
-    const signedDistance = terrainSignedDistance(
+    const signedDistance = terrainSignedDistanceFromBounds(
       query,
       point.x,
       point.y,
@@ -166,7 +199,7 @@ export function cpuRaycast(
       for (let r = 0; r < refinementSteps; r += 1) {
         const mid = (lo + hi) * 0.5;
         ray.at(mid, point);
-        const midDistance = terrainSignedDistance(
+        const midDistance = terrainSignedDistancePrecise(
           query,
           point.x,
           point.y,

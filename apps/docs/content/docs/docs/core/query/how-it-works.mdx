@@ -3,6 +3,8 @@ title: How It Works
 description: Architecture and data flow of the terrain query and raycasting systems
 ---
 
+import TileBoundsScene from "@/examples/TileBoundsScene"
+
 ## The problem
 
 Terrain elevation lives on the GPU. It's computed by a WebGPU compute shader, stored in a `StorageBufferAttribute`, and never touches JavaScript during normal rendering. But many gameplay and interaction tasks need elevation data on the CPU: placing objects, snapping characters to the ground, responding to mouse clicks.
@@ -16,18 +18,23 @@ The terrain query and raycast systems solve this by reading the GPU elevation da
 ```mermaid
 flowchart TD
     ElevationFn["elevationFn (GPU compute)"] --> ElevationBuffer["Elevation StorageBufferAttribute"]
+    ElevationBuffer --> BoundsReduction["tileBoundsReductionTask (GPU)"]
+    BoundsReduction --> BoundsBuffer["Per-tile min/max bounds buffer"]
     QuadtreeUpdate["quadtreeUpdateTask"] --> LeafIndex["SpatialIndex (CPU)"]
-    ElevationBuffer --> Readback["getArrayBufferAsync()"]
+    ElevationBuffer --> ElevReadback["getArrayBufferAsync()"]
+    BoundsBuffer --> BoundsReadback["getArrayBufferAsync()"]
     LeafIndex --> Clone["cloneSpatialIndex()"]
-    Readback --> BackBuffer["backElevation (Float32Array)"]
-    Clone --> BackIndex["backIndex (SpatialIndex clone)"]
-    BackBuffer --> Swap["Double-buffer swap"]
-    BackIndex --> Swap
-    Swap --> FrontBuffer["frontElevation + frontIndex"]
+    ElevReadback --> Swap["Double-buffer swap"]
+    BoundsReadback --> Swap
+    Clone --> Swap
+    Swap --> FrontBuffer["frontElevation + frontIndex + frontTileBounds"]
     FrontBuffer --> TerrainQuery["TerrainQuery API"]
     FrontBuffer --> CpuRaycast["cpuRaycast (ray march)"]
+    FrontBuffer --> GlobalRange["getGlobalElevationRange()"]
+    GlobalRange --> RaycastAABB["Data-driven raycast AABB"]
     TerrainQuery --> Pick["TerrainRaycast.pick()"]
     CpuRaycast --> Pick
+    RaycastAABB --> Pick
     Pick --> ThreeRaycast["TerrainMesh.raycast()"]
     ThreeRaycast --> PointerEvents["R3F pointer events"]
 ```
@@ -38,13 +45,15 @@ flowchart TD
 
 2. **Quadtree update** produces a `LeafSet` and builds a `SpatialIndex` — a CPU-side open-addressed hash map keyed by `(space, level, tileX, tileY)` that maps to the leaf array index.
 
-3. **Readback** is triggered once per frame (if no readback is already in flight). It clones the current `SpatialIndex` into a back buffer, then calls `renderer.getArrayBufferAsync(attribute)` to copy the GPU elevation buffer to CPU. This is asynchronous — the promise resolves on a later frame.
+3. **GPU bounds reduction** runs immediately after the elevation compute. A dedicated compute kernel uses workgroup shared memory to parallel-reduce each tile's elevation grid into a `(min, max)` pair. The output is a compact per-tile bounds buffer on the GPU.
 
-4. **Double-buffer swap** happens when the readback promise resolves. The back elevation array and back spatial index become the new front buffers. This ensures the elevation data and spatial index are always from the same frame — a consistent snapshot.
+4. **Readback** is triggered once per frame (if no readback is already in flight). It clones the current `SpatialIndex` into a back buffer, then fires two parallel `getArrayBufferAsync` calls — one for the elevation buffer and one for the small per-tile bounds buffer. Both are asynchronous and resolve on a later frame.
 
-5. **TerrainQuery** reads from the front buffers. Point queries (`getElevation`, `sampleTerrain`, etc.) are now fully synchronous.
+5. **Double-buffer swap** happens when both readback promises resolve. The back elevation array, back spatial index, and back tile bounds become the new front buffers. The global elevation range (min/max across all tiles) is computed from the bounds during the swap. This ensures all data is from the same frame — a consistent snapshot.
 
-6. **TerrainRaycast** uses the query for ray marching. The mesh's `raycast()` override routes Three.js raycaster calls through this system.
+6. **TerrainQuery** reads from the front buffers. Point queries (`getElevation`, `sampleTerrain`, etc.) are fully synchronous. Per-tile bounds are available via `getTileBounds()`, and the global elevation range via `getGlobalElevationRange()`.
+
+7. **TerrainRaycast** uses the query for ray marching. Its AABB is derived from the actual global elevation range rather than a conservative estimate, giving tighter clipping. The mesh's `raycast()` override routes Three.js raycaster calls through this system.
 
 ## CPU terrain cache
 
@@ -91,7 +100,9 @@ The ray march algorithm intersects a ray against the terrain heightfield stored 
 
 The terrain is bounded by an axis-aligned box:
 - XZ extents: `origin ± rootSize/2`
-- Y extents: `origin.y ± elevationScale * 2`
+- Y extents: derived from the GPU-computed per-tile elevation bounds (falls back to `origin.y ± elevationScale * 2` before the first readback)
+
+The per-tile bounds reduction pass computes the true min/max elevation across all active tiles. This means the raycast AABB tightly fits the actual terrain surface rather than using a conservative overestimate. A mostly-flat terrain with `elevationScale = 100` might have a Y range of `[-2, 5]` instead of the old `[-200, 200]`.
 
 The ray is clipped to this AABB. If it misses entirely, the raycast returns `null` immediately.
 
@@ -140,15 +151,33 @@ raycast(raycaster, intersects) {
 
 This means standard Three.js raycasting and R3F pointer events (`onPointerMove`, `onPointerDown`, etc.) automatically use terrain-aware picking once `terrainRaycast` is assigned to the mesh. The `event.point` in R3F handlers carries the correct terrain elevation.
 
+## Per-tile bounds reduction
+
+After the elevation field compute, a separate GPU compute kernel reduces each tile's elevation grid to a `(min, max)` pair using workgroup shared memory.
+
+The kernel dispatches one workgroup per active tile. Within each workgroup, threads cooperatively scan the tile's elevation values using a parallel tree reduction. Each thread first pre-reduces its assigned elements (handling tiles with more vertices than the workgroup size), writes to shared memory, then participates in a log2(N) barrier-synchronized reduction. Thread 0 writes the final min/max to a compact per-tile output buffer.
+
+This runs entirely on the GPU in under 0.1ms for typical tile counts. The small output buffer (2 floats per tile) is read back to the CPU alongside the elevation data, adding negligible overhead to the async readback.
+
+The yellow wireframe boxes below visualize the per-tile bounding boxes derived from the GPU reduction pass. Each box spans the tile's XZ footprint and its true min/max elevation.
+
+<div className="h-[560px] rounded overflow-hidden">
+  <TileBoundsScene />
+</div>
+
 ## Task graph wiring
 
-Both systems are integrated into the reactive task graph:
+The systems are integrated into the reactive task graph:
 
-- `terrainQueryTask` depends on `executeComputeTask` (ensuring the GPU has written elevation data) and `quadtreeConfigTask` (ensuring the spatial index is populated). It triggers a readback each frame and returns the `TerrainQuery` wrapper.
+- `tileBoundsContextTask` creates the per-tile bounds storage buffer and compiles the reduction kernel.
 
-- `terrainRaycastTask` depends on `terrainQueryTask`. It creates a `TerrainRaycast` with a getter for the latest `TerrainQuery`, so the raycast always uses current terrain data without needing to be recreated.
+- `tileBoundsReductionTask` depends on `executeComputeTask` (ensuring elevation is written) and dispatches the reduction kernel. It runs on the GPU lane.
 
-Both tasks always return their respective objects (never `null`). The objects handle internal readiness gracefully — queries return `{ valid: false }` before the first readback, and the raycast falls back to bounds-only picking.
+- `terrainQueryTask` depends on `tileBoundsReductionTask` (which transitively depends on `executeComputeTask`) and `quadtreeConfigTask`. It triggers readback of both the elevation buffer and the bounds buffer each frame.
+
+- `terrainRaycastTask` depends on `terrainQueryTask`. It reads the global elevation range from the query to set its AABB, falling back to a conservative estimate before the first readback completes.
+
+All tasks always return their respective objects (never `null`). The objects handle internal readiness gracefully — queries return `{ valid: false }` before the first readback, and the raycast falls back to bounds-only picking.
 
 ## Performance characteristics
 
@@ -157,7 +186,9 @@ Both tasks always return their respective objects (never `null`). The objects ha
 | `getElevation` / `sampleTerrain` | < 0.01 ms | Hash lookup + bilinear interp on typed arrays |
 | `sampleTerrainBatch` (1000 points) | < 1 ms | Amortized by tile caching |
 | `pick` (ray march) | ~0.1 ms | 128 steps + 8 refinement, all CPU |
-| `getTile` | < 0.01 ms | Hash lookup only |
+| `getTile` / `getTileBounds` | < 0.01 ms | Hash lookup only |
+| `getGlobalElevationRange` | < 0.01 ms | Precomputed during readback swap |
+| GPU bounds reduction | < 0.1 ms | Parallel shared-memory reduction per tile |
 | GPU readback | 1-3 ms async | Does not block the frame; runs in background |
 
 The entire query and raycast path is allocation-free in the hot loop (no `new` in per-step code), operates on contiguous `Float32Array` data, and fits comfortably in L1/L2 cache for typical terrain configurations.

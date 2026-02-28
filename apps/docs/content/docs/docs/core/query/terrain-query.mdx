@@ -67,10 +67,33 @@ for (let i = 0; i < batch.elevations.length; i++) {
 }
 ```
 
+## Tile bounds
+
+Each tile's min/max elevation is computed on the GPU via a parallel reduction pass and read back alongside the elevation data.
+
+```ts
+const bounds = terrainQuery.getTileBounds(worldX, worldZ);
+if (bounds) {
+  console.log(`Tile L${bounds.level} (${bounds.x},${bounds.y})`);
+  console.log(`Elevation range: ${bounds.minElevation} – ${bounds.maxElevation}`);
+}
+```
+
+The global elevation range across all active tiles is also available:
+
+```ts
+const range = terrainQuery.getGlobalElevationRange();
+if (range) {
+  console.log(`Terrain spans Y: ${range.min} – ${range.max}`);
+}
+```
+
+This is used internally by the raycast system to derive a tight AABB instead of a conservative estimate.
+
 ## Freshness and startup behavior
 
 - Before the first successful readback, `graph.get(terrainTasks.terrainQuery)` returns `null`.
 - Once non-null, per-sample `valid` still indicates whether the queried point maps to an active tile.
 - Use `terrainQuery.generation` to detect when cache content changes between frames.
-- Values are frame-coherent snapshots: tile lookup and elevation data are paired from the same readback generation.
+- Values are frame-coherent snapshots: tile lookup, elevation data, and per-tile bounds are all paired from the same readback generation.
 
