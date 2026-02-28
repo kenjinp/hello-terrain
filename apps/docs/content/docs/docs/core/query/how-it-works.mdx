@@ -178,17 +178,3 @@ The systems are integrated into the reactive task graph:
 - `terrainRaycastTask` depends on `terrainQueryTask`. It reads the global elevation range from the query to set its AABB, falling back to a conservative estimate before the first readback completes.
 
 All tasks always return their respective objects (never `null`). The objects handle internal readiness gracefully — queries return `{ valid: false }` before the first readback, and the raycast falls back to bounds-only picking.
-
-## Performance characteristics
-
-| Operation | Typical cost | Notes |
-|:--|:--|:--|
-| `getElevation` / `sampleTerrain` | < 0.01 ms | Hash lookup + bilinear interp on typed arrays |
-| `sampleTerrainBatch` (1000 points) | < 1 ms | Amortized by tile caching |
-| `pick` (ray march) | ~0.1 ms | 128 steps + 8 refinement, all CPU |
-| `getTile` / `getTileBounds` | < 0.01 ms | Hash lookup only |
-| `getGlobalElevationRange` | < 0.01 ms | Precomputed during readback swap |
-| GPU bounds reduction | < 0.1 ms | Parallel shared-memory reduction per tile |
-| GPU readback | 1-3 ms async | Does not block the frame; runs in background |
-
-The entire query and raycast path is allocation-free in the hot loop (no `new` in per-step code), operates on contiguous `Float32Array` data, and fits comfortably in L1/L2 cache for typical terrain configurations.
