@@ -16,8 +16,8 @@ import {
   skirtScale,
   TerrainGeometry,
   terrainGraph,
-  terrainTasks,
   TerrainMesh,
+  terrainTasks,
   type ElevationCallback,
   type LeafSet,
   type TerrainGraph,
@@ -34,14 +34,14 @@ import {
   cos,
   dot,
   float,
-  Fn,
   floor,
+  Fn,
   fract,
   Loop,
   max,
   mix,
-  normalWorld,
   normalize,
+  normalWorld,
   sin,
   vec2,
   vec3,
@@ -55,9 +55,7 @@ extend({ TerrainGeometry, TerrainMesh });
 type LevaStore = ReturnType<typeof useCreateStore>;
 
 const randomGradient = Fn(([p]: [any]) => {
-  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
-    Math.PI * 2,
-  );
+  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(Math.PI * 2);
   return vec2(cos(angle), sin(angle));
 });
 
@@ -103,14 +101,7 @@ function writeBoxEdges(
   maxZ: number,
 ) {
   let i = offset;
-  const edge = (
-    x0: number,
-    y0: number,
-    z0: number,
-    x1: number,
-    y1: number,
-    z1: number,
-  ) => {
+  const edge = (x0: number, y0: number, z0: number, x1: number, y1: number, z1: number) => {
     out[i++] = x0;
     out[i++] = y0;
     out[i++] = z0;
@@ -136,30 +127,19 @@ const MAX_BOXES = 1024;
 
 function makeBoxGeo() {
   const geo = new THREE.BufferGeometry();
-  const attr = new THREE.BufferAttribute(
-    new Float32Array(MAX_BOXES * FLOATS_PER_BOX),
-    3,
-  );
+  const attr = new THREE.BufferAttribute(new Float32Array(MAX_BOXES * FLOATS_PER_BOX), 3);
   attr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute("position", attr);
   geo.setDrawRange(0, 0);
   return geo;
 }
 
-function TileBoundsViz({
-  g,
-  currentRootSize,
-}: {
-  g: TerrainGraph;
-  currentRootSize: number;
-}) {
+function TileBoundsViz({ g, currentRootSize }: { g: TerrainGraph; currentRootSize: number }) {
   const geo = useMemo(makeBoxGeo, []);
 
   useFrame(() => {
     const leafSet = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
-    const terrainQuery = g.peek((terrainTasks as any).terrainQuery) as
-      | TerrainQuery
-      | undefined;
+    const terrainQuery = g.peek((terrainTasks as any).terrainQuery) as TerrainQuery | undefined;
 
     if (!leafSet || !terrainQuery) {
       geo.setDrawRange(0, 0);
@@ -174,9 +154,7 @@ function TileBoundsViz({
     let positions = attr.array as Float32Array;
     const floatsNeeded = count * FLOATS_PER_BOX;
     if (positions.length < floatsNeeded) {
-      positions = new Float32Array(
-        Math.max(floatsNeeded, MAX_BOXES * FLOATS_PER_BOX),
-      );
+      positions = new Float32Array(Math.max(floatsNeeded, MAX_BOXES * FLOATS_PER_BOX));
       attr = new THREE.BufferAttribute(positions, 3);
       attr.setUsage(THREE.DynamicDrawUsage);
       geo.setAttribute("position", attr);
@@ -195,10 +173,7 @@ function TileBoundsViz({
       const centerX = tileMinX + tileSize * 0.5;
       const centerZ = tileMinZ + tileSize * 0.5;
 
-      const bounds: TerrainTileBounds | null = terrainQuery.getTileBounds(
-        centerX,
-        centerZ,
-      );
+      const bounds: TerrainTileBounds | null = terrainQuery.getTileBounds(centerX, centerZ);
       if (!bounds) continue;
 
       writeBoxEdges(
@@ -220,23 +195,15 @@ function TileBoundsViz({
 
   return (
     <lineSegments args={[geo]} frustumCulled={false}>
-      <lineBasicMaterial color={"red"} transparent opacity={0.6} />
+      <lineBasicMaterial color={"red"} transparent />
     </lineSegments>
   );
 }
 
-function TileBoundsSceneImpl({
-  g,
-  store,
-}: {
-  g: TerrainGraph;
-  store: LevaStore;
-}) {
+function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
   const meshRef = useRef<TerrainMesh | null>(null);
   const materialRef = useRef<THREE.MeshBasicNodeMaterial | null>(null);
-  const lastPositionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(
-    null,
-  );
+  const lastPositionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
   const lastCameraRef = useRef(new THREE.Vector3());
 
   const controls = useControls(
@@ -281,12 +248,7 @@ function TileBoundsSceneImpl({
     g.set(elevationScale, () => controls.elevationScale);
     g.set(maxLevel, () => controls.maxLevel);
     g.set(innerTileSegments, () => controls.innerTileSegments);
-  }, [
-    g,
-    controls.elevationScale,
-    controls.maxLevel,
-    controls.innerTileSegments,
-  ]);
+  }, [g, controls.elevationScale, controls.maxLevel, controls.innerTileSegments]);
 
   useEffect(() => {
     const elevation: ElevationCallback = ({ worldPosition }) => {
@@ -309,10 +271,7 @@ function TileBoundsSceneImpl({
   );
 
   useFrame(async ({ camera, gl }) => {
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      0.05 * 0.05
-    ) {
+    if (lastCameraRef.current.distanceToSquared(camera.position) >= 0.05 * 0.05) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
         prev.cameraOrigin.x = camera.position.x;
         prev.cameraOrigin.y = camera.position.y;
@@ -337,11 +296,7 @@ function TileBoundsSceneImpl({
 
     const positionNode = g.peek(positionNodeTask);
     const material = materialRef.current;
-    if (
-      material &&
-      positionNode &&
-      positionNode !== lastPositionNodeRef.current
-    ) {
+    if (material && positionNode && positionNode !== lastPositionNodeRef.current) {
       material.positionNode = positionNode;
       material.needsUpdate = true;
       lastPositionNodeRef.current = positionNode;
@@ -350,11 +305,7 @@ function TileBoundsSceneImpl({
 
   return (
     <>
-      <terrainMesh
-        ref={meshRef}
-        innerTileSegments={controls.innerTileSegments}
-        maxNodes={1024}
-      >
+      <terrainMesh ref={meshRef} innerTileSegments={controls.innerTileSegments} maxNodes={1024}>
         <meshBasicNodeMaterial ref={materialRef} colorNode={colorNode} />
       </terrainMesh>
       <TileBoundsViz g={g} currentRootSize={controls.rootSize} />
@@ -380,9 +331,7 @@ export default function TileBoundsScene() {
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
+          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
           await renderer.init();
           return renderer;
         }}

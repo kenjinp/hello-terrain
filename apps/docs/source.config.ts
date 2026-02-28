@@ -1,4 +1,5 @@
 import { defineConfig, defineDocs, frontmatterSchema, metaSchema } from "fumadocs-mdx/config";
+import { remarkMdxMermaid } from "fumadocs-mermaid";
 import { remarkGlossary } from "./src/lib/remark-glossary";
 import { z } from "zod";
 
@@ -20,6 +21,6 @@ export const docs = defineDocs({
 
 export default defineConfig({
   mdxOptions: {
-    remarkPlugins: [remarkGlossary],
+    remarkPlugins: [remarkGlossary, remarkMdxMermaid],
   },
 });
