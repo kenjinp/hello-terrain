@@ -9,6 +9,7 @@ import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
+import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type {
   GpuSpatialIndexContext,
   TerrainQuery,
@@ -21,6 +22,8 @@ import type { LeafStorageState, TerrainUniformsContext } from "../types";
 export interface QuadtreeConfigState {
   state: QuadtreeState;
   surface: Surface;
+  /** Set by terrainQueryTask, read by quadtreeUpdateTask (previous frame). */
+  terrainCache?: CpuTerrainCache;
 }
 
 export interface LeafGpuBufferState extends LeafStorageState {

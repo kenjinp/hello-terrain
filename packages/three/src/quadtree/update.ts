@@ -14,7 +14,13 @@ export function update(
   params: UpdateParams,
   outLeaves?: LeafSet,
 ): LeafSet {
+  const origY = params.cameraOrigin.y;
+  params.cameraOrigin.y -= params.elevationAtCameraXZ ?? 0;
+
   beginUpdate(state, surface, params);
   const leaves = refineLeaves(state, surface, params, outLeaves);
-  return balance2to1(state, surface, params, leaves);
+  const result = balance2to1(state, surface, params, leaves);
+
+  params.cameraOrigin.y = origY;
+  return result;
 }

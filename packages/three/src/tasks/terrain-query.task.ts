@@ -47,6 +47,7 @@ export const terrainQueryTask = task<{ renderer: WebGPURenderer }>(
         state.query = createTerrainQuery(state.cache);
         state.shapeKey = shapeKey;
       }
+      quadtreeConfig.terrainCache = state.cache;
 
       state.cache.updateConfig({
         rootSize: rootSizeValue,

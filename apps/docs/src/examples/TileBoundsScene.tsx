@@ -335,7 +335,7 @@ export default function TileBoundsScene() {
           await renderer.init();
           return renderer;
         }}
-        camera={{ position: [0, 38, 70] }}
+        camera={{ position: [0, 38, 70], near: 0.1, far: 4096 * 2 }}
         dpr={[1, 1]}
         performance={{ min: 0.5 }}
       >
@@ -343,6 +343,7 @@ export default function TileBoundsScene() {
         <directionalLight intensity={1.1} position={[1, 1, 1]} />
         <TileBoundsSceneImpl g={g} store={store} />
         <OrbitControls makeDefault target={[0, 4, 0]} />
+        <fog attach="fog" args={["#171720", 50, 512]} />
       </Canvas>
     </ExamplesCanvas>
   );

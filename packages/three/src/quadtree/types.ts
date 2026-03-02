@@ -116,6 +116,13 @@ export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
 
   /**
+   * Terrain elevation at the camera's XZ position (from previous frame).
+   * Subtracted from `cameraOrigin.y` during refinement so that LOD
+   * distance is measured relative to the terrain surface, not the datum.
+   */
+  elevationAtCameraXZ?: number;
+
+  /**
    * Controls how subdivision decisions are made.
    * `distance` is the initial focus; `screen` is supported for future parity.
    */
