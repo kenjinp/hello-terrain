@@ -99,6 +99,7 @@ export function createCpuTerrainCache(
   let hasSnapshot = false;
   let readbackPending = false;
   let generationCount = 0;
+  let lastClonedStampGen = -1;
 
   const readHeight = (leafIndex: number, ix: number, iy: number): number => {
     const base = leafIndex * verticesPerNode;
@@ -253,7 +254,9 @@ export function createCpuTerrainCache(
       activeLeafCount,
     ) {
       if (readbackPending) return;
+      if (spatialIndex.stampGen === lastClonedStampGen) return;
       cloneSpatialIndex(backIndex, spatialIndex);
+      lastClonedStampGen = spatialIndex.stampGen;
       const withReadback = renderer as RendererReadback;
       if (!withReadback.getArrayBufferAsync) return;
 

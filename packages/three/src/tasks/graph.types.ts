@@ -36,6 +36,12 @@ export interface ElevationFieldContext {
   node: StorageBufferNode;
 }
 
+export interface TerrainQueryContext {
+  cache: CpuTerrainCache;
+  query: TerrainQuery;
+  shapeKey: string;
+}
+
 /** Task refs for the standard terrain pipeline. */
 export interface TerrainTasks {
   instanceId: TaskRef<string>;
@@ -61,7 +67,8 @@ export interface TerrainTasks {
   executeCompute: TaskRef<void | (() => void)>;
   tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
   tileBoundsReduction: TaskRef<TileBoundsContext>;
-  terrainQuery: TaskRef<TerrainQuery>;
+  terrainQuery: TaskRef<TerrainQueryContext>;
+  terrainReadback: TaskRef<void>;
   terrainRaycast: TaskRef<TerrainRaycast>;
 }
 

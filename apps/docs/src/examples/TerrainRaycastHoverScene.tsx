@@ -22,7 +22,6 @@ import {
   type LeafSet,
   type TerrainGraph,
   type TerrainQuery,
-  type TerrainRaycast,
   type TerrainTile,
   type UpdateParams,
 } from "@hello-terrain/three";
@@ -246,17 +245,12 @@ function TerrainRaycastHoverSceneImpl({
       lastPositionNodeRef.current = positionNode;
     }
 
-    const terrainRaycast = g.peek((terrainTasks as any).terrainRaycast) as
-      | TerrainRaycast
-      | undefined;
+    const terrainRaycast = g.peek(terrainTasks.terrainRaycast);
     if (terrainRaycast) {
       mesh.terrainRaycast = terrainRaycast;
     }
 
-    terrainQueryRef.current =
-      (g.peek((terrainTasks as any).terrainQuery) as
-        | TerrainQuery
-        | undefined) ?? null;
+    terrainQueryRef.current = g.peek(terrainTasks.terrainQuery)?.query ?? null;
 
     if (hoverRef.current) {
       uHoverCenter.value.copy(hoverRef.current.point);

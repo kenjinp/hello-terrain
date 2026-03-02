@@ -21,7 +21,6 @@ import {
   type ElevationCallback,
   type LeafSet,
   type TerrainGraph,
-  type TerrainQuery,
   type TerrainTileBounds,
   type UpdateParams,
 } from "@hello-terrain/three";
@@ -139,7 +138,7 @@ function TileBoundsViz({ g, currentRootSize }: { g: TerrainGraph; currentRootSiz
 
   useFrame(() => {
     const leafSet = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
-    const terrainQuery = g.peek((terrainTasks as any).terrainQuery) as TerrainQuery | undefined;
+    const terrainQuery = g.peek(terrainTasks.terrainQuery)?.query;
 
     if (!leafSet || !terrainQuery) {
       geo.setDrawRange(0, 0);

@@ -29,7 +29,7 @@ const terrainRaycastTaskState: {
 
 export const terrainRaycastTask = task(
   (get, work) => {
-    const terrainQuery = get(terrainQueryTask);
+    const { query: terrainQuery } = get(terrainQueryTask);
     const rootSizeValue = get(rootSize);
     const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);

@@ -29,7 +29,7 @@ import {
   createUniformsTask,
   updateUniformsTask,
 } from "./uniforms/uniforms.task";
-import { terrainQueryTask } from "./terrain-query.task";
+import { terrainQueryTask, terrainReadbackTask } from "./terrain-query.task";
 import { terrainRaycastTask } from "./terrain-raycast.task";
 import {
   tileBoundsContextTask,
@@ -62,6 +62,7 @@ export function terrainGraph(): TerrainGraph {
     .add(tileBoundsContextTask)
     .add(tileBoundsReductionTask)
     .add(terrainQueryTask)
+    .add(terrainReadbackTask)
     .add(terrainRaycastTask);
 }
 
@@ -89,5 +90,6 @@ export const terrainTasks = {
   tileBoundsContext: tileBoundsContextTask,
   tileBoundsReduction: tileBoundsReductionTask,
   terrainQuery: terrainQueryTask,
+  terrainReadback: terrainReadbackTask,
   terrainRaycast: terrainRaycastTask,
 } as const satisfies TerrainTasks;
