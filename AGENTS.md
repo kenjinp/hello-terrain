@@ -12,3 +12,5 @@ When naming or refactoring terrain APIs, follow `packages/three/spec/naming-conv
 Prefer functions over classes. 
 
 In library internals, don't use three.js. Only expose three.js for consumer level methods. 
+
+Don't use module-scope variables, as there maybe be mulitple instances of the terrain. 

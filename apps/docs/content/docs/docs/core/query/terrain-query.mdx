@@ -16,17 +16,15 @@ The query path reads from a shared CPU cache populated by async GPU readback of 
 
 ## Get the query context
 
+`terrainTasks.terrainQuery` returns a `TerrainQueryContext` containing the `TerrainQuery` API on its `query` property.
+
 ```ts
 import { terrainGraph, terrainTasks } from "@hello-terrain/three";
 
 const graph = terrainGraph();
 await graph.run({ resources: { renderer } });
 
-const terrainQuery = graph.get(terrainTasks.terrainQuery);
-if (!terrainQuery) {
-  // Cache is not ready yet (no successful readback).
-  return;
-}
+const { query: terrainQuery } = graph.get(terrainTasks.terrainQuery);
 ```
 
 ## Single-point queries
@@ -92,8 +90,9 @@ This is used internally by the raycast system to derive a tight AABB instead of 
 
 ## Freshness and startup behavior
 
-- Before the first successful readback, `graph.get(terrainTasks.terrainQuery)` returns `null`.
-- Once non-null, per-sample `valid` still indicates whether the queried point maps to an active tile.
+- `graph.get(terrainTasks.terrainQuery)` always returns a `TerrainQueryContext`. Before the first successful readback, individual queries return `{ valid: false }`.
+- Per-sample `valid` indicates whether the queried point maps to an active tile with readback data.
 - Use `terrainQuery.generation` to detect when cache content changes between frames.
 - Values are frame-coherent snapshots: tile lookup, elevation data, and per-tile bounds are all paired from the same readback generation.
+- Readback is triggered by a separate `terrainReadbackTask` that runs on the GPU lane. It is fire-and-forget — downstream tasks like `terrainRaycastTask` depend on the stable `terrainQueryTask`, not the readback, so they don't block on GPU compute.
 

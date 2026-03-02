@@ -47,7 +47,7 @@ flowchart TD
 
 3. **GPU bounds reduction** runs immediately after the elevation compute. A dedicated compute kernel uses workgroup shared memory to parallel-reduce each tile's elevation grid into a `(min, max)` pair. The output is a compact per-tile bounds buffer on the GPU.
 
-4. **Readback** is triggered once per frame (if no readback is already in flight). It clones the current `SpatialIndex` into a back buffer, then fires two parallel `getArrayBufferAsync` calls — one for the elevation buffer and one for the small per-tile bounds buffer. Both are asynchronous and resolve on a later frame.
+4. **Readback** is triggered by `terrainReadbackTask` once per frame (if no readback is already in flight). It clones the current `SpatialIndex` into a back buffer (skipping the clone if the spatial index hasn't changed since the last readback), then fires two parallel `getArrayBufferAsync` calls — one for the elevation buffer and one for the small per-tile bounds buffer. Both are asynchronous and resolve on a later frame. Because readback is a separate fire-and-forget task, downstream consumers like `terrainRaycastTask` don't block on it.
 
 5. **Double-buffer swap** happens when both readback promises resolve. The back elevation array, back spatial index, and back tile bounds become the new front buffers. The global elevation range (min/max across all tiles) is computed from the bounds during the swap. This ensures all data is from the same frame — a consistent snapshot.
 
@@ -173,8 +173,10 @@ The systems are integrated into the reactive task graph:
 
 - `tileBoundsReductionTask` depends on `executeComputeTask` (ensuring elevation is written) and dispatches the reduction kernel. It runs on the GPU lane.
 
-- `terrainQueryTask` depends on `tileBoundsReductionTask` (which transitively depends on `executeComputeTask`) and `quadtreeConfigTask`. It triggers readback of both the elevation buffer and the bounds buffer each frame.
+- `terrainQueryTask` depends on `quadtreeConfigTask` and terrain params. It creates and manages the `CpuTerrainCache` and `TerrainQuery` facade. This is a stable "create" task — it only re-runs when configuration changes, not every frame. It does **not** depend on GPU compute tasks, keeping it off the GPU critical path.
 
-- `terrainRaycastTask` depends on `terrainQueryTask`. It reads the global elevation range from the query to set its AABB, falling back to a conservative estimate before the first readback completes.
+- `terrainReadbackTask` depends on `tileBoundsReductionTask`, `terrainQueryTask`, and the leaf GPU state. It triggers readback of both the elevation buffer and the bounds buffer each frame. No downstream tasks depend on it — readback is a fire-and-forget side effect. It runs on the GPU lane.
+
+- `terrainRaycastTask` depends on `terrainQueryTask` (not the readback task). It reads the global elevation range from the query to set its AABB, falling back to a conservative estimate before the first readback completes. Because it depends on the stable query task rather than the per-frame readback, it avoids blocking on GPU compute.
 
 All tasks always return their respective objects (never `null`). The objects handle internal readiness gracefully — queries return `{ valid: false }` before the first readback, and the raycast falls back to bounds-only picking.
