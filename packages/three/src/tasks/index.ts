@@ -6,6 +6,8 @@ export * from "./gpuSpatialIndex.task";
 export * from "./instanceId.task";
 export * from "./terrain-field.task";
 export * from "./terrain-sampler.task";
+export * from "./terrain-query.task";
+export * from "./terrain-raycast.task";
 export * from "./params";
 export * from "./positions.task";
 export * from "./quadtree.task";

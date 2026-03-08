@@ -1,8 +1,10 @@
 import { task } from "@hello-terrain/work";
 import { createLeafStorage } from "../gpu/leafStorage";
-import { createFlatSurface, createState, update } from "../quadtree";
 import type { LeafSet } from "../quadtree";
+import { createFlatSurface, createState, update } from "../quadtree";
+import type { QuadtreeConfigState } from "./graph.types";
 import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, surface } from "./params";
+import { terrainQueryTask } from "./terrain-query.task";
 
 /**
  * Derives the terrain surface from `rootSize` and `origin`.
@@ -25,7 +27,7 @@ export const quadtreeConfigTask = task((get, work) => {
   const maxNodesVal = get(maxNodes);
   const maxLevelVal = get(maxLevel);
 
-  return work(() => {
+  return work((): QuadtreeConfigState => {
     const state = createState({ maxNodes: maxNodesVal, maxLevel: maxLevelVal }, surfaceVal);
     return {
       state,
@@ -37,9 +39,13 @@ export const quadtreeConfigTask = task((get, work) => {
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
   const quadtreeUpdateConfig = get(quadtreeUpdate);
+  const { query: terrainQuery } = get(terrainQueryTask);
 
   let outLeaves: LeafSet | undefined = undefined;
   return work(() => {
+    const cam = quadtreeUpdateConfig.cameraOrigin;
+    quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
+
     outLeaves = update(
       quadtreeConfig.state,
       quadtreeConfig.surface,

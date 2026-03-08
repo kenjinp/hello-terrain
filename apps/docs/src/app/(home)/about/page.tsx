@@ -55,11 +55,12 @@ export default function AboutPage() {
 
         {/* Learning Journey */}
         <section className="space-y-4">
-          <h2 className="text-2xl font-semibold">A Learning Journey</h2>
+          <h2 className="text-2xl font-semibold">Let's do it together</h2>
           <p className="text-fd-muted-foreground leading-relaxed">
-            This project is my personal exploration of the world of ... rendering worlds. Terrain
+            This project is a personal exploration of the world of ... rendering worlds. Terrain
             rendering is full of fascinating algorithms and techniques, so Hello Terrain is as much
             about learning and documenting these concepts as it is about providing useful tools.
+            Please join the project on discord to help out if you are similarly interested!
           </p>
           <p className="text-fd-muted-foreground leading-relaxed">
             Expect explorations into topics like:
@@ -67,21 +68,10 @@ export default function AboutPage() {
           <ul className="list-disc list-inside text-fd-muted-foreground space-y-1 ml-2">
             <li>Procedural heightmap generation</li>
             <li>Terrain erosion simulation (thermal, hydraulic...)</li>
-            <li>Level of detail (LOD) and chunking strategies</li>
+            <li>Level of detail and chunking strategies</li>
             <li>WebGPU compute shaders</li>
             <li>Biome and texture splatting techniques</li>
           </ul>
-        </section>
-
-        {/* Teaching */}
-        <section className="space-y-4">
-          <h2 className="text-2xl font-semibold">Learn With Me</h2>
-          <p className="text-fd-muted-foreground leading-relaxed">
-            One of my goals with Hello Terrain is to make procedural terrain generation more
-            accessible. The documentation aims to not just show you <em>how</em> to use the library,
-            but explain <em>why</em> things work the way they do. If you&apos;ve ever wanted to
-            understand terrain erosion or procedural generation, I hope this project helps.
-          </p>
         </section>
 
         {/* Get in Touch */}

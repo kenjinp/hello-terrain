@@ -22,6 +22,8 @@ export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
 export { getDeviceComputeLimits } from "./gpu/deviceLimits";
 export * from "./gpu/terrainFieldStorage";
 export * from "./query/terrain-sampler";
+export * from "./query/terrain-query";
+export * from "./query/terrain-raycast";
 export * from "./query/types";
 export { createComputePipelineTasks } from "./tasks/compute.task";
 

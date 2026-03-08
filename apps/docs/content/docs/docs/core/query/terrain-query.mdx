@@ -1,0 +1,113 @@
+---
+title: Terrain Query API
+description: Synchronous CPU terrain sampling from the shared elevation readback cache
+---
+
+## Overview
+
+`terrainTasks.terrainQuery` exposes a synchronous CPU query API for:
+
+- `getElevation(worldX, worldZ)` — elevation at a point, or `null`
+- `getNormal(worldX, worldZ)` — surface normal at a point, or `null`
+- `getTile(worldX, worldZ)` — quadtree tile containing a point
+- `getTileBounds(worldX, worldZ)` — tile with GPU-computed min/max elevation
+- `getGlobalElevationRange()` — min/max elevation across all active tiles
+- `sampleTerrain(worldX, worldZ)` — elevation + normal + validity in one call
+- `sampleTerrainBatch(positions)` — batched elevation + normal sampling
+- `generation` — increments each time the cache receives new readback data
+
+The query path reads from a shared CPU cache populated by async GPU readback of the elevation field buffer. This keeps point queries fast while avoiding any duplicate CPU `elevationFn` implementation.
+
+## Get the query context
+
+`terrainTasks.terrainQuery` returns a `TerrainQueryContext` containing the `TerrainQuery` API on its `query` property.
+
+```ts
+import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+
+const graph = terrainGraph();
+await graph.run({ resources: { renderer } });
+
+const { query: terrainQuery } = graph.get(terrainTasks.terrainQuery);
+```
+
+## Single-point queries
+
+```ts
+const elevation = terrainQuery.getElevation(player.position.x, player.position.z);
+const normal = terrainQuery.getNormal(player.position.x, player.position.z);
+
+const sample = terrainQuery.sampleTerrain(player.position.x, player.position.z);
+if (sample.valid) {
+  player.position.y = sample.elevation;
+  player.up.copy(sample.normal);
+}
+```
+
+## Batch queries
+
+Use batch mode when you need many samples per frame (physics probes, AI paths, crowds).
+
+```ts
+// Interleaved x,z pairs.
+const positions = new Float32Array([
+  0, 0,
+  8, 0,
+  16, 0,
+  24, 0,
+]);
+
+const batch = terrainQuery.sampleTerrainBatch(positions);
+
+for (let i = 0; i < batch.elevations.length; i++) {
+  if (!batch.valid[i]) continue;
+  const y = batch.elevations[i];
+  const nx = batch.normals[i * 3];
+  const ny = batch.normals[i * 3 + 1];
+  const nz = batch.normals[i * 3 + 2];
+  // ...consume y / normal...
+}
+```
+
+## Tile lookup
+
+`getTile` returns the quadtree leaf tile that covers a world position, or `null` if no tile is active there.
+
+```ts
+const tile = terrainQuery.getTile(worldX, worldZ);
+if (tile) {
+  console.log(`Tile L${tile.level} (${tile.x},${tile.y}) index=${tile.index}`);
+}
+```
+
+## Tile bounds
+
+Each tile's min/max elevation is computed on the GPU via a parallel reduction pass and read back alongside the elevation data.
+
+```ts
+const bounds = terrainQuery.getTileBounds(worldX, worldZ);
+if (bounds) {
+  console.log(`Tile L${bounds.level} (${bounds.x},${bounds.y})`);
+  console.log(`Elevation range: ${bounds.minElevation} – ${bounds.maxElevation}`);
+}
+```
+
+The global elevation range across all active tiles is also available:
+
+```ts
+const range = terrainQuery.getGlobalElevationRange();
+if (range) {
+  console.log(`Terrain spans Y: ${range.min} – ${range.max}`);
+}
+```
+
+This is used internally by the raycast system to derive a tight AABB instead of a conservative estimate.
+
+## Freshness and startup behavior
+
+- `graph.get(terrainTasks.terrainQuery)` always returns a `TerrainQueryContext`. Before the first successful readback, individual queries return `{ valid: false }`.
+- Per-sample `valid` indicates whether the queried point maps to an active tile with readback data.
+- Use `terrainQuery.generation` to detect when cache content changes between frames.
+- Values are frame-coherent snapshots: tile lookup, elevation data, and per-tile bounds are all paired from the same readback generation.
+- Readback is triggered by a separate `terrainReadbackTask` that runs on the GPU lane. It is fire-and-forget — downstream tasks like `terrainRaycastTask` depend on the stable `terrainQueryTask`, not the readback, so they don't block on GPU compute.
+

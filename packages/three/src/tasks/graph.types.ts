@@ -9,7 +9,14 @@ import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
-import type { GpuSpatialIndexContext, TerrainSampler } from "../query/types";
+import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
+import type {
+  GpuSpatialIndexContext,
+  TerrainQuery,
+  TerrainRaycast,
+  TerrainSampler,
+} from "../query/types";
+import type { TileBoundsContext } from "./tile-bounds.task";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
 export interface QuadtreeConfigState {
@@ -25,6 +32,12 @@ export interface ElevationFieldContext {
   data: Float32Array<ArrayBuffer>;
   attribute: StorageBufferAttribute;
   node: StorageBufferNode;
+}
+
+export interface TerrainQueryContext {
+  cache: CpuTerrainCache;
+  query: TerrainQuery;
+  shapeKey: string;
 }
 
 /** Task refs for the standard terrain pipeline. */
@@ -50,6 +63,11 @@ export interface TerrainTasks {
     execute: (renderer: WebGPURenderer, instanceCount: number) => void;
   }>;
   executeCompute: TaskRef<void | (() => void)>;
+  tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
+  tileBoundsReduction: TaskRef<TileBoundsContext>;
+  terrainQuery: TaskRef<TerrainQueryContext>;
+  terrainReadback: TaskRef<void>;
+  terrainRaycast: TaskRef<TerrainRaycast>;
 }
 
 export type TerrainGraph = Graph<
