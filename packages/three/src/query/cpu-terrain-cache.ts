@@ -74,6 +74,16 @@ function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
   target.keysY.set(source.keysY);
   target.values.set(source.values);
 }
+/**
+ * Spatial index snapshot consistency contract:
+ * - GPU elevation/bounds readback completes asynchronously.
+ * - Quadtree/index state can mutate before readback completion.
+ * - CPU query snapshots must pair elevation/bounds with the matching index generation.
+ *
+ * Therefore we clone the source index into the cache back-buffer before scheduling
+ * async readback. This copy is required for correctness unless the quadtree/index
+ * itself provides immutable frame snapshots.
+ */
 
 function tileLocalToFieldUV(localCoord: number, innerSegments: number): number {
   const edge = innerSegments + 3;
@@ -99,7 +109,7 @@ export function createCpuTerrainCache(
   let hasSnapshot = false;
   let readbackPending = false;
   let generationCount = 0;
-  let lastClonedStampGen = -1;
+  let lastScheduledStampGen = -1;
 
   const readHeight = (leafIndex: number, ix: number, iy: number): number => {
     const base = leafIndex * verticesPerNode;
@@ -254,11 +264,12 @@ export function createCpuTerrainCache(
       activeLeafCount,
     ) {
       if (readbackPending) return;
-      if (spatialIndex.stampGen === lastClonedStampGen) return;
-      cloneSpatialIndex(backIndex, spatialIndex);
-      lastClonedStampGen = spatialIndex.stampGen;
       const withReadback = renderer as RendererReadback;
       if (!withReadback.getArrayBufferAsync) return;
+      if (spatialIndex.stampGen === lastScheduledStampGen) return;
+
+      cloneSpatialIndex(backIndex, spatialIndex);
+      lastScheduledStampGen = spatialIndex.stampGen;
 
       const capturedLeafCount = activeLeafCount ?? 0;
       const capturedScale = config.elevationScale;

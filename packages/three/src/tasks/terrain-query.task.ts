@@ -9,7 +9,6 @@ import { leafGpuBufferTask, quadtreeConfigTask } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./tile-bounds.task";
 
 export const terrainQueryTask = task((get, work) => {
-  const quadtreeConfig = get(quadtreeConfigTask);
   const maxNodesValue = get(maxNodes);
   const innerTileSegmentsValue = get(innerTileSegments);
   const maxLevelValue = get(maxLevel);
@@ -37,7 +36,6 @@ export const terrainQueryTask = task((get, work) => {
       query = createTerrainQuery(cache);
     }
 
-    quadtreeConfig.terrainCache = cache;
     cache.updateConfig(configValues);
 
     return { cache, query, shapeKey };

@@ -5,9 +5,9 @@ import { elevationScale, origin, rootSize } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
 
 const BOUNDS_PADDING = 1;
+const RAYCAST_STATE = Symbol("terrainRaycastTaskState");
 
-const terrainRaycastTaskState: {
-  raycast?: TerrainRaycast;
+type TerrainRaycastTaskState = {
   terrainQuery: TerrainQuery | null;
   bounds: {
     rootSize: number;
@@ -16,15 +16,9 @@ const terrainRaycastTaskState: {
     minY: number;
     maxY: number;
   };
-} = {
-  terrainQuery: null,
-  bounds: {
-    rootSize: 0,
-    originX: 0,
-    originZ: 0,
-    minY: 0,
-    maxY: 0,
-  },
+};
+type TerrainRaycastWithState = TerrainRaycast & {
+  [RAYCAST_STATE]?: TerrainRaycastTaskState;
 };
 
 export const terrainRaycastTask = task(
@@ -34,8 +28,22 @@ export const terrainRaycastTask = task(
     const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);
 
-    return work(() => {
-      const state = terrainRaycastTaskState;
+    return work((prev?: TerrainRaycast): TerrainRaycast => {
+      let raycast = prev as TerrainRaycastWithState | undefined;
+      let state = raycast?.[RAYCAST_STATE];
+      if (!state) {
+        state = {
+          terrainQuery: null,
+          bounds: {
+            rootSize: 0,
+            originX: 0,
+            originZ: 0,
+            minY: 0,
+            maxY: 0,
+          },
+        };
+      }
+
       state.terrainQuery = terrainQuery;
       state.bounds.rootSize = rootSizeValue;
       state.bounds.originX = originValue.x;
@@ -51,14 +59,15 @@ export const terrainRaycastTask = task(
         state.bounds.maxY = originValue.y + verticalExtent;
       }
 
-      if (!state.raycast) {
-        state.raycast = createTerrainRaycast({
+      if (!raycast) {
+        raycast = createTerrainRaycast({
           getTerrainQuery: () => state.terrainQuery,
           getConfig: () => state.bounds,
-        });
+        }) as TerrainRaycastWithState;
       }
+      raycast[RAYCAST_STATE] = state;
 
-      return state.raycast;
+      return raycast;
     });
   },
 ).displayName("terrainRaycastTask");

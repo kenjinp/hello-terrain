@@ -22,8 +22,6 @@ import type { LeafStorageState, TerrainUniformsContext } from "../types";
 export interface QuadtreeConfigState {
   state: QuadtreeState;
   surface: Surface;
-  /** Set by terrainQueryTask, read by quadtreeUpdateTask (previous frame). */
-  terrainCache?: CpuTerrainCache;
 }
 
 export interface LeafGpuBufferState extends LeafStorageState {

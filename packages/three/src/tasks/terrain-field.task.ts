@@ -13,7 +13,7 @@ import {
   tileNodesTask,
 } from "./elevation-field.task";
 import { innerTileSegments, maxNodes, terrainFieldFilter } from "./params";
-import { createUniformsTask } from "./uniforms/uniforms.task";
+import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 // ── Storage buffer context ──────────────────────────────────────────────
 
@@ -105,7 +105,7 @@ export const terrainFieldStageTask = task((get, work) => {
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
   const tileEdgeVertexCount = get(innerTileSegments) + 3;
   const tile = get(tileNodesTask);
-  const uniforms = get(createUniformsTask);
+  const uniforms = get(updateUniformsTask);
 
   return work((): ComputePipeline => {
     const computeNormal = createNormalFromElevationField(

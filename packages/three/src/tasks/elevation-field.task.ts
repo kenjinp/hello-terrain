@@ -7,7 +7,7 @@ import { createTileCompute } from "../gpu/tile";
 import { elevationFn, innerTileSegments, maxNodes } from "./params";
 import { leafStorageTask } from "./quadtree.task";
 import { createElevationFunction } from "../tsl/elevation";
-import { createUniformsTask } from "./uniforms/uniforms.task";
+import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 export const createElevationFieldContextTask = task((get, work) => {
   const edgeVertexCount = get(innerTileSegments) + 3;
@@ -28,7 +28,7 @@ export const createElevationFieldContextTask = task((get, work) => {
 
 export const tileNodesTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
-  const uniforms = get(createUniformsTask);
+  const uniforms = get(updateUniformsTask);
   return work(() => {
     return createTileCompute(leafStorage, uniforms);
   });
@@ -40,7 +40,7 @@ export const tileNodesTask = task((get, work) => {
  */
 export const elevationFieldStageTask = task((get, work) => {
   const tile = get(tileNodesTask);
-  const uniforms = get(createUniformsTask);
+  const uniforms = get(updateUniformsTask);
   const elevationFieldContext = get(createElevationFieldContextTask);
   const userElevationFn = get(elevationFn);
 

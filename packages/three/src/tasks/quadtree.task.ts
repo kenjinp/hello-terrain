@@ -4,6 +4,7 @@ import type { LeafSet } from "../quadtree";
 import { createFlatSurface, createState, update } from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
 import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, surface } from "./params";
+import { terrainQueryTask } from "./terrain-query.task";
 
 /**
  * Derives the terrain surface from `rootSize` and `origin`.
@@ -38,12 +39,12 @@ export const quadtreeConfigTask = task((get, work) => {
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
   const quadtreeUpdateConfig = get(quadtreeUpdate);
+  const { query: terrainQuery } = get(terrainQueryTask);
 
   let outLeaves: LeafSet | undefined = undefined;
   return work(() => {
     const cam = quadtreeUpdateConfig.cameraOrigin;
-    quadtreeUpdateConfig.elevationAtCameraXZ =
-      quadtreeConfig.terrainCache?.getElevation(cam.x, cam.z) ?? 0;
+    quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
 
     outLeaves = update(
       quadtreeConfig.state,
