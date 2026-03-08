@@ -7,10 +7,14 @@ description: Synchronous CPU terrain sampling from the shared elevation readback
 
 `terrainTasks.terrainQuery` exposes a synchronous CPU query API for:
 
-- `getElevation(worldX, worldZ)`
-- `getNormal(worldX, worldZ)`
-- `sampleTerrain(worldX, worldZ)`
-- `sampleTerrainBatch(positions)`
+- `getElevation(worldX, worldZ)` — elevation at a point, or `null`
+- `getNormal(worldX, worldZ)` — surface normal at a point, or `null`
+- `getTile(worldX, worldZ)` — quadtree tile containing a point
+- `getTileBounds(worldX, worldZ)` — tile with GPU-computed min/max elevation
+- `getGlobalElevationRange()` — min/max elevation across all active tiles
+- `sampleTerrain(worldX, worldZ)` — elevation + normal + validity in one call
+- `sampleTerrainBatch(positions)` — batched elevation + normal sampling
+- `generation` — increments each time the cache receives new readback data
 
 The query path reads from a shared CPU cache populated by async GPU readback of the elevation field buffer. This keeps point queries fast while avoiding any duplicate CPU `elevationFn` implementation.
 
@@ -62,6 +66,17 @@ for (let i = 0; i < batch.elevations.length; i++) {
   const ny = batch.normals[i * 3 + 1];
   const nz = batch.normals[i * 3 + 2];
   // ...consume y / normal...
+}
+```
+
+## Tile lookup
+
+`getTile` returns the quadtree leaf tile that covers a world position, or `null` if no tile is active there.
+
+```ts
+const tile = terrainQuery.getTile(worldX, worldZ);
+if (tile) {
+  console.log(`Tile L${tile.level} (${tile.x},${tile.y}) index=${tile.index}`);
 }
 ```
 
