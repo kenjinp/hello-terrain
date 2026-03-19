@@ -1,0 +1,104 @@
+---
+title: Terrain Texturing
+description: Procedural terrain texturing with textureControlFn and texture arrays
+---
+
+import TerrainTexturingScene from "@/examples/TerrainTexturingScene"
+
+<div className="h-[560px] rounded overflow-hidden">
+<TerrainTexturingScene />
+</div>
+
+## Overview
+
+`textureControlFn` is the texture equivalent of `elevationFn`.
+It runs in the compute pipeline per terrain vertex and returns texture indices plus blend information.
+The result is packed into a control-map u32 buffer and decoded in material nodes.
+
+The API is inspired by Terrain3D's packed control-map approach:
+[Control Map Format](https://terrain3d.readthedocs.io/en/stable/docs/controlmap_format.html).
+
+## API
+
+### `textureControlFn`
+
+`Param<TextureControlCallback | null>` used to provide a GPU-evaluated callback for texture selection.
+
+```ts
+import { textureControlFn } from "@hello-terrain/three";
+
+graph.set(textureControlFn, () => ({ slope }) => ({
+  baseTextureId: slope.lessThan(float(0.4)) ? int(1) : int(0),
+}));
+```
+
+### `textureArrays`
+
+`Param<TextureArrayContext | null>` carrying consumer-created texture arrays.
+
+```ts
+import { createTextureArrays, addTextureSet, textureArrays } from "@hello-terrain/three";
+
+const arrays = createTextureArrays(1024, 32);
+addTextureSet(arrays, albedo, normal, height, roughness);
+graph.set(textureArrays, () => arrays);
+```
+
+### `controlMapNodeTask`
+
+Task that returns material nodes:
+
+```ts
+{
+  colorNode,
+  normalNode,
+  roughnessNode,
+}
+```
+
+Use it the same way `positionNodeTask` is applied to a node material.
+
+## Example callback
+
+This mirrors the docs demo setup.
+
+```ts
+graph.set(textureControlFn, () => ({ slope, elevation, worldPosition }) => {
+  const noise = fbm(vec2(worldPosition.x, worldPosition.z).mul(float(0.02)));
+  const isCliff = slope.lessThan(float(0.4));
+  const isBeach = elevation.lessThan(float(1.5));
+  const isHighRock = elevation.greaterThan(float(3.2));
+
+  const baseTextureId = select(
+    isBeach,
+    int(3),                         // sand-bright
+    select(isCliff, int(1),         // cliff
+      select(isHighRock, int(2),    // ground-rocky
+        int(0))),                   // moss
+  );
+
+  return {
+    baseTextureId,
+    overlayTextureId: int(4),       // ground-forest-stone
+    blend: noise.mul(float(0.4)).max(float(0)).min(float(1)),
+    uvScale: select(isCliff, int(2), int(0)),
+  };
+});
+```
+
+## MaterialsBCN texture sets
+
+The example scene uses the same material IDs/roles as `MaterialsBCNScene`:
+
+- `moss` (base flats)
+- `cliff` (steep slopes)
+- `ground-rocky` (higher zones)
+- `sand-bright` (low shoreline)
+- `ground-forest-stone` (overlay variation)
+
+## Related
+
+- [Elevation Function](/docs/core/elevation-function)
+- [Material Nodes](/docs/core/nodes/materials)
+- [Graph](/work/graph)
+- [Param](/work/param)

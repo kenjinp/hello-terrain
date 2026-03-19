@@ -1,0 +1,21 @@
+---
+title: Terrain Texturing
+description: Interactive demo of procedural terrain texturing with textureControlFn
+---
+
+import TerrainTexturingScene from "@/examples/TerrainTexturingScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<TerrainTexturingScene />
+</div>
+
+## Overview
+
+This example demonstrates the full texture-control pipeline:
+
+- `textureControlFn` decides per-vertex base/overlay IDs and blend values
+- the control map is generated in compute
+- `controlMapNodeTask` returns `colorNode`, `normalNode`, and `roughnessNode`
+- those nodes are applied to `meshStandardNodeMaterial`
+
+The texture IDs and roles mirror the `MaterialsBCNScene` texture sets.

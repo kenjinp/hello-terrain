@@ -1,6 +1,8 @@
 import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
+import type { TextureArrayContext } from "../gpu/textureArray";
 import type { ElevationCallback } from "../tsl/elevation";
+import type { TextureControlCallback } from "../tsl/textureControl";
 import type { Surface, UpdateParams } from "../quadtree";
 
 /** Root tile size in world units. */
@@ -46,3 +48,11 @@ export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayN
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));
+
+/** Terrain texture control function (per vertex, in gpu compute) */
+export const textureControlFn =
+  param<TextureControlCallback | null>(null).displayName("textureControlFn");
+
+/** Consumer-provided texture arrays used by terrain material nodes. */
+export const textureArrays =
+  param<TextureArrayContext | null>(null).displayName("textureArrays");

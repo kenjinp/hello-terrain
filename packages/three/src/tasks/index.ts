@@ -1,4 +1,7 @@
 export * from "./compute.task";
+export * from "./control-map.task";
+export * from "./control-map-stage.task";
+export * from "./control-map-node.task";
 export * from "./graph";
 export * from "./graph.types";
 export * from "./elevation-field.task";

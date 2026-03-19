@@ -2,6 +2,11 @@ import { graph } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
 import { compileComputeTask, executeComputeTask } from "./compute.task";
 import {
+  createControlMapContextTask,
+} from "./control-map.task";
+import { controlMapStageTask } from "./control-map-stage.task";
+import { controlMapNodeTask } from "./control-map-node.task";
+import {
   createElevationFieldContextTask,
   tileNodesTask,
   elevationFieldStageTask,
@@ -57,8 +62,11 @@ export function terrainGraph(): TerrainGraph {
     .add(createTerrainSamplerTask)
     .add(elevationFieldStageTask)
     .add(terrainFieldStageTask)
+    .add(createControlMapContextTask)
+    .add(controlMapStageTask)
     .add(compileComputeTask)
     .add(executeComputeTask)
+    .add(controlMapNodeTask)
     .add(tileBoundsContextTask)
     .add(tileBoundsReductionTask)
     .add(terrainQueryTask)
@@ -85,8 +93,11 @@ export const terrainTasks = {
   createTerrainSampler: createTerrainSamplerTask,
   elevationFieldStage: elevationFieldStageTask,
   terrainFieldStage: terrainFieldStageTask,
+  createControlMapContext: createControlMapContextTask,
+  controlMapStage: controlMapStageTask,
   compileCompute: compileComputeTask,
   executeCompute: executeComputeTask,
+  controlMapNode: controlMapNodeTask,
   tileBoundsContext: tileBoundsContextTask,
   tileBoundsReduction: tileBoundsReductionTask,
   terrainQuery: terrainQueryTask,

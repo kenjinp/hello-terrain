@@ -1,5 +1,6 @@
 import type { Graph, TaskRef } from "@hello-terrain/work";
 import type {
+  Node,
   StorageBufferAttribute,
   StorageBufferNode,
   WebGPURenderer,
@@ -7,6 +8,7 @@ import type {
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
+import type { ControlMapContext } from "../gpu/controlMap";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
@@ -40,6 +42,12 @@ export interface TerrainQueryContext {
   shapeKey: string;
 }
 
+export interface TerrainTextureNodes {
+  colorNode: Node;
+  normalNode: Node;
+  roughnessNode: Node;
+}
+
 /** Task refs for the standard terrain pipeline. */
 export interface TerrainTasks {
   instanceId: TaskRef<string>;
@@ -59,10 +67,13 @@ export interface TerrainTasks {
   createTerrainSampler: TaskRef<TerrainSampler>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   terrainFieldStage: TaskRef<ComputePipeline>;
+  createControlMapContext: TaskRef<ControlMapContext>;
+  controlMapStage: TaskRef<ComputePipeline>;
   compileCompute: TaskRef<{
     execute: (renderer: WebGPURenderer, instanceCount: number) => void;
   }>;
   executeCompute: TaskRef<void | (() => void)>;
+  controlMapNode: TaskRef<TerrainTextureNodes | null>;
   tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
   tileBoundsReduction: TaskRef<TileBoundsContext>;
   terrainQuery: TaskRef<TerrainQueryContext>;

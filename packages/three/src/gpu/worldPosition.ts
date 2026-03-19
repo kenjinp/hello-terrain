@@ -10,6 +10,7 @@ import {
   vec3,
   vertexIndex,
 } from "three/tsl";
+import { vGlobalVertexIndex } from "../nodes/varyings";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
@@ -108,6 +109,11 @@ export function createTileWorldPosition(
       .sub(terrainUniforms.uSkirtScale.toVar());
     const worldY = select(skirtVertex, skirtY, base.y.add(yElevation));
     createNormalAssignment(terrainUniforms, terrainFieldStorage);
+    const edgeVertexCount = int(terrainUniforms.uInnerTileSegments.add(3));
+    const verticesPerNode = edgeVertexCount.mul(edgeVertexCount);
+    vGlobalVertexIndex.assign(
+      int(instanceIndex).mul(verticesPerNode).add(int(vertexIndex)),
+    );
     return vec3(base.x, worldY, base.z);
   })();
 }

@@ -2,13 +2,13 @@ import type { TaskRef } from "@hello-terrain/work";
 import { task } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
 import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
-import { terrainFieldStageTask } from "./terrain-field.task";
+import { controlMapStageTask } from "./control-map-stage.task";
 import { innerTileSegments } from "./params";
 import { leafGpuBufferTask } from "./quadtree.task";
 
 /** Default compile task — uses terrainFieldStageTask as the leaf. */
 export const compileComputeTask = task((get, work) => {
-  const pipeline = get(terrainFieldStageTask);
+  const pipeline = get(controlMapStageTask);
   const edgeVertexCount = get(innerTileSegments) + 3;
 
   return work(() =>

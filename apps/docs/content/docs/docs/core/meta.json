@@ -3,6 +3,7 @@
   "description": "Core utilities and building blocks",
   "pages": [
     "elevation-function",
+    "texturing",
     "...nodes",
     "---Query API---",
     "...query"
