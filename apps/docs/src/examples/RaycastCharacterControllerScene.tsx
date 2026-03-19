@@ -9,6 +9,11 @@ import {
   type CharacterControllerSnapshot,
 } from "@/examples/character/CharacterController";
 import {
+  createStampedFbmElevation,
+  type TerrainStamp,
+  useTerrainStampFieldSuspense,
+} from "@/examples/terrain/terrainStamps";
+import {
   elevationFn,
   elevationScale,
   innerTileSegments,
@@ -23,7 +28,6 @@ import {
   terrainGraph,
   terrainTasks,
   TerrainMesh,
-  type ElevationCallback,
   type TerrainGraph,
   type TerrainQuery,
   type TerrainRaycast,
@@ -32,66 +36,14 @@ import {
 import { Environment } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import {
-  cos,
-  dot,
-  float,
-  Fn,
-  floor,
-  fract,
-  Loop,
-  mix,
-  sin,
-  vec2,
-} from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
-
-const randomGradient = Fn(([p]: [any]) => {
-  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
-    Math.PI * 2,
-  );
-  return vec2(cos(angle), sin(angle));
-});
-
-const perlinNoise = Fn(([p]: [any]) => {
-  const i = floor(p).toVar();
-  const f = fract(p).toVar();
-  const u = f.mul(f).mul(float(3).sub(f.mul(2)));
-
-  const g00 = randomGradient(i);
-  const g10 = randomGradient(i.add(vec2(1, 0)));
-  const g01 = randomGradient(i.add(vec2(0, 1)));
-  const g11 = randomGradient(i.add(vec2(1, 1)));
-
-  const d00 = dot(g00, f);
-  const d10 = dot(g10, f.sub(vec2(1, 0)));
-  const d01 = dot(g01, f.sub(vec2(0, 1)));
-  const d11 = dot(g11, f.sub(vec2(1, 1)));
-
-  return mix(mix(d00, d10, u.x), mix(d01, d11, u.x), u.y).add(0.5);
-});
-
-const fbm = Fn(([pos_immutable]: [any]) => {
-  const p = vec2(pos_immutable).toVar();
-  const total = float(0).toVar();
-  const amp = float(0.5).toVar();
-  const freq = float(1).toVar();
-
-  Loop(6, () => {
-    total.addAssign(perlinNoise(p.mul(freq)).mul(amp));
-    freq.mulAssign(2.03);
-    amp.mulAssign(0.5);
-  });
-
-  return total;
-});
 
 const QUADTREE_ORIGIN_HYSTERESIS = 0.35;
 const QUADTREE_ORIGIN_SNAP = 0.25;
@@ -245,6 +197,117 @@ function RaycastCharacterControllerSceneImpl({
     { store },
   );
 
+  const terrainStamps = useMemo<TerrainStamp[]>(
+    () => [
+      {
+        assetId: "hills003",
+        center: [0, 0],
+        radius: 760,
+        height: 0.06,
+        falloff: 0.3,
+        stretch: [1.16, 1.08],
+        rotation: Math.PI * 0.06,
+      },
+      {
+        assetId: "plateausTalus013",
+        center: [280, 160],
+        radius: 356,
+        height: 0.42,
+        falloff: 0.12,
+        stretch: [1.2, 0.98],
+        rotation: Math.PI * 0.1,
+      },
+      {
+        assetId: "plateausTalus014",
+        center: [-336, 220],
+        radius: 332,
+        height: 0.38,
+        falloff: 0.12,
+        stretch: [1.14, 0.94],
+        rotation: -Math.PI * 0.14,
+      },
+      {
+        assetId: "plateausTalus015",
+        center: [228, -332],
+        radius: 344,
+        height: 0.4,
+        falloff: 0.11,
+        stretch: [1.14, 1.04],
+        rotation: Math.PI * 0.22,
+      },
+      {
+        assetId: "plateausTalus016",
+        center: [-500, -500],
+        radius: 368,
+        height: 1.5,
+        falloff: 0.11,
+        stretch: [2, 2],
+        rotation: -Math.PI * 0.18,
+      },
+      {
+        assetId: "ridged006",
+        center: [1000, 1000],
+        radius: 484,
+        height: 2,
+        falloff: 0.08,
+        stretch: [5, 5],
+        rotation: Math.PI * 0.3,
+      },
+      {
+        assetId: "ridged008",
+        center: [-2000, -2000],
+        radius: 512,
+        height: 1.5,
+        falloff: 0.08,
+        stretch: [2.58, 1],
+        rotation: -Math.PI * 0.24,
+      },
+      {
+        assetId: "terrace018",
+        center: [548, -88],
+        radius: 348,
+        height: 0.2,
+        falloff: 0.1,
+        stretch: [1.08, 1.18],
+        rotation: Math.PI * 0.18,
+      },
+      {
+        assetId: "terrace019",
+        center: [-604, 48],
+        radius: 364,
+        height: 0.18,
+        falloff: 0.1,
+        stretch: [1.22, 0.98],
+        rotation: -Math.PI * 0.08,
+      },
+    ],
+    [],
+  );
+  const terrainStampField = useTerrainStampFieldSuspense(terrainStamps, {
+    worldSpan: Math.max(controls.rootSize, 2048),
+    resolution: 1024,
+  });
+  const stampFieldTexture = terrainStampField.texture;
+  const stampFieldScale = terrainStampField.scale;
+  const stampFieldWorldSpan = terrainStampField.worldSpan;
+
+  useEffect(() => {
+    const elevation = createStampedFbmElevation({
+      noiseScale: controls.noiseScale,
+      noiseFloor: 0.3,
+      stampFieldTexture,
+      stampFieldScale,
+      stampFieldWorldSpan,
+    });
+    g.set(elevationFn, () => elevation);
+  }, [
+    controls.noiseScale,
+    g,
+    stampFieldScale,
+    stampFieldTexture,
+    stampFieldWorldSpan,
+  ]);
+
   useEffect(() => {
     g.set(rootSize, () => controls.rootSize);
   }, [controls.rootSize, g]);
@@ -268,17 +331,6 @@ function RaycastCharacterControllerSceneImpl({
   useEffect(() => {
     g.set(innerTileSegments, () => controls.innerTileSegments);
   }, [controls.innerTileSegments, g]);
-
-  useEffect(() => {
-    const noiseScaleValue = controls.noiseScale;
-    const elevation: ElevationCallback = ({ worldPosition }) => {
-      const p = vec2(worldPosition.x, worldPosition.z).mul(
-        float(noiseScaleValue),
-      );
-      return fbm(p).sub(float(0.3));
-    };
-    g.set(elevationFn, () => elevation);
-  }, [controls.noiseScale, g]);
 
   useFrame(async ({ gl }) => {
     const playerPosition = characterSnapshotRef.current?.position;
@@ -439,11 +491,13 @@ export default function RaycastCharacterControllerScene() {
           shadow-mapSize-height={2048}
         /> */}
         <Environment preset="park" />
-        <RaycastCharacterControllerSceneImpl
-          g={g}
-          store={store}
-          onCharacterUpdate={setSnapshot}
-        />
+        <Suspense fallback={null}>
+          <RaycastCharacterControllerSceneImpl
+            g={g}
+            store={store}
+            onCharacterUpdate={setSnapshot}
+          />
+        </Suspense>
       </Canvas>
     </ExamplesCanvas>
   );
