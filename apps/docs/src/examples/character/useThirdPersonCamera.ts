@@ -42,6 +42,10 @@ export function useThirdPersonCamera({
   const desiredRadiusRef = useRef(radius);
   const internalViewVectorRef = useRef(new Vector3(0, 0, 1));
   const viewVectorRef = providedViewVectorRef ?? internalViewVectorRef;
+  const smoothedTargetRef = useRef(new Vector3());
+  const smoothedCameraPositionRef = useRef(new Vector3());
+  const smoothedFloorYRef = useRef(0);
+  const hasSmoothedStateRef = useRef(false);
   const [isPointerLocked, setIsPointerLocked] = useState(false);
 
   const scratch = useMemo(
@@ -128,6 +132,31 @@ export function useThirdPersonCamera({
     scratch.target.copy(targetPositionRef.current);
     scratch.target.y += targetHeight;
 
+    if (!hasSmoothedStateRef.current) {
+      smoothedTargetRef.current.copy(scratch.target);
+      smoothedCameraPositionRef.current.copy(camera.position);
+      smoothedFloorYRef.current = camera.position.y;
+      hasSmoothedStateRef.current = true;
+    }
+
+    const targetHorizontalBlend = 1 - Math.exp(-10 * Math.min(dt, 1 / 20));
+    const targetVerticalBlend = 1 - Math.exp(-5 * Math.min(dt, 1 / 20));
+    smoothedTargetRef.current.x = MathUtils.lerp(
+      smoothedTargetRef.current.x,
+      scratch.target.x,
+      targetHorizontalBlend,
+    );
+    smoothedTargetRef.current.z = MathUtils.lerp(
+      smoothedTargetRef.current.z,
+      scratch.target.z,
+      targetHorizontalBlend,
+    );
+    smoothedTargetRef.current.y = MathUtils.lerp(
+      smoothedTargetRef.current.y,
+      scratch.target.y,
+      targetVerticalBlend,
+    );
+
     const radiusBlend = 1 - Math.exp(-12 * Math.min(dt, 1 / 20));
     currentRadiusRef.current = MathUtils.lerp(
       currentRadiusRef.current,
@@ -140,23 +169,23 @@ export function useThirdPersonCamera({
     const planarRadius = Math.cos(phiRad) * currentRadiusRef.current;
 
     scratch.desiredCameraPosition.set(
-      scratch.target.x + Math.sin(thetaRad) * planarRadius,
-      scratch.target.y + Math.sin(phiRad) * currentRadiusRef.current,
-      scratch.target.z + Math.cos(thetaRad) * planarRadius,
+      smoothedTargetRef.current.x + Math.sin(thetaRad) * planarRadius,
+      smoothedTargetRef.current.y + Math.sin(phiRad) * currentRadiusRef.current,
+      smoothedTargetRef.current.z + Math.cos(thetaRad) * planarRadius,
     );
 
     scratch.resolvedCameraPosition.copy(scratch.desiredCameraPosition);
 
     scratch.cameraDirection
       .copy(scratch.desiredCameraPosition)
-      .sub(scratch.target);
+      .sub(smoothedTargetRef.current);
     const desiredDistance = scratch.cameraDirection.length();
     if (desiredDistance > 1e-6) {
       scratch.cameraDirection.divideScalar(desiredDistance);
 
       const terrainRaycast = terrainRaycastRef?.current;
       if (terrainRaycast) {
-        scratch.cameraCollisionRay.origin.copy(scratch.target);
+        scratch.cameraCollisionRay.origin.copy(smoothedTargetRef.current);
         scratch.cameraCollisionRay.direction.copy(scratch.cameraDirection);
         const hit = terrainRaycast.pick(scratch.cameraCollisionRay, {
           maxSteps: 96,
@@ -179,18 +208,48 @@ export function useThirdPersonCamera({
         scratch.resolvedCameraPosition.z,
       );
       if (sample.valid) {
+        const desiredFloorY = sample.elevation + 0.35;
+        const floorDelta = desiredFloorY - smoothedFloorYRef.current;
+        const floorBlend = 1 - Math.exp(-(floorDelta > 0 ? 12 : 4) * Math.min(dt, 1 / 20));
+        smoothedFloorYRef.current = MathUtils.lerp(
+          smoothedFloorYRef.current,
+          desiredFloorY,
+          floorBlend,
+        );
         scratch.resolvedCameraPosition.y = Math.max(
           scratch.resolvedCameraPosition.y,
-          sample.elevation + 0.35,
+          smoothedFloorYRef.current,
         );
       }
     }
 
-    const followBlend = 1 - Math.exp(-14 * Math.min(dt, 1 / 20));
-    camera.position.lerp(scratch.resolvedCameraPosition, followBlend);
-    camera.lookAt(scratch.target);
+    const followHorizontalBlend = 1 - Math.exp(-8 * Math.min(dt, 1 / 20));
+    const verticalDelta =
+      scratch.resolvedCameraPosition.y - smoothedCameraPositionRef.current.y;
+    const followVerticalBlend =
+      1 - Math.exp(-(verticalDelta > 0 ? 10 : 4) * Math.min(dt, 1 / 20));
+    smoothedCameraPositionRef.current.x = MathUtils.lerp(
+      smoothedCameraPositionRef.current.x,
+      scratch.resolvedCameraPosition.x,
+      followHorizontalBlend,
+    );
+    smoothedCameraPositionRef.current.z = MathUtils.lerp(
+      smoothedCameraPositionRef.current.z,
+      scratch.resolvedCameraPosition.z,
+      followHorizontalBlend,
+    );
+    smoothedCameraPositionRef.current.y = MathUtils.lerp(
+      smoothedCameraPositionRef.current.y,
+      scratch.resolvedCameraPosition.y,
+      followVerticalBlend,
+    );
+    camera.position.copy(smoothedCameraPositionRef.current);
+    camera.lookAt(smoothedTargetRef.current);
 
-    viewVectorRef.current.copy(scratch.target).sub(camera.position).setY(0);
+    viewVectorRef.current
+      .copy(smoothedTargetRef.current)
+      .sub(camera.position)
+      .setY(0);
     if (viewVectorRef.current.lengthSq() > 1e-6) {
       viewVectorRef.current.normalize();
     } else {

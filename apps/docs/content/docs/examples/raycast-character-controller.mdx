@@ -11,43 +11,11 @@ import RaycastCharacterControllerScene from "@/examples/RaycastCharacterControll
 
 ## Overview
 
-This example ports the core ideas from Sketchbook's third-person controller into reusable React Three Fiber components.
+This example uses a character controller inspired from Sketchbook's third-person controller, and uses their iconic boxman model.  
 
-Instead of duplicating the terrain height function on the CPU, the controller uses the terrain systems already exposed by `@hello-terrain/three`:
+### How it works?
 
 - `terrainQuery.sampleTerrain(x, z)` for synchronous elevation and normal sampling
 - `terrainRaycast.pick(ray)` for downward terrain hit testing
 
-That keeps the character grounded against the same terrain data used for rendering, including quadtree LOD updates and GPU-generated elevation readback.
-
-## Controls
-
-| Control | Description |
-|:--|:--|
-| **W / A / S / D** | Move the character |
-| **Shift** | Sprint |
-| **Space** | Jump |
-| **Click canvas** | Lock the pointer and enable mouse look |
-| **Mouse** | Rotate the third-person camera |
-| **Escape** | Release pointer lock |
-
-## Architecture
-
-The example is split into reusable pieces:
-
-- `useKeyboardInput` for action state
-- `useCharacterController` for movement, gravity, jump, and terrain grounding
-- `useThirdPersonCamera` for spherical follow camera + pointer lock mouse look
-- `CharacterModel` for the procedural player mesh
-- `CharacterController` for composing the hooks and model into one drop-in scene component
-
-## Terrain Integration
-
-Each frame the scene:
-
-1. Updates `quadtreeUpdate.cameraOrigin` from the player position so active terrain tiles follow the character.
-2. Runs the terrain graph.
-3. Reads `terrainTasks.terrainQuery` and `terrainTasks.terrainRaycast` from the graph.
-4. Passes those refs into the character controller for ground sampling and downward ray tests.
-
-This keeps traversal and terrain interaction aligned with the docs query/raycast APIs rather than a separate gameplay-only approximation.
+That keeps the character grounded on the terrain. 
