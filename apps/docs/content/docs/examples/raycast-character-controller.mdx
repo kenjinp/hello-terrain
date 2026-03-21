@@ -1,0 +1,21 @@
+---
+title: Raycast Character Controller
+description: Third-person character movement over FBM terrain using terrain query and terrain raycasting
+---
+
+import RaycastCharacterControllerScene from "@/examples/RaycastCharacterControllerScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<RaycastCharacterControllerScene />
+</div>
+
+## Overview
+
+This example uses a character controller inspired from Sketchbook's third-person controller, and uses their iconic boxman model.  
+
+### How it works?
+
+- `terrainQuery.sampleTerrain(x, z)` for synchronous elevation and normal sampling
+- `terrainRaycast.pick(ray)` for downward terrain hit testing
+
+That keeps the character grounded on the terrain. 
