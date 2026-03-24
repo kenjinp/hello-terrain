@@ -2,13 +2,18 @@ import "@/app/global.css";
 import { Footer } from "@/components/Footer/Footer";
 import { LevaPanel } from "@/components/LevaPanel/LevaPanel";
 import DefaultSearchDialog from "@/components/Search/Search";
+import Link from "fumadocs-core/link";
+import { Banner } from "fumadocs-ui/components/banner";
 import { RootProvider } from "fumadocs-ui/provider";
+import { StarIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { Lato, Lisu_Bosa } from "next/font/google";
 import Script from "next/script";
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"),
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  ),
   icons: {
     icon: "/assets/logo.svg",
   },
@@ -30,7 +35,11 @@ const serif = Lisu_Bosa({
 
 export default function Layout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${sans.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html
+      lang="en"
+      className={`${sans.variable} ${serif.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <Script
           src="https://plausible.io/js/pa-ba2GUGyQD-ursX_yCMA3E.js"
@@ -46,6 +55,16 @@ export default function Layout({ children }: LayoutProps<"/">) {
             SearchDialog: DefaultSearchDialog,
           }}
         >
+          <Banner id="support-project-banner" className="gap-2">
+            <StarIcon size="16" />
+            <Link
+              external
+              href="https://github.com/kenjinp/hello-terrain"
+              className="underline"
+            >
+              Help support this project by starring the repo on GitHub!
+            </Link>
+          </Banner>
           <LevaPanel />
           {children}
           <Footer />
