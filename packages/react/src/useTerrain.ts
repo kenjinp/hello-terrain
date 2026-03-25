@@ -84,15 +84,24 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
     return nextGraph
   }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask])
   const runnerTargets = useMemo(
-    () =>
-      [
+    () => {
+      const userTasks = options.tasks ?? []
+      return [
+        ...userTasks,
         terrainTasks.executeCompute,
         terrainTasks.terrainReadback,
         syncTerrainRuntimeTask,
         syncTerrainNodesTask,
-      ] satisfies readonly TerrainTask[],
-    [syncTerrainNodesTask, syncTerrainRuntimeTask],
+      ] satisfies readonly TerrainTask[]
+    },
+    [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask],
   )
+  const stopTerrainRunner = useTerrainRunner({
+    graph,
+    targets: runnerTargets,
+    getCameraOrigin: options.getCameraOrigin,
+    cameraHysteresis: options.cameraHysteresis,
+  })
 
   useEffect(() => {
     graphLifecycleRef.current += 1
@@ -102,10 +111,13 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
       isMountedRef.current = false
       queueMicrotask(() => {
         if (graphLifecycleRef.current !== lifecycle) return
-        graph.dispose()
+        void stopTerrainRunner().finally(() => {
+          if (graphLifecycleRef.current !== lifecycle) return
+          graph.dispose()
+        })
       })
     }
-  }, [graph])
+  }, [graph, stopTerrainRunner])
 
   useLayoutEffect(() => {
     runtime.query = null
@@ -120,12 +132,6 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   }, [graph, runtime])
 
   useTerrainParams(graph, options)
-  useTerrainRunner({
-    graph,
-    targets: runnerTargets,
-    getCameraOrigin: options.getCameraOrigin,
-    cameraHysteresis: options.cameraHysteresis,
-  })
 
   return useMemo(
     () => ({

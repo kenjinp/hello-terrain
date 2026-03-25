@@ -1,6 +1,9 @@
 "use client";
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
+import { FpsDebug } from "@/components/FpsDebug";
+import { RunTimingBars } from "@/components/RunTimingBars";
+import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
   CharacterController,
   type CharacterControllerSnapshot,
@@ -11,10 +14,18 @@ import {
   useTerrainStampFieldSuspense,
 } from "@/examples/terrain/terrainStamps";
 import { Terrain, TerrainProvider, useTerrain } from "@hello-terrain/react";
+import type { TerrainGraph } from "@hello-terrain/three";
 import { Environment } from "@react-three/drei";
 import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
-import { Suspense, useCallback, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
 
@@ -70,9 +81,11 @@ function CharacterHud({
 function RaycastCharacterControllerSceneImpl({
   store,
   onCharacterUpdate,
+  onGraphReady,
 }: {
   store: LevaStore;
   onCharacterUpdate: (snapshot: CharacterControllerSnapshot) => void;
+  onGraphReady: (graph: TerrainGraph) => void;
 }) {
   const characterSnapshotRef = useRef<CharacterControllerSnapshot | null>(null);
 
@@ -303,6 +316,10 @@ function RaycastCharacterControllerSceneImpl({
     cameraHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
   });
 
+  useEffect(() => {
+    onGraphReady(terrain.graph);
+  }, [onGraphReady, terrain.graph]);
+
   return (
     <TerrainProvider value={terrain}>
       <CharacterController
@@ -343,6 +360,7 @@ function RaycastCharacterControllerSceneImpl({
 
 export default function RaycastCharacterControllerScene() {
   const store = useCreateStore();
+  const [debugGraph, setDebugGraph] = useState<TerrainGraph | null>(null);
   const [snapshot, setSnapshot] = useState<CharacterControllerSnapshot | null>(
     null,
   );
@@ -350,6 +368,15 @@ export default function RaycastCharacterControllerScene() {
   return (
     <ExamplesCanvas store={store}>
       <CharacterHud snapshot={snapshot} />
+      {debugGraph ? (
+        <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-10 flex flex-col gap-1.5 md:bottom-4 md:left-auto md:right-4 md:max-w-xs">
+          <RunTimingBars graph={debugGraph} />
+          <div className="flex flex-row gap-1.5">
+            <TerrainTileDebug graph={debugGraph} />
+            <FpsDebug />
+          </div>
+        </div>
+      ) : null}
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
         shadows
@@ -384,6 +411,7 @@ export default function RaycastCharacterControllerScene() {
           <RaycastCharacterControllerSceneImpl
             store={store}
             onCharacterUpdate={setSnapshot}
+            onGraphReady={setDebugGraph}
           />
         </Suspense>
       </Canvas>

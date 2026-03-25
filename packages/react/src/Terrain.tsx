@@ -1,6 +1,6 @@
 import { terrainTasks, TerrainMesh } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
-import { cloneElement, isValidElement, useEffect, useRef } from "react";
+import { cloneElement, isValidElement, useEffect, useState } from "react";
 import { TerrainProvider } from "./TerrainContext";
 import type {
   TerrainHandle,
@@ -13,16 +13,13 @@ function useTerrainMesh(
   innerTileSegments: number | undefined,
   maxNodes: number | undefined,
 ) {
-  const meshRef = useRef<TerrainMesh | null>(null);
-
-  if (!meshRef.current) {
-    meshRef.current = new TerrainMesh({
+  const [mesh] = useState(
+    () =>
+      new TerrainMesh({
       innerTileSegments: innerTileSegments ?? 13,
       maxNodes: maxNodes ?? 1024,
-    });
-  }
-
-  const mesh = meshRef.current;
+    }),
+  );
 
   useEffect(() => {
     mesh.innerTileSegments = innerTileSegments ?? 13;

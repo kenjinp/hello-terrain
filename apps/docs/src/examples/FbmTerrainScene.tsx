@@ -27,6 +27,8 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
+type LevaStore = ReturnType<typeof useCreateStore>;
+
 const randomGradient = Fn(([p]: [any]) => {
   const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
     Math.PI * 2,
@@ -67,61 +69,65 @@ const fbm = Fn(([pos_immutable]: [any]) => {
   return total;
 });
 
-function FbmTerrainSceneImpl() {
-  const controls = useControls("FBM Terrain", {
-    rootSize: {
-      value: 128,
-      min: 16,
-      max: 4096,
-      step: 16,
-      label: "root size",
+function FbmTerrainSceneImpl({ store }: { store: LevaStore }) {
+  const controls = useControls(
+    "FBM Terrain",
+    {
+      rootSize: {
+        value: 128,
+        min: 16,
+        max: 4096,
+        step: 16,
+        label: "root size",
+      },
+      maxLevel: {
+        value: 12,
+        min: 2,
+        max: 24,
+        step: 2,
+        label: "max level",
+      },
+      maxNodes: {
+        value: 512,
+        min: 128,
+        max: 2048,
+        step: 1,
+        label: "max nodes",
+      },
+      skirtScale: {
+        value: 10,
+        min: 0,
+        max: 1000,
+        step: 1,
+        label: "skirt scale",
+      },
+      elevationScale: {
+        value: 15,
+        min: 1,
+        max: 100,
+        step: 1,
+        label: "elevation scale",
+      },
+      innerTileSegments: {
+        value: 13,
+        min: 3,
+        max: 64,
+        step: 1,
+        label: "inner tile segments",
+      },
+      noiseScale: {
+        value: 0.05,
+        min: 0.001,
+        max: 0.5,
+        step: 0.001,
+        label: "noise scale",
+      },
+      wireframe: {
+        value: false,
+      },
     },
-    maxLevel: {
-      value: 12,
-      min: 2,
-      max: 24,
-      step: 2,
-      label: "max level",
-    },
-    maxNodes: {
-      value: 512,
-      min: 128,
-      max: 2048,
-      step: 1,
-      label: "max nodes",
-    },
-    skirtScale: {
-      value: 10,
-      min: 0,
-      max: 1000,
-      step: 1,
-      label: "skirt scale",
-    },
-    elevationScale: {
-      value: 15,
-      min: 1,
-      max: 100,
-      step: 1,
-      label: "elevation scale",
-    },
-    innerTileSegments: {
-      value: 13,
-      min: 3,
-      max: 64,
-      step: 1,
-      label: "inner tile segments",
-    },
-    noiseScale: {
-      value: 0.05,
-      min: 0.001,
-      max: 0.5,
-      step: 0.001,
-      label: "noise scale",
-    },
-    wireframe: {
-      value: false,
-    },
-  });
+    { store },
+  );
 
   const elevation = useMemo<ElevationCallback>(() => {
     return ({ worldPosition }) => {
@@ -192,7 +198,7 @@ export default function FbmTerrainScene() {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <FbmTerrainSceneImpl />
+        <FbmTerrainSceneImpl store={store} />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>
