@@ -1,33 +1,12 @@
 "use client";
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
-import { FpsDebug } from "@/components/FpsDebug";
-import { RunTimingBars } from "@/components/RunTimingBars";
-import { TerrainTileDebug } from "@/components/TerrainTileDebug";
-import {
-  elevationFn,
-  elevationScale,
-  innerTileSegments,
-  maxLevel,
-  maxNodes,
-  positionNodeTask,
-  quadtreeUpdate,
-  quadtreeUpdateTask,
-  rootSize,
-  skirtScale,
-  TerrainGeometry,
-  terrainGraph,
-  TerrainMesh,
-  type ElevationCallback,
-  type UpdateParams,
-} from "@hello-terrain/three";
-import { Graph, task, type TaskRef } from "@hello-terrain/work";
+import { Terrain, useTerrain } from "@hello-terrain/react";
+import { type ElevationCallback } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
-import { Canvas, extend, useFrame } from "@react-three/fiber";
+import { Canvas } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
-
-type LevaStore = ReturnType<typeof useCreateStore>;
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   cos,
@@ -47,11 +26,6 @@ import {
   vec4,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
-
-extend(THREE as any);
-extend({ TerrainGeometry, TerrainMesh });
-
-// ── TSL noise helpers ──────────────────────────────────────
 
 const randomGradient = Fn(([p]: [any]) => {
   const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
@@ -93,15 +67,7 @@ const fbm = Fn(([pos_immutable]: [any]) => {
   return total;
 });
 
-// ── Scene Implementation ───────────────────────────────────
-
-type FbmTerrainSceneImplProps = {
-  g: Graph;
-  rendererTask: TaskRef<THREE.WebGPURenderer | null>;
-  store: LevaStore;
-};
-
-const FbmTerrainSceneImpl = ({ g, rendererTask, store }: FbmTerrainSceneImplProps) => {
+function FbmTerrainSceneImpl() {
   const controls = useControls("FBM Terrain", {
     rootSize: {
       value: 128,
@@ -155,159 +121,60 @@ const FbmTerrainSceneImpl = ({ g, rendererTask, store }: FbmTerrainSceneImplProp
     wireframe: {
       value: false,
     },
-  }, { store });
+  });
 
-  const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
-  const meshRef = useRef<THREE.InstancedMesh | null>(null);
-  const materialRef = useRef<THREE.MeshBasicNodeMaterial | null>(null);
-  const materialReadyRef = useRef(false);
-
-  useEffect(() => {
-    g.add(
-      task((get, work) => {
-        const leafSet = get(quadtreeUpdateTask);
-        return work(() => {
-          const mesh = meshRef.current;
-
-          if (
-            mesh &&
-            leafSet?.count !== undefined &&
-            leafSet.count !== mesh.count
-          ) {
-            mesh.count = leafSet.count;
-            mesh.instanceMatrix.needsUpdate = true;
-          }
-        });
-      }).displayName("applyCount"),
-    );
-    g.add(
-      task((get, work) => {
-        const positionNode = get(positionNodeTask);
-        return work(() => {
-          const material = materialRef.current;
-          if (material && positionNode) {
-            material.positionNode = positionNode;
-
-            if (!materialReadyRef.current) {
-              material.outputNode = Fn(() => {
-                const baseColor = vec3(0.42, 0.55, 0.33);
-                const lightDir = normalize(vec3(0.5, 0.8, 0.3));
-                const ambient = float(0.3);
-                const diff = max(dot(normalWorld, lightDir), float(0));
-                return vec4(
-                  baseColor.mul(ambient.add(diff.mul(float(0.7)))),
-                  float(1),
-                );
-              })();
-              materialReadyRef.current = true;
-            }
-
-            material.needsUpdate = true;
-          }
-        });
-      }).displayName("applyPositionNodeTask"),
-    );
-  }, [g, rendererTask]);
-
-  useEffect(() => {
-    const noiseScaleValue = controls.noiseScale;
-    const elevation: ElevationCallback = ({ worldPosition }) => {
+  const elevation = useMemo<ElevationCallback>(() => {
+    return ({ worldPosition }) => {
       const p = vec2(worldPosition.x, worldPosition.z).mul(
-        float(noiseScaleValue),
+        float(controls.noiseScale),
       );
       return fbm(p).sub(float(0.3));
     };
-    g.set(elevationFn, () => elevation);
-  }, [g, controls.noiseScale]);
+  }, [controls.noiseScale]);
 
-  useEffect(() => {
-    g.set(elevationScale, () => controls.elevationScale);
-  }, [controls.elevationScale]);
-
-  useEffect(() => {
-    g.set(maxNodes, () => controls.maxNodes);
-  }, [controls.maxNodes]);
-
-  useEffect(() => {
-    g.set(rootSize, () => controls.rootSize);
-  }, [controls.rootSize]);
-
-  useEffect(() => {
-    g.set(maxLevel, () => controls.maxLevel);
-  }, [controls.maxLevel]);
-
-  useEffect(() => {
-    g.set(skirtScale, () => controls.skirtScale);
-  }, [controls.skirtScale]);
-
-  useEffect(() => {
-    g.set(innerTileSegments, () => controls.innerTileSegments);
-  }, [controls.innerTileSegments]);
-
-  useFrame(async ({ camera, gl }) => {
-    const cameraHysteresis = 0.05;
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      cameraHysteresis * cameraHysteresis
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
-
-    await g.run({
-      resources: {
-        renderer: gl,
-      },
-    });
+  const terrain = useTerrain({
+    rootSize: controls.rootSize,
+    maxLevel: controls.maxLevel,
+    maxNodes: controls.maxNodes,
+    innerTileSegments: controls.innerTileSegments,
+    skirtScale: controls.skirtScale,
+    elevationScale: controls.elevationScale,
+    elevation,
   });
 
   return (
-    <>
-      <terrainMesh
-        ref={meshRef}
-        innerTileSegments={controls.innerTileSegments}
-        maxNodes={controls.maxNodes}
-      >
+    <Terrain
+      terrain={terrain}
+      innerTileSegments={controls.innerTileSegments}
+      maxNodes={controls.maxNodes}
+    >
+      {({ positionNode }) => (
         <meshBasicNodeMaterial
-          ref={materialRef}
+          positionNode={positionNode}
           wireframe={controls.wireframe}
+          outputNode={Fn(() => {
+            const baseColor = vec3(0.42, 0.55, 0.33);
+            const lightDir = normalize(vec3(0.5, 0.8, 0.3));
+            const ambient = float(0.3);
+            const diff = max(dot(normalWorld, lightDir), float(0));
+            return vec4(
+              baseColor.mul(ambient.add(diff.mul(float(0.7)))),
+              float(1),
+            );
+          })()}
         />
-      </terrainMesh>
-    </>
+      )}
+    </Terrain>
   );
-};
+}
 
-const FbmTerrainScene = () => {
+export default function FbmTerrainScene() {
   const store = useCreateStore();
-  const g = useMemo(() => terrainGraph(), []);
-  const rendererTask = useMemo(
-    () =>
-      task<{ renderer: THREE.WebGPURenderer }>((_get, work, { resources }) =>
-        work(() => resources?.renderer ?? null),
-      ).displayName("debugRendererTask"),
-    [],
-  );
-
-  useEffect(() => {
-    g.add(rendererTask);
-  }, [g, rendererTask]);
 
   return (
     <ExamplesCanvas store={store}>
-      <div className="pointer-events-none absolute z-10 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
-        <RunTimingBars graph={g} />
-        <div className="flex flex-row gap-1.5">
-          <TerrainTileDebug graph={g} rendererTask={rendererTask} />
-          <FpsDebug />
-        </div>
-      </div>
       <Canvas
-        className="touch-none relative w-full h-full top-0 left-0"
+        className="touch-none relative left-0 top-0 h-full w-full"
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
@@ -325,11 +192,9 @@ const FbmTerrainScene = () => {
       >
         <ambientLight intensity={0.15} />
         <directionalLight intensity={1} position={[1, 1, 1]} />
-        <FbmTerrainSceneImpl g={g} rendererTask={rendererTask} store={store} />
+        <FbmTerrainSceneImpl />
         <OrbitControls makeDefault />
       </Canvas>
     </ExamplesCanvas>
   );
-};
-
-export default FbmTerrainScene;
+}

@@ -40,7 +40,7 @@ export class TerrainMesh extends InstancedMesh {
     const oldGeometry = this.geometry;
     this.geometry = new TerrainGeometry(tileSegments, true);
     this._innerTileSegments = tileSegments;
-    setTimeout(oldGeometry.dispose);
+    setTimeout(() => oldGeometry.dispose());
   }
 
   get maxNodes() {

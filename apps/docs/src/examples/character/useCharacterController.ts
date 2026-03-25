@@ -1,6 +1,6 @@
 "use client";
 
-import type { TerrainQuery, TerrainRaycast } from "@hello-terrain/three";
+import type { TerrainRuntime } from "@hello-terrain/react";
 import { useFrame } from "@react-three/fiber";
 import { useMemo, useRef, useState, type MutableRefObject } from "react";
 import { Group, Ray, Vector3 } from "three";
@@ -20,8 +20,8 @@ export type CharacterMotionState =
 type UseCharacterControllerParams = {
   inputRef: MutableRefObject<CharacterInputState>;
   viewVectorRef: MutableRefObject<Vector3>;
-  terrainQueryRef: MutableRefObject<TerrainQuery | null>;
-  terrainRaycastRef: MutableRefObject<TerrainRaycast | null>;
+  terrainRuntime: TerrainRuntime;
+  enabled?: boolean;
   initialPosition?: [number, number, number];
   onUpdate?: (snapshot: {
     position: Vector3;
@@ -55,8 +55,8 @@ function getMotionState(
 export function useCharacterController({
   inputRef,
   viewVectorRef,
-  terrainQueryRef,
-  terrainRaycastRef,
+  terrainRuntime,
+  enabled = true,
   initialPosition = [0, 12, 0],
   onUpdate,
 }: UseCharacterControllerParams) {
@@ -83,10 +83,11 @@ export function useCharacterController({
   );
 
   useFrame((_frame, dt) => {
+    if (!enabled) return;
     const delta = Math.min(dt, 1 / 20);
     const input = inputRef.current;
-    const query = terrainQueryRef.current;
-    const terrainRaycast = terrainRaycastRef.current;
+    const query = terrainRuntime.query;
+    const terrainRaycast = terrainRuntime.raycast;
 
     scratch.prevPosition.copy(positionRef.current);
 

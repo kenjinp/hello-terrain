@@ -28,7 +28,10 @@
     "lint": "oxlint -c node_modules/@config/oxlint/react.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
   },
-  "dependencies": {},
+  "dependencies": {
+    "@hello-terrain/three": "workspace:*",
+    "@hello-terrain/work": "workspace:*"
+  },
   "devDependencies": {
     "@config/oxfmt": "workspace:*",
     "@config/oxlint": "workspace:*",
