@@ -2,6 +2,7 @@
   "title": "Core",
   "description": "Core utilities and building blocks",
   "pages": [
+    "params",
     "elevation-function",
     "...nodes",
     "---Query API---",

@@ -1,0 +1,71 @@
+---
+title: Getting Started
+description: Create your first Hello Terrain scene in react-three/fiber
+---
+
+## Prerequisites
+
+The React bindings require:
+
+- `@hello-terrain/react`
+- `@react-three/fiber`
+- `three`
+- `react`
+- `react-dom`
+- a WebGPU renderer created from `three/webgpu`
+
+## Smallest Working Setup
+
+This is the smallest complete example using `Terrain` directly inside a WebGPU `Canvas`:
+
+```tsx
+import { Terrain } from "@hello-terrain/react";
+import { Canvas } from "@react-three/fiber";
+import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
+import { float } from "three/tsl";
+import * as THREE from "three/webgpu";
+
+const elevation = () => float(0);
+
+export function App() {
+  return (
+    <Canvas
+      gl={async (props) => {
+        const renderer = new THREE.WebGPURenderer(
+          props as WebGPURendererParameters,
+        );
+        await renderer.init();
+        return renderer;
+      }}
+      camera={{ position: [0, 30, 60] }}
+    >
+      <ambientLight intensity={0.15} />
+      <directionalLight intensity={1} position={[1, 1, 1]} />
+
+      <Terrain rootSize={128} maxLevel={10} elevation={elevation}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
+    </Canvas>
+  );
+}
+```
+
+## What This Does
+
+- The `Canvas` uses `THREE.WebGPURenderer`.
+- `Terrain` creates and manages its own terrain handle internally.
+- The render prop receives `positionNode`, which displaces the terrain mesh through a node material.
+
+## Customizing The Terrain
+
+`Terrain` accepts the same terrain options as `useTerrain()`. See the [Params](/docs/core/params) reference for a table that explains each option in detail.
+
+It also accepts R3F primitive props such as `castShadow`, `receiveShadow`, `position`, and `visible`.
+
+## When To Reach For `useTerrain()`
+
+The inline `Terrain` form is great for simple scenes. If you need to reuse the same terrain handle across siblings, inspect the graph, or share runtime access with cameras or gameplay systems, use `useTerrain()` and pass the handle into `Terrain`.
+
+Continue to [useTerrain](./use-terrain) for that pattern.
