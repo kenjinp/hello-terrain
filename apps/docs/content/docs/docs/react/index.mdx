@@ -1,0 +1,99 @@
+---
+title: React Overview
+description: Build Hello Terrain scenes in react-three/fiber with the @hello-terrain/react package
+---
+
+`@hello-terrain/react` wraps the core terrain graph with a React-first API for [react-three/fiber](https://r3f.docs.pmnd.rs/). It gives you a terrain handle, hooks the graph into `useFrame`, and exposes the generated node material inputs through a render prop.
+
+## What It Provides
+
+- `Terrain` for rendering a `TerrainMesh` with a node material.
+- `useTerrain()` for creating and owning a terrain handle in React.
+- `TerrainProvider` and `useTerrainContext()` for sharing that handle with sibling systems such as controllers or tools.
+- `terrain.ready` and `terrain.runtime` for coordinating render timing and runtime queries.
+
+## Usage Flow
+
+The typical flow looks like this:
+
+1. Create a WebGPU `Canvas`.
+2. Create a terrain handle with `useTerrain()`, or let `Terrain` do it for you by passing props to Terrain.
+3. Pass the terrain `positionNode` into a node material.
+4. Read `terrain.ready` and `terrain.runtime` anywhere that needs terrain-driven behavior.
+
+### Simple case without `useTerrain()` handle
+```tsx
+import { Terrain } from "@hello-terrain/react";
+
+return (
+  <Terrain rootSize={128} maxLevel={10} elevation={elevation}>
+    {({ positionNode }) => (
+      <meshStandardNodeMaterial positionNode={positionNode} />
+    )}
+  </Terrain>
+);
+```
+
+### With `useTerrain()` handle
+```tsx 
+import { Terrain, useTerrain } from "@hello-terrain/react";
+
+const terrain = useTerrain({
+  rootSize: 128,
+  maxLevel: 10,
+  elevation,
+});
+
+return (
+  <Terrain terrain={terrain}>
+    {({ positionNode }) => (
+      <meshStandardNodeMaterial positionNode={positionNode} />
+    )}
+  </Terrain>
+);
+```
+
+
+## When To Use It
+
+Use `@hello-terrain/react` when you want React to own the terrain lifecycle and the terrain graph to stay frame-driven in the background. 
+If you want to wire meshes, graph tasks, and runtime execution manually, use `@hello-terrain/three` directly instead. That gives you a more imperative workflow. 
+
+## Key Concepts
+
+### `Terrain`
+
+`Terrain` renders the terrain mesh and expects a render-prop child that returns a node material. The child receives `TerrainNodes`, which currently contains `positionNode`.
+In the future this will also contain texture nodes for the texturing system.
+
+### `useTerrain()`
+
+`useTerrain()` returns a `TerrainHandle` with:
+
+- `graph`
+- `tasks`
+- `runtime`
+- `ready`
+- `positionNode`
+
+### `terrain.ready`
+
+`ready` flips to `true` once the required terrain nodes are available. Until then, the terrain material children are not mounted and the terrain mesh stays hidden.
+
+### `terrain.runtime`
+
+<Callout>The runtime object contains stable references and will not trigger react updates!</Callout>
+
+`runtime` exposes the imperative terrain systems that update with the graph.
+
+- `terrain.runtime.query`
+- `terrain.runtime.raycast`
+
+These are useful for cameras, controllers, and gameplay code that needs terrain sampling or collision queries.
+
+## Next Steps
+
+- Start with [Getting Started](./getting-started) for the smallest working setup.
+- Read [useTerrain](./use-terrain) for the full handle API.
+- Read [Context and Runtime](./context-and-runtime) if your scene has sibling consumers like a character controller.
+- Explore [React Examples](./examples) for complete scenes.

@@ -64,22 +64,36 @@ The `@hello-terrain/react` package includes `@hello-terrain/three` as a dependen
 ### Basic Usage
 
 ```tsx
-import { TerrainGeometry } from "@hello-terrain/three";
-import { Canvas, extend } from "@react-three/fiber";
+import { Terrain } from "@hello-terrain/react";
+import { Canvas } from "@react-three/fiber";
+import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
+import { float } from "three/tsl";
+import * as THREE from "three/webgpu";
 
-extend({ TerrainGeometry });
+const elevation = () => float(0);
 
 function App() {
   return (
-    <Canvas>
-      <mesh>
-        <terrainGeometry args={[16, true]} />
-        <meshStandardMaterial />
-      </mesh>
+    <Canvas
+      gl={async (props) => {
+        const renderer = new THREE.WebGPURenderer(
+          props as WebGPURendererParameters,
+        );
+        await renderer.init();
+        return renderer;
+      }}
+    >
+      <Terrain rootSize={128} maxLevel={10} elevation={elevation}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
     </Canvas>
   );
 }
 ```
+
+`@hello-terrain/react` expects a WebGPU renderer and a node material that accepts the `positionNode` provided by the terrain render prop.
 
 ## TypeScript Support
 
@@ -87,4 +101,4 @@ Both packages ship with TypeScript definitions out of the box. No additional `@t
 
 ## Next Steps
 
-Once installed, check out the [Terrain Geometry](/docs/core/terrain-geometry) documentation to learn about the core building block of the terrain system.
+Once installed, start with the [React overview](/docs/react) for the React bindings, or jump to the [Terrain Geometry](/docs/core/terrain-geometry) docs if you're using the lower-level Three.js API directly.

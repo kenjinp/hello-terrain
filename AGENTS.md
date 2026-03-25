@@ -14,3 +14,5 @@ Prefer functions over classes.
 In library internals, don't use three.js. Only expose three.js for consumer level methods. 
 
 Don't use module-scope variables, as there maybe be mulitple instances of the terrain. 
+
+Review the apps/docs and make sure that any API changes are reflected in the docs

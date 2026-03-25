@@ -1,0 +1,38 @@
+---
+title: React Examples
+description: Interactive scenes built with @hello-terrain/react
+---
+
+import FbmTerrainScene from "@/examples/FbmTerrainScene"
+import RaycastCharacterControllerScene from "@/examples/RaycastCharacterControllerScene"
+
+## FBM Terrain
+
+This scene shows the basic `useTerrain()` plus `Terrain` flow:
+
+- create a terrain handle with `useTerrain()`
+- pass it into `Terrain`
+- render the surface with a node material using `positionNode`
+
+<div className="h-[600px] overflow-hidden rounded">
+  <FbmTerrainScene />
+</div>
+
+## Character Controller
+
+This scene shows the shared-handle pattern:
+
+- create one terrain handle
+- wrap siblings in `TerrainProvider`
+- let the character controller and camera read `terrain.runtime`
+- use `terrain.ready` to gate terrain-dependent behavior
+
+<div className="h-[700px] overflow-hidden rounded">
+  <RaycastCharacterControllerScene />
+</div>
+
+## Related Guides
+
+- Read [Getting Started](./getting-started) for the minimal setup.
+- Read [useTerrain](./use-terrain) for the handle lifecycle and options.
+- Read [Context and Runtime](./context-and-runtime) for the provider and runtime patterns.

@@ -1,9 +1,9 @@
 "use client";
 
 import { useExamplesCanvas } from "@/components/ExamplesCanvas";
-import type { TerrainQuery, TerrainRaycast } from "@hello-terrain/three";
+import { useTerrainContext } from "@hello-terrain/react";
 import { useFrame } from "@react-three/fiber";
-import { Suspense, useRef, type MutableRefObject } from "react";
+import { Suspense, useRef } from "react";
 import { Vector3 } from "three";
 
 import { CharacterModel } from "./CharacterModel";
@@ -23,8 +23,6 @@ export type CharacterControllerSnapshot = {
 };
 
 type CharacterControllerProps = {
-  terrainQueryRef: MutableRefObject<TerrainQuery | null>;
-  terrainRaycastRef: MutableRefObject<TerrainRaycast | null>;
   initialPosition?: [number, number, number];
   cameraRadius?: number;
   cameraMinRadius?: number;
@@ -34,8 +32,6 @@ type CharacterControllerProps = {
 };
 
 export function CharacterController({
-  terrainQueryRef,
-  terrainRaycastRef,
   initialPosition = [0, 12, 0],
   cameraRadius = 4.8,
   cameraMinRadius = 1.75,
@@ -43,6 +39,7 @@ export function CharacterController({
   cameraSensitivityY = 0.12,
   onUpdate,
 }: CharacterControllerProps) {
+  const terrain = useTerrainContext();
   const { isFullscreen } = useExamplesCanvas();
   const inputRef = useKeyboardInput(true);
   const viewVectorRef = useRef(new Vector3(0, 0, 1));
@@ -60,8 +57,8 @@ export function CharacterController({
   } = useCharacterController({
     inputRef,
     viewVectorRef,
-    terrainQueryRef,
-    terrainRaycastRef,
+    terrainRuntime: terrain.runtime,
+    enabled: terrain.ready,
     initialPosition,
     onUpdate: (snapshot) => {
       latestStateRef.current = snapshot.state;
@@ -71,8 +68,7 @@ export function CharacterController({
 
   const { isPointerLocked } = useThirdPersonCamera({
     targetPositionRef: positionRef,
-    terrainQueryRef,
-    terrainRaycastRef,
+    terrainRuntime: terrain.runtime,
     viewVectorRef,
     targetHeight: 1.15,
     radius: cameraRadius,
@@ -80,10 +76,12 @@ export function CharacterController({
     maxRadius: cameraRadius,
     sensitivityX: cameraSensitivityX,
     sensitivityY: cameraSensitivityY,
-    zoomEnabled: isFullscreen,
+    enabled: terrain.ready,
+    zoomEnabled: isFullscreen && terrain.ready,
   });
 
   useFrame(() => {
+    if (!terrain.ready) return;
     speedRef.current = Math.hypot(velocityRef.current.x, velocityRef.current.z);
     onUpdate?.({
       position: positionRef.current,
@@ -93,6 +91,8 @@ export function CharacterController({
       isPointerLocked,
     });
   });
+
+  if (!terrain.ready) return null;
 
   return (
     <group ref={groupRef}>

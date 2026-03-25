@@ -13,37 +13,25 @@ import {
   type TerrainStamp,
   useTerrainStampFieldSuspense,
 } from "@/examples/terrain/terrainStamps";
-import {
-  elevationFn,
-  elevationScale,
-  innerTileSegments,
-  type LeafSet,
-  maxLevel,
-  maxNodes,
-  positionNodeTask,
-  quadtreeUpdate,
-  rootSize,
-  skirtScale,
-  TerrainGeometry,
-  terrainGraph,
-  terrainTasks,
-  TerrainMesh,
-  type TerrainGraph,
-  type TerrainQuery,
-  type TerrainRaycast,
-  type UpdateParams,
-} from "@hello-terrain/three";
+import { Terrain, TerrainProvider, useTerrain } from "@hello-terrain/react";
+import type { TerrainGraph } from "@hello-terrain/three";
 import { Environment } from "@react-three/drei";
-import { Canvas, extend, useFrame } from "@react-three/fiber";
+import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
 
-extend(THREE as any);
-extend({ TerrainGeometry, TerrainMesh });
-
 type LevaStore = ReturnType<typeof useCreateStore>;
+
+extend(THREE as any);
 
 const QUADTREE_ORIGIN_HYSTERESIS = 0.35;
 const QUADTREE_ORIGIN_SNAP = 0.25;
@@ -91,24 +79,15 @@ function CharacterHud({
 }
 
 function RaycastCharacterControllerSceneImpl({
-  g,
   store,
   onCharacterUpdate,
+  onGraphReady,
 }: {
-  g: TerrainGraph;
   store: LevaStore;
   onCharacterUpdate: (snapshot: CharacterControllerSnapshot) => void;
+  onGraphReady: (graph: TerrainGraph) => void;
 }) {
-  const meshRef = useRef<TerrainMesh | null>(null);
-  const materialRef = useRef<THREE.MeshStandardNodeMaterial | null>(null);
-  const lastPositionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(
-    null,
-  );
-  const terrainQueryRef = useRef<TerrainQuery | null>(null);
-  const terrainRaycastRef = useRef<TerrainRaycast | null>(null);
   const characterSnapshotRef = useRef<CharacterControllerSnapshot | null>(null);
-  const lastQuadtreeOriginRef = useRef<THREE.Vector3 | null>(null);
-  const nextQuadtreeOriginRef = useRef(new THREE.Vector3());
 
   const controls = useControls(
     "Raycast Character Controller",
@@ -291,48 +270,24 @@ function RaycastCharacterControllerSceneImpl({
   const stampFieldScale = terrainStampField.scale;
   const stampFieldWorldSpan = terrainStampField.worldSpan;
 
-  useEffect(() => {
-    const elevation = createStampedFbmElevation({
-      noiseScale: controls.noiseScale,
-      noiseFloor: 0.3,
-      stampFieldTexture,
+  const elevation = useMemo(
+    () =>
+      createStampedFbmElevation({
+        noiseScale: controls.noiseScale,
+        noiseFloor: 0.3,
+        stampFieldTexture,
+        stampFieldScale,
+        stampFieldWorldSpan,
+      }),
+    [
+      controls.noiseScale,
       stampFieldScale,
+      stampFieldTexture,
       stampFieldWorldSpan,
-    });
-    g.set(elevationFn, () => elevation);
-  }, [
-    controls.noiseScale,
-    g,
-    stampFieldScale,
-    stampFieldTexture,
-    stampFieldWorldSpan,
-  ]);
+    ],
+  );
 
-  useEffect(() => {
-    g.set(rootSize, () => controls.rootSize);
-  }, [controls.rootSize, g]);
-
-  useEffect(() => {
-    g.set(maxLevel, () => controls.maxLevel);
-  }, [controls.maxLevel, g]);
-
-  useEffect(() => {
-    g.set(maxNodes, () => controls.maxNodes);
-  }, [controls.maxNodes, g]);
-
-  useEffect(() => {
-    g.set(skirtScale, () => controls.skirtScale);
-  }, [controls.skirtScale, g]);
-
-  useEffect(() => {
-    g.set(elevationScale, () => controls.elevationScale);
-  }, [controls.elevationScale, g]);
-
-  useEffect(() => {
-    g.set(innerTileSegments, () => controls.innerTileSegments);
-  }, [controls.innerTileSegments, g]);
-
-  useFrame(async ({ gl }) => {
+  const getCameraOrigin = useCallback(() => {
     const playerPosition = characterSnapshotRef.current?.position;
     const nextOriginX = snapToStep(
       playerPosition?.x ?? 0,
@@ -346,71 +301,28 @@ function RaycastCharacterControllerSceneImpl({
       playerPosition?.z ?? 0,
       QUADTREE_ORIGIN_SNAP,
     );
-    nextQuadtreeOriginRef.current.set(nextOriginX, nextOriginY, nextOriginZ);
+    return { x: nextOriginX, y: nextOriginY, z: nextOriginZ };
+  }, []);
 
-    const lastOrigin = lastQuadtreeOriginRef.current;
-    const shouldUpdateOrigin =
-      !lastOrigin ||
-      lastOrigin.distanceToSquared(nextQuadtreeOriginRef.current) >=
-        QUADTREE_ORIGIN_HYSTERESIS * QUADTREE_ORIGIN_HYSTERESIS;
-
-    if (shouldUpdateOrigin) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = nextOriginX;
-        prev.cameraOrigin.y = nextOriginY;
-        prev.cameraOrigin.z = nextOriginZ;
-        return prev;
-      });
-
-      if (!lastOrigin) {
-        lastQuadtreeOriginRef.current = new THREE.Vector3(
-          nextOriginX,
-          nextOriginY,
-          nextOriginZ,
-        );
-      } else {
-        lastOrigin.set(nextOriginX, nextOriginY, nextOriginZ);
-      }
-    }
-
-    await g.run({
-      resources: { renderer: gl as unknown as THREE.WebGPURenderer },
-    });
-
-    const mesh = meshRef.current;
-    const material = materialRef.current;
-    const leaves = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
-    const positionNode = g.peek(positionNodeTask);
-
-    if (mesh && leaves && mesh.count !== leaves.count) {
-      mesh.count = leaves.count;
-      mesh.instanceMatrix.needsUpdate = true;
-    }
-
-    if (
-      material &&
-      positionNode &&
-      positionNode !== lastPositionNodeRef.current
-    ) {
-      material.positionNode = positionNode;
-      material.needsUpdate = true;
-      lastPositionNodeRef.current = positionNode;
-    }
-
-    terrainQueryRef.current = g.peek(terrainTasks.terrainQuery)?.query ?? null;
-
-    const terrainRaycast = g.peek(terrainTasks.terrainRaycast) ?? null;
-    terrainRaycastRef.current = terrainRaycast;
-    if (mesh && terrainRaycast) {
-      mesh.terrainRaycast = terrainRaycast;
-    }
+  const terrain = useTerrain({
+    rootSize: controls.rootSize,
+    maxLevel: controls.maxLevel,
+    maxNodes: controls.maxNodes,
+    innerTileSegments: controls.innerTileSegments,
+    skirtScale: controls.skirtScale,
+    elevationScale: controls.elevationScale,
+    elevation,
+    getCameraOrigin,
+    cameraHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
   });
 
+  useEffect(() => {
+    onGraphReady(terrain.graph);
+  }, [onGraphReady, terrain.graph]);
+
   return (
-    <>
+    <TerrainProvider value={terrain}>
       <CharacterController
-        terrainQueryRef={terrainQueryRef}
-        terrainRaycastRef={terrainRaycastRef}
         initialPosition={[0, 12, 0]}
         cameraRadius={controls.cameraRadius}
         cameraMinRadius={Math.min(
@@ -425,28 +337,30 @@ function RaycastCharacterControllerSceneImpl({
         }}
       />
 
-      <terrainMesh
-        ref={meshRef}
+      <Terrain
+        terrain={terrain}
         castShadow
         receiveShadow
         innerTileSegments={controls.innerTileSegments}
         maxNodes={controls.maxNodes}
       >
-        <meshStandardNodeMaterial
-          ref={materialRef}
-          wireframe={controls.wireframe}
-          color="#5f7655"
-          metalness={0.03}
-          roughness={0.94}
-        />
-      </terrainMesh>
-    </>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial
+            positionNode={positionNode}
+            wireframe={controls.wireframe}
+            color="#5f7655"
+            metalness={0.03}
+            roughness={0.94}
+          />
+        )}
+      </Terrain>
+    </TerrainProvider>
   );
 }
 
 export default function RaycastCharacterControllerScene() {
   const store = useCreateStore();
-  const g = useMemo(() => terrainGraph(), []);
+  const [debugGraph, setDebugGraph] = useState<TerrainGraph | null>(null);
   const [snapshot, setSnapshot] = useState<CharacterControllerSnapshot | null>(
     null,
   );
@@ -454,13 +368,15 @@ export default function RaycastCharacterControllerScene() {
   return (
     <ExamplesCanvas store={store}>
       <CharacterHud snapshot={snapshot} />
-      <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-10 flex flex-col gap-1.5 md:bottom-4 md:left-auto md:right-4 md:max-w-xs">
-        <RunTimingBars graph={g} />
-        <div className="flex flex-row gap-1.5">
-          <TerrainTileDebug graph={g} />
-          <FpsDebug />
+      {debugGraph ? (
+        <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-10 flex flex-col gap-1.5 md:bottom-4 md:left-auto md:right-4 md:max-w-xs">
+          <RunTimingBars graph={debugGraph} />
+          <div className="flex flex-row gap-1.5">
+            <TerrainTileDebug graph={debugGraph} />
+            <FpsDebug />
+          </div>
         </div>
-      </div>
+      ) : null}
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
         shadows
@@ -493,9 +409,9 @@ export default function RaycastCharacterControllerScene() {
         <Environment preset="park" />
         <Suspense fallback={null}>
           <RaycastCharacterControllerSceneImpl
-            g={g}
             store={store}
             onCharacterUpdate={setSnapshot}
+            onGraphReady={setDebugGraph}
           />
         </Suspense>
       </Canvas>

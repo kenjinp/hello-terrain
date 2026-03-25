@@ -1,0 +1,109 @@
+---
+title: useTerrain
+description: Create and manage a Hello Terrain handle in React
+---
+
+## Overview
+
+`useTerrain(options)` creates a `TerrainHandle` and keeps the underlying terrain graph running from React.
+
+Use it when you want to:
+
+- reuse the same terrain handle across multiple components
+- inspect the graph or tasks directly
+- access `runtime.query` or `runtime.raycast`
+- control quadtree tracking with a custom `getCameraOrigin`
+
+## Return Value
+
+`useTerrain()` returns a `TerrainHandle`:
+
+```tsx
+type TerrainHandle = {
+  graph: TerrainGraph;
+  tasks: TerrainTasks;
+  runtime: TerrainRuntime;
+  ready: boolean;
+  positionNode: ShaderCallNodeInternal | null;
+};
+```
+
+### `graph`
+
+The underlying `@hello-terrain/work` graph instance. This is mainly useful for advanced integrations, inspection, and tooling.
+
+### `tasks`
+
+The standard terrain task refs exported from `@hello-terrain/three`.
+
+### `runtime`
+
+Imperative runtime helpers that update with the graph:
+
+- `runtime.query`
+- `runtime.raycast`
+
+### `ready`
+
+Signals that the terrain nodes needed for rendering are available. Before `ready` is `true`, the terrain mesh stays hidden and render-prop materials do not mount.
+
+### `positionNode`
+
+The generated node material input used to displace the terrain surface.
+
+## Basic Pattern
+
+```tsx
+import { Terrain, useTerrain } from "@hello-terrain/react";
+
+function Scene() {
+  const terrain = useTerrain({
+    rootSize: 512,
+    maxLevel: 12,
+    elevation,
+  });
+
+  return (
+    <Terrain terrain={terrain}>
+      {({ positionNode }) => (
+        <meshStandardNodeMaterial positionNode={positionNode} />
+      )}
+    </Terrain>
+  );
+}
+```
+
+## Following A Custom Origin
+
+By default the runner uses the active R3F camera position. If you want the quadtree to follow a player or another tracked point, provide `getCameraOrigin`.
+
+```tsx
+const terrain = useTerrain({
+  rootSize: 4096,
+  maxLevel: 6,
+  elevation,
+  getCameraOrigin: () => playerPositionRef.current,
+  cameraHysteresis: 0.25,
+});
+```
+
+## Custom Tasks
+
+You can add extra graph tasks with the `tasks` option:
+
+```tsx
+const terrain = useTerrain({
+  elevation,
+  tasks: [myDebugTask, myAnalysisTask],
+});
+```
+
+Custom tasks are added to the terrain graph and included in the targeted run list.
+
+## Caveats
+
+- `useTerrain()` expects to be used inside a WebGPU-backed R3F canvas.
+- `runtime.query` and `runtime.raycast` may be `null` until the graph has produced them.
+- `ready` is the safest guard for terrain-driven render and gameplay code.
+
+If you need to share the handle with sibling systems, continue to [Context and Runtime](./context-and-runtime).

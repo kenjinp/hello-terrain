@@ -1,0 +1,123 @@
+---
+title: Params
+description: Reference for the core terrain graph params and how to create your own with @hello-terrain/work
+---
+
+Terrain configuration in Hello Terrain is built on top of `Param` values from `@hello-terrain/work`.
+
+The core terrain graph in `@hello-terrain/three` exposes a shared set of params such as `rootSize`, `maxLevel`, `elevationScale`, and `terrainFieldFilter`. Higher-level APIs like `@hello-terrain/react` map their props and options onto these same graph inputs.
+
+## Terrain Params
+
+| Param | Type | Default | What It Controls |
+|-------|------|---------|------------------|
+| `rootSize` | `number` | `256` | The world-space size of the root terrain region. Larger values cover more world space before subdivision. |
+| `origin` | `{ x: number; y: number; z: number }` | `{ x: 0, y: 0, z: 0 }` | The world-space origin of the terrain root. This offsets the terrain surface and related bounds calculations. |
+| `maxLevel` | `number` | `16` | The maximum quadtree subdivision depth. Higher values allow finer terrain detail close to the tracked origin. |
+| `maxNodes` | `number` | `1024` | The maximum number of active terrain tiles that can be rendered and processed at once. |
+| `innerTileSegments` | `number` | `13` | The vertex resolution inside each terrain tile before skirts are added. Higher values increase per-tile detail and cost. |
+| `skirtScale` | `number` | `100` | The length of the downward skirt geometry used to hide cracks between terrain LOD levels. |
+| `elevationScale` | `number` | `1` | A multiplier applied to the sampled elevation values, controlling the vertical exaggeration of the terrain. |
+| `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
+| `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
+| `surface` | `Surface` | `null` | `null` | The terrain surface model that defines topology and bounds behavior. Leave it unset to use the default flat surface. |
+| `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
+
+## Where These Params Apply
+
+These params are part of the core terrain graph, not just the React wrapper.
+
+- In `@hello-terrain/three`, you can import the param refs directly and set them on a graph.
+- In `@hello-terrain/react`, options like `rootSize`, `maxLevel`, `elevation`, and `terrainFieldFilter` are translated onto these same graph params.
+- Advanced integrations can add their own params and read them inside custom tasks.
+
+## Built On `@hello-terrain/work`
+
+The terrain graph uses `param()` from `@hello-terrain/work` to define reactive inputs:
+
+```ts
+import { param } from "@hello-terrain/work";
+
+export const rootSize = param(256).displayName("rootSize");
+export const maxLevel = param(16).displayName("maxLevel");
+```
+
+When a task reads one of these params with `get(paramRef)`, the graph tracks that dependency and marks downstream tasks dirty whenever the param changes.
+
+## Using Terrain Params Directly
+
+In lower-level `@hello-terrain/three` code, you can set core terrain params on a graph yourself:
+
+```ts
+import { terrainGraph, rootSize, maxLevel, elevationScale } from "@hello-terrain/three";
+
+const graph = terrainGraph();
+
+graph.set(rootSize, 4096);
+graph.set(maxLevel, 6);
+graph.set(elevationScale, 200);
+```
+
+This takes graph-local ownership of those params, which is the idiomatic `@hello-terrain/work` model for multi-instance graphs.
+
+## Creating Your Own Params
+
+You can define your own params with `@hello-terrain/work` and use them alongside the built-in terrain params.
+
+```ts
+import { graph, param, task } from "@hello-terrain/work";
+import { rootSize, maxLevel } from "@hello-terrain/three";
+
+const scatterCount = param(1024).displayName("scatterCount");
+
+const debugTask = task((get, work) => {
+  const size = get(rootSize);
+  const level = get(maxLevel);
+  const count = get(scatterCount);
+
+  return work(() => ({ size, level, count }));
+}).displayName("debugTask");
+
+const g = graph()
+  .add(debugTask)
+  .set(rootSize, 2048)
+  .set(maxLevel, 8)
+  .set(scatterCount, 2048);
+```
+
+This is useful for custom scatter systems, debug overlays, analysis tasks, or any terrain-adjacent feature that should participate in the same graph lifecycle.
+
+## Shared Params vs Graph-Owned Params
+
+`@hello-terrain/work` supports both shared params and graph-owned params:
+
+- A plain `param()` stores a shared value.
+- `graph.set(paramRef, valueOrCallback)` gives one graph its own local value for that param.
+- `graph.reset(paramRef)` resets a graph-owned param back to its baseline for that graph.
+
+Hello Terrain uses graph-owned params so multiple terrain instances can coexist without leaking values into each other.
+
+## React Mapping
+
+In `@hello-terrain/react`, these core params are surfaced through `Terrain` props and `useTerrain()` options. A few names are slightly adapted for the React API:
+
+```tsx
+const terrain = useTerrain({
+  rootSize: 4096,
+  maxLevel: 6,
+  elevation,
+  getCameraOrigin,
+  cameraHysteresis: 0.35,
+});
+```
+
+- `elevation` maps to the core `elevationFn` param.
+- `getCameraOrigin` and `cameraHysteresis` influence how the runner updates the core `quadtreeUpdate` param over time.
+- `tasks` lets you add extra `@hello-terrain/work` tasks to the terrain graph.
+
+## Related Pages
+
+- [Getting Started](/docs/react/getting-started)
+- [useTerrain](/docs/react/use-terrain)
+- [Context and Runtime](/docs/react/context-and-runtime)
+- [Param](/work/param)

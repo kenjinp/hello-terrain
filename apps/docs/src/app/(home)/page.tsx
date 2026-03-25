@@ -37,7 +37,7 @@ export default function HomePage() {
           Realtime web terrain engine, for vast virtual worlds.
         </p>
         <div className="flex flex-col items-center justify-center gap-2 mt-4">
-          <div className="flex flex-row flex-wrap items-center justify-center gap-2 mb-4">
+          <div className="flex flex-row flex-wrap items-center justify-center gap-2 mb-4 max-w-[600px]">
             <Link
               className="shadow-md"
               href="https://threejs.org/docs/"
@@ -78,8 +78,19 @@ export default function HomePage() {
               rel="noopener noreferrer"
             >
               <img
-                src="https://img.shields.io/npm/v/@hello-terrain/three?style=for-the-badge&colorA=000000&colorB=000000"
-                alt="npm version"
+                src="https://img.shields.io/npm/v/@hello-terrain/three?style=for-the-badge&label=%40hello-terrain%2Fthree&colorA=000000&colorB=000000"
+                alt="@hello-terrain/three"
+              />
+            </Link>
+            <Link
+              className="shadow-md"
+              href="https://www.npmjs.com/package/@hello-terrain/react"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <img
+                src="https://img.shields.io/npm/v/@hello-terrain/react?style=for-the-badge&label=%40hello-terrain%2Freact&colorA=000000&colorB=000000"
+                alt="@hello-terrain/react"
               />
             </Link>
           </div>

@@ -1,0 +1,109 @@
+---
+title: Context and Runtime
+description: Share terrain state with sibling systems using TerrainProvider and useTerrainContext
+---
+
+## Why Context Exists
+
+`Terrain` provides terrain context to its own subtree, but many real scenes need terrain access from sibling systems such as:
+
+- character controllers
+- camera rigs
+- raycast tools
+- gameplay systems
+
+For those cases, create the terrain handle with `useTerrain()`, provide it with `TerrainProvider`, and read it with `useTerrainContext()`.
+
+## Provider Pattern
+
+```tsx
+import {
+  Terrain,
+  TerrainProvider,
+  useTerrain,
+  useTerrainContext,
+} from "@hello-terrain/react";
+
+function Scene() {
+  const terrain = useTerrain({
+    rootSize: 4096,
+    maxLevel: 6,
+    elevation,
+    getCameraOrigin,
+    cameraHysteresis: 0.35,
+  });
+
+  return (
+    <TerrainProvider value={terrain}>
+      <CharacterController />
+      <Terrain terrain={terrain}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
+    </TerrainProvider>
+  );
+}
+```
+
+## Reading The Terrain Handle
+
+Any descendant of `TerrainProvider` can read the terrain handle:
+
+```tsx
+function CharacterController() {
+  const terrain = useTerrainContext();
+
+  if (!terrain.ready) return null;
+
+  return null;
+}
+```
+
+## Runtime Access
+
+`terrain.runtime` contains the imperative runtime helpers that systems outside the material path usually care about:
+
+```tsx
+const terrain = useTerrainContext();
+
+const query = terrain.runtime.query;
+const raycast = terrain.runtime.raycast;
+```
+
+These values are updated by the terrain graph. They may be `null` before the terrain is ready.
+
+## Recommended Guards
+
+The safest pattern is to gate terrain-dependent behavior on `terrain.ready`:
+
+```tsx
+const terrain = useTerrainContext();
+
+useCharacterController({
+  terrainRuntime: terrain.runtime,
+  enabled: terrain.ready,
+});
+```
+
+That is the pattern used by the React character controller example. It prevents cameras, movement code, or raycasts from running before the terrain graph has produced the required runtime state.
+
+## Render Subtree vs Siblings
+
+There are two common shapes:
+
+### Terrain-only subtree
+
+If everything that needs the handle lives under the `Terrain` subtree, the built-in provider inside `Terrain` is enough.
+
+### Shared scene systems
+
+If a controller, camera, or gameplay system is a sibling of `Terrain`, wrap both in `TerrainProvider` so they share one `TerrainHandle`.
+
+## Example Use Cases
+
+- Third-person character movement that queries ground height.
+- Cameras that raycast against the current terrain tiles.
+- Debug panels that inspect the graph or runtime state.
+
+See [React Examples](./examples) for full scene implementations.

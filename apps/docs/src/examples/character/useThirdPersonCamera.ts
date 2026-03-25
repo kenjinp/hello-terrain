@@ -1,14 +1,13 @@
 "use client";
 
-import type { TerrainQuery, TerrainRaycast } from "@hello-terrain/three";
+import type { TerrainRuntime } from "@hello-terrain/react";
 import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { MathUtils, Ray, Vector3 } from "three";
 
 type UseThirdPersonCameraParams = {
   targetPositionRef: MutableRefObject<Vector3>;
-  terrainQueryRef?: MutableRefObject<TerrainQuery | null>;
-  terrainRaycastRef?: MutableRefObject<TerrainRaycast | null>;
+  terrainRuntime?: TerrainRuntime;
   viewVectorRef?: MutableRefObject<Vector3>;
   targetHeight?: number;
   radius?: number;
@@ -22,8 +21,7 @@ type UseThirdPersonCameraParams = {
 
 export function useThirdPersonCamera({
   targetPositionRef,
-  terrainQueryRef,
-  terrainRaycastRef,
+  terrainRuntime,
   viewVectorRef: providedViewVectorRef,
   targetHeight = 1.2,
   radius = 4.8,
@@ -183,7 +181,7 @@ export function useThirdPersonCamera({
     if (desiredDistance > 1e-6) {
       scratch.cameraDirection.divideScalar(desiredDistance);
 
-      const terrainRaycast = terrainRaycastRef?.current;
+      const terrainRaycast = terrainRuntime?.raycast;
       if (terrainRaycast) {
         scratch.cameraCollisionRay.origin.copy(smoothedTargetRef.current);
         scratch.cameraCollisionRay.direction.copy(scratch.cameraDirection);
@@ -201,7 +199,7 @@ export function useThirdPersonCamera({
       }
     }
 
-    const terrainQuery = terrainQueryRef?.current;
+    const terrainQuery = terrainRuntime?.query;
     if (terrainQuery) {
       const sample = terrainQuery.sampleTerrain(
         scratch.resolvedCameraPosition.x,

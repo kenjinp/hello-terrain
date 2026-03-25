@@ -1,0 +1,11 @@
+{
+  "title": "React",
+  "description": "React Three Fiber bindings for Hello Terrain",
+  "pages": [
+    "index",
+    "getting-started",
+    "use-terrain",
+    "context-and-runtime",
+    "examples"
+  ]
+}

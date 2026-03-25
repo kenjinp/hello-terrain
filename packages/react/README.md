@@ -1,43 +1,85 @@
 # @hello-terrain/react
-Realtime web terrain engine, for vast virtual worlds. Built for [three.js](https://threejs.org/) and [react-three/fiber](https://r3f.docs.pmnd.rs/getting-started/introduction).
 
-## Features
+React bindings for Hello Terrain, built for [react-three/fiber](https://r3f.docs.pmnd.rs/) and WebGPU.
 
-- Performant variable LOD system for huge (earth-scale!) open worlds
-- Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
-- TSL-based elevation and texture assignment nodes
-- Composable compute stage plugins
+`@hello-terrain/react` wraps the core terrain graph from `@hello-terrain/three` with a React-first API:
 
-## Getting Started
+- `Terrain` renders the terrain mesh and connects node materials
+- `useTerrain()` creates and owns a `TerrainHandle`
+- `TerrainProvider` and `useTerrainContext()` share terrain state with sibling systems
+- `terrain.ready` and `terrain.runtime` make it easier to coordinate rendering, queries, and raycasts
 
-1. Read the [Introduction](http://hello-terrain.kenny.wtf/docs) to understand the architecture and see how it's used.
+## Installation
 
-2. Read the [Installation](http://hello-terrain.kenny.wtf/docs/installation) instructions.
+```bash
+pnpm add @hello-terrain/react @react-three/fiber three react react-dom
+```
 
-3. Review the [Examples](http://hello-terrain.kenny.wtf/examples) to get an idea of how to do things.
+`@hello-terrain/react` depends on WebGPU and expects a `three/webgpu` renderer.
 
-4. For support, join the [Discord server](https://discord.gg/HgTd2B828n).
+## Basic Example
 
-## Project Architecture
-This library uses [unbuild](https://github.com/unjs/unbuild) for building.
-- `src/index.tsx` is the main entry point for your library exports
-- Add your library code in the `src` folder
-- `tests/` contains your test files
+```tsx
+import { Terrain } from "@hello-terrain/react";
+import { Canvas } from "@react-three/fiber";
+import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
+import { float } from "three/tsl";
+import * as THREE from "three/webgpu";
 
+const elevation = () => float(0);
 
-## Libraries
-The following libraries are used - checkout the linked docs to learn more
-- [unbuild](https://github.com/unjs/unbuild) - Unified JavaScript build system
+export function App() {
+  return (
+    <Canvas
+      gl={async (props) => {
+        const renderer = new THREE.WebGPURenderer(
+          props as WebGPURendererParameters,
+        );
+        await renderer.init();
+        return renderer;
+      }}
+      camera={{ position: [0, 30, 60] }}
+    >
+      <ambientLight intensity={0.15} />
+      <directionalLight intensity={1} position={[1, 1, 1]} />
 
+      <Terrain rootSize={1024} maxLevel={6} elevation={elevation}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
+    </Canvas>
+  );
+}
+```
 
-## Tools
-- [Vitest](https://vitest.dev/) - Fast unit test framework powered by Vite
-- [Oxlint](https://oxc.rs/docs/guide/usage/linter) - A fast linter for JavaScript and TypeScript
-- [Oxfmt](https://oxc.rs/docs/guide/usage/formatter) - Fast Prettier-compatible code formatter
+## When To Use `useTerrain()`
 
+Use `Terrain` by itself for the smallest setup. Reach for `useTerrain()` when you want to:
 
-## Development Commands
-- `pnpm install` to install the dependencies
-- `pnpm run build` to build the library into the `dist` folder
-- `pnpm run test` to run the tests
-- `pnpm run release` to build and publish to npm
+- reuse the same terrain handle across multiple components
+- access `terrain.runtime.query` or `terrain.runtime.raycast`
+- share terrain state with sibling systems like controllers or cameras
+- inspect the underlying graph or provide custom graph tasks
+
+## Public API
+
+- `Terrain`
+- `useTerrain`
+- `TerrainProvider`
+- `useTerrainContext`
+- `TerrainHandle`
+- `TerrainOptions`
+- `TerrainRuntime`
+- `TerrainTask`
+
+## Docs
+
+- [Introduction](http://hello-terrain.kenny.wtf/docs)
+- [Installation](http://hello-terrain.kenny.wtf/docs/installation)
+- [React Overview](http://hello-terrain.kenny.wtf/docs/react)
+- [Examples](http://hello-terrain.kenny.wtf/examples)
+
+## Support
+
+For support, join the [Discord server](https://discord.gg/HgTd2B828n).

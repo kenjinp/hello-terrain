@@ -68,22 +68,33 @@ export function createNormalAssignment(
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
   if (!terrainFieldStorage) return;
-  const nodeIndex = int(instanceIndex);
-  const edgeVertexCount = int(terrainUniforms.uInnerTileSegments.add(3));
-  const localVertexIndex = int(vertexIndex);
-  const ix = localVertexIndex.mod(edgeVertexCount);
-  const iy = localVertexIndex.div(edgeVertexCount);
-  const normalXZ = loadTerrainFieldNormal(
-    terrainFieldStorage,
-    ix,
-    iy,
-    nodeIndex,
-  );
-  const nx = normalXZ.x;
-  const nz = normalXZ.y;
-  const nySq = float(1).sub(nx.mul(nx)).sub(nz.mul(nz)).max(float(0));
-  const ny = nySq.sqrt();
-  normalLocal.assign(vec3(nx, ny, nz));
+  normalLocal.assign(createTileLocalNormal(terrainUniforms, terrainFieldStorage));
+}
+
+export function createTileLocalNormal(
+  terrainUniforms: TerrainUniformsContext,
+  terrainFieldStorage?: TerrainFieldStorage,
+) {
+  if (!terrainFieldStorage) return vec3(0, 1, 0);
+
+  return Fn(() => {
+    const nodeIndex = int(instanceIndex);
+    const edgeVertexCount = int(terrainUniforms.uInnerTileSegments.add(3));
+    const localVertexIndex = int(vertexIndex);
+    const ix = localVertexIndex.mod(edgeVertexCount);
+    const iy = localVertexIndex.div(edgeVertexCount);
+    const normalXZ = loadTerrainFieldNormal(
+      terrainFieldStorage,
+      ix,
+      iy,
+      nodeIndex,
+    );
+    const nx = normalXZ.x;
+    const nz = normalXZ.y;
+    const nySq = float(1).sub(nx.mul(nx)).sub(nz.mul(nz)).max(float(0));
+    const ny = nySq.sqrt();
+    return vec3(nx, ny, nz);
+  })();
 }
 
 export function createTileWorldPosition(
