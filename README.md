@@ -16,6 +16,7 @@ Realtime web terrain engine, for vast virtual worlds. Built for [three.js](https
 - Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
 - TSL-based elevation and texture assignment nodes
 - Composable compute stage plugins
+- GPU render-side frustum culling with optional Hi-Z occlusion culling
 
 ## Getting Started
 

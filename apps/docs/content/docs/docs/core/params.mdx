@@ -22,6 +22,9 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
 | `surface` | `Surface` | `null` | `null` | The terrain surface model that defines topology and bounds behavior. Leave it unset to use the default flat surface. |
 | `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
+| `frustumCulling` | `boolean` | `true` | Enables GPU render-side frustum culling. Compute and readback still run on the full quadtree leaf set. |
+| `occlusionCulling` | `boolean` | `false` | Enables previous-frame Hi-Z occlusion culling on top of frustum culling. |
+| `hiZResolution` | `number` | `512` | Controls the square resolution used for the Hi-Z depth capture and mip pyramid. Higher values improve occlusion precision at higher cost. |
 
 ## Where These Params Apply
 
@@ -29,6 +32,7 @@ These params are part of the core terrain graph, not just the React wrapper.
 
 - In `@hello-terrain/three`, you can import the param refs directly and set them on a graph.
 - In `@hello-terrain/react`, options like `rootSize`, `maxLevel`, `elevation`, and `terrainFieldFilter` are translated onto these same graph params.
+- In `@hello-terrain/react`, render-culling options like `frustumCulling`, `occlusionCulling`, and `hiZResolution` map onto the same graph-owned params.
 - Advanced integrations can add their own params and read them inside custom tasks.
 
 ## Built On `@hello-terrain/work`
@@ -113,6 +117,7 @@ const terrain = useTerrain({
 
 - `elevation` maps to the core `elevationFn` param.
 - `getCameraOrigin` and `cameraHysteresis` influence how the runner updates the core `quadtreeUpdate` param over time.
+- `frustumCulling`, `occlusionCulling`, and `hiZResolution` control the renderer-facing visibility pipeline without changing compute/query coverage.
 - `tasks` lets you add extra `@hello-terrain/work` tasks to the terrain graph.
 
 ## Related Pages

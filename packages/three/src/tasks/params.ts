@@ -3,6 +3,14 @@ import { float } from "three/tsl";
 import type { ElevationCallback } from "../tsl/elevation";
 import type { Surface, UpdateParams } from "../quadtree";
 
+const identityMatrix = () =>
+  new Float32Array([
+    1, 0, 0, 0,
+    0, 1, 0, 0,
+    0, 0, 1, 0,
+    0, 0, 0, 1,
+  ]);
+
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
 
@@ -43,6 +51,30 @@ export const surface = param<Surface | null>(null).displayName("surface");
 
 /** Terrain field texture filter mode. */
 export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayName("terrainFieldFilter");
+
+/** Camera projection-view matrix uploaded by the runtime each frame. */
+export const cameraProjectionViewMatrix = param(identityMatrix()).displayName(
+  "cameraProjectionViewMatrix",
+);
+
+/** Camera projection matrix uploaded by the runtime each frame. */
+export const cameraProjectionMatrix = param(identityMatrix()).displayName(
+  "cameraProjectionMatrix",
+);
+
+/** Camera view matrix uploaded by the runtime each frame. */
+export const cameraViewMatrix = param(identityMatrix()).displayName(
+  "cameraViewMatrix",
+);
+
+/** Toggle render-side frustum culling. */
+export const frustumCulling = param(true).displayName("frustumCulling");
+
+/** Toggle render-side Hi-Z occlusion culling. */
+export const occlusionCulling = param(false).displayName("occlusionCulling");
+
+/** Hi-Z capture resolution in pixels. */
+export const hiZResolution = param(512).displayName("hiZResolution");
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));

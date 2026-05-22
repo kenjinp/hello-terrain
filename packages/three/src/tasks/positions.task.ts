@@ -1,8 +1,9 @@
 import { task } from "@hello-terrain/work";
 import { createTileWorldPosition } from "../gpu/worldPosition";
 import { createTerrainFieldTextureTask } from "./terrain-field.task";
+import { createRenderIndirectionTask } from "./frustum-cull.task";
 import { leafStorageTask } from "./quadtree.task";
-import { updateUniformsTask } from "./uniforms/uniforms.task";
+import { createUniformsTask } from "./uniforms/uniforms.task";
 
 /**
  * Builds the TSL position node for the terrain shader.
@@ -20,11 +21,13 @@ import { updateUniformsTask } from "./uniforms/uniforms.task";
  */
 export const positionNodeTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
-  const terrainUniforms = get(updateUniformsTask);
+  const renderIndirection = get(createRenderIndirectionTask);
+  const terrainUniforms = get(createUniformsTask);
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
   return work(() =>
     createTileWorldPosition(
       leafStorage,
+      renderIndirection,
       terrainUniforms,
       terrainFieldStorage,
     ),

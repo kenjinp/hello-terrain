@@ -1,9 +1,12 @@
 import {
+  frustumCulling,
   elevationFn,
   elevationScale,
+  hiZResolution,
   innerTileSegments,
   maxLevel,
   maxNodes,
+  occlusionCulling,
   origin,
   rootSize,
   skirtScale,
@@ -46,6 +49,9 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     surface: nextSurface,
     terrainFieldFilter: nextTerrainFieldFilter,
+    frustumCulling: nextFrustumCulling,
+    occlusionCulling: nextOcclusionCulling,
+    hiZResolution: nextHiZResolution,
   } = options;
 
   useLayoutEffect(() => {
@@ -116,6 +122,27 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
       nextTerrainFieldFilter,
       () => nextTerrainFieldFilter as "nearest" | "linear",
     );
+    resetOrSet(
+      graph,
+      ownedParamIds,
+      frustumCulling,
+      nextFrustumCulling,
+      () => nextFrustumCulling as boolean,
+    );
+    resetOrSet(
+      graph,
+      ownedParamIds,
+      occlusionCulling,
+      nextOcclusionCulling,
+      () => nextOcclusionCulling as boolean,
+    );
+    resetOrSet(
+      graph,
+      ownedParamIds,
+      hiZResolution,
+      nextHiZResolution,
+      () => nextHiZResolution as number,
+    );
 
     if (elevation === undefined) {
       if (ownedParamIds.has(elevationFn.id)) {
@@ -138,5 +165,8 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     nextSurface,
     nextTerrainFieldFilter,
+    nextFrustumCulling,
+    nextOcclusionCulling,
+    nextHiZResolution,
   ]);
 }

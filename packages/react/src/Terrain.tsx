@@ -38,12 +38,26 @@ function useTerrainMesh(
   return mesh;
 }
 
-function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
-  const leaves = terrain.graph.peek(terrainTasks.quadtreeUpdate);
-  if (leaves && mesh.count !== leaves.count) {
-    mesh.count = leaves.count;
-    mesh.instanceMatrix.needsUpdate = true;
+function syncTerrainMesh(
+  mesh: TerrainMesh,
+  captureMesh: TerrainMesh,
+  terrain: TerrainHandle,
+) {
+  const renderIndirection = terrain.graph.peek(terrainTasks.createRenderIndirection);
+  if (renderIndirection) {
+    mesh.setIndirectAttribute(renderIndirection.indirectAttribute);
+    captureMesh.setIndirectAttribute(renderIndirection.indirectAttribute);
   }
+
+  if (mesh.count !== mesh.maxNodes) {
+    mesh.count = mesh.maxNodes;
+  }
+  if (captureMesh.count !== captureMesh.maxNodes) {
+    captureMesh.count = captureMesh.maxNodes;
+  }
+
+  captureMesh.matrix.copy(mesh.matrixWorld);
+  captureMesh.matrixWorld.copy(mesh.matrixWorld);
 
   const raycast = terrain.runtime.raycast;
   if (mesh.terrainRaycast !== raycast) {
@@ -76,11 +90,30 @@ function TerrainWithHandle({
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
   const mesh = useTerrainMesh(innerTileSegments, maxNodes);
+  const captureMesh = useTerrainMesh(innerTileSegments, maxNodes);
   const { visible: primitiveVisible = true, ...restPrimitiveProps } =
     primitiveProps;
 
+  useEffect(() => {
+    captureMesh.matrixAutoUpdate = false;
+    return () => {
+      captureMesh.matrixAutoUpdate = true;
+    };
+  }, [captureMesh]);
+
+  useEffect(() => {
+    terrain.runtime.mesh = mesh;
+    terrain.runtime.captureMesh = captureMesh;
+    return () => {
+      if (terrain.runtime.mesh === mesh) terrain.runtime.mesh = null;
+      if (terrain.runtime.captureMesh === captureMesh) {
+        terrain.runtime.captureMesh = null;
+      }
+    };
+  }, [captureMesh, mesh, terrain]);
+
   useFrame(() => {
-    syncTerrainMesh(mesh, terrain);
+    syncTerrainMesh(mesh, captureMesh, terrain);
   });
 
   return (
@@ -115,6 +148,9 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     elevation,
     surface,
     terrainFieldFilter,
+    frustumCulling,
+    occlusionCulling,
+    hiZResolution,
     getCameraOrigin,
     cameraHysteresis,
     tasks,
@@ -132,6 +168,9 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     elevation,
     surface,
     terrainFieldFilter,
+    frustumCulling,
+    occlusionCulling,
+    hiZResolution,
     getCameraOrigin,
     cameraHysteresis,
     tasks,
@@ -162,6 +201,9 @@ export function Terrain({
   elevation,
   surface,
   terrainFieldFilter,
+  frustumCulling,
+  occlusionCulling,
+  hiZResolution,
   getCameraOrigin,
   cameraHysteresis,
   tasks,
@@ -192,6 +234,9 @@ export function Terrain({
       elevation={elevation}
       surface={surface}
       terrainFieldFilter={terrainFieldFilter}
+      frustumCulling={frustumCulling}
+      occlusionCulling={occlusionCulling}
+      hiZResolution={hiZResolution}
       getCameraOrigin={getCameraOrigin}
       cameraHysteresis={cameraHysteresis}
       tasks={tasks}

@@ -4,7 +4,7 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { Terrain, useTerrain } from "@hello-terrain/react";
 import { type ElevationCallback } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useMemo } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
@@ -28,6 +28,8 @@ import {
 import * as THREE from "three/webgpu";
 
 type LevaStore = ReturnType<typeof useCreateStore>;
+
+extend(THREE as any);
 
 const randomGradient = Fn(([p]: [any]) => {
   const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(

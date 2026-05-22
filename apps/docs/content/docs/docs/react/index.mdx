@@ -11,6 +11,7 @@ description: Build Hello Terrain scenes in react-three/fiber with the @hello-ter
 - `useTerrain()` for creating and owning a terrain handle in React.
 - `TerrainProvider` and `useTerrainContext()` for sharing that handle with sibling systems such as controllers or tools.
 - `terrain.ready` and `terrain.runtime` for coordinating render timing and runtime queries.
+- GPU render-side frustum culling by default, with optional previous-frame Hi-Z occlusion culling.
 
 ## Usage Flow
 
@@ -88,6 +89,8 @@ In the future this will also contain texture nodes for the texturing system.
 
 - `terrain.runtime.query`
 - `terrain.runtime.raycast`
+
+Render visibility optimizations stay renderer-facing: the React runtime captures an internal depth pyramid for Hi-Z occlusion, while compute, query, and raycast continue to operate on the full quadtree leaf set.
 
 These are useful for cameras, controllers, and gameplay code that needs terrain sampling or collision queries.
 

@@ -2,6 +2,7 @@ import type {
   ElevationCallback,
   Surface,
   TerrainGraph,
+  TerrainMesh,
   TerrainQuery,
   TerrainRaycast,
   TerrainTasks,
@@ -9,7 +10,7 @@ import type {
 import type { Task } from "@hello-terrain/work"
 import type { RootState, ThreeElements } from "@react-three/fiber"
 import type { ReactNode } from "react"
-import type { WebGPURenderer } from "three/webgpu"
+import type { RenderTarget, WebGPURenderer } from "three/webgpu"
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js"
 
 export type TerrainVector3Like = {
@@ -18,7 +19,14 @@ export type TerrainVector3Like = {
   z: number
 }
 
-export type TerrainTask = Task<unknown, string, { renderer: WebGPURenderer }>
+export type TerrainTask = Task<
+  unknown,
+  string,
+  {
+    renderer: WebGPURenderer
+    captureTerrainDepth?: (target: RenderTarget) => void
+  }
+>
 
 export interface TerrainNodes {
   positionNode: ShaderCallNodeInternal | null
@@ -27,6 +35,8 @@ export interface TerrainNodes {
 export interface TerrainRuntime {
   query: TerrainQuery | null
   raycast: TerrainRaycast | null
+  mesh: TerrainMesh | null
+  captureMesh: TerrainMesh | null
 }
 
 export interface TerrainHandle extends TerrainNodes {
@@ -47,6 +57,9 @@ export interface TerrainOptions {
   elevation?: ElevationCallback
   surface?: Surface | null
   terrainFieldFilter?: "nearest" | "linear"
+  frustumCulling?: boolean
+  occlusionCulling?: boolean
+  hiZResolution?: number
   getCameraOrigin?: (state: RootState) => TerrainVector3Like
   cameraHysteresis?: number
   tasks?: readonly TerrainTask[]

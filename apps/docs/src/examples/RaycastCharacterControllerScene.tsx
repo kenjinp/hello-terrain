@@ -93,14 +93,14 @@ function RaycastCharacterControllerSceneImpl({
     "Raycast Character Controller",
     {
       rootSize: {
-        value: 4096,
+        value: 4096 * 5,
         min: 128,
-        max: 4096,
+        max: 4096 * 10,
         step: 32,
         label: "root size",
       },
       maxLevel: {
-        value: 6,
+        value: 8,
         min: 2,
         max: 20,
         step: 1,
@@ -396,7 +396,7 @@ export default function RaycastCharacterControllerScene() {
         performance={{ min: 0.5 }}
       >
         <color attach="background" args={["#34A8CD"]} />
-        <fog attach="fog" args={["#34A8CD", 90, 4000]} />
+        <fog attach="fog" args={["#34A8CD", 90, 4000 * 2]} />
         <ambientLight intensity={0.45} />
         <hemisphereLight intensity={0.45} groundColor="#334433" />
         {/* <directionalLight

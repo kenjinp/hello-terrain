@@ -7,6 +7,7 @@ import type {
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
+import type { RenderIndirectionState } from "../gpu/renderIndirection";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
@@ -17,7 +18,15 @@ import type {
   TerrainSampler,
 } from "../query/types";
 import type { TileBoundsContext } from "./tile-bounds.task";
-import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type {
+  LeafStorageState,
+  TerrainCullingUniformsContext,
+  TerrainUniformsContext,
+} from "../types";
+import type {
+  FrustumCullContext,
+} from "./frustum-cull.task";
+import type { CaptureTerrainDepth, HiZContext } from "./hiZ.task";
 
 export interface QuadtreeConfigState {
   state: QuadtreeState;
@@ -52,6 +61,11 @@ export interface TerrainTasks {
   gpuSpatialIndexUpload: TaskRef<GpuSpatialIndexContext>;
   createUniforms: TaskRef<TerrainUniformsContext>;
   updateUniforms: TaskRef<TerrainUniformsContext>;
+  createCullingUniforms: TaskRef<TerrainCullingUniformsContext>;
+  updateCullingUniforms: TaskRef<TerrainCullingUniformsContext>;
+  createRenderIndirection: TaskRef<RenderIndirectionState>;
+  createFrustumCullContext: TaskRef<FrustumCullContext>;
+  frustumCull: TaskRef<RenderIndirectionState>;
   positionNode: TaskRef<ShaderCallNodeInternal>;
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
@@ -65,6 +79,9 @@ export interface TerrainTasks {
   executeCompute: TaskRef<void | (() => void)>;
   tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
   tileBoundsReduction: TaskRef<TileBoundsContext>;
+  createHiZContext: TaskRef<HiZContext>;
+  captureDepth: TaskRef<HiZContext>;
+  updateHiZ: TaskRef<HiZContext>;
   terrainQuery: TaskRef<TerrainQueryContext>;
   terrainReadback: TaskRef<void>;
   terrainRaycast: TaskRef<TerrainRaycast>;
@@ -74,5 +91,6 @@ export type TerrainGraph = Graph<
   string,
   {
     renderer: WebGPURenderer;
+    captureTerrainDepth?: CaptureTerrainDepth;
   }
 >;

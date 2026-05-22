@@ -1,11 +1,28 @@
 import { task } from "@hello-terrain/work";
-import { Vector3 } from "three";
-import { createTerrainUniforms } from "../../gpu/uniforms";
-import type { TerrainUniformsParams } from "../../types";
+import {
+  createTerrainCullingUniforms,
+  createTerrainUniforms,
+} from "../../gpu/uniforms";
+import {
+  createFrustumPlaneTuple,
+  extractFrustumPlanesFromMatrix,
+} from "../../gpu/frustumPlanes";
+import type {
+  TerrainCullingUniformsParams,
+  TerrainUniformsParams,
+} from "../../types";
 import { instanceIdTask } from "../instanceId.task";
-import { elevationScale, innerTileSegments, origin, rootSize, skirtScale } from "../params";
-
-const scratchVector3 = new Vector3();
+import {
+  cameraProjectionMatrix,
+  cameraProjectionViewMatrix,
+  cameraViewMatrix,
+  elevationScale,
+  innerTileSegments,
+  origin,
+  rootSize,
+  skirtScale,
+} from "../params";
+import { Matrix4 } from "three/webgpu";
 
 /**
  * Creates the terrain uniform nodes once. Downstream tasks capture
@@ -40,7 +57,7 @@ export const updateUniformsTask = task((get, work) => {
 
   return work(() => {
     terrainUniformsContext.uRootSize.value = rootSizeVal;
-    terrainUniformsContext.uRootOrigin.value = scratchVector3.set(
+    terrainUniformsContext.uRootOrigin.value.set(
       rootOrigin.x,
       rootOrigin.y,
       rootOrigin.z,
@@ -52,3 +69,47 @@ export const updateUniformsTask = task((get, work) => {
     return terrainUniformsContext;
   });
 }).displayName("updateUniformsTask");
+
+export const createCullingUniformsTask = task((get, work) => {
+  const projectionViewMatrix = new Matrix4().fromArray(
+    get(cameraProjectionViewMatrix),
+  );
+  const projectionMatrix = new Matrix4().fromArray(get(cameraProjectionMatrix));
+  const viewMatrix = new Matrix4().fromArray(get(cameraViewMatrix));
+  const frustumPlanes = extractFrustumPlanesFromMatrix(
+    get(cameraProjectionViewMatrix),
+    createFrustumPlaneTuple(),
+  );
+  const uniformParams: TerrainCullingUniformsParams = {
+    cameraProjectionMatrix: projectionMatrix,
+    cameraProjectionViewMatrix: projectionViewMatrix,
+    cameraViewMatrix: viewMatrix,
+    frustumPlanes,
+    instanceId: get(instanceIdTask),
+  };
+  return work(() => createTerrainCullingUniforms(uniformParams));
+})
+  .displayName("createCullingUniformsTask")
+  .cache("once");
+
+export const updateCullingUniformsTask = task((get, work) => {
+  const terrainUniformsContext = get(createCullingUniformsTask);
+  const projection = get(cameraProjectionMatrix);
+  const projectionView = get(cameraProjectionViewMatrix);
+  const view = get(cameraViewMatrix);
+
+  return work(() => {
+    terrainUniformsContext.uCameraProjectionMatrix.value.fromArray(projection);
+    terrainUniformsContext.uCameraProjectionViewMatrix.value.fromArray(
+      projectionView,
+    );
+    terrainUniformsContext.uCameraViewMatrix.value.fromArray(view);
+
+    const frustumPlanes = extractFrustumPlanesFromMatrix(projectionView);
+    for (let i = 0; i < frustumPlanes.length; i += 1) {
+      terrainUniformsContext.uFrustumPlanes[i]?.value.copy(frustumPlanes[i]);
+    }
+
+    return terrainUniformsContext;
+  });
+}).displayName("updateCullingUniformsTask");

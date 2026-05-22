@@ -1,2 +1,10 @@
-export { createTerrainUniforms } from "../../gpu/uniforms";
-export type { TerrainUniformsContext, TerrainUniformsParams } from "../../types";
+export {
+  createTerrainCullingUniforms,
+  createTerrainUniforms,
+} from "../../gpu/uniforms";
+export type {
+  TerrainCullingUniformsContext,
+  TerrainCullingUniformsParams,
+  TerrainUniformsContext,
+  TerrainUniformsParams,
+} from "../../types";

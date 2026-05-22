@@ -64,6 +64,14 @@ export function App() {
 
 It also accepts R3F primitive props such as `castShadow`, `receiveShadow`, `position`, and `visible`.
 
+Render culling is enabled by default on the React path:
+
+- `frustumCulling` defaults to `true`
+- `occlusionCulling` defaults to `false`
+- `hiZResolution` defaults to `512`
+
+Those options affect render cost only. Terrain compute, query, and raycast systems continue to cover the full active quadtree leaf set.
+
 ## When To Reach For `useTerrain()`
 
 The inline `Terrain` form is great for simple scenes. If you need to reuse the same terrain handle across siblings, inspect the graph, or share runtime access with cameras or gameplay systems, use `useTerrain()` and pass the handle into `Terrain`.

@@ -42,7 +42,8 @@ Defined in `packages/three/src/tasks/params.ts`.
 
 - **World config:** `rootSize`, `origin`, `elevationScale`
 - **Shape config:** `innerTileSegments`, `maxNodes`, `maxLevel`
-- **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`
+- **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`, `frustumCulling`, `occlusionCulling`, `hiZResolution`
+- **Camera state:** `cameraProjectionMatrix`, `cameraProjectionViewMatrix`, `cameraViewMatrix`
 - **Customization callbacks:** `surface`, `elevationFn`
 
 These values are not copied into one monolithic config object; they are consumed directly by task dependencies.
@@ -108,7 +109,26 @@ CPU query facade and backing cache:
 
 This is the authoritative CPU query entrypoint for app/raycast usage.
 
-### 10) TerrainRaycast
+### 10) RenderIndirectionState
+
+GPU render indirection and indirect-draw state used to decouple the render tile set from the compute tile set.
+
+- `node` maps render instance index -> compute tile index
+- `indirectNode` stores indexed indirect draw arguments (`indexCount`, `instanceCount`, ...)
+
+The quadtree can continue driving compute/readback over all active leaves while render work is compacted down to the visible subset.
+
+### 11) HiZContext
+
+Cross-frame Hi-Z occlusion resources:
+
+- capture render target for linear-depth rendering,
+- reduced Hi-Z texture pyramid,
+- readiness state for previous-frame sampling.
+
+This data is consumed only on the render-culling path; query/raycast systems remain driven by compute + readback snapshots.
+
+### 12) TerrainRaycast
 
 Raycast adapter over `TerrainQuery`, produced by `terrainRaycastTask`.
 
@@ -125,6 +145,7 @@ To avoid accidental rebuild churn:
 - **Payload fields** should be updated per frame:
   - uniform values,
   - leaf counts,
+  - indirect draw `instanceCount`,
   - compute/readback outputs.
 
 In practice:
@@ -153,6 +174,8 @@ flowchart TD
     terrainField[TerrainFieldStorage]
     gpuIndex[GpuSpatialIndexContext]
     tileBounds[TileBoundsContext]
+    renderIndirection[RenderIndirectionState]
+    hiZ[HiZContext]
   end
 
   subgraph cpuQuery [CpuSnapshotQueryDomain]
@@ -166,12 +189,16 @@ flowchart TD
   quadtreeConfig --> cpuLeafIndex
   leafSet --> leafGpu
   cpuLeafIndex --> gpuIndex
+  leafGpu --> renderIndirection
+  tileBounds --> renderIndirection
 
   params --> uniforms
   leafGpu --> elevationField
   uniforms --> elevationField
   elevationField --> terrainField
   elevationField --> tileBounds
+  uniforms --> renderIndirection
+  hiZ --> renderIndirection
 
   elevationField --> cache
   tileBounds --> cache
@@ -185,6 +212,7 @@ flowchart TD
 ### Render path
 
 - Uses current-frame GPU resources directly.
+- Uses indirect draw and render indirection so visible instances can diverge from the compute tile set.
 - Lowest latency, authoritative for visual output.
 
 ### Query path
@@ -205,16 +233,18 @@ This clone is intentional correctness protection, not incidental duplication.
 ## Task-Model Mapping (Canonical)
 
 - **Topology producer:** `quadtreeConfigTask`, `quadtreeUpdateTask`
-- **GPU upload/materialization:** `leafGpuBufferTask`, `gpuSpatialIndexUploadTask`
+- **GPU upload/materialization:** `leafGpuBufferTask`, `gpuSpatialIndexUploadTask`, `createRenderIndirectionTask`
 - **Uniform lifecycle:** `createUniformsTask`, `updateUniformsTask`
 - **Compute production:** `elevationFieldStageTask`, `terrainFieldStageTask`, `executeComputeTask`
+- **Render culling:** `createFrustumCullContextTask`, `frustumCullTask`, `createHiZContextTask`, `captureDepthTask`, `updateHiZTask`
 - **Reduction/readback:** `tileBoundsReductionTask`, `terrainReadbackTask`
 - **CPU consumption:** `terrainQueryTask`, `terrainRaycastTask`
 - **Render node output:** `positionNodeTask`
 
 ## Consumer Guidance
 
-- Use `positionNodeTask` + `quadtreeUpdateTask.count` for rendering.
+- Use `positionNodeTask` + `frustumCullTask` / indirect draw for rendering.
 - Use `terrainQueryTask.query` for CPU terrain sampling APIs.
 - Use `terrainRaycastTask` for scene picking integration.
+- Treat render culling as renderer-facing only; compute and query paths still operate on the full quadtree leaf set.
 - Treat query data as snapshot-based and generation-driven rather than immediate GPU truth.

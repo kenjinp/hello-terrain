@@ -19,6 +19,8 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
     () => ({
       query: null,
       raycast: null,
+      mesh: null,
+      captureMesh: null,
     }),
     [],
   )
@@ -89,7 +91,9 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
       return [
         ...userTasks,
         terrainTasks.executeCompute,
+        terrainTasks.frustumCull,
         terrainTasks.terrainReadback,
+        terrainTasks.updateHiZ,
         syncTerrainRuntimeTask,
         syncTerrainNodesTask,
       ] satisfies readonly TerrainTask[]
@@ -98,6 +102,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   )
   const stopTerrainRunner = useTerrainRunner({
     graph,
+    runtime,
     targets: runnerTargets,
     getCameraOrigin: options.getCameraOrigin,
     cameraHysteresis: options.cameraHysteresis,
@@ -122,6 +127,8 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   useLayoutEffect(() => {
     runtime.query = null
     runtime.raycast = null
+    runtime.mesh = null
+    runtime.captureMesh = null
     const nextTerrainNodes = {
       positionNode: null,
     } satisfies TerrainNodes

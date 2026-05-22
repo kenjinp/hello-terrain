@@ -1,4 +1,5 @@
 import {
+  IndirectStorageBufferAttribute,
   InstancedBufferAttribute,
   InstancedMesh,
   MeshStandardNodeMaterial,
@@ -74,6 +75,19 @@ export class TerrainMesh extends InstancedMesh {
     if (maxNodes < oldMax && this.count >= maxNodes) {
       this.count = maxNodes;
     }
+  }
+
+  setIndirectAttribute(
+    indirectAttribute: IndirectStorageBufferAttribute | null,
+  ): void {
+    const geometry = this.geometry as typeof this.geometry & {
+      setIndirect?: (indirect: IndirectStorageBufferAttribute | null) => void;
+      indirect?: IndirectStorageBufferAttribute | null;
+    };
+    if (!geometry.setIndirect) return;
+    if (geometry.indirect === indirectAttribute) return;
+    geometry.setIndirect(indirectAttribute);
+    this.count = this._maxNodes;
   }
 
   raycast(raycaster: Raycaster, intersects: Intersection[]): void {
