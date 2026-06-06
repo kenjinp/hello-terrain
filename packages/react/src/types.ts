@@ -44,6 +44,7 @@ export interface TerrainOptions {
   innerTileSegments?: number
   skirtScale?: number
   elevationScale?: number
+  radius?: number
   elevation?: ElevationCallback
   surface?: Surface | null
   terrainFieldFilter?: "nearest" | "linear"

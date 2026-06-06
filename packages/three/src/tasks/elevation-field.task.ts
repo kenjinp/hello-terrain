@@ -5,7 +5,7 @@ import type { ComputePipeline } from "../gpu/compute";
 import { createElevation } from "../gpu/elevation-field";
 import { createTileCompute } from "../gpu/tile";
 import { elevationFn, innerTileSegments, maxNodes } from "./params";
-import { leafStorageTask } from "./quadtree.task";
+import { leafStorageTask, surfaceTask } from "./quadtree.task";
 import { createElevationFunction } from "../tsl/elevation";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
@@ -29,8 +29,9 @@ export const createElevationFieldContextTask = task((get, work) => {
 export const tileNodesTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
   const uniforms = get(updateUniformsTask);
+  const surface = get(surfaceTask);
   return work(() => {
-    return createTileCompute(leafStorage, uniforms);
+    return createTileCompute(leafStorage, uniforms, surface.projection ?? "flat");
   });
 }).displayName("tileNodesTask");
 

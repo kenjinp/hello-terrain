@@ -112,6 +112,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     innerTileSegments,
     skirtScale,
     elevationScale,
+    radius,
     elevation,
     surface,
     terrainFieldFilter,
@@ -129,6 +130,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     innerTileSegments,
     skirtScale,
     elevationScale,
+    radius,
     elevation,
     surface,
     terrainFieldFilter,
@@ -159,6 +161,7 @@ export function Terrain({
   innerTileSegments,
   skirtScale,
   elevationScale,
+  radius,
   elevation,
   surface,
   terrainFieldFilter,
@@ -189,6 +192,7 @@ export function Terrain({
       innerTileSegments={innerTileSegments}
       skirtScale={skirtScale}
       elevationScale={elevationScale}
+      radius={radius}
       elevation={elevation}
       surface={surface}
       terrainFieldFilter={terrainFieldFilter}

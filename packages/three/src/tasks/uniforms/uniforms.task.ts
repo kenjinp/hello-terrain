@@ -3,7 +3,7 @@ import { Vector3 } from "three";
 import { createTerrainUniforms } from "../../gpu/uniforms";
 import type { TerrainUniformsParams } from "../../types";
 import { instanceIdTask } from "../instanceId.task";
-import { elevationScale, innerTileSegments, origin, rootSize, skirtScale } from "../params";
+import { elevationScale, innerTileSegments, origin, radius, rootSize, skirtScale } from "../params";
 
 const scratchVector3 = new Vector3();
 
@@ -19,6 +19,7 @@ export const createUniformsTask = task((get, work) => {
     innerTileSegments: get(innerTileSegments),
     skirtScale: get(skirtScale),
     elevationScale: get(elevationScale),
+    radius: get(radius),
     instanceId: get(instanceIdTask),
   };
   return work(() => createTerrainUniforms(uniformParams));
@@ -37,6 +38,7 @@ export const updateUniformsTask = task((get, work) => {
   const innerTileSegmentsVal = get(innerTileSegments);
   const skirtScaleVal = get(skirtScale);
   const elevationScaleVal = get(elevationScale);
+  const radiusVal = get(radius);
 
   return work(() => {
     terrainUniformsContext.uRootSize.value = rootSizeVal;
@@ -48,6 +50,7 @@ export const updateUniformsTask = task((get, work) => {
     terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
     terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
     terrainUniformsContext.uElevationScale.value = elevationScaleVal;
+    terrainUniformsContext.uRadius.value = radiusVal;
 
     return terrainUniformsContext;
   });

@@ -1,0 +1,244 @@
+"use client";
+
+import { ExamplesCanvas } from "@/components/ExamplesCanvas";
+import { FpsDebug } from "@/components/FpsDebug";
+import { Terrain, useTerrain } from "@hello-terrain/react";
+import {
+  createCubeSphereSurface,
+  type ElevationCallback,
+} from "@hello-terrain/three";
+import { Environment, OrbitControls } from "@react-three/drei";
+import { Canvas, extend } from "@react-three/fiber";
+import { useControls, useCreateStore } from "leva";
+import { useMemo } from "react";
+import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
+import {
+  clamp,
+  dot,
+  float,
+  floor,
+  Fn,
+  fract,
+  Loop,
+  mix,
+  positionWorld,
+  sin,
+  smoothstep,
+  vec3,
+} from "three/tsl";
+import * as THREE from "three/webgpu";
+
+extend({ MeshStandardNodeMaterial: THREE.MeshStandardNodeMaterial });
+
+type LevaStore = ReturnType<typeof useCreateStore>;
+
+// Seamless 3D value noise so terrain features wrap continuously across the
+// six cube-sphere faces (a 2D noise would crack at face seams).
+const hash3 = Fn(([p]: [any]) => {
+  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+});
+
+const valueNoise3 = Fn(([p]: [any]) => {
+  const i = floor(p).toVar();
+  const f = fract(p).toVar();
+  const u = f.mul(f).mul(float(3).sub(f.mul(2)));
+
+  const n000 = hash3(i.add(vec3(0, 0, 0)));
+  const n100 = hash3(i.add(vec3(1, 0, 0)));
+  const n010 = hash3(i.add(vec3(0, 1, 0)));
+  const n110 = hash3(i.add(vec3(1, 1, 0)));
+  const n001 = hash3(i.add(vec3(0, 0, 1)));
+  const n101 = hash3(i.add(vec3(1, 0, 1)));
+  const n011 = hash3(i.add(vec3(0, 1, 1)));
+  const n111 = hash3(i.add(vec3(1, 1, 1)));
+
+  const nx00 = mix(n000, n100, u.x);
+  const nx10 = mix(n010, n110, u.x);
+  const nx01 = mix(n001, n101, u.x);
+  const nx11 = mix(n011, n111, u.x);
+
+  const nxy0 = mix(nx00, nx10, u.y);
+  const nxy1 = mix(nx01, nx11, u.y);
+
+  return mix(nxy0, nxy1, u.z);
+});
+
+const fbm3 = Fn(([pos]: [any]) => {
+  const p = vec3(pos).toVar();
+  const total = float(0).toVar();
+  const amp = float(0.5).toVar();
+  const freq = float(1).toVar();
+
+  Loop(6, () => {
+    total.addAssign(valueNoise3(p.mul(freq)).mul(amp));
+    freq.mulAssign(2.03);
+    amp.mulAssign(0.5);
+  });
+
+  return total;
+});
+
+function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
+  const controls = useControls(
+    "Cube-Sphere Planet",
+    {
+      radius: {
+        value: 1000,
+        min: 100,
+        max: 4000,
+        step: 50,
+        label: "radius",
+      },
+      maxLevel: {
+        value: 16,
+        min: 2,
+        max: 24,
+        step: 1,
+        label: "max level",
+      },
+      maxNodes: {
+        value: 2048,
+        min: 128,
+        max: 4096,
+        step: 1,
+        label: "max nodes",
+      },
+      skirtScale: {
+        value: 4,
+        min: 0,
+        max: 200,
+        step: 1,
+        label: "skirt scale",
+      },
+      elevationScale: {
+        value: 60,
+        min: 0,
+        max: 400,
+        step: 1,
+        label: "elevation scale",
+      },
+      noiseFrequency: {
+        value: 2.5,
+        min: 0.2,
+        max: 12,
+        step: 0.1,
+        label: "noise frequency",
+      },
+      seaLevel: {
+        value: 0.35,
+        min: 0,
+        max: 1,
+        step: 0.01,
+        label: "sea level",
+      },
+      wireframe: {
+        value: false,
+      },
+    },
+    { store },
+  );
+
+  const surface = useMemo(
+    () =>
+      createCubeSphereSurface({
+        radius: controls.radius,
+        maxHeight: controls.elevationScale,
+      }),
+    [controls.radius, controls.elevationScale],
+  );
+
+  const elevation = useMemo<ElevationCallback>(() => {
+    return ({ worldPosition }) => {
+      // worldPosition is a point on the sphere; sampling its unit direction
+      // keeps noise frequency independent of the planet radius.
+      const dir = worldPosition.normalize();
+      const n = fbm3(dir.mul(float(controls.noiseFrequency)));
+      // Flatten oceans below the sea level, keep land above it.
+      const sea = float(controls.seaLevel);
+      const land = smoothstep(sea, sea.add(0.05), n);
+      return clamp(n.sub(sea), float(0), float(1)).mul(land);
+    };
+  }, [controls.noiseFrequency, controls.seaLevel]);
+
+  const colorNode = useMemo(() => {
+    const radiusNode = float(controls.radius);
+    const elevScaleNode = float(controls.elevationScale);
+    return Fn(() => {
+      // Recover normalized elevation from the displaced world position.
+      const height = positionWorld.length().sub(radiusNode).div(elevScaleNode);
+      const ocean = vec3(0.05, 0.2, 0.45);
+      const beach = vec3(0.8, 0.73, 0.5);
+      const grass = vec3(0.2, 0.45, 0.18);
+      const rock = vec3(0.42, 0.38, 0.34);
+      const snow = vec3(0.95, 0.96, 0.98);
+
+      const c1 = mix(ocean, beach, smoothstep(float(0), float(0.02), height));
+      const c2 = mix(c1, grass, smoothstep(float(0.02), float(0.15), height));
+      const c3 = mix(c2, rock, smoothstep(float(0.35), float(0.6), height));
+      return mix(c3, snow, smoothstep(float(0.7), float(0.9), height));
+    })();
+  }, [controls.radius, controls.elevationScale]);
+
+  const terrain = useTerrain({
+    surface,
+    radius: controls.radius,
+    maxLevel: controls.maxLevel,
+    maxNodes: controls.maxNodes,
+    skirtScale: controls.skirtScale,
+    elevationScale: controls.elevationScale,
+    elevation,
+  });
+
+  return (
+    <Terrain terrain={terrain} maxNodes={controls.maxNodes} frustumCulled={false}>
+      {({ positionNode }) => (
+        <meshStandardNodeMaterial
+          positionNode={positionNode}
+          colorNode={controls.wireframe ? undefined : colorNode}
+          color={controls.wireframe ? "white" : undefined}
+          wireframe={controls.wireframe}
+          metalness={0.05}
+          roughness={0.95}
+        />
+      )}
+    </Terrain>
+  );
+}
+
+export default function CubeSpherePlanetScene() {
+  const store = useCreateStore();
+
+  return (
+    <ExamplesCanvas store={store}>
+      <div className="pointer-events-none absolute z-10 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
+        <FpsDebug />
+      </div>
+      <Canvas
+        className="touch-none relative left-0 top-0 h-full w-full"
+        gl={async (props) => {
+          props.alpha = true;
+          props.antialias = true;
+          const renderer = new THREE.WebGPURenderer(
+            props as WebGPURendererParameters,
+          );
+          renderer.logarithmicDepthBuffer = true;
+          await renderer.init();
+          return renderer;
+        }}
+        camera={{
+          near: 1,
+          far: 100000,
+          position: [0, 1200, 2600],
+        }}
+        dpr={[1, 1]}
+        performance={{ min: 0.5 }}
+      >
+        <Environment preset="sunset" />
+        <ambientLight intensity={0.3} />
+        <directionalLight intensity={1.5} position={[1, 0.6, 0.8]} />
+        <CubeSpherePlanetSceneImpl store={store} />
+        <OrbitControls makeDefault target={[0, 0, 0]} />
+      </Canvas>
+    </ExamplesCanvas>
+  );
+}

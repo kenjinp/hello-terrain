@@ -28,10 +28,21 @@ export type TileBounds = {
   r: number;
 };
 
+export type SurfaceProjection = "flat" | "cubeSphere";
+
 export type Surface = {
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
   maxRootCount: number;
+
+  /**
+   * GPU position/normal assembly projection. Defaults to `flat` when absent.
+   * `cubeSphere` selects radial sphere mapping from cube faces.
+   */
+  projection?: SurfaceProjection;
+
+  /** Sphere radius in world units (cube-sphere projection only). */
+  radius?: number;
 
   /**
    * Compute the same-level neighbor TileId in the requested direction.

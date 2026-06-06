@@ -18,9 +18,10 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `innerTileSegments` | `number` | `13` | The vertex resolution inside each terrain tile before skirts are added. Higher values increase per-tile detail and cost. |
 | `skirtScale` | `number` | `100` | The length of the downward skirt geometry used to hide cracks between terrain LOD levels. |
 | `elevationScale` | `number` | `1` | A multiplier applied to the sampled elevation values, controlling the vertical exaggeration of the terrain. |
+| `radius` | `number` | `1000` | The sphere radius used by the cube-sphere projection. Ignored by flat surfaces. See [Cube-Sphere Planet](/docs/examples/cube-sphere). |
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
 | `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
-| `surface` | `Surface` | `null` | `null` | The terrain surface model that defines topology and bounds behavior. Leave it unset to use the default flat surface. |
+| `surface` | `Surface` | `null` | `null` | The terrain surface model that defines topology, bounds, and GPU projection. Leave it unset for the default flat surface, or pass `createInfiniteFlatSurface` / `createCubeSphereSurface`. |
 | `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
 
 ## Where These Params Apply

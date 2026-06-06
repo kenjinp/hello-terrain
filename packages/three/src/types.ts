@@ -7,6 +7,7 @@ export interface TerrainUniformsParams {
   innerTileSegments: number;
   skirtScale: number;
   elevationScale: number;
+  radius: number;
   instanceId: string;
 }
 
@@ -16,6 +17,7 @@ export interface TerrainUniformsContext {
   uInnerTileSegments: UniformNode<number>;
   uSkirtScale: UniformNode<number>;
   uElevationScale: UniformNode<number>;
+  uRadius: UniformNode<number>;
 }
 
 export interface LeafStorageState {

@@ -25,6 +25,9 @@ export const skirtScale = param(100).displayName("skirtScale");
 /** Elevation vertical scale. */
 export const elevationScale = param(1).displayName("elevationScale");
 
+/** Sphere radius in world units (cube-sphere projection only). */
+export const radius = param(1000).displayName("radius");
+
 /** Maximum quadtree nodes. */
 export const maxNodes = param(1024).displayName("maxNodes");
 

@@ -5,6 +5,7 @@ import {
   maxLevel,
   maxNodes,
   origin,
+  radius,
   rootSize,
   skirtScale,
   surface,
@@ -43,6 +44,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     innerTileSegments: nextInnerTileSegments,
     skirtScale: nextSkirtScale,
     elevationScale: nextElevationScale,
+    radius: nextRadius,
     elevation,
     surface: nextSurface,
     terrainFieldFilter: nextTerrainFieldFilter,
@@ -105,6 +107,13 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     resetOrSet(
       graph,
       ownedParamIds,
+      radius,
+      nextRadius,
+      () => nextRadius as number,
+    );
+    resetOrSet(
+      graph,
+      ownedParamIds,
       surface,
       nextSurface,
       () => nextSurface as Exclude<TerrainOptions["surface"], undefined>,
@@ -135,6 +144,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     nextInnerTileSegments,
     nextSkirtScale,
     nextElevationScale,
+    nextRadius,
     elevation,
     nextSurface,
     nextTerrainFieldFilter,

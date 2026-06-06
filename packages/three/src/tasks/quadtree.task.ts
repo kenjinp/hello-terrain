@@ -79,7 +79,9 @@ export const leafGpuBufferTask = task((get, work) => {
       leafStorage.data[offset] = leafSet.level[i] ?? 0;
       leafStorage.data[offset + 1] = leafSet.x[i] ?? 0;
       leafStorage.data[offset + 2] = leafSet.y[i] ?? 0;
-      leafStorage.data[offset + 3] = 1;
+      // Slot 3 carries the surface space/face index (0 for flat surfaces,
+      // 0..5 for cube-sphere faces). Consumed by the sphere position assembly.
+      leafStorage.data[offset + 3] = leafSet.space[i] ?? 0;
     }
     leafStorage.attribute.needsUpdate = true;
     leafStorage.node.needsUpdate = true;

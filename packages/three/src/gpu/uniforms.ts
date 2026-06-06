@@ -15,6 +15,7 @@ export function createTerrainUniforms(params: TerrainUniformsParams): TerrainUni
   );
   const uSkirtScale = uniform(float(params.skirtScale)).setName(`uSkirtScale${suffix}`);
   const uElevationScale = uniform(float(params.elevationScale)).setName(`uElevationScale${suffix}`);
+  const uRadius = uniform(float(params.radius)).setName(`uRadius${suffix}`);
 
   return {
     uRootOrigin,
@@ -22,5 +23,6 @@ export function createTerrainUniforms(params: TerrainUniformsParams): TerrainUni
     uInnerTileSegments,
     uSkirtScale,
     uElevationScale,
+    uRadius,
   };
 }
