@@ -38,34 +38,6 @@ import {
 
 export { instanceIdTask } from "./instanceId.task";
 
-export function terrainGraph(): TerrainGraph {
-  return graph<{ renderer: WebGPURenderer }>()
-    .add(instanceIdTask)
-    .add(quadtreeConfigTask)
-    .add(quadtreeUpdateTask)
-    .add(leafStorageTask)
-    .add(surfaceTask)
-    .add(leafGpuBufferTask)
-    .add(gpuSpatialIndexStorageTask)
-    .add(gpuSpatialIndexUploadTask)
-    .add(createUniformsTask)
-    .add(updateUniformsTask)
-    .add(positionNodeTask)
-    .add(createElevationFieldContextTask)
-    .add(tileNodesTask)
-    .add(createTerrainFieldTextureTask)
-    .add(createTerrainSamplerTask)
-    .add(elevationFieldStageTask)
-    .add(terrainFieldStageTask)
-    .add(compileComputeTask)
-    .add(executeComputeTask)
-    .add(tileBoundsContextTask)
-    .add(tileBoundsReductionTask)
-    .add(terrainQueryTask)
-    .add(terrainReadbackTask)
-    .add(terrainRaycastTask);
-}
-
 /** All terrain task refs for direct access. */
 export const terrainTasks = {
   instanceId: instanceIdTask,
@@ -93,3 +65,11 @@ export const terrainTasks = {
   terrainReadback: terrainReadbackTask,
   terrainRaycast: terrainRaycastTask,
 } as const satisfies TerrainTasks;
+
+export function terrainGraph(): TerrainGraph {
+  const g = graph<{ renderer: WebGPURenderer }>();
+  for (const t of Object.values(terrainTasks)) {
+    g.add(t as Parameters<typeof g.add>[0]);
+  }
+  return g;
+}

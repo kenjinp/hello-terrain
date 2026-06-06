@@ -90,6 +90,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
         ...userTasks,
         terrainTasks.executeCompute,
         terrainTasks.terrainReadback,
+        terrainTasks.gpuSpatialIndexUpload,
         syncTerrainRuntimeTask,
         syncTerrainNodesTask,
       ] satisfies readonly TerrainTask[]
