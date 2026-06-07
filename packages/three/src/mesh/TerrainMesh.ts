@@ -1,10 +1,10 @@
+import type { Intersection, Raycaster } from "three";
 import {
   InstancedBufferAttribute,
   InstancedMesh,
   MeshStandardNodeMaterial,
   NodeMaterial,
 } from "three/webgpu";
-import type { Intersection, Raycaster } from "three";
 import { TerrainGeometry } from "../geometry/TerrainGeometry";
 import type { TerrainRaycast } from "../query/types";
 
@@ -12,25 +12,33 @@ export type TerrainMeshParams = {
   innerTileSegments: number;
   maxNodes: number;
   material: NodeMaterial;
+  /**
+   * Reverse tile triangle winding. Cube-sphere surfaces set this so the
+   * planet's outer shell is front-facing and renders with `FrontSide`.
+   */
+  flipWinding: boolean;
 };
 
 export const defaultTerrainMeshParams: TerrainMeshParams = {
-  innerTileSegments: 14,
+  innerTileSegments: 13,
   maxNodes: 1024,
   material: new MeshStandardNodeMaterial(),
+  flipWinding: false,
 };
 export class TerrainMesh extends InstancedMesh {
   private _innerTileSegments: number;
   private _maxNodes: number;
+  private _flipWinding: boolean;
   terrainRaycast: TerrainRaycast | null = null;
   constructor(params: Partial<TerrainMeshParams> = defaultTerrainMeshParams) {
     const mergedParams = { ...defaultTerrainMeshParams, ...params };
-    const { innerTileSegments, maxNodes, material } = mergedParams;
-    const geometry = new TerrainGeometry(innerTileSegments, true);
+    const { innerTileSegments, maxNodes, material, flipWinding } = mergedParams;
+    const geometry = new TerrainGeometry(innerTileSegments, true, flipWinding);
     super(geometry, material, maxNodes);
     this.frustumCulled = false;
     this._innerTileSegments = innerTileSegments;
     this._maxNodes = maxNodes;
+    this._flipWinding = flipWinding;
   }
 
   get innerTileSegments() {
@@ -38,8 +46,19 @@ export class TerrainMesh extends InstancedMesh {
   }
   set innerTileSegments(tileSegments: number) {
     const oldGeometry = this.geometry;
-    this.geometry = new TerrainGeometry(tileSegments, true);
+    this.geometry = new TerrainGeometry(tileSegments, true, this._flipWinding);
     this._innerTileSegments = tileSegments;
+    setTimeout(() => oldGeometry.dispose());
+  }
+
+  get flipWinding() {
+    return this._flipWinding;
+  }
+  set flipWinding(flip: boolean) {
+    if (flip === this._flipWinding) return;
+    const oldGeometry = this.geometry;
+    this.geometry = new TerrainGeometry(this._innerTileSegments, true, flip);
+    this._flipWinding = flip;
     setTimeout(() => oldGeometry.dispose());
   }
 

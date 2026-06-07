@@ -3,10 +3,7 @@
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { Terrain, useTerrain } from "@hello-terrain/react";
-import {
-  createCubeSphereSurface,
-  type ElevationCallback,
-} from "@hello-terrain/three";
+import { createCubeSphereSurface, type ElevationCallback } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
@@ -21,6 +18,7 @@ import {
   fract,
   Loop,
   mix,
+  normalize,
   positionWorld,
   sin,
   smoothstep,
@@ -32,45 +30,59 @@ extend({ MeshStandardNodeMaterial: THREE.MeshStandardNodeMaterial });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 
-// Seamless 3D value noise so terrain features wrap continuously across the
-// six cube-sphere faces (a 2D noise would crack at face seams).
-const hash3 = Fn(([p]: [any]) => {
-  return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))).mul(43758.5453));
+const randomGradient = Fn(([p]: [any]) => {
+  const x = dot(p, vec3(127.1, 311.7, 74.7));
+  const y = dot(p, vec3(269.5, 183.3, 246.1));
+  const z = dot(p, vec3(113.5, 271.9, 124.6));
+  return normalize(
+    fract(sin(vec3(x, y, z)).mul(43758.5453))
+      .mul(2)
+      .sub(1),
+  );
 });
 
-const valueNoise3 = Fn(([p]: [any]) => {
+const perlinNoise = Fn(([p]: [any]) => {
   const i = floor(p).toVar();
   const f = fract(p).toVar();
   const u = f.mul(f).mul(float(3).sub(f.mul(2)));
 
-  const n000 = hash3(i.add(vec3(0, 0, 0)));
-  const n100 = hash3(i.add(vec3(1, 0, 0)));
-  const n010 = hash3(i.add(vec3(0, 1, 0)));
-  const n110 = hash3(i.add(vec3(1, 1, 0)));
-  const n001 = hash3(i.add(vec3(0, 0, 1)));
-  const n101 = hash3(i.add(vec3(1, 0, 1)));
-  const n011 = hash3(i.add(vec3(0, 1, 1)));
-  const n111 = hash3(i.add(vec3(1, 1, 1)));
+  const g000 = randomGradient(i.add(vec3(0, 0, 0)));
+  const g100 = randomGradient(i.add(vec3(1, 0, 0)));
+  const g010 = randomGradient(i.add(vec3(0, 1, 0)));
+  const g110 = randomGradient(i.add(vec3(1, 1, 0)));
+  const g001 = randomGradient(i.add(vec3(0, 0, 1)));
+  const g101 = randomGradient(i.add(vec3(1, 0, 1)));
+  const g011 = randomGradient(i.add(vec3(0, 1, 1)));
+  const g111 = randomGradient(i.add(vec3(1, 1, 1)));
 
-  const nx00 = mix(n000, n100, u.x);
-  const nx10 = mix(n010, n110, u.x);
-  const nx01 = mix(n001, n101, u.x);
-  const nx11 = mix(n011, n111, u.x);
+  const d000 = dot(g000, f.sub(vec3(0, 0, 0)));
+  const d100 = dot(g100, f.sub(vec3(1, 0, 0)));
+  const d010 = dot(g010, f.sub(vec3(0, 1, 0)));
+  const d110 = dot(g110, f.sub(vec3(1, 1, 0)));
+  const d001 = dot(g001, f.sub(vec3(0, 0, 1)));
+  const d101 = dot(g101, f.sub(vec3(1, 0, 1)));
+  const d011 = dot(g011, f.sub(vec3(0, 1, 1)));
+  const d111 = dot(g111, f.sub(vec3(1, 1, 1)));
 
-  const nxy0 = mix(nx00, nx10, u.y);
-  const nxy1 = mix(nx01, nx11, u.y);
+  const x00 = mix(d000, d100, u.x);
+  const x10 = mix(d010, d110, u.x);
+  const x01 = mix(d001, d101, u.x);
+  const x11 = mix(d011, d111, u.x);
 
-  return mix(nxy0, nxy1, u.z);
+  const y0 = mix(x00, x10, u.y);
+  const y1 = mix(x01, x11, u.y);
+
+  return mix(y0, y1, u.z).add(0.5);
 });
 
-const fbm3 = Fn(([pos]: [any]) => {
+const fbm = Fn(([pos]: [any]) => {
   const p = vec3(pos).toVar();
   const total = float(0).toVar();
   const amp = float(0.5).toVar();
   const freq = float(1).toVar();
 
   Loop(6, () => {
-    total.addAssign(valueNoise3(p.mul(freq)).mul(amp));
+    total.addAssign(perlinNoise(p.mul(freq)).mul(amp));
     freq.mulAssign(2.03);
     amp.mulAssign(0.5);
   });
@@ -152,7 +164,7 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
       // worldPosition is a point on the sphere; sampling its unit direction
       // keeps noise frequency independent of the planet radius.
       const dir = worldPosition.normalize();
-      const n = fbm3(dir.mul(float(controls.noiseFrequency)));
+      const n = fbm(dir.mul(float(controls.noiseFrequency)));
       // Flatten oceans below the sea level, keep land above it.
       const sea = float(controls.seaLevel);
       const land = smoothstep(sea, sea.add(0.05), n);
@@ -218,9 +230,7 @@ export default function CubeSpherePlanetScene() {
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
+          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
           renderer.logarithmicDepthBuffer = true;
           await renderer.init();
           return renderer;

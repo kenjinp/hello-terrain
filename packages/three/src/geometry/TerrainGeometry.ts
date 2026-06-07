@@ -5,35 +5,30 @@ import { BufferAttribute, BufferGeometry } from "three";
  * This geometry ensures that corner triangles are subdivided correctly.
  */
 export class TerrainGeometry extends BufferGeometry {
-  constructor(innerSegments: number = 14, extendUV = false) {
+  /**
+   * @param flipWinding Reverse triangle winding so front faces point the
+   *   opposite way. The default winding makes flat tiles front-face `+Y`; the
+   *   cube-sphere maps `(u→right, v→up)`, which would otherwise leave the
+   *   planet's outer shell back-facing, so it passes `flipWinding` to render
+   *   the outer surface with `FrontSide`.
+   */
+  constructor(innerSegments: number = 14, extendUV = false, flipWinding = false) {
     super();
 
     // Validate innerSegments parameter
-    if (
-      innerSegments < 1 ||
-      !Number.isFinite(innerSegments) ||
-      !Number.isInteger(innerSegments)
-    ) {
-      throw new Error(
-        `Invalid innerSegments: ${innerSegments}. Must be a positive integer.`,
-      );
+    if (innerSegments < 1 || !Number.isFinite(innerSegments) || !Number.isInteger(innerSegments)) {
+      throw new Error(`Invalid innerSegments: ${innerSegments}. Must be a positive integer.`);
     }
 
     try {
-      this.setIndex(this.generateIndices(innerSegments));
+      this.setIndex(this.generateIndices(innerSegments, flipWinding));
       this.setAttribute(
         "position",
-        new BufferAttribute(
-          new Float32Array(this.generatePositions(innerSegments)),
-          3,
-        ),
+        new BufferAttribute(new Float32Array(this.generatePositions(innerSegments)), 3),
       );
       this.setAttribute(
         "normal",
-        new BufferAttribute(
-          new Float32Array(this.generateNormals(innerSegments)),
-          3,
-        ),
+        new BufferAttribute(new Float32Array(this.generateNormals(innerSegments)), 3),
       );
       this.setAttribute(
         "uv",
@@ -111,7 +106,7 @@ export class TerrainGeometry extends BufferGeometry {
    *   triangle 1: a, c, b
    *   triangle 2: b, c, d
    */
-  private generateIndices(innerSegments: number): number[] {
+  private generateIndices(innerSegments: number, flipWinding = false): number[] {
     // grid: (innerSegments + 3) x (innerSegments + 3)
     const innerEdgeVertexCount = innerSegments + 1;
     const edgeVertexCountWithSkirt = innerEdgeVertexCount + 2;
@@ -119,6 +114,12 @@ export class TerrainGeometry extends BufferGeometry {
     const indices: number[] = [];
     const cellsPerEdge = edgeVertexCountWithSkirt - 1;
     const mid = Math.floor(cellsPerEdge / 2);
+
+    // Reverse the last two vertices to flip a triangle's facing when requested.
+    const pushTri = (v0: number, v1: number, v2: number) => {
+      if (flipWinding) indices.push(v0, v2, v1);
+      else indices.push(v0, v1, v2);
+    };
 
     for (let y = 0; y < cellsPerEdge; y++) {
       for (let x = 0; x < cellsPerEdge; x++) {
@@ -128,11 +129,7 @@ export class TerrainGeometry extends BufferGeometry {
         const d = c + 1;
 
         // Check if this cell is on the skirt (outer ring)
-        const isSkirtCell =
-          x === 0 ||
-          x === cellsPerEdge - 1 ||
-          y === 0 ||
-          y === cellsPerEdge - 1;
+        const isSkirtCell = x === 0 || x === cellsPerEdge - 1 || y === 0 || y === cellsPerEdge - 1;
 
         let useDefaultDiagonal: boolean;
 
@@ -150,12 +147,12 @@ export class TerrainGeometry extends BufferGeometry {
 
         if (useDefaultDiagonal) {
           // diagonal a-d
-          indices.push(a, d, b);
-          indices.push(a, c, d);
+          pushTri(a, d, b);
+          pushTri(a, c, d);
         } else {
           // diagonal b-c
-          indices.push(a, c, b);
-          indices.push(b, c, d);
+          pushTri(a, c, b);
+          pushTri(b, c, d);
         }
       }
     }

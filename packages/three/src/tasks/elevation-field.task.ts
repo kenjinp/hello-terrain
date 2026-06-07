@@ -11,7 +11,7 @@ import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 export const createElevationFieldContextTask = task((get, work) => {
   const edgeVertexCount = get(innerTileSegments) + 3;
-  const verticesPerNode = edgeVertexCount * edgeVertexCount; // 289
+  const verticesPerNode = edgeVertexCount * edgeVertexCount;
   const totalElements = get(maxNodes) * verticesPerNode;
   return work(() => {
     const data = new Float32Array(totalElements);

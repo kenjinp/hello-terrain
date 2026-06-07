@@ -10,15 +10,12 @@ import {
   vec3,
   vertexIndex,
 } from "three/tsl";
-import type { SurfaceProjection } from "../quadtree";
-import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import { cubeFaceBasis, cubeFaceDirection, tangentFromAxis } from "../nodes/cubeSphere";
+import type { SurfaceProjection } from "../quadtree";
 import { isSkirtVertex } from "../tsl/skirt";
+import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
-import {
-  loadTerrainFieldNormal,
-  sampleTerrainFieldElevation,
-} from "./terrainFieldStorage";
+import { loadTerrainFieldNormal, sampleTerrainFieldElevation } from "./terrainFieldStorage";
 import { tileLocalToFieldUV } from "./tile";
 
 export function createTileBaseWorldPosition(
@@ -57,12 +54,9 @@ export function createTileElevation(
   const innerSegs = terrainUniforms.uInnerTileSegments;
   const u = tileLocalToFieldUV(positionLocal.x.add(float(0.5)), innerSegs);
   const v = tileLocalToFieldUV(positionLocal.z.add(float(0.5)), innerSegs);
-  return sampleTerrainFieldElevation(
-    terrainFieldStorage,
-    u,
-    v,
-    int(instanceIndex),
-  ).mul(terrainUniforms.uElevationScale);
+  return sampleTerrainFieldElevation(terrainFieldStorage, u, v, int(instanceIndex)).mul(
+    terrainUniforms.uElevationScale,
+  );
 }
 
 export function createNormalAssignment(
@@ -163,11 +157,7 @@ function createCubeSphereWorldPosition(
     const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
     const baseRadius = terrainUniforms.uRadius.toVar().add(yElevation);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
-    const r = select(
-      skirtVertex,
-      baseRadius.sub(terrainUniforms.uSkirtScale.toVar()),
-      baseRadius,
-    );
+    const r = select(skirtVertex, baseRadius.sub(terrainUniforms.uSkirtScale.toVar()), baseRadius);
 
     createNormalAssignment(leafStorage, terrainUniforms, terrainFieldStorage, "cubeSphere");
 
@@ -183,28 +173,16 @@ export function createTileWorldPosition(
   projection: SurfaceProjection = "flat",
 ) {
   if (projection === "cubeSphere") {
-    return createCubeSphereWorldPosition(
-      leafStorage,
-      terrainUniforms,
-      terrainFieldStorage,
-    );
+    return createCubeSphereWorldPosition(leafStorage, terrainUniforms, terrainFieldStorage);
   }
 
-  const baseWorldPosition = createTileBaseWorldPosition(
-    leafStorage,
-    terrainUniforms,
-  );
+  const baseWorldPosition = createTileBaseWorldPosition(leafStorage, terrainUniforms);
 
   return Fn(() => {
     const base = baseWorldPosition();
-    const yElevation = createTileElevation(
-      terrainUniforms,
-      terrainFieldStorage,
-    );
+    const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
-    const skirtY = base.y
-      .add(yElevation)
-      .sub(terrainUniforms.uSkirtScale.toVar());
+    const skirtY = base.y.add(yElevation).sub(terrainUniforms.uSkirtScale.toVar());
     const worldY = select(skirtVertex, skirtY, base.y.add(yElevation));
     createNormalAssignment(leafStorage, terrainUniforms, terrainFieldStorage, "flat");
     return vec3(base.x, worldY, base.z);

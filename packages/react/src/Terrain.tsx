@@ -1,24 +1,22 @@
-import { terrainTasks, TerrainMesh } from "@hello-terrain/three";
+import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
 import { cloneElement, isValidElement, useEffect, useState } from "react";
 import { TerrainProvider } from "./TerrainContext";
-import type {
-  TerrainHandle,
-  TerrainPrimitiveProps,
-  TerrainProps,
-} from "./types";
+import type { TerrainHandle, TerrainPrimitiveProps, TerrainProps } from "./types";
 import { useTerrain } from "./useTerrain";
 
 function useTerrainMesh(
   innerTileSegments: number | undefined,
   maxNodes: number | undefined,
+  flipWinding: boolean,
 ) {
   const [mesh] = useState(
     () =>
       new TerrainMesh({
-      innerTileSegments: innerTileSegments ?? 13,
-      maxNodes: maxNodes ?? 1024,
-    }),
+        innerTileSegments: innerTileSegments ?? 13,
+        maxNodes: maxNodes ?? 1024,
+        flipWinding,
+      }),
   );
 
   useEffect(() => {
@@ -28,6 +26,10 @@ function useTerrainMesh(
   useEffect(() => {
     mesh.maxNodes = maxNodes ?? 1024;
   }, [mesh, maxNodes]);
+
+  useEffect(() => {
+    mesh.flipWinding = flipWinding;
+  }, [mesh, flipWinding]);
 
   useEffect(() => {
     return () => {
@@ -75,9 +77,9 @@ function TerrainWithHandle({
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
-  const mesh = useTerrainMesh(innerTileSegments, maxNodes);
-  const { visible: primitiveVisible = true, ...restPrimitiveProps } =
-    primitiveProps;
+  const flipWinding = (terrain.surface?.projection ?? "flat") === "cubeSphere";
+  const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
+  const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
 
   useFrame(() => {
     syncTerrainMesh(mesh, terrain);
@@ -85,11 +87,7 @@ function TerrainWithHandle({
 
   return (
     <TerrainProvider value={terrain}>
-      <primitive
-        object={mesh}
-        visible={terrain.ready && primitiveVisible}
-        {...restPrimitiveProps}
-      >
+      <primitive object={mesh} visible={terrain.ready && primitiveVisible} {...restPrimitiveProps}>
         {terrain.ready
           ? attachTerrainMaterial(
               children({
