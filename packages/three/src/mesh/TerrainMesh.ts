@@ -7,6 +7,7 @@ import {
 } from "three/webgpu";
 import { TerrainGeometry } from "../geometry/TerrainGeometry";
 import type { TerrainRaycast } from "../query/types";
+import { innerTileSegments as innerTileSegmentsParam } from "../tasks/params";
 
 export type TerrainMeshParams = {
   innerTileSegments: number;
@@ -20,7 +21,8 @@ export type TerrainMeshParams = {
 };
 
 export const defaultTerrainMeshParams: TerrainMeshParams = {
-  innerTileSegments: 13,
+  // Source of truth is the `innerTileSegments` param itself.
+  innerTileSegments: innerTileSegmentsParam.get(),
   maxNodes: 1024,
   material: new MeshStandardNodeMaterial(),
   flipWinding: false,
@@ -45,6 +47,7 @@ export class TerrainMesh extends InstancedMesh {
     return this._innerTileSegments;
   }
   set innerTileSegments(tileSegments: number) {
+    if (tileSegments === this._innerTileSegments) return;
     const oldGeometry = this.geometry;
     this.geometry = new TerrainGeometry(tileSegments, true, this._flipWinding);
     this._innerTileSegments = tileSegments;

@@ -13,15 +13,11 @@ function useTerrainMesh(
   const [mesh] = useState(
     () =>
       new TerrainMesh({
-        innerTileSegments: innerTileSegments ?? 13,
+        ...(innerTileSegments !== undefined ? { innerTileSegments } : {}),
         maxNodes: maxNodes ?? 1024,
         flipWinding,
       }),
   );
-
-  useEffect(() => {
-    mesh.innerTileSegments = innerTileSegments ?? 13;
-  }, [mesh, innerTileSegments]);
 
   useEffect(() => {
     mesh.maxNodes = maxNodes ?? 1024;
@@ -45,6 +41,17 @@ function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
   if (leaves && mesh.count !== leaves.count) {
     mesh.count = leaves.count;
     mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // Keep the tile geometry resolution in sync with the effective
+  // `innerTileSegments` param (prop-driven or set directly via `graph.set`).
+  // The setter rebuilds the geometry only when the value actually changes.
+  const uniforms = terrain.graph.peek(terrainTasks.updateUniforms);
+  if (uniforms) {
+    const segments = uniforms.uInnerTileSegments.value;
+    if (typeof segments === "number") {
+      mesh.innerTileSegments = segments;
+    }
   }
 
   const raycast = terrain.runtime.raycast;

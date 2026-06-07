@@ -14,10 +14,10 @@ export const origin = param<{ x: number; y: number; z: number }>({
 }).displayName("origin");
 
 /**
- * Number of segments per inner tile edge.
- * Effective edge vertex count is `innerTileSegments + 3`.
+ * Default number of segments per inner tile edge. The effective edge vertex
+ * count is `innerTileSegments + 3`
  */
-export const innerTileSegments = param(13).displayName("innerTileSegments");
+export const innerTileSegments = param(61).displayName("innerTileSegments");
 
 /** Skirt scale factor. */
 export const skirtScale = param(100).displayName("skirtScale");
