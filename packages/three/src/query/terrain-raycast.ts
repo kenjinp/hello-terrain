@@ -11,12 +11,14 @@ import type {
   TerrainQuery,
   TerrainRaycast,
   TerrainRaycastResult,
+  TerrainSphereQuery,
 } from "./types";
 
 export type TerrainRaycastConfig = CpuRaycastConfig;
 
 export function createTerrainRaycast(params: {
   getTerrainQuery: () => TerrainQuery | null;
+  getSphereQuery: () => TerrainSphereQuery | null;
   getConfig: () => TerrainRaycastConfig;
 }): TerrainRaycast {
   return {
@@ -25,8 +27,9 @@ export function createTerrainRaycast(params: {
       const terrainQuery = params.getTerrainQuery();
 
       if (config.projection === "cubeSphere") {
-        if (terrainQuery) {
-          const precise = cubeSphereRaycast(terrainQuery, ray, config, options);
+        const sphereQuery = params.getSphereQuery();
+        if (sphereQuery) {
+          const precise = cubeSphereRaycast(sphereQuery, ray, config, options);
           if (precise) return precise;
         }
         return cubeSphereRaycastBoundsOnly(ray, config, options);

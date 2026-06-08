@@ -1,4 +1,4 @@
-import { Vector3 } from "three";
+import { Ray, Vector3 } from "three";
 import type { StorageBufferAttribute } from "three/webgpu";
 import { describe, expect, it } from "vitest";
 import {
@@ -10,7 +10,9 @@ import {
   type Vec3Mutable,
 } from "../quadtree";
 import { createSpatialIndex, insertSpatialIndexRaw } from "../quadtree/spatialIndex";
+import { cubeSphereRaycast, type CpuRaycastConfig } from "./cpu-raycast";
 import { createCpuTerrainCache, type TerrainQueryConfig } from "./cpu-terrain-cache";
+import { createTerrainSphereQuery } from "./terrain-query";
 
 describe("cube-sphere inverse math", () => {
   it("selects the dominant-axis face for each cardinal direction", () => {
@@ -155,5 +157,34 @@ describe("cube-sphere CPU sampling", () => {
   it("returns null for flat queries on a cube-sphere surface", async () => {
     const cache = await seededCache();
     expect(cache.getElevation(0, 0)).toBeNull();
+  });
+
+  it("raycasts onto the displaced sphere surface", async () => {
+    const cache = await seededCache();
+    const sphereQuery = createTerrainSphereQuery(cache);
+    const surfaceRadius = radius + height * elevationScale;
+
+    const config: CpuRaycastConfig = {
+      rootSize: 256,
+      originX: 0,
+      originZ: 0,
+      minY: 0,
+      maxY: 0,
+      projection: "cubeSphere",
+      centerX: 0,
+      centerY: 0,
+      centerZ: 0,
+      radius,
+      minRadius: radius - 5,
+      maxRadius: surfaceRadius + 5,
+    };
+
+    // Ray from far out on +Z aimed at the planet center.
+    const ray = new Ray(new Vector3(0, 0, radius * 3), new Vector3(0, 0, -1));
+    const hit = cubeSphereRaycast(sphereQuery, ray, config);
+
+    expect(hit).not.toBeNull();
+    expect(hit?.position.z).toBeCloseTo(surfaceRadius, 1);
+    expect(hit?.normal.z).toBeGreaterThan(0.99);
   });
 });

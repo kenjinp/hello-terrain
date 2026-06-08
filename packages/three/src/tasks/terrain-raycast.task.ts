@@ -1,7 +1,7 @@
 import { task } from "@hello-terrain/work";
 import type { SurfaceProjection } from "../quadtree";
 import { createTerrainRaycast } from "../query/terrain-raycast";
-import type { TerrainQuery, TerrainRaycast } from "../query/types";
+import type { TerrainQuery, TerrainRaycast, TerrainSphereQuery } from "../query/types";
 import { elevationScale, origin, radius, rootSize } from "./params";
 import { surfaceTask } from "./quadtree.task";
 import { terrainQueryTask } from "./terrain-query.task";
@@ -11,6 +11,7 @@ const RAYCAST_STATE = Symbol("terrainRaycastTaskState");
 
 type TerrainRaycastTaskState = {
   terrainQuery: TerrainQuery | null;
+  sphereQuery: TerrainSphereQuery | null;
   bounds: {
     rootSize: number;
     originX: number;
@@ -32,7 +33,7 @@ type TerrainRaycastWithState = TerrainRaycast & {
 
 export const terrainRaycastTask = task(
   (get, work) => {
-    const { query: terrainQuery } = get(terrainQueryTask);
+    const { query: terrainQuery, sphereQuery } = get(terrainQueryTask);
     const rootSizeValue = get(rootSize);
     const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);
@@ -47,6 +48,7 @@ export const terrainRaycastTask = task(
       if (!state) {
         state = {
           terrainQuery: null,
+          sphereQuery: null,
           bounds: {
             rootSize: 0,
             originX: 0,
@@ -65,6 +67,7 @@ export const terrainRaycastTask = task(
       }
 
       state.terrainQuery = terrainQuery;
+      state.sphereQuery = sphereQuery;
       state.bounds.rootSize = rootSizeValue;
       state.bounds.originX = originValue.x;
       state.bounds.originZ = originValue.z;
@@ -99,6 +102,7 @@ export const terrainRaycastTask = task(
       if (!raycast) {
         raycast = createTerrainRaycast({
           getTerrainQuery: () => state.terrainQuery,
+          getSphereQuery: () => state.sphereQuery,
           getConfig: () => state.bounds,
         }) as TerrainRaycastWithState;
       }

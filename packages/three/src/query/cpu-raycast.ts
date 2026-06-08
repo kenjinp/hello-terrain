@@ -5,6 +5,7 @@ import type {
   RaycastOptions,
   TerrainQuery,
   TerrainRaycastResult,
+  TerrainSphereQuery,
 } from "./types";
 
 export type CpuRaycastConfig = {
@@ -305,7 +306,7 @@ function intersectRaySphere(
  * the direction. `scratchDir` is reused to avoid per-sample allocation.
  */
 function sphereSignedDistance(
-  query: TerrainQuery,
+  query: TerrainSphereQuery,
   config: CpuRaycastConfig,
   px: number,
   py: number,
@@ -327,7 +328,7 @@ function sphereSignedDistance(
 }
 
 export function cubeSphereRaycast(
-  query: TerrainQuery,
+  query: TerrainSphereQuery,
   ray: Ray,
   config: CpuRaycastConfig,
   options?: RaycastOptions,
