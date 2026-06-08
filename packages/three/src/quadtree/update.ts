@@ -14,13 +14,38 @@ export function update(
   params: UpdateParams,
   outLeaves?: LeafSet,
 ): LeafSet {
-  const origY = params.cameraOrigin.y;
-  params.cameraOrigin.y -= params.elevationAtCameraXZ ?? 0;
+  const cam = params.cameraOrigin;
+  const elevation = params.elevationAtCameraXZ ?? 0;
+
+  // Offset the camera toward the terrain surface so LOD distance is measured
+  // from the surface rather than the datum. On a cube sphere the surface
+  // up-direction is radial, so move the camera inward along it; otherwise the
+  // up-direction is +Y.
+  const origX = cam.x;
+  const origY = cam.y;
+  const origZ = cam.z;
+  if (surface.projection === "cubeSphere") {
+    const center = surface.center ?? { x: 0, y: 0, z: 0 };
+    const dx = cam.x - center.x;
+    const dy = cam.y - center.y;
+    const dz = cam.z - center.z;
+    const len = Math.hypot(dx, dy, dz);
+    if (len > 1e-12) {
+      const inv = elevation / len;
+      cam.x -= dx * inv;
+      cam.y -= dy * inv;
+      cam.z -= dz * inv;
+    }
+  } else {
+    cam.y -= elevation;
+  }
 
   beginUpdate(state, surface, params);
   const leaves = refineLeaves(state, surface, params, outLeaves);
   const result = balance2to1(state, surface, params, leaves);
 
-  params.cameraOrigin.y = origY;
+  cam.x = origX;
+  cam.y = origY;
+  cam.z = origZ;
   return result;
 }

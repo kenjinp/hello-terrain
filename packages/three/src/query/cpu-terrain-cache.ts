@@ -1,16 +1,28 @@
 import { Vector3 } from "three";
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
-import { createSpatialIndex, U32_EMPTY } from "../quadtree";
+import {
+  CUBE_FACES,
+  createSpatialIndex,
+  directionToFace,
+  directionToFaceUV,
+  latLongToDirection,
+  U32_EMPTY,
+} from "../quadtree";
 import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
+import type { SurfaceProjection } from "../quadtree";
 import type {
   ElevationRange,
   TerrainElevationSample,
   TerrainSample,
   TerrainSampleBatch,
+  TerrainSurfaceSample,
+  TerrainSurfaceSampleBatch,
   TerrainTile,
   TerrainTileBounds,
 } from "./types";
+
+const HALF_PI = Math.PI * 0.5;
 
 type TerrainQueryConfig = {
   rootSize: number;
@@ -20,11 +32,16 @@ type TerrainQueryConfig = {
   innerTileSegments: number;
   elevationScale: number;
   maxLevel: number;
+  /** Surface projection; `cubeSphere` enables the direction/lat-long queries. */
+  projection: SurfaceProjection;
+  /** Sphere radius in world units (cube-sphere projection only). */
+  radius: number;
 };
 
 type TileLookupResult = {
   found: boolean;
   leafIndex: number;
+  space: number;
   level: number;
   tileX: number;
   tileY: number;
@@ -57,6 +74,23 @@ export interface CpuTerrainCache {
   getGlobalElevationRange(): ElevationRange | null;
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
+
+  getElevationByDirection(direction: Vector3): number | null;
+  getElevationByPosition(position: Vector3): number | null;
+  getElevationByLatLong(latitudeDeg: number, longitudeDeg: number): number | null;
+  getNormalByDirection(direction: Vector3): Vector3 | null;
+  getNormalByPosition(position: Vector3): Vector3 | null;
+  getNormalByLatLong(latitudeDeg: number, longitudeDeg: number): Vector3 | null;
+  sampleTerrainByDirection(direction: Vector3): TerrainSurfaceSample;
+  sampleTerrainByPosition(position: Vector3): TerrainSurfaceSample;
+  sampleTerrainByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainSurfaceSample;
+  getTileByDirection(direction: Vector3): TerrainTile | null;
+  getTileByPosition(position: Vector3): TerrainTile | null;
+  getTileByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTile | null;
+  getTileBoundsByDirection(direction: Vector3): TerrainTileBounds | null;
+  getTileBoundsByPosition(position: Vector3): TerrainTileBounds | null;
+  getTileBoundsByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTileBounds | null;
+  sampleTerrainBatchByDirection(directions: Float32Array): TerrainSurfaceSampleBatch;
 }
 
 function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
@@ -156,6 +190,18 @@ export function createCpuTerrainCache(
     return new Vector3(-dhdx, 1, -dhdz).normalize();
   };
 
+  const MISSED_LOOKUP: TileLookupResult = {
+    found: false,
+    leafIndex: -1,
+    space: -1,
+    level: -1,
+    tileX: -1,
+    tileY: -1,
+    tileSize: 0,
+    localU: 0,
+    localV: 0,
+  };
+
   const lookupTile = (worldX: number, worldZ: number): TileLookupResult => {
     const halfRoot = config.rootSize * 0.5;
     for (let level = config.maxLevel; level >= 0; level -= 1) {
@@ -176,6 +222,7 @@ export function createCpuTerrainCache(
         return {
           found: true,
           leafIndex,
+          space: 0,
           level,
           tileX,
           tileY,
@@ -185,16 +232,44 @@ export function createCpuTerrainCache(
         };
       }
     }
-    return {
-      found: false,
-      leafIndex: -1,
-      level: -1,
-      tileX: -1,
-      tileY: -1,
-      tileSize: 0,
-      localU: 0,
-      localV: 0,
-    };
+    return MISSED_LOOKUP;
+  };
+
+  const clamp01 = (value: number): number =>
+    value < 0 ? 0 : value > 1 ? 1 : value;
+
+  /** Coarse-to-fine tile lookup on a cube-sphere face. */
+  const lookupTileByFaceUV = (
+    face: number,
+    u: number,
+    v: number,
+  ): TileLookupResult => {
+    for (let level = config.maxLevel; level >= 0; level -= 1) {
+      const n = 2 ** level;
+      let tileX = Math.floor(u * n);
+      let tileY = Math.floor(v * n);
+      if (tileX < 0) tileX = 0;
+      else if (tileX > n - 1) tileX = n - 1;
+      if (tileY < 0) tileY = 0;
+      else if (tileY > n - 1) tileY = n - 1;
+      const leafIndex = lookupSpatialIndexRaw(frontIndex, face, level, tileX, tileY);
+      if (leafIndex !== U32_EMPTY) {
+        // Arc length of a tile edge on the sphere, used to scale gradients.
+        const tileSize = (config.radius * HALF_PI) / n;
+        return {
+          found: true,
+          leafIndex,
+          space: face,
+          level,
+          tileX,
+          tileY,
+          tileSize,
+          localU: clamp01(u * n - tileX),
+          localV: clamp01(v * n - tileY),
+        };
+      }
+    }
+    return MISSED_LOOKUP;
   };
 
   const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
@@ -241,6 +316,178 @@ export function createCpuTerrainCache(
       return { elevation: 0, valid: false };
     }
     return sampleElevationFromLookup(lookup);
+  };
+
+  // --- Cube-sphere queries -------------------------------------------------
+
+  // Per-cache scratch (no module-scope state; the terrain may have many instances).
+  const dirScratch: [number, number, number] = [0, 0, 0];
+  const uvScratch: [number, number] = [0, 0];
+  const llScratch: [number, number, number] = [0, 0, 0];
+
+  /**
+   * World-space normal at a sphere sample, derived from the elevation-field
+   * gradient rotated into the sphere tangent frame `(tu, dir, tv)` (mirrors the
+   * GPU `createTileLocalNormal` cube-sphere branch).
+   */
+  const computeSphereNormal = (
+    leafIndex: number,
+    gx: number,
+    gy: number,
+    tileSize: number,
+    face: number,
+    dirX: number,
+    dirY: number,
+    dirZ: number,
+  ): Vector3 => {
+    const hLeft = sampleGridBilinear(leafIndex, gx - 1, gy);
+    const hRight = sampleGridBilinear(leafIndex, gx + 1, gy);
+    const hUp = sampleGridBilinear(leafIndex, gx, gy - 1);
+    const hDown = sampleGridBilinear(leafIndex, gx, gy + 1);
+    const stepWorld = tileSize / config.innerTileSegments;
+    const inv2Step = 0.5 / stepWorld;
+    const dhdu = (hRight - hLeft) * config.elevationScale * inv2Step;
+    const dhdv = (hDown - hUp) * config.elevationScale * inv2Step;
+
+    const f = CUBE_FACES[face];
+    const dDotR = dirX * f.right[0] + dirY * f.right[1] + dirZ * f.right[2];
+    let tux = f.right[0] - dirX * dDotR;
+    let tuy = f.right[1] - dirY * dDotR;
+    let tuz = f.right[2] - dirZ * dDotR;
+    const tuLen = Math.hypot(tux, tuy, tuz) || 1;
+    tux /= tuLen;
+    tuy /= tuLen;
+    tuz /= tuLen;
+
+    const dDotU = dirX * f.up[0] + dirY * f.up[1] + dirZ * f.up[2];
+    let tvx = f.up[0] - dirX * dDotU;
+    let tvy = f.up[1] - dirY * dDotU;
+    let tvz = f.up[2] - dirZ * dDotU;
+    const tvLen = Math.hypot(tvx, tvy, tvz) || 1;
+    tvx /= tvLen;
+    tvy /= tvLen;
+    tvz /= tvLen;
+
+    const nx = -dhdu;
+    const ny = 1;
+    const nz = -dhdv;
+    return new Vector3(
+      tux * nx + dirX * ny + tvx * nz,
+      tuy * nx + dirY * ny + tvy * nz,
+      tuz * nx + dirZ * ny + tvz * nz,
+    ).normalize();
+  };
+
+  const invalidSurfaceSample = (
+    dx: number,
+    dy: number,
+    dz: number,
+  ): TerrainSurfaceSample => ({
+    position: new Vector3(),
+    normal: new Vector3(0, 1, 0),
+    direction: new Vector3(dx, dy, dz),
+    elevation: 0,
+    valid: false,
+  });
+
+  /** Tile lookup from a (possibly unnormalized) direction. */
+  const lookupTileForDirection = (
+    dx: number,
+    dy: number,
+    dz: number,
+  ): TileLookupResult => {
+    if (config.projection !== "cubeSphere") return MISSED_LOOKUP;
+    const len = Math.hypot(dx, dy, dz);
+    if (len === 0) return MISSED_LOOKUP;
+    dirScratch[0] = dx / len;
+    dirScratch[1] = dy / len;
+    dirScratch[2] = dz / len;
+    const face = directionToFace(dirScratch);
+    directionToFaceUV(face, dirScratch, uvScratch);
+    return lookupTileByFaceUV(face, uvScratch[0], uvScratch[1]);
+  };
+
+  const sampleSurfaceByDirection = (
+    dx: number,
+    dy: number,
+    dz: number,
+  ): TerrainSurfaceSample => {
+    if (!hasSnapshot || config.projection !== "cubeSphere") {
+      return invalidSurfaceSample(dx, dy, dz);
+    }
+    const len = Math.hypot(dx, dy, dz);
+    if (len === 0) return invalidSurfaceSample(0, 0, 0);
+    const nx = dx / len;
+    const ny = dy / len;
+    const nz = dz / len;
+    dirScratch[0] = nx;
+    dirScratch[1] = ny;
+    dirScratch[2] = nz;
+    const face = directionToFace(dirScratch);
+    directionToFaceUV(face, dirScratch, uvScratch);
+    const lookup = lookupTileByFaceUV(face, uvScratch[0], uvScratch[1]);
+    if (!lookup.found) return invalidSurfaceSample(nx, ny, nz);
+
+    const fieldU = tileLocalToFieldUV(lookup.localU, config.innerTileSegments);
+    const fieldV = tileLocalToFieldUV(lookup.localV, config.innerTileSegments);
+    const gx = fieldU * (edgeVertexCount - 1);
+    const gy = fieldV * (edgeVertexCount - 1);
+    const height = sampleGridBilinear(lookup.leafIndex, gx, gy);
+    const elevation = height * config.elevationScale;
+    const r = config.radius + elevation;
+    const position = new Vector3(
+      config.originX + nx * r,
+      config.originY + ny * r,
+      config.originZ + nz * r,
+    );
+    const normal = computeSphereNormal(
+      lookup.leafIndex,
+      gx,
+      gy,
+      lookup.tileSize,
+      face,
+      nx,
+      ny,
+      nz,
+    );
+    return {
+      position,
+      normal,
+      direction: new Vector3(nx, ny, nz),
+      elevation,
+      valid: true,
+    };
+  };
+
+  const tileFromLookup = (lookup: TileLookupResult): TerrainTile | null => {
+    if (!lookup.found) return null;
+    return {
+      space: lookup.space,
+      level: lookup.level,
+      x: lookup.tileX,
+      y: lookup.tileY,
+      index: lookup.leafIndex,
+    };
+  };
+
+  const tileBoundsFromLookup = (
+    lookup: TileLookupResult,
+    elevationBase: number,
+  ): TerrainTileBounds | null => {
+    if (!lookup.found || lookup.leafIndex >= frontLeafCount) return null;
+    const rawMin = frontTileBounds[lookup.leafIndex * 2]!;
+    const rawMax = frontTileBounds[lookup.leafIndex * 2 + 1]!;
+    const a = elevationBase + rawMin * config.elevationScale;
+    const b = elevationBase + rawMax * config.elevationScale;
+    return {
+      space: lookup.space,
+      level: lookup.level,
+      x: lookup.tileX,
+      y: lookup.tileY,
+      index: lookup.leafIndex,
+      minElevation: Math.min(a, b),
+      maxElevation: Math.max(a, b),
+    };
   };
 
   const api: CpuTerrainCache = {
@@ -356,31 +603,11 @@ export function createCpuTerrainCache(
     },
     getTile(worldX, worldZ) {
       if (!hasSnapshot) return null;
-      const lookup = lookupTile(worldX, worldZ);
-      if (!lookup.found) return null;
-      return {
-        level: lookup.level,
-        x: lookup.tileX,
-        y: lookup.tileY,
-        index: lookup.leafIndex,
-      };
+      return tileFromLookup(lookupTile(worldX, worldZ));
     },
     getTileBounds(worldX, worldZ) {
       if (!hasSnapshot) return null;
-      const lookup = lookupTile(worldX, worldZ);
-      if (!lookup.found || lookup.leafIndex >= frontLeafCount) return null;
-      const rawMin = frontTileBounds[lookup.leafIndex * 2]!;
-      const rawMax = frontTileBounds[lookup.leafIndex * 2 + 1]!;
-      const a = config.originY + rawMin * config.elevationScale;
-      const b = config.originY + rawMax * config.elevationScale;
-      return {
-        level: lookup.level,
-        x: lookup.tileX,
-        y: lookup.tileY,
-        index: lookup.leafIndex,
-        minElevation: Math.min(a, b),
-        maxElevation: Math.max(a, b),
-      };
+      return tileBoundsFromLookup(lookupTile(worldX, worldZ), config.originY);
     },
     getGlobalElevationRange() {
       return globalRange;
@@ -419,6 +646,7 @@ export function createCpuTerrainCache(
           lookup = {
             found: true,
             leafIndex: lastTile.leafIndex,
+            space: 0,
             level: lastTile.level,
             tileX: lastTile.tileX,
             tileY: lastTile.tileY,
@@ -459,6 +687,131 @@ export function createCpuTerrainCache(
       return { elevations, normals, valid, generation: generationCount };
     },
     sampleTerrain,
+
+    // --- Cube-sphere queries ---
+    sampleTerrainByDirection(direction) {
+      return sampleSurfaceByDirection(direction.x, direction.y, direction.z);
+    },
+    sampleTerrainByPosition(position) {
+      return sampleSurfaceByDirection(
+        position.x - config.originX,
+        position.y - config.originY,
+        position.z - config.originZ,
+      );
+    },
+    sampleTerrainByLatLong(latitudeDeg, longitudeDeg) {
+      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
+      return sampleSurfaceByDirection(llScratch[0], llScratch[1], llScratch[2]);
+    },
+    getElevationByDirection(direction) {
+      const sample = sampleSurfaceByDirection(direction.x, direction.y, direction.z);
+      return sample.valid ? sample.elevation : null;
+    },
+    getElevationByPosition(position) {
+      const sample = sampleSurfaceByDirection(
+        position.x - config.originX,
+        position.y - config.originY,
+        position.z - config.originZ,
+      );
+      return sample.valid ? sample.elevation : null;
+    },
+    getElevationByLatLong(latitudeDeg, longitudeDeg) {
+      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
+      const sample = sampleSurfaceByDirection(llScratch[0], llScratch[1], llScratch[2]);
+      return sample.valid ? sample.elevation : null;
+    },
+    getNormalByDirection(direction) {
+      const sample = sampleSurfaceByDirection(direction.x, direction.y, direction.z);
+      return sample.valid ? sample.normal : null;
+    },
+    getNormalByPosition(position) {
+      const sample = sampleSurfaceByDirection(
+        position.x - config.originX,
+        position.y - config.originY,
+        position.z - config.originZ,
+      );
+      return sample.valid ? sample.normal : null;
+    },
+    getNormalByLatLong(latitudeDeg, longitudeDeg) {
+      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
+      const sample = sampleSurfaceByDirection(llScratch[0], llScratch[1], llScratch[2]);
+      return sample.valid ? sample.normal : null;
+    },
+    getTileByDirection(direction) {
+      if (!hasSnapshot) return null;
+      return tileFromLookup(lookupTileForDirection(direction.x, direction.y, direction.z));
+    },
+    getTileByPosition(position) {
+      if (!hasSnapshot) return null;
+      return tileFromLookup(
+        lookupTileForDirection(
+          position.x - config.originX,
+          position.y - config.originY,
+          position.z - config.originZ,
+        ),
+      );
+    },
+    getTileByLatLong(latitudeDeg, longitudeDeg) {
+      if (!hasSnapshot) return null;
+      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
+      return tileFromLookup(lookupTileForDirection(llScratch[0], llScratch[1], llScratch[2]));
+    },
+    getTileBoundsByDirection(direction) {
+      if (!hasSnapshot) return null;
+      return tileBoundsFromLookup(
+        lookupTileForDirection(direction.x, direction.y, direction.z),
+        0,
+      );
+    },
+    getTileBoundsByPosition(position) {
+      if (!hasSnapshot) return null;
+      return tileBoundsFromLookup(
+        lookupTileForDirection(
+          position.x - config.originX,
+          position.y - config.originY,
+          position.z - config.originZ,
+        ),
+        0,
+      );
+    },
+    getTileBoundsByLatLong(latitudeDeg, longitudeDeg) {
+      if (!hasSnapshot) return null;
+      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
+      return tileBoundsFromLookup(
+        lookupTileForDirection(llScratch[0], llScratch[1], llScratch[2]),
+        0,
+      );
+    },
+    sampleTerrainBatchByDirection(directions) {
+      const count = Math.floor(directions.length / 3);
+      const positions = new Float32Array(count * 3);
+      const normals = new Float32Array(count * 3);
+      const elevations = new Float32Array(count);
+      const valid = new Uint8Array(count);
+      if (!hasSnapshot || config.projection !== "cubeSphere") {
+        return { positions, normals, elevations, valid, generation: generationCount };
+      }
+      for (let i = 0; i < count; i += 1) {
+        const sample = sampleSurfaceByDirection(
+          directions[i * 3] ?? 0,
+          directions[i * 3 + 1] ?? 0,
+          directions[i * 3 + 2] ?? 0,
+        );
+        if (!sample.valid) {
+          normals[i * 3 + 1] = 1;
+          continue;
+        }
+        positions[i * 3] = sample.position.x;
+        positions[i * 3 + 1] = sample.position.y;
+        positions[i * 3 + 2] = sample.position.z;
+        normals[i * 3] = sample.normal.x;
+        normals[i * 3 + 1] = sample.normal.y;
+        normals[i * 3 + 2] = sample.normal.z;
+        elevations[i] = sample.elevation;
+        valid[i] = 1;
+      }
+      return { positions, normals, elevations, valid, generation: generationCount };
+    },
   };
 
   return api;

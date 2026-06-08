@@ -1,5 +1,11 @@
 import { type Surface, type TileBounds, type TileId } from "../types";
-import { CUBE_FACES, type Vec3 } from "./cubeSphereFaces";
+import type { Vec3 } from "./cubeSphereFaces";
+import {
+  directionToFace,
+  directionToFaceUV,
+  faceUVToCube,
+  type Vec3Mutable,
+} from "./cubeSphereInverse";
 
 export type CubeSphereSurfaceConfig = {
   /** Sphere radius in world units. */
@@ -9,47 +15,6 @@ export type CubeSphereSurfaceConfig = {
   /** Optional conservative vertical extent, included in bounds radius. */
   maxHeight?: number;
 };
-
-function dot(a: Vec3, b: Vec3): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-
-/** Cube-space point for a face-local coordinate (u, v) in [0, 1]. */
-function faceCube(face: number, u: number, v: number, out: Vec3Mutable): void {
-  const f = CUBE_FACES[face];
-  const s = 2 * u - 1;
-  const t = 2 * v - 1;
-  out[0] = f.forward[0] + s * f.right[0] + t * f.up[0];
-  out[1] = f.forward[1] + s * f.right[1] + t * f.up[1];
-  out[2] = f.forward[2] + s * f.right[2] + t * f.up[2];
-}
-
-type Vec3Mutable = [number, number, number];
-
-/** Pick the cube face whose normal axis dominates the direction. */
-function dirToFace(d: Vec3): number {
-  const ax = Math.abs(d[0]);
-  const ay = Math.abs(d[1]);
-  const az = Math.abs(d[2]);
-  if (ax >= ay && ax >= az) return d[0] >= 0 ? 0 : 1;
-  if (ay >= ax && ay >= az) return d[1] >= 0 ? 2 : 3;
-  return d[2] >= 0 ? 4 : 5;
-}
-
-/** Face-local (u, v) in [0, 1] for a direction known to fall on `face`. */
-function faceUV(face: number, d: Vec3, out: [number, number]): void {
-  const f = CUBE_FACES[face];
-  const denom = dot(d, f.forward);
-  const inv = 1 / denom;
-  const px = d[0] * inv;
-  const py = d[1] * inv;
-  const pz = d[2] * inv;
-  const p: Vec3 = [px, py, pz];
-  const s = dot(p, f.right);
-  const t = dot(p, f.up);
-  out[0] = (s + 1) * 0.5;
-  out[1] = (t + 1) * 0.5;
-}
 
 /**
  * Cube-sphere surface: six quadtree faces wrapped onto a sphere.
@@ -77,11 +42,11 @@ export function createCubeSphereSurface(cfg: CubeSphereSurfaceConfig): Surface {
     // Continuous center of the (out-of-range) neighbor tile in this face's UV.
     const u = (nx + 0.5) / n;
     const v = (ny + 0.5) / n;
-    faceCube(face, u, v, cube);
+    faceUVToCube(face, u, v, cube);
     const len = Math.hypot(cube[0], cube[1], cube[2]);
     const dir: Vec3 = [cube[0] / len, cube[1] / len, cube[2] / len];
-    const nbrFace = dirToFace(dir);
-    faceUV(nbrFace, dir, uv);
+    const nbrFace = directionToFace(dir);
+    directionToFaceUV(nbrFace, dir, uv);
     let bx = Math.floor(uv[0] * n);
     let by = Math.floor(uv[1] * n);
     if (bx < 0) bx = 0;
@@ -149,7 +114,7 @@ export function createCubeSphereSurface(cfg: CubeSphereSurfaceConfig): Surface {
       const py: number[] = [0, 0, 0, 0];
       const pz: number[] = [0, 0, 0, 0];
       for (let i = 0; i < 4; i++) {
-        faceCube(tile.space, cornersU[i], cornersV[i], cube);
+        faceUVToCube(tile.space, cornersU[i], cornersV[i], cube);
         const len = Math.hypot(cube[0], cube[1], cube[2]);
         const sx = center.x + (cube[0] / len) * radius;
         const sy = center.y + (cube[1] / len) * radius;
@@ -194,5 +159,6 @@ export function createCubeSphereSurface(cfg: CubeSphereSurfaceConfig): Surface {
 
     projection: "cubeSphere",
     radius,
+    center,
   };
 }

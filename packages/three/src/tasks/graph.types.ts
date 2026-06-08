@@ -15,6 +15,7 @@ import type {
   TerrainQuery,
   TerrainRaycast,
   TerrainSampler,
+  TerrainSphereQuery,
 } from "../query/types";
 import type { TileBoundsContext } from "./tile-bounds.task";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
@@ -37,6 +38,8 @@ export interface ElevationFieldContext {
 export interface TerrainQueryContext {
   cache: CpuTerrainCache;
   query: TerrainQuery;
+  /** Cube-sphere query; `null` unless the surface uses the cubeSphere projection. */
+  sphereQuery: TerrainSphereQuery | null;
   shapeKey: string;
 }
 

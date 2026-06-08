@@ -28,6 +28,10 @@ Selects active terrain leaves based on camera-relative criteria and balancing ru
 
 - Input: camera and refinement params.
 - Output: active leaves for compute/render.
+- LOD distance is measured relative to the terrain surface, not the datum: the
+  previous frame's elevation beneath the camera offsets the camera toward the
+  surface during refinement — along `+Y` for flat surfaces and along the radial
+  up-direction (from the planet center) for cube spheres.
 
 ## Elevation Function
 
@@ -46,6 +50,24 @@ Computed terrain elevation dataset derived from the elevation function.
 ## Normal Derivation
 
 Normals are generated from neighbor sampling over the elevation field and then packed/unpacked for GPU usage.
+
+## Terrain Query
+
+Synchronous CPU sampling backed by an async readback of the elevation field.
+
+- `flat`: keyed on world `(x, z)`; elevation is a world-`Y` value.
+- `cubeSphere`: keyed on a **direction** from the planet center. A world point
+  maps to a direction via `normalize(p - center)`, then to a cube face and
+  face-local `(u, v)` (`directionToFace` / `directionToFaceUV` in
+  `quadtree/surface/cubeSphereInverse`), then to a quadtree tile keyed by face
+  (`space`). The same `(face, level, x, y)` spatial index used for rendering is
+  reused for lookup. Results report a world `position` on the displaced sphere
+  and a normal rebuilt in the sphere tangent frame, mirroring the GPU position
+  assembly. Cube-sphere sampling lives on a separate `TerrainSphereQuery`
+  (exposed alongside the flat `TerrainQuery`, `null` on flat surfaces) with
+  explicit `ByDirection` / `ByPosition` / `ByLatLong` variants rather than
+  overloading the flat query. Raycasts intersect the planet's bounding shell and
+  march in radial signed distance.
 
 ## Task Graph
 

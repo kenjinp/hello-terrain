@@ -11,3 +11,13 @@ export type {
   TerrainTask,
   TerrainVector3Like,
 } from "./types"
+export type {
+  TerrainQuery,
+  TerrainRaycast,
+  TerrainRaycastResult,
+  TerrainSample,
+  TerrainSphereQuery,
+  TerrainSurfaceSample,
+  TerrainSurfaceSampleBatch,
+  TerrainTile,
+} from "@hello-terrain/three"

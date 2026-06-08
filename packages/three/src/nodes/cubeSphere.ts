@@ -1,4 +1,4 @@
-import { float, int, select, vec3 } from "three/tsl";
+import { float, int, select, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { CUBE_FACES, type Vec3 } from "../quadtree/surface/cubeSphereFaces";
 
@@ -63,4 +63,33 @@ export function cubeFaceDirection(basis: CubeFaceBasis, u: Node, v: Node): Node 
  */
 export function tangentFromAxis(dir: Node, axis: Node): Node {
   return axis.sub(dir.mul(dir.dot(axis))).normalize();
+}
+
+/**
+ * Pick the cube face index (0..5) whose normal axis dominates `dir`.
+ * GPU mirror of `directionToFace` in `quadtree/surface/cubeSphereInverse.ts`.
+ */
+export function cubeFaceFromDirection(dir: Node): Node {
+  const d = vec3(dir);
+  const ax = d.x.abs();
+  const ay = d.y.abs();
+  const az = d.z.abs();
+  const faceX = select(d.x.greaterThanEqual(float(0)), int(0), int(1));
+  const faceY = select(d.y.greaterThanEqual(float(0)), int(2), int(3));
+  const faceZ = select(d.z.greaterThanEqual(float(0)), int(4), int(5));
+  const xDominant = ax.greaterThanEqual(ay).and(ax.greaterThanEqual(az));
+  const yDominant = ay.greaterThanEqual(ax).and(ay.greaterThanEqual(az));
+  return select(xDominant, faceX, select(yDominant, faceY, faceZ));
+}
+
+/**
+ * Face-local (u, v) in [0, 1] for a direction known to fall on `face`.
+ * GPU mirror of `directionToFaceUV` in `quadtree/surface/cubeSphereInverse.ts`.
+ */
+export function cubeFaceUVFromDirection(basis: CubeFaceBasis, dir: Node): Node {
+  const d = vec3(dir);
+  const p = d.div(d.dot(basis.forward));
+  const s = p.dot(basis.right);
+  const t = p.dot(basis.up);
+  return vec2(s.add(float(1)).mul(float(0.5)), t.add(float(1)).mul(float(0.5)));
 }

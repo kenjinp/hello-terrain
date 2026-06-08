@@ -1,4 +1,5 @@
 import { task } from "@hello-terrain/work";
+import { Vector3 } from "three";
 import { createLeafStorage } from "../gpu/leafStorage";
 import type { LeafSet } from "../quadtree";
 import { createFlatSurface, createState, update } from "../quadtree";
@@ -39,12 +40,23 @@ export const quadtreeConfigTask = task((get, work) => {
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
   const quadtreeUpdateConfig = get(quadtreeUpdate);
-  const { query: terrainQuery } = get(terrainQueryTask);
+  const { query: terrainQuery, sphereQuery } = get(terrainQueryTask);
 
   let outLeaves: LeafSet | undefined = undefined;
+  const cameraPosition = new Vector3();
   return work(() => {
     const cam = quadtreeUpdateConfig.cameraOrigin;
-    quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
+    // Terrain elevation beneath the camera drives the surface-relative LOD
+    // offset applied in `update()`. On a cube sphere this is the radial
+    // displacement at the camera's direction; on a flat surface it is the
+    // height at the camera's XZ.
+    if (sphereQuery) {
+      cameraPosition.set(cam.x, cam.y, cam.z);
+      quadtreeUpdateConfig.elevationAtCameraXZ =
+        sphereQuery.getElevationByPosition(cameraPosition) ?? 0;
+    } else {
+      quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
+    }
 
     outLeaves = update(
       quadtreeConfig.state,

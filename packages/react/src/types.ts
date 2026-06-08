@@ -4,6 +4,7 @@ import type {
   TerrainGraph,
   TerrainQuery,
   TerrainRaycast,
+  TerrainSphereQuery,
   TerrainTasks,
 } from "@hello-terrain/three";
 import type { Task } from "@hello-terrain/work";
@@ -26,6 +27,8 @@ export interface TerrainNodes {
 
 export interface TerrainRuntime {
   query: TerrainQuery | null;
+  /** Cube-sphere query; `null` unless the surface uses the cubeSphere projection. */
+  sphereQuery: TerrainSphereQuery | null;
   raycast: TerrainRaycast | null;
 }
 

@@ -7,4 +7,5 @@ export * from "./surface/flat";
 export * from "./surface/infiniteFlat";
 export * from "./surface/cubeSphere";
 export * from "./surface/cubeSphereFaces";
+export * from "./surface/cubeSphereInverse";
 
