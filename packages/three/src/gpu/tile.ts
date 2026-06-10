@@ -4,7 +4,63 @@ import type { SurfaceProjection } from "../quadtree";
 import { cubeFaceBasis, cubeFaceDirection } from "../nodes/cubeSphere";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
-const HALF_PI = Math.PI * 0.5;
+/** A cube face spans ~PI/2 of arc on the sphere. */
+export const HALF_PI = Math.PI * 0.5;
+
+/**
+ * Offset (in texels) from the field edge to the first inner texel center:
+ * 1-texel skirt border + 0.5 texel centering.
+ */
+export const FIELD_INNER_TEXEL_OFFSET = 1.5;
+
+/** Extra texels per edge beyond `innerTileSegments`: 2 skirt border + 1 closing vertex. */
+export const FIELD_EDGE_EXTRA_TEXELS = 3;
+
+/**
+ * Approximate arc length of a tile edge on the sphere, used to scale elevation
+ * gradients into world units. `levelDivisor` is `2 ** level`.
+ *
+ * Mirrors: the TSL `tileSize` cube-sphere branch in {@link createTileCompute}.
+ */
+export function sphereTileArcLength(radius: number, levelDivisor: number): number {
+  return (radius * HALF_PI) / levelDivisor;
+}
+
+/** TSL nodes for one decoded leaf tile record. */
+export type LeafTileNodes = {
+  level: Node;
+  x: Node;
+  y: Node;
+  /** Surface space/face index (0 for flat, 0..5 for cube-sphere faces). */
+  face: Node;
+};
+
+/**
+ * Decode a leaf tile record from leaf storage. Records are packed as
+ * `[level, x, y, space/face]` at `nodeIndex * 4` (see `leafGpuBufferTask`).
+ */
+export function decodeLeafTile(leafStorage: LeafStorageState, nodeIndex: Node): LeafTileNodes {
+  const nodeOffset = int(nodeIndex).mul(int(4));
+  return {
+    level: leafStorage.node.element(nodeOffset).toInt(),
+    x: leafStorage.node.element(nodeOffset.add(int(1))).toFloat(),
+    y: leafStorage.node.element(nodeOffset.add(int(2))).toFloat(),
+    face: leafStorage.node.element(nodeOffset.add(int(3))).toInt(),
+  };
+}
+
+/**
+ * Face-local (u, v) in [0, 1] for a tile-local coordinate:
+ * `(tile.xy + local) / 2^level`.
+ */
+export function faceUVFromTileLocal(
+  tile: Pick<LeafTileNodes, "level" | "x" | "y">,
+  localU: Node,
+  localV: Node,
+): Node {
+  const n = pow(float(2), tile.level.toFloat());
+  return vec2(tile.x.add(localU).div(n), tile.y.add(localV).div(n));
+}
 
 export function createTileCompute(
   leafStorage: LeafStorageState,
@@ -14,28 +70,23 @@ export function createTileCompute(
   const isSphere = projection === "cubeSphere";
 
   const tileLevel = Fn(([nodeIndex]: [Node]) => {
-    const nodeOffset = nodeIndex.mul(int(4));
-    return leafStorage.node.element(nodeOffset).toInt();
+    return decodeLeafTile(leafStorage, nodeIndex).level;
   });
 
   const tileFace = Fn(([nodeIndex]: [Node]) => {
-    const nodeOffset = nodeIndex.mul(int(4));
-    return leafStorage.node.element(nodeOffset.add(int(3))).toInt();
+    return decodeLeafTile(leafStorage, nodeIndex).face;
   });
 
   const tileOriginVec2 = Fn(([nodeIndex]: [Node]) => {
-    const nodeOffset = nodeIndex.mul(int(4));
-    const nodeX = leafStorage.node.element(nodeOffset.add(int(1))).toFloat();
-    const nodeY = leafStorage.node.element(nodeOffset.add(int(2))).toFloat();
-    return vec2(nodeX, nodeY);
+    const tile = decodeLeafTile(leafStorage, nodeIndex);
+    return vec2(tile.x, tile.y);
   });
 
   const tileSize = Fn(([nodeIndex]: [Node]) => {
     const level = tileLevel(nodeIndex);
     const divisor = pow(float(2), level.toFloat());
     if (isSphere) {
-      // Approximate arc-length of a tile edge on the sphere. A cube face spans
-      // ~PI/2 of arc; used to scale elevation gradients into world units.
+      // Mirrors: sphereTileArcLength (CPU).
       return uniforms.uRadius.toVar().mul(float(HALF_PI)).div(divisor);
     }
     const rootSize = uniforms.uRootSize.toVar();
@@ -44,16 +95,11 @@ export function createTileCompute(
 
   /** Face-local (u, v) in [0, 1] for a grid sample, including skirt border. */
   const tileFaceUV = Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
-    const nodeVec2 = tileOriginVec2(nodeIndex);
-    const level = tileLevel(nodeIndex);
-    const n = pow(float(2), level.toFloat());
+    const tile = decodeLeafTile(leafStorage, nodeIndex);
     const fInnerSegments = uniforms.uInnerTileSegments.toVar().toFloat();
     const localU = int(ix).toFloat().sub(float(1.0)).div(fInnerSegments);
     const localV = int(iy).toFloat().sub(float(1.0)).div(fInnerSegments);
-    return vec2(
-      nodeVec2.x.add(localU).div(n),
-      nodeVec2.y.add(localV).div(n),
-    );
+    return faceUVFromTileLocal(tile, localU, localV);
   });
 
   const rootUVCompute = Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
@@ -155,11 +201,29 @@ export function createTileRender(uniforms: TerrainUniformsContext) {
  *
  * `localCoord` is `0` at the first inner vertex and `1` at the last.
  * `innerSegments` is `uInnerTileSegments` (edgeVertexCount − 3).
+ *
+ * Mirrors: {@link tileLocalToFieldUVNumber} (CPU).
  */
 export function tileLocalToFieldUV(
   localCoord: Node,
   innerSegments: Node,
 ): Node {
-  const edge = float(innerSegments).add(float(3));
-  return float(localCoord).mul(float(innerSegments)).add(float(1.5)).div(edge);
+  const edge = float(innerSegments).add(float(FIELD_EDGE_EXTRA_TEXELS));
+  return float(localCoord)
+    .mul(float(innerSegments))
+    .add(float(FIELD_INNER_TEXEL_OFFSET))
+    .div(edge);
+}
+
+/**
+ * CPU variant of {@link tileLocalToFieldUV} for snapshot-based queries.
+ *
+ * Mirrors: tileLocalToFieldUV (TSL). Keep the two formulas in sync.
+ */
+export function tileLocalToFieldUVNumber(
+  localCoord: number,
+  innerSegments: number,
+): number {
+  const edge = innerSegments + FIELD_EDGE_EXTRA_TEXELS;
+  return (localCoord * innerSegments + FIELD_INNER_TEXEL_OFFSET) / edge;
 }

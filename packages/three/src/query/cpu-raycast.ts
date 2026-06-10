@@ -104,20 +104,25 @@ function getTerrainBounds(config: CpuRaycastConfig): TerrainBounds {
  * When tile bounds are available, points that are clearly above the
  * tile's max elevation or below its min elevation return a conservative
  * signed distance without performing the expensive bilinear sample.
+ * Binary refinement passes `skipBoundsFastPath: true` to always get the
+ * full-precision bilinear elevation.
  */
-function terrainSignedDistanceFromBounds(
+function terrainSignedDistance(
   query: TerrainQuery,
   worldX: number,
   worldY: number,
   worldZ: number,
+  skipBoundsFastPath: boolean,
 ): number | undefined {
-  const tileBounds = query.getTileBounds(worldX, worldZ);
-  if (tileBounds) {
-    if (worldY > tileBounds.maxElevation) {
-      return worldY - tileBounds.maxElevation;
-    }
-    if (worldY < tileBounds.minElevation) {
-      return worldY - tileBounds.minElevation;
+  if (!skipBoundsFastPath) {
+    const tileBounds = query.getTileBounds(worldX, worldZ);
+    if (tileBounds) {
+      if (worldY > tileBounds.maxElevation) {
+        return worldY - tileBounds.maxElevation;
+      }
+      if (worldY < tileBounds.minElevation) {
+        return worldY - tileBounds.minElevation;
+      }
     }
   }
   const elevation = query.getElevation(worldX, worldZ);
@@ -125,19 +130,70 @@ function terrainSignedDistanceFromBounds(
   return worldY - (elevation as number);
 }
 
+type SignedDistanceAt = (px: number, py: number, pz: number) => number | undefined;
+
 /**
- * Full-precision signed distance using bilinear interpolation.
- * Used during binary refinement where we need exact elevation, not bounds.
+ * Generic surface march: step along the ray over `[startT, endT]`, and on a
+ * positive→non-positive signed-distance crossing binary-refine the crossing.
+ *
+ * Returns the parametric hit distance (`startT` when the ray already starts
+ * at/below the surface), or `null` when no crossing is found. `point` is a
+ * caller-provided scratch vector. `refineSignedDistanceAt` is sampled during
+ * refinement and may be a higher-precision variant of `stepSignedDistanceAt`.
  */
-function terrainSignedDistancePrecise(
-  query: TerrainQuery,
-  worldX: number,
-  worldY: number,
-  worldZ: number,
-): number | undefined {
-  const elevation = query.getElevation(worldX, worldZ);
-  if (!Number.isFinite(elevation)) return undefined;
-  return worldY - (elevation as number);
+function marchSignedDistance(
+  ray: Ray,
+  startT: number,
+  endT: number,
+  stepSignedDistanceAt: SignedDistanceAt,
+  refineSignedDistanceAt: SignedDistanceAt,
+  options: { maxSteps: number; refinementSteps: number },
+  point: Vector3,
+): number | null {
+  let prevT = startT;
+  ray.at(prevT, point);
+  let prevSignedDistance = stepSignedDistanceAt(point.x, point.y, point.z);
+
+  if (prevSignedDistance !== undefined && prevSignedDistance <= 0) {
+    return startT;
+  }
+
+  for (let i = 1; i <= options.maxSteps; i += 1) {
+    const t = startT + ((endT - startT) * i) / options.maxSteps;
+    ray.at(t, point);
+    const signedDistance = stepSignedDistanceAt(point.x, point.y, point.z);
+    if (signedDistance === undefined) {
+      prevSignedDistance = undefined;
+      prevT = t;
+      continue;
+    }
+
+    if (
+      prevSignedDistance !== undefined &&
+      prevSignedDistance > 0 &&
+      signedDistance <= 0
+    ) {
+      let lo = prevT;
+      let hi = t;
+      for (let r = 0; r < options.refinementSteps; r += 1) {
+        const mid = (lo + hi) * 0.5;
+        ray.at(mid, point);
+        const midDistance = refineSignedDistanceAt(point.x, point.y, point.z);
+        if (midDistance === undefined) {
+          lo = mid;
+          continue;
+        }
+        if (midDistance > 0) lo = mid;
+        else hi = mid;
+      }
+      return hi;
+    }
+
+    prevSignedDistance = signedDistance;
+    prevT = t;
+  }
+
+  return null;
 }
 
 export function cpuRaycast(
@@ -159,89 +215,34 @@ export function cpuRaycast(
   if (!segment) return null;
 
   const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
-  let startT = Math.max(0, segment.tMin);
+  const startT = Math.max(0, segment.tMin);
   const endT = Math.min(segment.tMax, maxDistance);
   if (endT < startT) return null;
 
-  const maxSteps = Math.max(8, options?.maxSteps ?? 128);
-  const refinementSteps = Math.max(1, options?.refinementSteps ?? 8);
-
   const point = new Vector3();
-  let prevT = startT;
-  ray.at(prevT, point);
-  let prevSignedDistance = terrainSignedDistanceFromBounds(
-    query,
-    point.x,
-    point.y,
-    point.z,
+  const hitT = marchSignedDistance(
+    ray,
+    startT,
+    endT,
+    (px, py, pz) => terrainSignedDistance(query, px, py, pz, false),
+    (px, py, pz) => terrainSignedDistance(query, px, py, pz, true),
+    {
+      maxSteps: Math.max(8, options?.maxSteps ?? 128),
+      refinementSteps: Math.max(1, options?.refinementSteps ?? 8),
+    },
+    point,
   );
+  if (hitT === null) return null;
 
-  if (prevSignedDistance !== undefined && prevSignedDistance <= 0) {
-    const sample = query.sampleTerrain(point.x, point.z);
-    if (!sample.valid) return null;
-    point.y = sample.elevation;
-    return {
-      position: point.clone(),
-      normal: sample.normal.clone(),
-      distance: ray.origin.distanceTo(point),
-    };
-  }
-
-  for (let i = 1; i <= maxSteps; i += 1) {
-    const t = startT + ((endT - startT) * i) / maxSteps;
-    ray.at(t, point);
-    const signedDistance = terrainSignedDistanceFromBounds(
-      query,
-      point.x,
-      point.y,
-      point.z,
-    );
-    if (signedDistance === undefined) {
-      prevSignedDistance = undefined;
-      prevT = t;
-      continue;
-    }
-
-    if (
-      prevSignedDistance !== undefined &&
-      prevSignedDistance > 0 &&
-      signedDistance <= 0
-    ) {
-      let lo = prevT;
-      let hi = t;
-      for (let r = 0; r < refinementSteps; r += 1) {
-        const mid = (lo + hi) * 0.5;
-        ray.at(mid, point);
-        const midDistance = terrainSignedDistancePrecise(
-          query,
-          point.x,
-          point.y,
-          point.z,
-        );
-        if (midDistance === undefined) {
-          lo = mid;
-          continue;
-        }
-        if (midDistance > 0) lo = mid;
-        else hi = mid;
-      }
-      const hitT = hi;
-      ray.at(hitT, point);
-      const sample = query.sampleTerrain(point.x, point.z);
-      if (!sample.valid) return null;
-      point.y = sample.elevation;
-      return {
-        position: point.clone(),
-        normal: sample.normal.clone(),
-        distance: ray.origin.distanceTo(point),
-      };
-    }
-
-    prevSignedDistance = signedDistance;
-    prevT = t;
-  }
-
-  return null;
+  ray.at(hitT, point);
+  const sample = query.sampleTerrain(point.x, point.z);
+  if (!sample.valid) return null;
+  point.y = sample.elevation;
+  return {
+    position: point.clone(),
+    normal: sample.normal.clone(),
+    distance: ray.origin.distanceTo(point),
+  };
 }
 
 export function cpuRaycastBoundsOnly(
@@ -347,60 +348,33 @@ export function cubeSphereRaycast(
   const endT = Math.min(shell.t1, maxDistance);
   if (endT < startT) return null;
 
-  const maxSteps = Math.max(8, options?.maxSteps ?? 256);
-  const refinementSteps = Math.max(1, options?.refinementSteps ?? 12);
-
   const scratchDir = new Vector3();
   const point = new Vector3();
-  let prevT = startT;
-  ray.at(prevT, point);
-  let prevSd = sphereSignedDistance(query, config, point.x, point.y, point.z, scratchDir);
+  const signedDistanceAt: SignedDistanceAt = (px, py, pz) =>
+    sphereSignedDistance(query, config, px, py, pz, scratchDir);
 
-  const finalize = (hitT: number): TerrainRaycastResult | null => {
-    ray.at(hitT, point);
-    const sample = query.sampleTerrainByPosition(point);
-    if (!sample.valid) return null;
-    return {
-      position: sample.position.clone(),
-      normal: sample.normal.clone(),
-      distance: ray.origin.distanceTo(sample.position),
-    };
+  const hitT = marchSignedDistance(
+    ray,
+    startT,
+    endT,
+    signedDistanceAt,
+    signedDistanceAt,
+    {
+      maxSteps: Math.max(8, options?.maxSteps ?? 256),
+      refinementSteps: Math.max(1, options?.refinementSteps ?? 12),
+    },
+    point,
+  );
+  if (hitT === null) return null;
+
+  ray.at(hitT, point);
+  const sample = query.sampleTerrainByPosition(point);
+  if (!sample.valid) return null;
+  return {
+    position: sample.position.clone(),
+    normal: sample.normal.clone(),
+    distance: ray.origin.distanceTo(sample.position),
   };
-
-  if (prevSd !== undefined && prevSd <= 0) {
-    return finalize(prevT);
-  }
-
-  for (let i = 1; i <= maxSteps; i += 1) {
-    const t = startT + ((endT - startT) * i) / maxSteps;
-    ray.at(t, point);
-    const sd = sphereSignedDistance(query, config, point.x, point.y, point.z, scratchDir);
-    if (sd === undefined) {
-      prevSd = undefined;
-      prevT = t;
-      continue;
-    }
-    if (prevSd !== undefined && prevSd > 0 && sd <= 0) {
-      let lo = prevT;
-      let hi = t;
-      for (let r = 0; r < refinementSteps; r += 1) {
-        const mid = (lo + hi) * 0.5;
-        ray.at(mid, point);
-        const midSd = sphereSignedDistance(query, config, point.x, point.y, point.z, scratchDir);
-        if (midSd === undefined) {
-          lo = mid;
-          continue;
-        }
-        if (midSd > 0) lo = mid;
-        else hi = mid;
-      }
-      return finalize(hi);
-    }
-    prevSd = sd;
-    prevT = t;
-  }
-
-  return null;
 }
 
 /** Coarse fallback: intersect the base sphere and return a radial-normal hit. */

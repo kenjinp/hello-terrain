@@ -66,6 +66,32 @@ export function tangentFromAxis(dir: Node, axis: Node): Node {
 }
 
 /**
+ * Reconstruct a unit tangent-space normal from its packed horizontal
+ * components: `ny = sqrt(max(0, 1 - nx² - nz²))`.
+ */
+export function unpackTangentNormal(nx: Node, nz: Node): Node {
+  const ny = float(1).sub(nx.mul(nx)).sub(nz.mul(nz)).max(float(0)).sqrt();
+  return vec3(nx, ny, nz);
+}
+
+/**
+ * Rotate a tangent-space normal into the sphere tangent frame
+ * `(tu, dir, tv)` at `dir` and normalize.
+ *
+ * Mirrors: the CPU `computeSphereNormal` in `query/cpu-terrain-cache.ts`.
+ */
+export function sphereTangentFrameNormal(
+  dir: Node,
+  basis: CubeFaceBasis,
+  tangentNormal: Node,
+): Node {
+  const n = vec3(tangentNormal);
+  const tu = tangentFromAxis(dir, basis.right);
+  const tv = tangentFromAxis(dir, basis.up);
+  return tu.mul(n.x).add(dir.mul(n.y)).add(tv.mul(n.z)).normalize();
+}
+
+/**
  * Pick the cube face index (0..5) whose normal axis dominates `dir`.
  * GPU mirror of `directionToFace` in `quadtree/surface/cubeSphereInverse.ts`.
  */

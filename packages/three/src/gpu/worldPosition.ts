@@ -10,33 +10,34 @@ import {
   vec3,
   vertexIndex,
 } from "three/tsl";
-import { cubeFaceBasis, cubeFaceDirection, tangentFromAxis } from "../nodes/cubeSphere";
+import {
+  cubeFaceBasis,
+  cubeFaceDirection,
+  sphereTangentFrameNormal,
+  unpackTangentNormal,
+} from "../nodes/cubeSphere";
 import type { SurfaceProjection } from "../quadtree";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
 import { loadTerrainFieldNormal, sampleTerrainFieldElevation } from "./terrainFieldStorage";
-import { tileLocalToFieldUV } from "./tile";
+import { decodeLeafTile, faceUVFromTileLocal, tileLocalToFieldUV } from "./tile";
 
 export function createTileBaseWorldPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
 ) {
   return Fn(() => {
-    const nodeIndex = int(instanceIndex);
-    const nodeOffset = nodeIndex.mul(int(4));
-    const nodeLevel = leafStorage.node.element(nodeOffset).toInt();
-    const nodeX = leafStorage.node.element(nodeOffset.add(int(1))).toFloat();
-    const nodeY = leafStorage.node.element(nodeOffset.add(int(2))).toFloat();
+    const tile = decodeLeafTile(leafStorage, int(instanceIndex));
 
     const rootSize = terrainUniforms.uRootSize.toVar();
     const rootOrigin = terrainUniforms.uRootOrigin.toVar();
     const half = float(0.5);
-    const size = rootSize.div(pow(float(2), nodeLevel.toFloat()));
+    const size = rootSize.div(pow(float(2), tile.level.toFloat()));
     const halfRoot = rootSize.mul(half);
 
-    const centerX = rootOrigin.x.add(nodeX.add(half).mul(size)).sub(halfRoot);
-    const centerZ = rootOrigin.z.add(nodeY.add(half).mul(size)).sub(halfRoot);
+    const centerX = rootOrigin.x.add(tile.x.add(half).mul(size)).sub(halfRoot);
+    const centerZ = rootOrigin.z.add(tile.y.add(half).mul(size)).sub(halfRoot);
     const clampedX = positionLocal.x.max(half.negate()).min(half);
     const clampedZ = positionLocal.z.max(half.negate()).min(half);
 
@@ -82,11 +83,8 @@ function loadTangentNormal(
   const ix = localVertexIndex.mod(edgeVertexCount);
   const iy = localVertexIndex.div(edgeVertexCount);
   const normalXZ = loadTerrainFieldNormal(terrainFieldStorage, ix, iy, nodeIndex);
-  const nx = normalXZ.x;
-  const nz = normalXZ.y;
-  const nySq = float(1).sub(nx.mul(nx)).sub(nz.mul(nz)).max(float(0));
-  const ny = nySq.sqrt();
-  return { ix, iy, nx, ny, nz };
+  const normal = unpackTangentNormal(normalXZ.x, normalXZ.y);
+  return { ix, iy, normal };
 }
 
 export function createTileLocalNormal(
@@ -99,35 +97,23 @@ export function createTileLocalNormal(
 
   if (projection === "cubeSphere") {
     return Fn(() => {
-      const { ix, iy, nx, ny, nz } = loadTangentNormal(terrainUniforms, terrainFieldStorage);
+      const { ix, iy, normal } = loadTangentNormal(terrainUniforms, terrainFieldStorage);
 
-      const nodeIndex = int(instanceIndex);
-      const nodeOffset = nodeIndex.mul(int(4));
-      const level = leafStorage.node.element(nodeOffset).toInt();
-      const nodeX = leafStorage.node.element(nodeOffset.add(int(1))).toFloat();
-      const nodeY = leafStorage.node.element(nodeOffset.add(int(2))).toFloat();
-      const face = leafStorage.node.element(nodeOffset.add(int(3))).toInt();
-
+      const tile = decodeLeafTile(leafStorage, int(instanceIndex));
       const innerSeg = terrainUniforms.uInnerTileSegments.toVar().toFloat();
       const localU = ix.toFloat().sub(float(1)).div(innerSeg).max(float(0)).min(float(1));
       const localV = iy.toFloat().sub(float(1)).div(innerSeg).max(float(0)).min(float(1));
-      const n = pow(float(2), level.toFloat());
-      const u = nodeX.add(localU).div(n);
-      const v = nodeY.add(localV).div(n);
+      const faceUV = faceUVFromTileLocal(tile, localU, localV);
 
-      const basis = cubeFaceBasis(face);
-      const dir = cubeFaceDirection(basis, u, v);
-      const tu = tangentFromAxis(dir, basis.right);
-      const tv = tangentFromAxis(dir, basis.up);
-
-      // Rotate the tangent-space normal into the sphere tangent frame.
-      return tu.mul(nx).add(dir.mul(ny)).add(tv.mul(nz)).normalize();
+      const basis = cubeFaceBasis(tile.face);
+      const dir = cubeFaceDirection(basis, faceUV.x, faceUV.y);
+      return sphereTangentFrameNormal(dir, basis, normal);
     })();
   }
 
   return Fn(() => {
-    const { nx, ny, nz } = loadTangentNormal(terrainUniforms, terrainFieldStorage);
-    return vec3(nx, ny, nz);
+    const { normal } = loadTangentNormal(terrainUniforms, terrainFieldStorage);
+    return normal;
   })();
 }
 
@@ -137,22 +123,15 @@ function createCubeSphereWorldPosition(
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
   return Fn(() => {
-    const nodeIndex = int(instanceIndex);
-    const nodeOffset = nodeIndex.mul(int(4));
-    const nodeLevel = leafStorage.node.element(nodeOffset).toInt();
-    const nodeX = leafStorage.node.element(nodeOffset.add(int(1))).toFloat();
-    const nodeY = leafStorage.node.element(nodeOffset.add(int(2))).toFloat();
-    const face = leafStorage.node.element(nodeOffset.add(int(3))).toInt();
+    const tile = decodeLeafTile(leafStorage, int(instanceIndex));
 
     const half = float(0.5);
-    const n = pow(float(2), nodeLevel.toFloat());
     const localU = positionLocal.x.max(half.negate()).min(half).add(half);
     const localV = positionLocal.z.max(half.negate()).min(half).add(half);
-    const u = nodeX.add(localU).div(n);
-    const v = nodeY.add(localV).div(n);
+    const faceUV = faceUVFromTileLocal(tile, localU, localV);
 
-    const basis = cubeFaceBasis(face);
-    const dir = cubeFaceDirection(basis, u, v);
+    const basis = cubeFaceBasis(tile.face);
+    const dir = cubeFaceDirection(basis, faceUV.x, faceUV.y);
 
     const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
     const baseRadius = terrainUniforms.uRadius.toVar().add(yElevation);

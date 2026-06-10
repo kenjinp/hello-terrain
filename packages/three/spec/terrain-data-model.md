@@ -202,6 +202,16 @@ flowchart TD
 
 This clone is intentional correctness protection, not incidental duplication.
 
+### CPU Query Module Layout
+
+`CpuTerrainCache` (`query/cpu-terrain-cache.ts`) is an assembler over focused modules:
+
+- `query/terrain-snapshot.ts`: double-buffered snapshot state plus the readback/swap lifecycle (owns the spatial-index clone above).
+- `query/tile-lookup.ts`: coarse-to-fine flat / face-UV / direction tile lookups against a snapshot index. CPU mirror of the TSL lookups in `query/gpuSpatialIndex.ts`.
+- `query/elevation-field-sampling.ts`: plain-number grid reads, bilinear sampling, and the shared central-difference elevation gradient. CPU mirror of the TSL normal derivation in `tasks/terrain-field.task.ts`.
+
+CPU/TSL mirror pairs are never merged across the boundary; they are co-located or cross-referenced (`Mirrors:` comments) with shared scalar constants in `gpu/tile.ts`.
+
 ## Task-Model Mapping (Canonical)
 
 - **Topology producer:** `quadtreeConfigTask`, `quadtreeUpdateTask`

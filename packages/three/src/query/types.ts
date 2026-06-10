@@ -41,6 +41,8 @@ export interface CreateTerrainSamplerParams {
   spatialIndex: GpuSpatialIndexContext;
   uniforms: TerrainUniformsContext;
   elevationCallback: ElevationCallback;
+  /** Maximum quadtree level to probe during tile lookup. */
+  maxLevel: number;
   projection?: import("../quadtree").SurfaceProjection;
 }
 
