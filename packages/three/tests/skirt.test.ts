@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { int } from "three/tsl";
-import { isSkirtVertex, isSkirtUV } from "../src/nodes/skirt.js";
+import { isSkirtVertex, isSkirtUV } from "../src/tsl/skirt.js";
 
 describe("skirt TSL nodes", () => {
   describe("isSkirtVertex", () => {

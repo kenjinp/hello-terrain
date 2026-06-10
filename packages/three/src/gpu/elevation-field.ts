@@ -1,10 +1,8 @@
-import { Fn, float, instanceIndex, int, max, min, vertexIndex } from "three/tsl";
+import { int } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TerrainUniformsContext } from "../types";
 import type { createTileCompute } from "./tile";
 import type { ElevationReturn } from "../tsl/elevation";
-import type { TerrainFieldStorage } from "./terrainFieldStorage";
-import { loadTerrainFieldElevation } from "./terrainFieldStorage";
 
 export const createElevation = (
   tile: ReturnType<typeof createTileCompute>,
@@ -35,43 +33,3 @@ export const createElevation = (
     });
   };
 };
-
-export const readElevationFieldVertex = (
-  terrainFieldStorage: TerrainFieldStorage,
-  edgeVertexCount: number,
-) =>
-  Fn(() => {
-    const intEdgeVertexCount = int(edgeVertexCount);
-    const localVertexIndex = int(vertexIndex);
-    const ix = localVertexIndex.mod(intEdgeVertexCount);
-    const iy = localVertexIndex.div(intEdgeVertexCount);
-    return loadTerrainFieldElevation(terrainFieldStorage, ix, iy, int(instanceIndex));
-  });
-
-export const readElevationFieldAtPositionLocal = (
-  terrainFieldStorage: TerrainFieldStorage,
-  edgeVertexCount: Node,
-  positionLocal: Node,
-) =>
-  Fn(() => {
-    const nodeIndex = int(instanceIndex);
-    const intEdge = int(edgeVertexCount);
-    const innerSegments = int(edgeVertexCount).sub(3);
-    const fInnerSegments = float(innerSegments);
-    const last = intEdge.sub(int(1));
-
-    const u = positionLocal.x.add(float(0.5));
-    const v = positionLocal.z.add(float(0.5));
-    const x = u.mul(fInnerSegments).round().toInt().add(int(1));
-    const y = v.mul(fInnerSegments).round().toInt().add(int(1));
-
-    const xClamped = min(max(x, int(0)), last);
-    const yClamped = min(max(y, int(0)), last);
-
-    return loadTerrainFieldElevation(
-      terrainFieldStorage,
-      xClamped,
-      yClamped,
-      nodeIndex,
-    );
-  });

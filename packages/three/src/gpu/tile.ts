@@ -1,7 +1,7 @@
-import { Fn, float, int, positionWorld, pow, vec2, vec3 } from "three/tsl";
+import { Fn, float, int, pow, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { SurfaceProjection } from "../quadtree";
-import { cubeFaceBasis, cubeFaceDirection } from "../nodes/cubeSphere";
+import { cubeFaceBasis, cubeFaceDirection } from "../tsl/cubeSphere";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
 /** A cube face spans ~PI/2 of arc on the sphere. */
@@ -173,25 +173,6 @@ export function createTileCompute(
     rootUVCompute,
     tileVertexWorldPositionCompute,
   };
-}
-
-export function createTileRender(uniforms: TerrainUniformsContext) {
-  const rootUV = Fn(() => {
-    const worldX = positionWorld.x;
-    const worldZ = positionWorld.z;
-    const centeredX = worldX.sub(uniforms.uRootOrigin.x);
-    const centeredZ = worldZ.sub(uniforms.uRootOrigin.z);
-    return vec2(
-      centeredX.div(uniforms.uRootSize).add(0.5),
-      centeredZ.div(uniforms.uRootSize).mul(-1.0).add(0.5),
-    );
-  }).setLayout({
-    name: "rootUV",
-    type: "vec2",
-    inputs: [],
-  });
-
-  return { rootUV };
 }
 
 /**

@@ -6,7 +6,7 @@ import {
   cubeFaceFromDirection,
   sphereTangentFrameNormal,
   unpackTangentNormal,
-} from "../nodes/cubeSphere";
+} from "../tsl/cubeSphere";
 import { createElevationFunction } from "../tsl/elevation";
 import {
   createTileIndexFromDirection,

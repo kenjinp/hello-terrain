@@ -22,7 +22,6 @@ import {
 } from "./terrain-snapshot";
 import type {
   ElevationRange,
-  TerrainElevationSample,
   TerrainSample,
   TerrainSampleBatch,
   TerrainSurfaceSample,
@@ -30,6 +29,11 @@ import type {
   TerrainTile,
   TerrainTileBounds,
 } from "./types";
+
+type TerrainElevationSample = {
+  elevation: number;
+  valid: boolean;
+};
 
 type TerrainQueryConfig = {
   rootSize: number;

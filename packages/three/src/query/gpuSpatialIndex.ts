@@ -6,7 +6,7 @@ import {
   cubeFaceBasis,
   cubeFaceFromDirection,
   cubeFaceUVFromDirection,
-} from "../nodes/cubeSphere";
+} from "../tsl/cubeSphere";
 import type { TerrainUniformsContext } from "../types";
 import type { GpuSpatialIndexContext } from "./types";
 

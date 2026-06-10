@@ -51,10 +51,6 @@ export interface TerrainSample {
   normal: Vector3;
   valid: boolean;
 }
-export interface TerrainElevationSample {
-  elevation: number;
-  valid: boolean;
-}
 export interface TerrainSampleBatch {
   elevations: Float32Array;
   normals: Float32Array;

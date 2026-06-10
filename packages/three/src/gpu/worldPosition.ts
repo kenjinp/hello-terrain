@@ -15,7 +15,7 @@ import {
   cubeFaceDirection,
   sphereTangentFrameNormal,
   unpackTangentNormal,
-} from "../nodes/cubeSphere";
+} from "../tsl/cubeSphere";
 import type { SurfaceProjection } from "../quadtree";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
@@ -23,7 +23,7 @@ import type { TerrainFieldStorage } from "./terrainFieldStorage";
 import { loadTerrainFieldNormal, sampleTerrainFieldElevation } from "./terrainFieldStorage";
 import { decodeLeafTile, faceUVFromTileLocal, tileLocalToFieldUV } from "./tile";
 
-export function createTileBaseWorldPosition(
+function createTileBaseWorldPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
 ) {
@@ -47,7 +47,7 @@ export function createTileBaseWorldPosition(
   });
 }
 
-export function createTileElevation(
+function createTileElevation(
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
@@ -60,7 +60,7 @@ export function createTileElevation(
   );
 }
 
-export function createNormalAssignment(
+function createNormalAssignment(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
@@ -87,7 +87,7 @@ function loadTangentNormal(
   return { ix, iy, normal };
 }
 
-export function createTileLocalNormal(
+function createTileLocalNormal(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
