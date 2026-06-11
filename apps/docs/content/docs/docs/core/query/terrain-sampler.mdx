@@ -34,6 +34,17 @@ The sampler object provides:
 - `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation (full accuracy, slow)
 - `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from evaluated elevation (slowest)
 
+### Cube-sphere samplers
+
+When the active topology is a cube sphere, the sampler also exposes
+direction-based nodes (a `direction` is a `vec3` from the planet center). These
+are `undefined` on flat topologies:
+
+- `sampleTerrainByDirection(direction)` // packed `(elevation, nx, ny, nz)`
+- `sampleElevationByDirection(direction)`
+- `sampleNormalByDirection(direction)` // world-space normal in the sphere tangent frame
+- `sampleValidityByDirection(direction)`
+
 ## Example: scatter instances aligned to terrain
 
 ```ts

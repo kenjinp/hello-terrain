@@ -4,7 +4,7 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { Terrain, useTerrain } from "@hello-terrain/react";
 import { type ElevationCallback } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
-import { Canvas } from "@react-three/fiber";
+import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useMemo } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
@@ -26,6 +26,8 @@ import {
   vec4,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
+
+extend({ MeshBasicNodeMaterial: THREE.MeshBasicNodeMaterial });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 

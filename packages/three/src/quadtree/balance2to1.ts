@@ -3,7 +3,7 @@ import { type QuadtreeState } from "./state";
 import { refineLeaves } from "./refine";
 import { buildLeafIndex } from "./leafIndex";
 import { lookupSpatialIndexRaw } from "./spatialIndex";
-import { Dir, type LeafSet, type Surface, U32_EMPTY, type UpdateParams } from "./types";
+import { Dir, type LeafSet, type Topology, U32_EMPTY, type UpdateParams } from "./types";
 
 function resetSplitMarks(state: QuadtreeState): void {
   state.splitGen = (state.splitGen + 1) & 0xffff;
@@ -28,7 +28,7 @@ function scheduleSplit(state: QuadtreeState, nodeId: number, count: number): num
  */
 export function balance2to1(
   state: QuadtreeState,
-  surface: Surface,
+  topology: Topology,
   params: UpdateParams,
   leaves: LeafSet,
 ): LeafSet {
@@ -62,7 +62,7 @@ export function balance2to1(
           tile.y = leafY >>> shift;
 
           const neighbor = state.scratchNeighbor;
-          if (!surface.neighborSameLevel(tile, dir as Dir, neighbor)) break;
+          if (!topology.neighborSameLevel(tile, dir as Dir, neighbor)) break;
 
           const j = lookupSpatialIndexRaw(
             index,
@@ -93,7 +93,7 @@ export function balance2to1(
     if (!anySplit) return leaves;
 
     // Recompute leaves after forced splits.
-    refineLeaves(state, surface, params, leaves);
+    refineLeaves(state, topology, params, leaves);
   }
 
   return leaves;

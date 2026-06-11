@@ -1,6 +1,6 @@
-import { Dir, type Surface, type TileBounds, type TileId } from "../types";
+import { Dir, type TileBounds, type TileId, type Topology } from "../types";
 
-export type InfiniteFlatSurfaceConfig = {
+export type InfiniteFlatTopologyConfig = {
   rootSize: number;
   origin: { x: number; y: number; z: number };
   /** optional conservative vertical extent, included in bounds radius */
@@ -9,7 +9,7 @@ export type InfiniteFlatSurfaceConfig = {
   rootGridRadius?: number;
 };
 
-export function createInfiniteFlatSurface(cfg: InfiniteFlatSurfaceConfig): Surface {
+export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Topology {
   const halfRoot = 0.5 * cfg.rootSize;
   const maxHeight = cfg.maxHeight ?? 0;
   const rootGridRadius = Math.max(0, Math.floor(cfg.rootGridRadius ?? 1));

@@ -1,6 +1,6 @@
 import { buildLeafIndex, type SpatialIndex } from "./leafIndex";
 import { lookupSpatialIndexRaw } from "./spatialIndex";
-import { Dir, type LeafSet, type SeamTable, type Surface, type TileId, U32_EMPTY } from "./types";
+import { Dir, type LeafSet, type SeamTable, type TileId, type Topology, U32_EMPTY } from "./types";
 
 // Module-scope scratch (no per-call allocations). Not re-entrant by design.
 const scratchTile: TileId = { space: 0, level: 0, x: 0, y: 0 };
@@ -15,7 +15,7 @@ const scratchParentNbr: TileId = { space: 0, level: 0, x: 0, y: 0 };
  * Layout: neighbors[leafIndex * 8 + edge*2 + slot].
  */
 export function buildSeams2to1(
-  surface: Surface,
+  topology: Topology,
   leaves: LeafSet,
   outSeams: SeamTable,
   outIndex?: SpatialIndex,
@@ -43,13 +43,13 @@ export function buildSeams2to1(
       neighbors[outOffset + 1] = U32_EMPTY;
 
       // Same-level neighbor tile id.
-      // Note: surface handles cross-space edges.
+      // Note: topology handles cross-space edges.
       scratchTile.space = space;
       scratchTile.level = level;
       scratchTile.x = x;
       scratchTile.y = y;
 
-      if (!surface.neighborSameLevel(scratchTile, dir as Dir, scratchNbr)) continue;
+      if (!topology.neighborSameLevel(scratchTile, dir as Dir, scratchNbr)) continue;
 
       // 1) same-level neighbor leaf
       let j = lookupSpatialIndexRaw(index, scratchNbr.space, scratchNbr.level, scratchNbr.x, scratchNbr.y);
@@ -68,7 +68,7 @@ export function buildSeams2to1(
         scratchParentTile.x = px;
         scratchParentTile.y = py;
 
-        if (surface.neighborSameLevel(scratchParentTile, dir as Dir, scratchParentNbr)) {
+        if (topology.neighborSameLevel(scratchParentTile, dir as Dir, scratchParentNbr)) {
           j = lookupSpatialIndexRaw(
             index,
             scratchParentNbr.space,

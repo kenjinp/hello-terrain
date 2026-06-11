@@ -103,6 +103,62 @@ if (range) {
 
 This is used internally by the raycast system to derive a tight AABB instead of a conservative estimate.
 
+## Cube-sphere queries
+
+The `TerrainQuery` above describes a flat heightfield keyed on world XZ. On a
+cube-sphere surface there is no single ground plane, so cube-sphere sampling
+lives on a **separate** `TerrainSphereQuery` rather than being overloaded onto
+`TerrainQuery`. A surface location is identified by a **direction from the
+planet center**:
+
+```ts
+// flat
+const { query, sphereQuery } = graph.get(terrainTasks.terrainQuery);
+// react: const { query, sphereQuery } = terrain.runtime;
+```
+
+`sphereQuery` is `null` unless the active topology uses the `cubeSphere`
+projection. Each getter comes in three explicit variants — no argument
+overloading:
+
+- `...ByDirection(direction)` — `direction` is a `THREE.Vector3` from the planet center (normalized internally). This is the canonical form.
+- `...ByPosition(position)` — any world-space `THREE.Vector3`; it is projected onto its direction from the center.
+- `...ByLatLong(latitudeDeg, longitudeDeg)` — degrees, latitude `[-90, 90]`, longitude `[-180, 180]`. Latitude is measured from the equator toward +Y (north pole); longitude is measured from +Z toward +X.
+
+The variants exist for `getElevation`, `getNormal`, `sampleTerrain`, `getTile`,
+and `getTileBounds`, plus a `sampleTerrainBatchByDirection(directions)` batch
+(xyz triples).
+
+`sampleTerrain*` returns a `TerrainSurfaceSample`:
+
+```ts
+interface TerrainSurfaceSample {
+  position: Vector3; // center + direction * (radius + elevation)
+  normal: Vector3; // world-space surface normal
+  direction: Vector3; // unit direction used for the lookup
+  elevation: number; // radial displacement above the base radius (scaled)
+  valid: boolean;
+}
+```
+
+```ts
+// Snap an object to the planet surface at a lat/long.
+const sample = sphereQuery.sampleTerrainByLatLong(20, 40);
+if (sample.valid) {
+  object.position.copy(sample.position);
+  object.quaternion.setFromUnitVectors(object.up, sample.normal);
+}
+
+// Project an arbitrary world position down onto the terrain.
+const ground = sphereQuery.sampleTerrainByPosition(camera.position);
+
+// Elevation only (radial displacement above the base radius).
+const elevation = sphereQuery.getElevationByDirection(new Vector3(0, 1, 0));
+```
+
+For cube-sphere tile bounds, `minElevation` / `maxElevation` are radial
+displacements above the base radius (not absolute world Y).
+
 ## Freshness and startup behavior
 
 - `graph.get(terrainTasks.terrainQuery)` always returns a `TerrainQueryContext`. Before the first successful readback, individual queries return `{ valid: false }`.

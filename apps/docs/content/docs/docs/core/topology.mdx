@@ -1,0 +1,235 @@
+---
+title: Topology Types
+description: Flat, infinite flat, and cube-sphere topologies — what each one does, their APIs, and how to set them up in a react-three/fiber scene
+---
+
+A **topology** defines the terrain's tile layout and bounds behavior. It tells the quadtree how root tiles are laid out, how neighboring tiles connect (including across edges), and how conservative bounds are computed for LOD decisions. For spheres it also selects the GPU projection used to assemble world positions and normals.
+
+Hello Terrain ships three topologies:
+
+| Topology | Factory | Spaces | Shape |
+|:--|:--|:--|:--|
+| **Bounded flat** | `createFlatTopology` | 1 root | A single finite tile in the XZ plane (the default). |
+| **Infinite flat** | `createInfiniteFlatTopology` | 1 space | A camera-centered grid of roots that extends forever. |
+| **Cube-sphere** | `createCubeSphereTopology` | 6 roots | Six quadtree faces wrapped onto a sphere to form a planet. |
+
+All three are imported from `@hello-terrain/three` and assigned through the [`topology` param](/docs/core/params).
+
+## How a Topology Is Selected
+
+The terrain graph reads the `topology` param to derive its tile layout. When `topology` is `null` (the default), the graph falls back to a bounded flat topology built from `rootSize` and `origin`:
+
+```ts
+import { topology, createInfiniteFlatTopology } from "@hello-terrain/three";
+
+// Default: leave `topology` unset → bounded flat topology from rootSize/origin.
+
+// Or assign an explicit topology:
+graph.set(topology, () =>
+  createInfiniteFlatTopology({ rootSize: 256, origin: { x: 0, y: 0, z: 0 } }),
+);
+```
+
+In `@hello-terrain/react`, the same value is passed as the `topology` option/prop on `useTerrain()` and `<Terrain>`.
+
+<Callout>
+  `graph.set(topology, () => createInfiniteFlatTopology(...))` takes graph-local ownership of the param. This is the idiomatic `@hello-terrain/work` pattern that lets multiple terrain instances coexist without sharing topology state.
+</Callout>
+
+## Flat Topology (default)
+
+`createFlatTopology` produces a single finite root tile lying in the XZ plane. Elevation displaces vertices along `+Y`. This is what you get when you leave `topology` unset, so most simple scenes never call it directly.
+
+```ts
+import { createFlatTopology } from "@hello-terrain/three";
+
+const flat = createFlatTopology({
+  rootSize: 256,
+  origin: { x: 0, y: 0, z: 0 },
+  maxHeight: 50,
+});
+```
+
+### `FlatTopologyConfig`
+
+| Field | Type | Default | Description |
+|:--|:--|:--|:--|
+| `rootSize` | `number` | — | World-space size of the root tile edge. The tile covers `[-rootSize/2, +rootSize/2]` around `origin` in X/Z. |
+| `origin` | `{ x, y, z }` | — | World-space origin of the root tile. |
+| `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius, so tall terrain isn't culled too early. |
+
+Because the topology is bounded, `neighborSameLevel` returns `false` at the outer edges — there is no terrain beyond the root tile.
+
+## Infinite Flat Topology
+
+`createInfiniteFlatTopology` extends a flat topology infinitely by placing a grid of root tiles centered on the camera. As the camera moves, the root grid re-centers so terrain is always present in every direction.
+
+```ts
+import { createInfiniteFlatTopology } from "@hello-terrain/three";
+
+const infinite = createInfiniteFlatTopology({
+  rootSize: 256,
+  origin: { x: 0, y: 0, z: 0 },
+  rootGridRadius: 1,
+  maxHeight: 50,
+});
+```
+
+### `InfiniteFlatTopologyConfig`
+
+| Field | Type | Default | Description |
+|:--|:--|:--|:--|
+| `rootSize` | `number` | — | World-space size of each root tile edge. |
+| `origin` | `{ x, y, z }` | — | World-space origin of the root grid. |
+| `rootGridRadius` | `number` | `1` | Half-width of the root grid in root tiles. `1` → a 3×3 grid, `2` → 5×5, etc. |
+| `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius. |
+
+### Key differences from bounded flat
+
+- **No boundary** — `neighborSameLevel` always succeeds, so a tile at the edge of one root connects seamlessly to a tile in the neighboring root.
+- **Camera-centered roots** — `rootTiles` recomputes which level-0 tiles surround the camera each frame.
+- **Signed tile coordinates** — roots can have negative `(x, y)` positions when the camera is near the origin.
+
+See the [Infinite Flat Terrain example](/docs/examples/infinite-flat) for an interactive demo.
+
+## Cube-Sphere Topology
+
+`createCubeSphereTopology` wraps six independent quadtree faces around a sphere to produce a full planet. Each face refines toward the camera with the same LOD machinery as the flat topologies, and the topology stitches faces together so the planet behaves as one continuous surface.
+
+```ts
+import { createCubeSphereTopology } from "@hello-terrain/three";
+
+const planet = createCubeSphereTopology({
+  radius: 1000,
+  center: { x: 0, y: 0, z: 0 },
+  maxHeight: 100,
+});
+```
+
+### `CubeSphereTopologyConfig`
+
+| Field | Type | Default | Description |
+|:--|:--|:--|:--|
+| `radius` | `number` | — | Sphere radius in world units. |
+| `center` | `{ x, y, z }` | `{ 0, 0, 0 }` | Planet center in world space. |
+| `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius. |
+
+Unlike the flat topologies, the cube-sphere reports `projection: "cubeSphere"` along with its `radius` and `center`. The GPU position pipeline uses this to map each tile vertex from its face-local `(u, v)` onto the cube, normalize it onto the unit sphere, scale by `radius`, and displace it radially by elevation. Normals are rebuilt in the per-vertex sphere tangent frame so lighting follows the planet's curvature.
+
+Cross-face topology (`neighborSameLevel`) is derived numerically from a shared cube-face basis, so tiles that cross a face edge — including the rotated edges near the poles — resolve to the correct neighbor for 2:1 balancing and seam filling.
+
+See the [Cube-Sphere Planet example](/docs/examples/cube-sphere) for an interactive demo.
+
+## The `Topology` Type
+
+All three factories return the same `Topology` shape. You rarely implement this by hand, but it's useful to know what the quadtree consumes:
+
+```ts
+type TopologyProjection = "flat" | "cubeSphere";
+
+type Topology = {
+  spaceCount: number;
+  maxRootCount: number;
+  projection?: TopologyProjection; // defaults to "flat" when absent
+  radius?: number;                 // cube-sphere only
+  center?: { x: number; y: number; z: number }; // cube-sphere only
+
+  neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean;
+  tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void;
+  rootTiles(cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number;
+};
+```
+
+- `spaceCount` — number of independent root spaces (1 for flat topologies, 6 for the cube-sphere's faces).
+- `maxRootCount` — the maximum number of roots `rootTiles` can emit in a frame.
+- `neighborSameLevel` — fills the same-level neighbor in a direction; returns `false` when there is no neighbor (e.g. the edge of a bounded topology).
+- `tileBounds` — writes a conservative, camera-relative bounding sphere used for LOD decisions.
+- `rootTiles` — fills the active level-0 tiles for the current frame and returns the count.
+
+## Setting Up a Topology in react-three/fiber
+
+There are two ways to wire a topology into an R3F scene, depending on which API you use.
+
+### High-level: `<Terrain>` / `useTerrain()`
+
+The React bindings accept `topology` as an option. Pass a memoized topology so it isn't recreated every render:
+
+```tsx
+import { Terrain } from "@hello-terrain/react";
+import { createCubeSphereTopology } from "@hello-terrain/three";
+import { Canvas } from "@react-three/fiber";
+import { useMemo } from "react";
+import { float } from "three/tsl";
+import * as THREE from "three/webgpu";
+import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
+
+const elevation = () => float(0);
+
+export function Planet() {
+  const topology = useMemo(
+    () => createCubeSphereTopology({ radius: 1000, center: { x: 0, y: 0, z: 0 } }),
+    [],
+  );
+
+  return (
+    <Canvas
+      gl={async (props) => {
+        const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+        await renderer.init();
+        return renderer;
+      }}
+      camera={{ position: [0, 0, 3000], near: 0.1, far: Number.MAX_SAFE_INTEGER }}
+    >
+      <ambientLight intensity={0.15} />
+      <directionalLight intensity={1} position={[1, 1, 1]} />
+
+      <Terrain topology={topology} radius={1000} maxLevel={12} elevation={elevation}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
+    </Canvas>
+  );
+}
+```
+
+Swapping `createCubeSphereTopology` for `createInfiniteFlatTopology` (or omitting `topology` entirely for the default bounded flat) is all that changes between flat and sphere scenes — the rest of the rendering pipeline stays the same.
+
+### Low-level: setting the `topology` param on a graph
+
+When you drive a `terrainGraph()` directly, set the `topology` param yourself. Re-assign it from an effect whenever the topology config changes:
+
+```tsx
+import {
+  createInfiniteFlatTopology,
+  topology,
+  terrainGraph,
+} from "@hello-terrain/three";
+import { useEffect, useMemo } from "react";
+
+function useInfiniteFlatGraph(rootSize: number, rootGridRadius: number) {
+  const g = useMemo(() => terrainGraph(), []);
+
+  useEffect(() => {
+    g.set(topology, () =>
+      createInfiniteFlatTopology({
+        rootSize,
+        origin: { x: 0, y: 0, z: 0 },
+        rootGridRadius,
+      }),
+    );
+  }, [g, rootSize, rootGridRadius]);
+
+  return g;
+}
+```
+
+Because the `topology` param feeds the `topologyTask`, re-assigning it re-derives the quadtree tile layout and keeps CPU LOD and GPU geometry in sync. The [Infinite Flat](/docs/examples/infinite-flat) and [Cube-Sphere Planet](/docs/examples/cube-sphere) example sources show this pattern end to end.
+
+## Related Pages
+
+- [Params](/docs/core/params) — the `topology` param and the rest of the terrain graph inputs
+- [Getting Started](/docs/react/getting-started) — the smallest R3F terrain scene
+- [useTerrain](/docs/react/use-terrain) — the React handle that accepts a `topology` option
+- [Infinite Flat Terrain](/docs/examples/infinite-flat) — interactive infinite flat demo
+- [Cube-Sphere Planet](/docs/examples/cube-sphere) — interactive planet demo

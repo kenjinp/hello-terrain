@@ -6,32 +6,12 @@ import { terrainFieldStageTask } from "./terrain-field.task";
 import { innerTileSegments } from "./params";
 import { leafGpuBufferTask } from "./quadtree.task";
 
-/** Default compile task — uses terrainFieldStageTask as the leaf. */
-export const compileComputeTask = task((get, work) => {
-  const pipeline = get(terrainFieldStageTask);
-  const edgeVertexCount = get(innerTileSegments) + 3;
-
-  return work(() =>
-    compileComputePipeline(pipeline, edgeVertexCount, {
-      preferSingleKernelWhenPossible: false,
-    }),
-  );
-}).displayName("compileComputeTask");
-
-/** Default execute task — dispatches the compiled kernel. */
-export const executeComputeTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
-    const { execute } = get(compileComputeTask);
-    const leafState = get(leafGpuBufferTask);
-    return work(() =>
-      resources?.renderer
-        ? execute(resources.renderer, leafState.count)
-        : () => {},
-    );
-  },
-)
-  .displayName("executeComputeTask")
-  .lane("gpu");
+/**
+ * Default compile + execute tasks — uses terrainFieldStageTask as the leaf.
+ * Derived from the same factory as user pipelines to avoid duplicated logic.
+ */
+export const { compile: compileComputeTask, execute: executeComputeTask } =
+  createComputePipelineTasks(terrainFieldStageTask);
 
 /**
  * Factory for user-extensible pipelines.

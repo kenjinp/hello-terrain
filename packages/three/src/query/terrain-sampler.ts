@@ -1,51 +1,70 @@
 import { Fn, float, int, vec2, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { sampleTerrainField } from "../gpu/terrainFieldStorage";
-import { maxLevel } from "../tasks/params";
+import {
+  cubeFaceBasis,
+  cubeFaceFromDirection,
+  sphereTangentFrameNormal,
+  unpackTangentNormal,
+} from "../tsl/cubeSphere";
 import { createElevationFunction } from "../tsl/elevation";
-import { createTileIndexFromWorldPosition } from "./gpuSpatialIndex";
+import {
+  createTileIndexFromDirection,
+  createTileIndexFromWorldPosition,
+} from "./gpuSpatialIndex";
 import type { CreateTerrainSamplerParams, TerrainSampler } from "./types";
 import { tileLocalToFieldUV } from "../gpu/tile";
+
+/**
+ * Shared sample body: turns a tile-lookup result `vec3(tileIndex, u, v)` into
+ * the packed sample `vec4(elevation, nx, ny, nz)` (zeroed when no tile covers
+ * the location).
+ */
+function packedSampleFromTileResult(
+  params: CreateTerrainSamplerParams,
+  tileResult: Node,
+): Node {
+  const tileIndex = int(tileResult.x).toVar();
+  const safeTileIndex = tileIndex.max(int(0)).toVar();
+  const fieldU = tileLocalToFieldUV(
+    tileResult.y,
+    params.uniforms.uInnerTileSegments,
+  ).toVar();
+  const fieldV = tileLocalToFieldUV(
+    tileResult.z,
+    params.uniforms.uInnerTileSegments,
+  ).toVar();
+  const found = tileIndex.greaterThanEqual(int(0)).toVar();
+
+  const sampled = sampleTerrainField(
+    params.terrainFieldStorage,
+    fieldU,
+    fieldV,
+    safeTileIndex,
+  ).toVar();
+  const normal = unpackTangentNormal(sampled.g, sampled.b);
+
+  const valid = found.select(float(1), float(0)).toVar();
+  return vec4(sampled.r, normal.x, normal.y, normal.z).mul(valid);
+}
 
 function createTerrainSampleNode(params: CreateTerrainSamplerParams) {
   const tileLookup = createTileIndexFromWorldPosition(
     params.spatialIndex,
     params.uniforms,
-    maxLevel.get(),
+    params.maxLevel,
   );
   return Fn(([worldX, worldZ]: [Node, Node]) => {
     const tileResult = tileLookup(worldX, worldZ).toVar();
-    const tileIndex = int(tileResult.x).toVar();
-    const safeTileIndex = tileIndex.max(int(0)).toVar();
-    const u = tileResult.y.toVar();
-    const v = tileResult.z.toVar();
-    const fieldU = tileLocalToFieldUV(
-      u,
-      params.uniforms.uInnerTileSegments,
-    ).toVar();
-    const fieldV = tileLocalToFieldUV(
-      v,
-      params.uniforms.uInnerTileSegments,
-    ).toVar();
-    const found = tileIndex.greaterThanEqual(int(0)).toVar();
+    return packedSampleFromTileResult(params, tileResult);
+  });
+}
 
-    const sampled = sampleTerrainField(
-      params.terrainFieldStorage,
-      fieldU,
-      fieldV,
-      safeTileIndex,
-    ).toVar();
-    const nx = sampled.g.toVar();
-    const nz = sampled.b.toVar();
-    const ny = float(1).sub(nx.mul(nx)).sub(nz.mul(nz)).max(0).sqrt();
-
-    const valid = found.select(float(1), float(0)).toVar();
-    return vec4(
-      sampled.r.mul(valid),
-      nx.mul(valid),
-      ny.mul(valid),
-      nz.mul(valid),
-    );
+function createTerrainSampleNodeByDirection(params: CreateTerrainSamplerParams) {
+  const tileLookup = createTileIndexFromDirection(params.spatialIndex, params.maxLevel);
+  return Fn(([direction]: [Node]) => {
+    const tileResult = tileLookup(direction).toVar();
+    return packedSampleFromTileResult(params, tileResult);
   });
 }
 
@@ -82,21 +101,19 @@ export function createTerrainSampler(
   const sampleElevation = Fn(
     ([worldX, worldZ]: [Node, Node]) => terrainSampleAt(worldX, worldZ).x,
   );
-  const sampleNormal = Fn(([worldX, worldZ]: [Node, Node]) =>
-    vec3(
-      terrainSampleAt(worldX, worldZ).y,
-      terrainSampleAt(worldX, worldZ).z,
-      terrainSampleAt(worldX, worldZ).w,
-    ),
-  );
-  const sampleValidity = Fn(([worldX, worldZ]: [Node, Node]) =>
-    terrainSampleAt(worldX, worldZ)
-      .y.abs()
-      .add(terrainSampleAt(worldX, worldZ).z.abs())
-      .add(terrainSampleAt(worldX, worldZ).w.abs())
+  const sampleNormal = Fn(([worldX, worldZ]: [Node, Node]) => {
+    const sample = terrainSampleAt(worldX, worldZ).toVar();
+    return vec3(sample.y, sample.z, sample.w);
+  });
+  const sampleValidity = Fn(([worldX, worldZ]: [Node, Node]) => {
+    const sample = terrainSampleAt(worldX, worldZ).toVar();
+    return sample.y
+      .abs()
+      .add(sample.z.abs())
+      .add(sample.w.abs())
       .greaterThan(float(0))
-      .select(float(1), float(0)),
-  );
+      .select(float(1), float(0));
+  });
   const evaluateElevation = Fn(([worldX, worldZ]: [Node, Node]) =>
     evaluateElevationAt(worldX, worldZ),
   );
@@ -125,7 +142,7 @@ export function createTerrainSampler(
   const evaluateNormal = (worldX: Node, worldZ: Node, epsilon?: Node) =>
     evaluateNormalNode(worldX, worldZ, epsilon ?? float(0.1));
 
-  return {
+  const sampler: TerrainSampler = {
     sampleElevation,
     sampleNormal,
     sampleTerrain,
@@ -133,4 +150,31 @@ export function createTerrainSampler(
     evaluateElevation,
     evaluateNormal,
   };
+
+  if (params.projection === "cubeSphere") {
+    const terrainSampleByDir = createTerrainSampleNodeByDirection(params);
+    sampler.sampleTerrainByDirection = Fn(([direction]: [Node]) =>
+      terrainSampleByDir(direction),
+    );
+    sampler.sampleElevationByDirection = Fn(
+      ([direction]: [Node]) => terrainSampleByDir(direction).x,
+    );
+    sampler.sampleValidityByDirection = Fn(([direction]: [Node]) => {
+      const sample = terrainSampleByDir(direction).toVar();
+      return sample.y
+        .abs()
+        .add(sample.z.abs())
+        .add(sample.w.abs())
+        .greaterThan(float(0))
+        .select(float(1), float(0));
+    });
+    sampler.sampleNormalByDirection = Fn(([direction]: [Node]) => {
+      const dir = vec3(direction).normalize().toVar();
+      const packed = terrainSampleByDir(direction).toVar();
+      const basis = cubeFaceBasis(cubeFaceFromDirection(dir));
+      return sphereTangentFrameNormal(dir, basis, vec3(packed.y, packed.z, packed.w));
+    });
+  }
+
+  return sampler;
 }

@@ -2,6 +2,11 @@ import { storage, Break, Fn, If, Loop, float, int, pow, uint, uniform, vec3 } fr
 import { StorageBufferAttribute } from "three/webgpu";
 import type { Node } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
+import {
+  cubeFaceBasis,
+  cubeFaceFromDirection,
+  cubeFaceUVFromDirection,
+} from "../tsl/cubeSphere";
 import type { TerrainUniformsContext } from "../types";
 import type { GpuSpatialIndexContext } from "./types";
 
@@ -163,6 +168,53 @@ export const createTileIndexFromWorldPosition = (
         tileIndex.assign(maybeIndex);
         tileU.assign(worldX.sub(minX).div(tileSize));
         tileV.assign(worldZ.sub(minZ).div(tileSize));
+        Break();
+      });
+
+      i.addAssign(1);
+    });
+
+    return vec3(tileIndex.toFloat(), tileU, tileV);
+  });
+};
+
+/**
+ * Cube-sphere counterpart of {@link createTileIndexFromWorldPosition}: maps a
+ * direction from the planet center to `(tileIndex, faceU, faceV)`. The face
+ * index becomes the spatial-index `space` key.
+ */
+export const createTileIndexFromDirection = (
+  spatialIndex: GpuSpatialIndexContext,
+  maxLevel: number,
+) => {
+  const lookup = createGpuSpatialLookup(spatialIndex);
+  const levelCount = Math.max(1, maxLevel + 1);
+
+  return Fn(([direction]: [Node]) => {
+    const dir = vec3(direction).normalize().toVar();
+    const face = cubeFaceFromDirection(dir).toVar();
+    const basis = cubeFaceBasis(face);
+    const faceUV = cubeFaceUVFromDirection(basis, dir).toVar();
+    const u = faceUV.x.toVar();
+    const v = faceUV.y.toVar();
+
+    const tileIndex = int(-1).toVar();
+    const tileU = float(0).toVar();
+    const tileV = float(0).toVar();
+    const i = int(0).toVar();
+
+    Loop(levelCount, () => {
+      const level = int(maxLevel).sub(i).toVar();
+      const n = pow(float(2), level.toFloat()).toVar();
+      const nInt = int(n).toVar();
+      const tileX = u.mul(n).floor().toInt().max(int(0)).min(nInt.sub(int(1))).toVar();
+      const tileY = v.mul(n).floor().toInt().max(int(0)).min(nInt.sub(int(1))).toVar();
+      const maybeIndex = lookup(face, level, tileX, tileY).toVar();
+
+      If(maybeIndex.greaterThanEqual(int(0)), () => {
+        tileIndex.assign(maybeIndex);
+        tileU.assign(u.mul(n).sub(tileX.toFloat()));
+        tileV.assign(v.mul(n).sub(tileY.toFloat()));
         Break();
       });
 

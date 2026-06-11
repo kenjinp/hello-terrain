@@ -27,6 +27,20 @@ Prefer names that reflect **what data is** and **how it is stored**.
   - `createElevationFieldContextTask`
   - `elevationFieldStageTask`
 
+## Topology Terminology
+
+- Use `Topology` (not `Surface`) for the pluggable adapter that defines tile
+  topology: root tiles, same-level neighbors (including cross-face edges),
+  conservative bounds, and the GPU `projection`. This avoids confusion with
+  the geometric "terrain surface" and with texturing.
+- Preferred examples:
+  - `Topology` (the adapter type), `TopologyProjection`
+  - `createFlatTopology`, `createInfiniteFlatTopology`, `createCubeSphereTopology`
+  - `FlatTopologyConfig`, `InfiniteFlatTopologyConfig`, `CubeSphereTopologyConfig`
+  - the `topology` param and `topologyTask`
+- Reserve `surface` wording for the actual displaced terrain surface, e.g.
+  geometric query results (`TerrainSurfaceSample`) and "surface normal".
+
 ## Task Naming
 
 - Task symbols should end with `Task`.

@@ -5,13 +5,13 @@ import type { ComputePipeline } from "../gpu/compute";
 import { createElevation } from "../gpu/elevation-field";
 import { createTileCompute } from "../gpu/tile";
 import { elevationFn, innerTileSegments, maxNodes } from "./params";
-import { leafStorageTask } from "./quadtree.task";
+import { leafStorageTask, topologyTask } from "./quadtree.task";
 import { createElevationFunction } from "../tsl/elevation";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 export const createElevationFieldContextTask = task((get, work) => {
   const edgeVertexCount = get(innerTileSegments) + 3;
-  const verticesPerNode = edgeVertexCount * edgeVertexCount; // 289
+  const verticesPerNode = edgeVertexCount * edgeVertexCount;
   const totalElements = get(maxNodes) * verticesPerNode;
   return work(() => {
     const data = new Float32Array(totalElements);
@@ -29,8 +29,9 @@ export const createElevationFieldContextTask = task((get, work) => {
 export const tileNodesTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
   const uniforms = get(updateUniformsTask);
+  const topology = get(topologyTask);
   return work(() => {
-    return createTileCompute(leafStorage, uniforms);
+    return createTileCompute(leafStorage, uniforms, topology.projection ?? "flat");
   });
 }).displayName("tileNodesTask");
 

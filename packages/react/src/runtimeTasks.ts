@@ -5,11 +5,14 @@ import type { TerrainNodes, TerrainRuntime } from "./types";
 
 export function createSyncTerrainRuntimeTask(runtime: TerrainRuntime) {
   return task<{ renderer: WebGPURenderer }>((get, work) => {
-    const query = get(terrainTasks.terrainQuery).query;
+    const queryContext = get(terrainTasks.terrainQuery);
+    const query = queryContext.query;
+    const sphereQuery = queryContext.sphereQuery;
     const raycast = get(terrainTasks.terrainRaycast);
 
     return work(() => {
       runtime.query = query;
+      runtime.sphereQuery = sphereQuery;
       runtime.raycast = raycast;
       return runtime;
     });

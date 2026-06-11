@@ -1,33 +1,31 @@
-import { terrainTasks, TerrainMesh } from "@hello-terrain/three";
+import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
 import { cloneElement, isValidElement, useEffect, useState } from "react";
 import { TerrainProvider } from "./TerrainContext";
-import type {
-  TerrainHandle,
-  TerrainPrimitiveProps,
-  TerrainProps,
-} from "./types";
+import type { TerrainHandle, TerrainPrimitiveProps, TerrainProps } from "./types";
 import { useTerrain } from "./useTerrain";
 
 function useTerrainMesh(
   innerTileSegments: number | undefined,
   maxNodes: number | undefined,
+  flipWinding: boolean,
 ) {
   const [mesh] = useState(
     () =>
       new TerrainMesh({
-      innerTileSegments: innerTileSegments ?? 13,
-      maxNodes: maxNodes ?? 1024,
-    }),
+        ...(innerTileSegments !== undefined ? { innerTileSegments } : {}),
+        maxNodes: maxNodes ?? 1024,
+        flipWinding,
+      }),
   );
-
-  useEffect(() => {
-    mesh.innerTileSegments = innerTileSegments ?? 13;
-  }, [mesh, innerTileSegments]);
 
   useEffect(() => {
     mesh.maxNodes = maxNodes ?? 1024;
   }, [mesh, maxNodes]);
+
+  useEffect(() => {
+    mesh.flipWinding = flipWinding;
+  }, [mesh, flipWinding]);
 
   useEffect(() => {
     return () => {
@@ -43,6 +41,17 @@ function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
   if (leaves && mesh.count !== leaves.count) {
     mesh.count = leaves.count;
     mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  // Keep the tile geometry resolution in sync with the effective
+  // `innerTileSegments` param (prop-driven or set directly via `graph.set`).
+  // The setter rebuilds the geometry only when the value actually changes.
+  const uniforms = terrain.graph.peek(terrainTasks.updateUniforms);
+  if (uniforms) {
+    const segments = uniforms.uInnerTileSegments.value;
+    if (typeof segments === "number") {
+      mesh.innerTileSegments = segments;
+    }
   }
 
   const raycast = terrain.runtime.raycast;
@@ -75,9 +84,9 @@ function TerrainWithHandle({
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
-  const mesh = useTerrainMesh(innerTileSegments, maxNodes);
-  const { visible: primitiveVisible = true, ...restPrimitiveProps } =
-    primitiveProps;
+  const flipWinding = (terrain.topology?.projection ?? "flat") === "cubeSphere";
+  const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
+  const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
 
   useFrame(() => {
     syncTerrainMesh(mesh, terrain);
@@ -85,11 +94,7 @@ function TerrainWithHandle({
 
   return (
     <TerrainProvider value={terrain}>
-      <primitive
-        object={mesh}
-        visible={terrain.ready && primitiveVisible}
-        {...restPrimitiveProps}
-      >
+      <primitive object={mesh} visible={terrain.ready && primitiveVisible} {...restPrimitiveProps}>
         {terrain.ready
           ? attachTerrainMaterial(
               children({
@@ -112,8 +117,9 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     innerTileSegments,
     skirtScale,
     elevationScale,
+    radius,
     elevation,
-    surface,
+    topology,
     terrainFieldFilter,
     getCameraOrigin,
     cameraHysteresis,
@@ -129,8 +135,9 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     innerTileSegments,
     skirtScale,
     elevationScale,
+    radius,
     elevation,
-    surface,
+    topology,
     terrainFieldFilter,
     getCameraOrigin,
     cameraHysteresis,
@@ -159,8 +166,9 @@ export function Terrain({
   innerTileSegments,
   skirtScale,
   elevationScale,
+  radius,
   elevation,
-  surface,
+  topology,
   terrainFieldFilter,
   getCameraOrigin,
   cameraHysteresis,
@@ -189,8 +197,9 @@ export function Terrain({
       innerTileSegments={innerTileSegments}
       skirtScale={skirtScale}
       elevationScale={elevationScale}
+      radius={radius}
       elevation={elevation}
-      surface={surface}
+      topology={topology}
       terrainFieldFilter={terrainFieldFilter}
       getCameraOrigin={getCameraOrigin}
       cameraHysteresis={cameraHysteresis}

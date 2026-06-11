@@ -5,7 +5,7 @@ import type {
   WebGPURenderer,
 } from "three/webgpu";
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
-import type { Surface, LeafSet, QuadtreeState } from "../quadtree";
+import type { Topology, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
@@ -15,13 +15,14 @@ import type {
   TerrainQuery,
   TerrainRaycast,
   TerrainSampler,
+  TerrainSphereQuery,
 } from "../query/types";
 import type { TileBoundsContext } from "./tile-bounds.task";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
 export interface QuadtreeConfigState {
   state: QuadtreeState;
-  surface: Surface;
+  topology: Topology;
 }
 
 export interface LeafGpuBufferState extends LeafStorageState {
@@ -37,6 +38,8 @@ export interface ElevationFieldContext {
 export interface TerrainQueryContext {
   cache: CpuTerrainCache;
   query: TerrainQuery;
+  /** Cube-sphere query; `null` unless the topology uses the cubeSphere projection. */
+  sphereQuery: TerrainSphereQuery | null;
   shapeKey: string;
 }
 
@@ -45,7 +48,7 @@ export interface TerrainTasks {
   instanceId: TaskRef<string>;
   quadtreeConfig: TaskRef<QuadtreeConfigState>;
   quadtreeUpdate: TaskRef<LeafSet>;
-  surface: TaskRef<Surface>;
+  topology: TaskRef<Topology>;
   leafStorage: TaskRef<LeafStorageState>;
   leafGpuBuffer: TaskRef<LeafGpuBufferState>;
   gpuSpatialIndexStorage: TaskRef<GpuSpatialIndexContext>;

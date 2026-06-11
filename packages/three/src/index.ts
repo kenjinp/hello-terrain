@@ -9,10 +9,11 @@ export {
   innerTileSegments,
   skirtScale,
   elevationScale,
+  radius,
   maxNodes,
   maxLevel,
   quadtreeUpdate,
-  surface,
+  topology,
   terrainFieldFilter,
   elevationFn,
 } from "./tasks/params";
@@ -27,6 +28,7 @@ export * from "./query/terrain-raycast";
 export * from "./query/types";
 export { createComputePipelineTasks } from "./tasks/compute.task";
 
+export * from "./tsl/cubeSphere";
 export * from "./tsl/materials";
 export * from "./tsl/skirt";
 export * from "./tsl/varyings";

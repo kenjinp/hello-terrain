@@ -6,7 +6,7 @@ The design targets:
 - **Large flat terrain today**
 - A future **6-faced cube-sphere planet** (one quadtree per face)
 
-The core principle is: **the quadtree only deals in TileIds** (tile space), and all world/surface math lives in a pluggable `Surface` adapter.
+The core principle is: **the quadtree only deals in TileIds** (tile space), and all world/surface math lives in a pluggable `Topology` adapter.
 
 ---
 
@@ -14,11 +14,11 @@ The core principle is: **the quadtree only deals in TileIds** (tile space), and 
 
 The public API is intended to be a small set of functions operating on explicit state objects and preallocated buffers.
 
-- **`createState(cfg, surface)`** → `State`
+- **`createState(cfg, topology)`** → `State`
   - Allocates typed arrays once
-  - Initializes root nodes for each `surface.spaceCount`
+  - Initializes root nodes for each `topology.spaceCount`
 
-- **`update(state, surface, params, outLeaves?)`** → `LeafSet`
+- **`update(state, topology, params, outLeaves?)`** → `LeafSet`
   - Hot-loop entrypoint
   - Produces the current set of renderable leaf tiles
   - Performs refinement and **2:1 balancing**
@@ -27,7 +27,7 @@ The public API is intended to be a small set of functions operating on explicit 
 - **`buildLeafIndex(leaves, outIndex?)`** → `SpatialIndex`
   - Open-addressing lookup for `(space, level, x, y) -> leafListIndex`
 
-- **`buildSeams2to1(surface, leaves, leafIndex, out?)`** → `SeamTable`
+- **`buildSeams2to1(topology, leaves, leafIndex, out?)`** → `SeamTable`
   - Fixed-width seam/neighbor table suitable for GPU consumption
 
 ---
@@ -57,9 +57,9 @@ Only the prefix `[0, count)` is valid each frame. No JS arrays of nodes are prod
 
 ---
 
-### Surface adapter (flat now, cube-sphere later)
+### Topology adapter (flat now, cube-sphere later)
 
-The quadtree is **surface-agnostic**. It relies on `Surface` for:
+The quadtree is **topology-agnostic**. It relies on `Topology` for:
 - **Topology** (neighbors across edges)
 - **Bounds** (conservative camera-relative bounds for LOD decisions)
 
@@ -82,7 +82,7 @@ export type TileBounds = {
   r: number; // conservative radius
 };
 
-export type Surface = {
+export type Topology = {
   spaceCount: number;
 
   /**

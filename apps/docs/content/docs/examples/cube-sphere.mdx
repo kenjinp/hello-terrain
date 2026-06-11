@@ -1,0 +1,36 @@
+---
+title: Cube-Sphere Planet
+description: Interactive demo of a planet-scale cube-sphere terrain surface with seamless LOD across faces
+---
+
+import CubeSpherePlanetScene from "@/examples/CubeSpherePlanetScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<CubeSpherePlanetScene />
+</div>
+
+## Overview
+
+This example demonstrates the `createCubeSphereTopology` API, which wraps six quadtree faces around a sphere to produce a full planet. Each face refines independently with the same LOD machinery used by the flat topologies, and the topology stitches faces together so the planet behaves as one continuous surface.
+
+Unlike the flat topologies, the GPU position pipeline runs in `cubeSphere` projection mode: each tile vertex is mapped from its face-local `(u, v)` coordinate onto the cube, normalized onto the unit sphere, scaled by the planet `radius`, and then displaced radially by the elevation function. Surface normals are reconstructed in the per-vertex sphere tangent frame so lighting follows the curvature of the planet.
+
+### How it works
+
+- **Six faces, one quadtree** — `rootTiles` emits one level-0 root per cube face (`space` 0..5). The quadtree refines each face toward the camera.
+- **Cross-face topology** — `neighborSameLevel` resolves neighbors numerically from the shared cube-face basis, so tiles that cross a face edge (including the rotated edges around the poles) connect to the correct neighbor for 2:1 balancing and seam filling.
+- **Conservative sphere bounds** — `tileBounds` returns a camera-relative bounding sphere built from each tile's projected corners, keeping LOD decisions stable at planet scale.
+- **Radial elevation** — the elevation function receives the spherical `worldPosition`. Sampling its normalized direction with 3D noise keeps terrain features seamless across face boundaries.
+
+### Controls
+
+| Control | Description |
+|:--|:--|
+| **radius** | Planet radius in world units |
+| **max level** | Maximum quadtree subdivision depth per face |
+| **max nodes** | Total node budget across all six faces |
+| **elevation scale** | Vertical (radial) scale applied to the elevation function |
+| **skirt scale** | Skirt drop distance (radially inward) to hide tile seams |
+| **noise frequency** | Spatial frequency of the 3D terrain noise |
+| **sea level** | Threshold below which terrain is flattened into ocean |
+| **wireframe** | Toggle wireframe to visualize the per-face tiling |

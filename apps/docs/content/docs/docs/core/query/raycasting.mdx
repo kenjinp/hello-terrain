@@ -47,6 +47,26 @@ if (hit) {
 }
 ```
 
+## Cube-sphere raycasting
+
+`pick(ray, options?)` is projection-aware and needs no special call site. When
+the active topology is a cube sphere, the ray is intersected with the planet's
+bounding shell and marched in **radial** signed distance (`|p - center| -
+(radius + elevation)`) rather than against a horizontal heightfield. The
+returned `position` lies on the displaced sphere surface and `normal` is the
+world-space surface normal.
+
+```ts
+import { Ray, Vector3 } from "three";
+
+// e.g. from an R3F pointer event you can use event.ray directly.
+const ray = new Ray(camera.position.clone(), camera.getWorldDirection(new Vector3()));
+const hit = terrainRaycast.pick(ray);
+if (hit) {
+  marker.position.copy(hit.position);
+}
+```
+
 ## Three.js Raycaster integration
 
 `TerrainMesh` supports standard Three.js / React Three Fiber ray interactions once a terrain raycast context is attached.

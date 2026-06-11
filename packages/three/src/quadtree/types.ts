@@ -28,10 +28,27 @@ export type TileBounds = {
   r: number;
 };
 
-export type Surface = {
+export type TopologyProjection = "flat" | "cubeSphere";
+
+export type Topology = {
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
   maxRootCount: number;
+
+  /**
+   * GPU position/normal assembly projection. Defaults to `flat` when absent.
+   * `cubeSphere` selects radial sphere mapping from cube faces.
+   */
+  projection?: TopologyProjection;
+
+  /** Sphere radius in world units (cube-sphere projection only). */
+  radius?: number;
+
+  /**
+   * Planet center in world space (cube-sphere projection only). Used to apply
+   * the camera elevation offset along the radial up-direction during LOD.
+   */
+  center?: { x: number; y: number; z: number };
 
   /**
    * Compute the same-level neighbor TileId in the requested direction.
@@ -116,9 +133,11 @@ export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
 
   /**
-   * Terrain elevation at the camera's XZ position (from previous frame).
-   * Subtracted from `cameraOrigin.y` during refinement so that LOD
-   * distance is measured relative to the terrain surface, not the datum.
+   * Terrain elevation beneath the camera (from the previous frame). During
+   * refinement it offsets the camera toward the terrain surface so LOD distance
+   * is measured relative to the surface rather than the datum:
+   * - flat: subtracted from `cameraOrigin.y`.
+   * - cube-sphere: subtracted along the radial up-direction from the planet center.
    */
   elevationAtCameraXZ?: number;
 

@@ -198,48 +198,17 @@ export function AtlasBackend(
 }
 
 /**
- * Placeholder backend for future true 3D storage-texture support in Three.js.
- * We keep it present to preserve the backend API shape.
+ * Placeholder backend type preserved for API compatibility. Uses the same
+ * storage-array implementation as {@link ArrayTextureBackend} until true 3D
+ * storage-texture support lands in Three.js.
  */
-export function Texture3DBackend(
+function texture3DBackend(
   edgeVertexCount: number,
   tileCount: number,
   options: Required<Pick<TerrainFieldStorageOptions, "format" | "filter">>,
 ): TerrainFieldStorage {
-  let currentEdgeVertexCount = edgeVertexCount;
-  let currentTileCount = tileCount;
-  const tex = new StorageArrayTexture(
-    edgeVertexCount,
-    edgeVertexCount,
-    tileCount,
-  );
-  configureStorageTexture(tex, options.format, options.filter);
-
-  return {
-    backendType: "texture-3d",
-    get edgeVertexCount() {
-      return currentEdgeVertexCount;
-    },
-    get tileCount() {
-      return currentTileCount;
-    },
-    texture: tex,
-    uv(ix: Node, iy: Node, _tileIndex: Node): Node {
-      return vec2(ix.toFloat(), iy.toFloat());
-    },
-    texel(ix: Node, iy: Node, tileIndex: Node): Node {
-      return ivec3(ix, iy, tileIndex);
-    },
-    sample(u: Node, v: Node, tileIndex: Node): Node {
-      return texture(tex, vec2(u, v)).depth(int(tileIndex));
-    },
-    resize(width: number, height: number, nextTileCount: number): void {
-      currentEdgeVertexCount = width;
-      currentTileCount = nextTileCount;
-      tex.setSize(width, height, nextTileCount);
-      tex.needsUpdate = true;
-    },
-  };
+  const storage = ArrayTextureBackend(edgeVertexCount, tileCount, options);
+  return { ...storage, backendType: "texture-3d" };
 }
 
 type DeviceLimits = {
@@ -271,7 +240,7 @@ export function createTerrainFieldStorage(
     return AtlasBackend(edgeVertexCount, tileCount, { filter, format });
   }
   if (forcedBackend === "texture-3d") {
-    return Texture3DBackend(edgeVertexCount, tileCount, { filter, format });
+    return texture3DBackend(edgeVertexCount, tileCount, { filter, format });
   }
   if (forcedBackend === "array-texture") {
     return ArrayTextureBackend(edgeVertexCount, tileCount, { filter, format });
@@ -365,16 +334,6 @@ export function sampleTerrainFieldElevation(
   tileIndex: Node,
 ): Node {
   return sampleTerrainField(storage, u, v, tileIndex).r;
-}
-
-export function sampleTerrainFieldNormal(
-  storage: TerrainFieldStorage,
-  u: Node,
-  v: Node,
-  tileIndex: Node,
-): Node {
-  const raw = sampleTerrainField(storage, u, v, tileIndex);
-  return vec2(raw.g, raw.b);
 }
 
 export function packTerrainFieldSample(

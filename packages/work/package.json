@@ -25,6 +25,7 @@
     "build": "unbuild",
     "release": "pnpm run build && pnpm publish --access=public",
     "test": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "bench": "npx tsx benchmarks/Graph.bench.ts",
     "lint": "oxlint -c node_modules/@config/oxlint/base.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."

@@ -6,7 +6,7 @@
     "type": "git",
     "url": "https://github.com/kenjinp/hello-terrain.git"
   },
-  "version": "0.0.0-alpha.10",
+  "version": "0.0.0-alpha.11",
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -25,6 +25,7 @@
     "build": "unbuild",
     "release": "pnpm run build && pnpm publish --access=public",
     "test": "vitest",
+    "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
     "bench": "npx tsx benchmarks/Quadtree.bench.ts",
     "lint": "oxlint -c node_modules/@config/oxlint/base.json",
     "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
