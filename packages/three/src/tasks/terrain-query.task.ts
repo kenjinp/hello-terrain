@@ -5,7 +5,7 @@ import { createTerrainQuery, createTerrainSphereQuery } from "../query/terrain-q
 import type { TerrainQueryContext } from "./graph.types";
 import { createElevationFieldContextTask } from "./elevation-field.task";
 import { elevationScale, innerTileSegments, maxLevel, maxNodes, origin, radius, rootSize } from "./params";
-import { leafGpuBufferTask, quadtreeConfigTask, surfaceTask } from "./quadtree.task";
+import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./tile-bounds.task";
 
 export const terrainQueryTask = task((get, work) => {
@@ -16,8 +16,8 @@ export const terrainQueryTask = task((get, work) => {
   const originValue = get(origin);
   const elevationScaleValue = get(elevationScale);
   const radiusValue = get(radius);
-  const surfaceValue = get(surfaceTask);
-  const projectionValue = surfaceValue.projection ?? "flat";
+  const topologyValue = get(topologyTask);
+  const projectionValue = topologyValue.projection ?? "flat";
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
     const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projectionValue}`;
@@ -30,7 +30,7 @@ export const terrainQueryTask = task((get, work) => {
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
       projection: projectionValue,
-      radius: surfaceValue.radius ?? radiusValue,
+      radius: topologyValue.radius ?? radiusValue,
     };
 
     let cache = prev?.cache;

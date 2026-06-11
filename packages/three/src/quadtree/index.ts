@@ -3,9 +3,9 @@ export * from "./state";
 export * from "./update";
 export * from "./leafIndex";
 export * from "./seams";
-export * from "./surface/flat";
-export * from "./surface/infiniteFlat";
-export * from "./surface/cubeSphere";
-export * from "./surface/cubeSphereFaces";
-export * from "./surface/cubeSphereInverse";
+export * from "./topology/flat";
+export * from "./topology/infiniteFlat";
+export * from "./topology/cubeSphere";
+export * from "./topology/cubeSphereFaces";
+export * from "./topology/cubeSphereInverse";
 

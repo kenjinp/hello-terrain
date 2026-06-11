@@ -1,6 +1,6 @@
 import { Fn, float, int, pow, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import type { SurfaceProjection } from "../quadtree";
+import type { TopologyProjection } from "../quadtree";
 import { cubeFaceBasis, cubeFaceDirection } from "../tsl/cubeSphere";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 
@@ -65,7 +65,7 @@ export function faceUVFromTileLocal(
 export function createTileCompute(
   leafStorage: LeafStorageState,
   uniforms: TerrainUniformsContext,
-  projection: SurfaceProjection = "flat",
+  projection: TopologyProjection = "flat",
 ) {
   const isSphere = projection === "cubeSphere";
 

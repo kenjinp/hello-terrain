@@ -2,7 +2,7 @@ import { Vector3 } from "three";
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
 import { CUBE_FACES, latLongToDirection } from "../quadtree";
-import type { SurfaceProjection } from "../quadtree";
+import type { TopologyProjection } from "../quadtree";
 import { tileLocalToFieldUVNumber } from "../gpu/tile";
 import {
   type ElevationGradient,
@@ -43,8 +43,8 @@ type TerrainQueryConfig = {
   innerTileSegments: number;
   elevationScale: number;
   maxLevel: number;
-  /** Surface projection; `cubeSphere` enables the direction/lat-long queries. */
-  projection: SurfaceProjection;
+  /** Topology projection; `cubeSphere` enables the direction/lat-long queries. */
+  projection: TopologyProjection;
   /** Sphere radius in world units (cube-sphere projection only). */
   radius: number;
 };

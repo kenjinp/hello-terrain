@@ -50,7 +50,7 @@ vi.mock("@hello-terrain/three", () => {
     origin: "origin",
     rootSize: "rootSize",
     skirtScale: "skirtScale",
-    surface: "surface",
+    topology: "topology",
     terrainFieldFilter: "terrainFieldFilter",
   };
 });

@@ -2,7 +2,7 @@ import { task } from "@hello-terrain/work";
 import { createTerrainSampler } from "../query/terrain-sampler";
 import { elevationFn, maxLevel } from "./params";
 import { gpuSpatialIndexStorageTask } from "./gpuSpatialIndex.task";
-import { surfaceTask } from "./quadtree.task";
+import { topologyTask } from "./quadtree.task";
 import { createTerrainFieldTextureTask } from "./terrain-field.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
@@ -12,7 +12,7 @@ export const createTerrainSamplerTask = task((get, work) => {
   const uniforms = get(updateUniformsTask);
   const elevationCallback = get(elevationFn);
   const maxLevelValue = get(maxLevel);
-  const projection = get(surfaceTask).projection ?? "flat";
+  const projection = get(topologyTask).projection ?? "flat";
 
   return work(() =>
     createTerrainSampler({

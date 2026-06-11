@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Dir, type TileId } from "../types.js";
 import { createState } from "../state.js";
 import { update } from "../update.js";
-import { createCubeSphereSurface } from "./cubeSphere.js";
+import { createCubeSphereTopology } from "./cubeSphere.js";
 
 const DIRS: Dir[] = [Dir.LEFT, Dir.RIGHT, Dir.TOP, Dir.BOTTOM];
 
@@ -10,9 +10,9 @@ function tilesEqual(a: TileId, b: TileId): boolean {
   return a.space === b.space && a.level === b.level && a.x === b.x && a.y === b.y;
 }
 
-describe("quadtree/surface/cubeSphere", () => {
+describe("quadtree/topology/cubeSphere", () => {
   it("emits six level-0 root faces", () => {
-    const surface = createCubeSphereSurface({ radius: 1000 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const out: TileId[] = Array.from({ length: 6 }, () => ({
       space: -1,
       level: -1,
@@ -20,7 +20,7 @@ describe("quadtree/surface/cubeSphere", () => {
       y: -1,
     }));
 
-    const count = surface.rootTiles({ x: 0, y: 0, z: 0 }, out);
+    const count = topology.rootTiles({ x: 0, y: 0, z: 0 }, out);
     expect(count).toBe(6);
     for (let s = 0; s < 6; s++) {
       expect(out[s]).toEqual({ space: s, level: 0, x: 0, y: 0 });
@@ -28,23 +28,23 @@ describe("quadtree/surface/cubeSphere", () => {
   });
 
   it("computes in-face neighbors like a bounded grid", () => {
-    const surface = createCubeSphereSurface({ radius: 1000 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const out: TileId = { space: 0, level: 0, x: 0, y: 0 };
 
     // Interior tile on a 4x4 face (level 2).
     expect(
-      surface.neighborSameLevel({ space: 4, level: 2, x: 1, y: 1 }, Dir.RIGHT, out),
+      topology.neighborSameLevel({ space: 4, level: 2, x: 1, y: 1 }, Dir.RIGHT, out),
     ).toBe(true);
     expect(out).toEqual({ space: 4, level: 2, x: 2, y: 1 });
 
     expect(
-      surface.neighborSameLevel({ space: 4, level: 2, x: 1, y: 1 }, Dir.BOTTOM, out),
+      topology.neighborSameLevel({ space: 4, level: 2, x: 1, y: 1 }, Dir.BOTTOM, out),
     ).toBe(true);
     expect(out).toEqual({ space: 4, level: 2, x: 1, y: 2 });
   });
 
   it("is a closed surface: every edge has a valid neighbor", () => {
-    const surface = createCubeSphereSurface({ radius: 1000 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const out: TileId = { space: 0, level: 0, x: 0, y: 0 };
 
     for (let level = 1; level <= 3; level++) {
@@ -53,7 +53,7 @@ describe("quadtree/surface/cubeSphere", () => {
         for (let x = 0; x < n; x++) {
           for (let y = 0; y < n; y++) {
             for (const dir of DIRS) {
-              const ok = surface.neighborSameLevel(
+              const ok = topology.neighborSameLevel(
                 { space, level, x, y },
                 dir,
                 out,
@@ -74,7 +74,7 @@ describe("quadtree/surface/cubeSphere", () => {
   });
 
   it("neighbor relationships are mutual across face edges", () => {
-    const surface = createCubeSphereSurface({ radius: 1000 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const neighbor: TileId = { space: 0, level: 0, x: 0, y: 0 };
     const back: TileId = { space: 0, level: 0, x: 0, y: 0 };
 
@@ -85,13 +85,13 @@ describe("quadtree/surface/cubeSphere", () => {
         for (let y = 0; y < n; y++) {
           const tile: TileId = { space, level, x, y };
           for (const dir of DIRS) {
-            surface.neighborSameLevel(tile, dir, neighbor);
+            topology.neighborSameLevel(tile, dir, neighbor);
             const neighborCopy: TileId = { ...neighbor };
 
             // `tile` must appear among the neighbor's own neighbors.
             let mutual = false;
             for (const dir2 of DIRS) {
-              surface.neighborSameLevel(neighborCopy, dir2, back);
+              topology.neighborSameLevel(neighborCopy, dir2, back);
               if (tilesEqual(back, tile)) {
                 mutual = true;
                 break;
@@ -105,12 +105,12 @@ describe("quadtree/surface/cubeSphere", () => {
   });
 
   it("crosses faces at level-1 edges", () => {
-    const surface = createCubeSphereSurface({ radius: 1000 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const out: TileId = { space: 0, level: 0, x: 0, y: 0 };
 
     // The LEFT edge of the +X face (space 0) must leave the face.
     expect(
-      surface.neighborSameLevel({ space: 0, level: 1, x: 0, y: 0 }, Dir.LEFT, out),
+      topology.neighborSameLevel({ space: 0, level: 1, x: 0, y: 0 }, Dir.LEFT, out),
     ).toBe(true);
     expect(out.space).not.toBe(0);
     expect(out.x).toBeGreaterThanOrEqual(0);
@@ -120,10 +120,10 @@ describe("quadtree/surface/cubeSphere", () => {
   });
 
   it("produces conservative finite bounds", () => {
-    const surface = createCubeSphereSurface({ radius: 1000, maxHeight: 50 });
+    const topology = createCubeSphereTopology({ radius: 1000, maxHeight: 50 });
     const out = { cx: 0, cy: 0, cz: 0, r: 0 };
 
-    surface.tileBounds({ space: 0, level: 0, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, out);
+    topology.tileBounds({ space: 0, level: 0, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, out);
     expect(Number.isFinite(out.r)).toBe(true);
     expect(out.r).toBeGreaterThan(0);
     // A whole face's bounding radius cannot exceed the sphere diameter + height.
@@ -131,23 +131,23 @@ describe("quadtree/surface/cubeSphere", () => {
 
     // Deeper tiles are smaller.
     const deep = { cx: 0, cy: 0, cz: 0, r: 0 };
-    surface.tileBounds({ space: 0, level: 4, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, deep);
+    topology.tileBounds({ space: 0, level: 4, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, deep);
     expect(deep.r).toBeLessThan(out.r);
   });
 
   it("exposes the cube-sphere projection and radius", () => {
-    const surface = createCubeSphereSurface({ radius: 1234 });
-    expect(surface.projection).toBe("cubeSphere");
-    expect(surface.radius).toBe(1234);
-    expect(surface.spaceCount).toBe(6);
-    expect(surface.maxRootCount).toBe(6);
+    const topology = createCubeSphereTopology({ radius: 1234 });
+    expect(topology.projection).toBe("cubeSphere");
+    expect(topology.radius).toBe(1234);
+    expect(topology.spaceCount).toBe(6);
+    expect(topology.maxRootCount).toBe(6);
   });
 
   it("runs a full LOD update without throwing and respects the node budget", () => {
-    const surface = createCubeSphereSurface({ radius: 1000, maxHeight: 50 });
-    const state = createState({ maxNodes: 8192, maxLevel: 8 }, surface);
+    const topology = createCubeSphereTopology({ radius: 1000, maxHeight: 50 });
+    const state = createState({ maxNodes: 8192, maxLevel: 8 }, topology);
 
-    const leaves = update(state, surface, {
+    const leaves = update(state, topology, {
       cameraOrigin: { x: 1200, y: 0, z: 0 },
       mode: "distance",
       distanceFactor: 1.0,

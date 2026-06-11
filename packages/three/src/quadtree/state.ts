@@ -2,9 +2,9 @@ import {
   allocLeafSet,
   type LeafSet,
   type QuadtreeConfig,
-  type Surface,
   type TileBounds,
   type TileId,
+  type Topology,
   U32_EMPTY,
   type UpdateParams,
 } from "./types";
@@ -39,14 +39,14 @@ export type QuadtreeState = {
   scratchBounds: TileBounds;
   scratchRootTiles: TileId[];
 
-  /** surface space count is fixed for a given state */
+  /** topology space count is fixed for a given state */
   spaceCount: number;
 };
 
-export function createState(cfg: QuadtreeConfig, surface: Surface): QuadtreeState {
-  const store = createNodeStore(cfg.maxNodes, surface.spaceCount);
+export function createState(cfg: QuadtreeConfig, topology: Topology): QuadtreeState {
+  const store = createNodeStore(cfg.maxNodes, topology.spaceCount);
   const scratchRootTiles: TileId[] = [];
-  for (let i = 0; i < surface.maxRootCount; i++) {
+  for (let i = 0; i < topology.maxRootCount; i++) {
     scratchRootTiles.push({ space: 0, level: 0, x: 0, y: 0 });
   }
 
@@ -57,7 +57,7 @@ export function createState(cfg: QuadtreeConfig, surface: Surface): QuadtreeStat
     leafNodeIds: new Uint32Array(cfg.maxNodes),
     leafIndex: createSpatialIndex(cfg.maxNodes),
     stack: new Uint32Array(cfg.maxNodes),
-    rootNodeIds: new Uint32Array(surface.maxRootCount),
+    rootNodeIds: new Uint32Array(topology.maxRootCount),
     rootCount: 0,
     splitQueue: new Uint32Array(cfg.maxNodes),
     splitStamp: new Uint16Array(cfg.maxNodes),
@@ -66,31 +66,31 @@ export function createState(cfg: QuadtreeConfig, surface: Surface): QuadtreeStat
     scratchNeighbor: { space: 0, level: 0, x: 0, y: 0 },
     scratchBounds: { cx: 0, cy: 0, cz: 0, r: 0 },
     scratchRootTiles,
-    spaceCount: surface.spaceCount,
+    spaceCount: topology.spaceCount,
   };
 }
 
-export function beginUpdate(state: QuadtreeState, surface: Surface, params: UpdateParams): void {
-  if (surface.spaceCount !== state.spaceCount) {
+export function beginUpdate(state: QuadtreeState, topology: Topology, params: UpdateParams): void {
+  if (topology.spaceCount !== state.spaceCount) {
     throw new Error(
-      `Surface spaceCount changed (${state.spaceCount} -> ${surface.spaceCount}). Create a new quadtree state.`,
+      `Topology spaceCount changed (${state.spaceCount} -> ${topology.spaceCount}). Create a new quadtree state.`,
     );
   }
-  if (surface.maxRootCount !== state.rootNodeIds.length) {
+  if (topology.maxRootCount !== state.rootNodeIds.length) {
     throw new Error(
-      `Surface maxRootCount changed (${state.rootNodeIds.length} -> ${surface.maxRootCount}). Create a new quadtree state.`,
+      `Topology maxRootCount changed (${state.rootNodeIds.length} -> ${topology.maxRootCount}). Create a new quadtree state.`,
     );
   }
 
   beginFrame(state.store);
   state.rootCount = 0;
 
-  const rootCount = surface.rootTiles(params.cameraOrigin, state.scratchRootTiles);
-  if (rootCount < 0 || rootCount > surface.maxRootCount) {
-    throw new Error(`Surface returned invalid root count (${rootCount}).`);
+  const rootCount = topology.rootTiles(params.cameraOrigin, state.scratchRootTiles);
+  if (rootCount < 0 || rootCount > topology.maxRootCount) {
+    throw new Error(`Topology returned invalid root count (${rootCount}).`);
   }
 
-  // Allocate a root node per surface-selected root tile.
+  // Allocate a root node per topology-selected root tile.
   for (let i = 0; i < rootCount; i++) {
     const rootId = allocNode(state.store, state.scratchRootTiles[i]);
     if (rootId === U32_EMPTY) {

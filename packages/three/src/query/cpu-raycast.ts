@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
 import type { Ray } from "three";
-import type { SurfaceProjection } from "../quadtree";
+import type { TopologyProjection } from "../quadtree";
 import type {
   RaycastOptions,
   TerrainQuery,
@@ -14,8 +14,8 @@ export type CpuRaycastConfig = {
   originZ: number;
   minY: number;
   maxY: number;
-  /** Surface projection; `cubeSphere` selects the radial sphere raycast. */
-  projection?: SurfaceProjection;
+  /** Topology projection; `cubeSphere` selects the radial sphere raycast. */
+  projection?: TopologyProjection;
   /** Planet center (cube-sphere only). */
   centerX?: number;
   centerY?: number;

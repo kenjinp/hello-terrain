@@ -1,7 +1,7 @@
 import { task } from "@hello-terrain/work";
 import { createTileWorldPosition } from "../gpu/worldPosition";
 import { createTerrainFieldTextureTask } from "./terrain-field.task";
-import { leafStorageTask, surfaceTask } from "./quadtree.task";
+import { leafStorageTask, topologyTask } from "./quadtree.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 /**
@@ -22,13 +22,13 @@ export const positionNodeTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
   const terrainUniforms = get(updateUniformsTask);
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
-  const surface = get(surfaceTask);
+  const topology = get(topologyTask);
   return work(() =>
     createTileWorldPosition(
       leafStorage,
       terrainUniforms,
       terrainFieldStorage,
-      surface.projection ?? "flat",
+      topology.projection ?? "flat",
     ),
   );
 }).displayName("positionNodeTask");

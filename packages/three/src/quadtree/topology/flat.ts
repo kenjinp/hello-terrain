@@ -1,6 +1,6 @@
-import { Dir, type Surface, type TileBounds, type TileId } from "../types";
+import { Dir, type TileBounds, type TileId, type Topology } from "../types";
 
-export type FlatSurfaceConfig = {
+export type FlatTopologyConfig = {
   /**
    * World-space size of the root tile edge.
    * The root tile covers [-rootSize/2, +rootSize/2] around origin in X/Z.
@@ -11,11 +11,11 @@ export type FlatSurfaceConfig = {
   maxHeight?: number;
 };
 
-export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
+export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
   const halfRoot = 0.5 * cfg.rootSize;
   const maxHeight = cfg.maxHeight ?? 0;
 
-  const surface: Surface = {
+  const topology: Topology = {
     spaceCount: 1,
     maxRootCount: 1,
 
@@ -83,6 +83,6 @@ export function createFlatSurface(cfg: FlatSurfaceConfig): Surface {
     },
   };
 
-  return surface;
+  return topology;
 }
 

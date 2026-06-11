@@ -11,9 +11,9 @@ import CubeSpherePlanetScene from "@/examples/CubeSpherePlanetScene"
 
 ## Overview
 
-This example demonstrates the `createCubeSphereSurface` API, which wraps six quadtree faces around a sphere to produce a full planet. Each face refines independently with the same LOD machinery used by the flat surfaces, and the topology stitches faces together so the planet behaves as one continuous surface.
+This example demonstrates the `createCubeSphereTopology` API, which wraps six quadtree faces around a sphere to produce a full planet. Each face refines independently with the same LOD machinery used by the flat topologies, and the topology stitches faces together so the planet behaves as one continuous surface.
 
-Unlike the flat surfaces, the GPU position pipeline runs in `cubeSphere` projection mode: each tile vertex is mapped from its face-local `(u, v)` coordinate onto the cube, normalized onto the unit sphere, scaled by the planet `radius`, and then displaced radially by the elevation function. Surface normals are reconstructed in the per-vertex sphere tangent frame so lighting follows the curvature of the planet.
+Unlike the flat topologies, the GPU position pipeline runs in `cubeSphere` projection mode: each tile vertex is mapped from its face-local `(u, v)` coordinate onto the cube, normalized onto the unit sphere, scaled by the planet `radius`, and then displaced radially by the elevation function. Surface normals are reconstructed in the per-vertex sphere tangent frame so lighting follows the curvature of the planet.
 
 ### How it works
 

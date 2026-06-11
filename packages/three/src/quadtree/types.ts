@@ -28,9 +28,9 @@ export type TileBounds = {
   r: number;
 };
 
-export type SurfaceProjection = "flat" | "cubeSphere";
+export type TopologyProjection = "flat" | "cubeSphere";
 
-export type Surface = {
+export type Topology = {
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
   maxRootCount: number;
@@ -39,7 +39,7 @@ export type Surface = {
    * GPU position/normal assembly projection. Defaults to `flat` when absent.
    * `cubeSphere` selects radial sphere mapping from cube faces.
    */
-  projection?: SurfaceProjection;
+  projection?: TopologyProjection;
 
   /** Sphere radius in world units (cube-sphere projection only). */
   radius?: number;

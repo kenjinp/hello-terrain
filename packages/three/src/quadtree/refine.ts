@@ -1,7 +1,7 @@
 import { shouldSplit } from "./criteria";
 import { ensureChildren, hasChildren } from "./nodeStore";
 import { type QuadtreeState } from "./state";
-import { resetLeafSet, type LeafSet, type Surface, U32_EMPTY, type UpdateParams } from "./types";
+import { resetLeafSet, type LeafSet, type Topology, U32_EMPTY, type UpdateParams } from "./types";
 
 /**
  * Build a leaf set by iteratively refining from the root(s).
@@ -9,7 +9,7 @@ import { resetLeafSet, type LeafSet, type Surface, U32_EMPTY, type UpdateParams 
  * IMPORTANT: This traversal is allocation-free and uses preallocated scratch.
  * Nodes may already have children (e.g. balance-forced splits); those children are always traversed.
  */
-export function refineLeaves(state: QuadtreeState, surface: Surface, params: UpdateParams, outLeaves?: LeafSet): LeafSet {
+export function refineLeaves(state: QuadtreeState, topology: Topology, params: UpdateParams, outLeaves?: LeafSet): LeafSet {
   const leaves = outLeaves ?? state.leaves;
   resetLeafSet(leaves);
 
@@ -36,7 +36,7 @@ export function refineLeaves(state: QuadtreeState, surface: Surface, params: Upd
     tile.y = y;
 
     const bounds = state.scratchBounds;
-    surface.tileBounds(tile, params.cameraOrigin, bounds);
+    topology.tileBounds(tile, params.cameraOrigin, bounds);
 
     // Forced split: if children exist, always traverse them.
     if (hasChildren(store, nodeId)) {

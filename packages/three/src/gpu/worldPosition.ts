@@ -16,7 +16,7 @@ import {
   sphereTangentFrameNormal,
   unpackTangentNormal,
 } from "../tsl/cubeSphere";
-import type { SurfaceProjection } from "../quadtree";
+import type { TopologyProjection } from "../quadtree";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
@@ -64,7 +64,7 @@ function createNormalAssignment(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
-  projection: SurfaceProjection = "flat",
+  projection: TopologyProjection = "flat",
 ) {
   if (!terrainFieldStorage) return;
   normalLocal.assign(
@@ -91,7 +91,7 @@ function createTileLocalNormal(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
-  projection: SurfaceProjection = "flat",
+  projection: TopologyProjection = "flat",
 ) {
   if (!terrainFieldStorage) return vec3(0, 1, 0);
 
@@ -149,7 +149,7 @@ export function createTileWorldPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
-  projection: SurfaceProjection = "flat",
+  projection: TopologyProjection = "flat",
 ) {
   if (projection === "cubeSphere") {
     return createCubeSphereWorldPosition(leafStorage, terrainUniforms, terrainFieldStorage);

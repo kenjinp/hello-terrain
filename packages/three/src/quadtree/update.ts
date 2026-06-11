@@ -1,16 +1,16 @@
 import { balance2to1 } from "./balance2to1";
 import { refineLeaves } from "./refine";
 import { beginUpdate, type QuadtreeState } from "./state";
-import { type LeafSet, type Surface, type UpdateParams } from "./types";
+import { type LeafSet, type Topology, type UpdateParams } from "./types";
 
 /**
- * Update the quadtree for the given surface + camera parameters.
+ * Update the quadtree for the given topology + camera parameters.
  *
  * Produces a LeafSet of TileIds (SoA typed arrays).
  */
 export function update(
   state: QuadtreeState,
-  surface: Surface,
+  topology: Topology,
   params: UpdateParams,
   outLeaves?: LeafSet,
 ): LeafSet {
@@ -24,8 +24,8 @@ export function update(
   const origX = cam.x;
   const origY = cam.y;
   const origZ = cam.z;
-  if (surface.projection === "cubeSphere") {
-    const center = surface.center ?? { x: 0, y: 0, z: 0 };
+  if (topology.projection === "cubeSphere") {
+    const center = topology.center ?? { x: 0, y: 0, z: 0 };
     const dx = cam.x - center.x;
     const dy = cam.y - center.y;
     const dz = cam.z - center.z;
@@ -40,9 +40,9 @@ export function update(
     cam.y -= elevation;
   }
 
-  beginUpdate(state, surface, params);
-  const leaves = refineLeaves(state, surface, params, outLeaves);
-  const result = balance2to1(state, surface, params, leaves);
+  beginUpdate(state, topology, params);
+  const leaves = refineLeaves(state, topology, params, outLeaves);
+  const result = balance2to1(state, topology, params, leaves);
 
   cam.x = origX;
   cam.y = origY;

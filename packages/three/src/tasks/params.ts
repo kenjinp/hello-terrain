@@ -1,6 +1,6 @@
 import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
-import type { Surface, UpdateParams } from "../quadtree";
+import type { Topology, UpdateParams } from "../quadtree";
 import type { ElevationCallback } from "../tsl/elevation";
 
 /** Root tile size in world units. */
@@ -41,8 +41,8 @@ export const quadtreeUpdate = param<UpdateParams>({
   distanceFactor: 1.5,
 }).displayName("quadtreeUpdate");
 
-/** Optional custom terrain surface; defaults to bounded flat surface when null. */
-export const surface = param<Surface | null>(null).displayName("surface");
+/** Optional custom terrain topology; defaults to bounded flat topology when null. */
+export const topology = param<Topology | null>(null).displayName("topology");
 
 /** Terrain field texture filter mode. */
 export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayName(

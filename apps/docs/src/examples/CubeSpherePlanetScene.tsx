@@ -4,7 +4,7 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { createPlanetColorNode, createPlanetElevation } from "@/examples/terrain/planetNoise";
 import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
-import { createCubeSphereSurface } from "@hello-terrain/three";
+import { createCubeSphereTopology } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
@@ -177,9 +177,9 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
     { store },
   );
 
-  const surface = useMemo(
+  const topology = useMemo(
     () =>
-      createCubeSphereSurface({
+      createCubeSphereTopology({
         radius: controls.radius,
         maxHeight: controls.elevationScale,
       }),
@@ -205,7 +205,7 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
   );
 
   const terrain = useTerrain({
-    surface,
+    topology,
     radius: controls.radius,
     maxLevel: controls.maxLevel,
     maxNodes: controls.maxNodes,

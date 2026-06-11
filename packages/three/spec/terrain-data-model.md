@@ -43,7 +43,7 @@ Defined in `packages/three/src/tasks/params.ts`.
 - **World config:** `rootSize`, `origin`, `elevationScale`
 - **Shape config:** `innerTileSegments`, `maxNodes`, `maxLevel`
 - **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`
-- **Customization callbacks:** `surface`, `elevationFn`
+- **Customization callbacks:** `topology`, `elevationFn`
 
 These values are not copied into one monolithic config object; they are consumed directly by task dependencies.
 
@@ -52,7 +52,7 @@ These values are not copied into one monolithic config object; they are consumed
 Defined in `packages/three/src/tasks/graph.types.ts`.
 
 - `state: QuadtreeState`
-- `surface: Surface`
+- `topology: Topology`
 
 `QuadtreeState` owns:
 

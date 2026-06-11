@@ -1,4 +1,4 @@
-import { type Surface, type TileBounds, type TileId } from "../types";
+import { type TileBounds, type TileId, type Topology } from "../types";
 import type { Vec3 } from "./cubeSphereFaces";
 import {
   directionToFace,
@@ -7,7 +7,7 @@ import {
   type Vec3Mutable,
 } from "./cubeSphereInverse";
 
-export type CubeSphereSurfaceConfig = {
+export type CubeSphereTopologyConfig = {
   /** Sphere radius in world units. */
   radius: number;
   /** Planet center in world space (defaults to origin). */
@@ -17,13 +17,13 @@ export type CubeSphereSurfaceConfig = {
 };
 
 /**
- * Cube-sphere surface: six quadtree faces wrapped onto a sphere.
+ * Cube-sphere topology: six quadtree faces wrapped onto a sphere.
  *
  * Topology (`neighborSameLevel`) is derived numerically from the shared
  * `CUBE_FACES` basis so cross-face edges (including rotated pole edges)
  * resolve to the correct neighbor tile without hand-coded transforms.
  */
-export function createCubeSphereSurface(cfg: CubeSphereSurfaceConfig): Surface {
+export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topology {
   const radius = cfg.radius;
   const maxHeight = cfg.maxHeight ?? 0;
   const center = cfg.center ?? { x: 0, y: 0, z: 0 };

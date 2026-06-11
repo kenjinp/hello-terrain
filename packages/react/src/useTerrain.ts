@@ -111,7 +111,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
 
   useTerrainParams(graph, options);
 
-  const surface = options.surface ?? null;
+  const topology = options.topology ?? null;
 
   return useMemo(
     () => ({
@@ -119,9 +119,9 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
       tasks: terrainTasks,
       runtime,
       ready,
-      surface,
+      topology,
       ...terrainNodes,
     }),
-    [graph, ready, runtime, surface, terrainNodes],
+    [graph, ready, runtime, topology, terrainNodes],
   );
 }

@@ -43,7 +43,7 @@ export interface CreateTerrainSamplerParams {
   elevationCallback: ElevationCallback;
   /** Maximum quadtree level to probe during tile lookup. */
   maxLevel: number;
-  projection?: import("../quadtree").SurfaceProjection;
+  projection?: import("../quadtree").TopologyProjection;
 }
 
 export interface TerrainSample {

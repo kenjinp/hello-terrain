@@ -84,7 +84,7 @@ function TerrainWithHandle({
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
-  const flipWinding = (terrain.surface?.projection ?? "flat") === "cubeSphere";
+  const flipWinding = (terrain.topology?.projection ?? "flat") === "cubeSphere";
   const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
   const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
 
@@ -119,7 +119,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     elevationScale,
     radius,
     elevation,
-    surface,
+    topology,
     terrainFieldFilter,
     getCameraOrigin,
     cameraHysteresis,
@@ -137,7 +137,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     elevationScale,
     radius,
     elevation,
-    surface,
+    topology,
     terrainFieldFilter,
     getCameraOrigin,
     cameraHysteresis,
@@ -168,7 +168,7 @@ export function Terrain({
   elevationScale,
   radius,
   elevation,
-  surface,
+  topology,
   terrainFieldFilter,
   getCameraOrigin,
   cameraHysteresis,
@@ -199,7 +199,7 @@ export function Terrain({
       elevationScale={elevationScale}
       radius={radius}
       elevation={elevation}
-      surface={surface}
+      topology={topology}
       terrainFieldFilter={terrainFieldFilter}
       getCameraOrigin={getCameraOrigin}
       cameraHysteresis={cameraHysteresis}

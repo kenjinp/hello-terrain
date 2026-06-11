@@ -5,7 +5,7 @@ import { FpsDebug } from "@/components/FpsDebug";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
-  createInfiniteFlatSurface,
+  createInfiniteFlatTopology,
   elevationFn,
   elevationScale,
   innerTileSegments,
@@ -16,10 +16,10 @@ import {
   quadtreeUpdateTask,
   rootSize,
   skirtScale,
-  surface,
   TerrainGeometry,
   terrainGraph,
   TerrainMesh,
+  topology,
   voronoiCells,
   type ElevationParams,
   type UpdateParams,
@@ -144,8 +144,8 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   }, [g]);
 
   useEffect(() => {
-    g.set(surface, () =>
-      createInfiniteFlatSurface({
+    g.set(topology, () =>
+      createInfiniteFlatTopology({
         rootSize: controls.rootSize,
         origin: { x: 0, y: 0, z: 0 },
         rootGridRadius: controls.rootGridRadius,

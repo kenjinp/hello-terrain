@@ -1,11 +1,11 @@
 import { float, int, select, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { CUBE_FACES, type Vec3 } from "../quadtree/surface/cubeSphereFaces";
+import { CUBE_FACES, type Vec3 } from "../quadtree/topology/cubeSphereFaces";
 
 /**
  * GPU cube-sphere mapping helpers.
  *
- * These mirror the CPU topology in `quadtree/surface/cubeSphere.ts` by reading
+ * These mirror the CPU topology in `quadtree/topology/cubeSphere.ts` by reading
  * the shared `CUBE_FACES` basis, so positions/normals computed on the GPU agree
  * with the LOD topology computed on the CPU.
  *
@@ -93,7 +93,7 @@ export function sphereTangentFrameNormal(
 
 /**
  * Pick the cube face index (0..5) whose normal axis dominates `dir`.
- * GPU mirror of `directionToFace` in `quadtree/surface/cubeSphereInverse.ts`.
+ * GPU mirror of `directionToFace` in `quadtree/topology/cubeSphereInverse.ts`.
  */
 export function cubeFaceFromDirection(dir: Node): Node {
   const d = vec3(dir);
@@ -110,7 +110,7 @@ export function cubeFaceFromDirection(dir: Node): Node {
 
 /**
  * Face-local (u, v) in [0, 1] for a direction known to fall on `face`.
- * GPU mirror of `directionToFaceUV` in `quadtree/surface/cubeSphereInverse.ts`.
+ * GPU mirror of `directionToFaceUV` in `quadtree/topology/cubeSphereInverse.ts`.
  */
 export function cubeFaceUVFromDirection(basis: CubeFaceBasis, dir: Node): Node {
   const d = vec3(dir);

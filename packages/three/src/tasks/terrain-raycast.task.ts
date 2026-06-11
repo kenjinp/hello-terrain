@@ -1,9 +1,9 @@
 import { task } from "@hello-terrain/work";
-import type { SurfaceProjection } from "../quadtree";
+import type { TopologyProjection } from "../quadtree";
 import { createTerrainRaycast } from "../query/terrain-raycast";
 import type { TerrainQuery, TerrainRaycast, TerrainSphereQuery } from "../query/types";
 import { elevationScale, origin, radius, rootSize } from "./params";
-import { surfaceTask } from "./quadtree.task";
+import { topologyTask } from "./quadtree.task";
 import { terrainQueryTask } from "./terrain-query.task";
 
 const BOUNDS_PADDING = 1;
@@ -18,7 +18,7 @@ type TerrainRaycastTaskState = {
     originZ: number;
     minY: number;
     maxY: number;
-    projection: SurfaceProjection;
+    projection: TopologyProjection;
     centerX: number;
     centerY: number;
     centerZ: number;
@@ -38,9 +38,9 @@ export const terrainRaycastTask = task(
     const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);
     const radiusValue = get(radius);
-    const surfaceValue = get(surfaceTask);
-    const projection = surfaceValue.projection ?? "flat";
-    const sphereRadius = surfaceValue.radius ?? radiusValue;
+    const topologyValue = get(topologyTask);
+    const projection = topologyValue.projection ?? "flat";
+    const sphereRadius = topologyValue.radius ?? radiusValue;
 
     return work((prev?: TerrainRaycast): TerrainRaycast => {
       let raycast = prev as TerrainRaycastWithState | undefined;

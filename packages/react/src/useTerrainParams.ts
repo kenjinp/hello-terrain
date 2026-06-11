@@ -8,8 +8,8 @@ import {
   radius,
   rootSize,
   skirtScale,
-  surface,
   terrainFieldFilter,
+  topology,
   type TerrainGraph,
 } from "@hello-terrain/three";
 import type { ParamRef } from "@hello-terrain/work";
@@ -46,7 +46,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevationScale: nextElevationScale,
     radius: nextRadius,
     elevation,
-    surface: nextSurface,
+    topology: nextTopology,
     terrainFieldFilter: nextTerrainFieldFilter,
   } = options;
 
@@ -114,9 +114,9 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     resetOrSet(
       graph,
       ownedParamIds,
-      surface,
-      nextSurface,
-      () => nextSurface as Exclude<TerrainOptions["surface"], undefined>,
+      topology,
+      nextTopology,
+      () => nextTopology as Exclude<TerrainOptions["topology"], undefined>,
     );
     resetOrSet(
       graph,
@@ -146,7 +146,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     nextElevationScale,
     nextRadius,
     elevation,
-    nextSurface,
+    nextTopology,
     nextTerrainFieldFilter,
   ]);
 }

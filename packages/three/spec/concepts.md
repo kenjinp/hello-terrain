@@ -1,14 +1,14 @@
 # Core Concepts
 
-## Surface
+## Topology
 
 Defines terrain topology and bounds behavior for LOD decisions.
 
-- Flat surface: one root space.
-- Infinite flat surface: one space, camera-centered root grid.
-- Cube-sphere surface: six root spaces (cube faces) wrapped onto a sphere.
+- Flat topology: one root space.
+- Infinite flat topology: one space, camera-centered root grid.
+- Cube-sphere topology: six root spaces (cube faces) wrapped onto a sphere.
 
-A surface declares an optional `projection` (`"flat"` by default, or
+A topology declares an optional `projection` (`"flat"` by default, or
 `"cubeSphere"`) and, for spheres, a `radius`. The projection selects how the GPU
 assembles world positions and normals:
 
@@ -59,7 +59,7 @@ Synchronous CPU sampling backed by an async readback of the elevation field.
 - `cubeSphere`: keyed on a **direction** from the planet center. A world point
   maps to a direction via `normalize(p - center)`, then to a cube face and
   face-local `(u, v)` (`directionToFace` / `directionToFaceUV` in
-  `quadtree/surface/cubeSphereInverse`), then to a quadtree tile keyed by face
+  `quadtree/topology/cubeSphereInverse`), then to a quadtree tile keyed by face
   (`space`). The same `(face, level, x, y)` spatial index used for rendering is
   reused for lookup. Results report a world `position` on the displaced sphere
   and a normal rebuilt in the sphere tangent frame, mirroring the GPU position

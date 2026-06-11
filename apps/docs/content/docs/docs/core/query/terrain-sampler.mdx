@@ -36,9 +36,9 @@ The sampler object provides:
 
 ### Cube-sphere samplers
 
-When the active surface is a cube sphere, the sampler also exposes
+When the active topology is a cube sphere, the sampler also exposes
 direction-based nodes (a `direction` is a `vec3` from the planet center). These
-are `undefined` on flat surfaces:
+are `undefined` on flat topologies:
 
 - `sampleTerrainByDirection(direction)` // packed `(elevation, nx, ny, nz)`
 - `sampleElevationByDirection(direction)`

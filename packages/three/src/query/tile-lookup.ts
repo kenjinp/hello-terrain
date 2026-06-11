@@ -1,4 +1,4 @@
-import type { SpatialIndex, SurfaceProjection } from "../quadtree";
+import type { SpatialIndex, TopologyProjection } from "../quadtree";
 import { U32_EMPTY, directionToFace, directionToFaceUV } from "../quadtree";
 import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
 import { sphereTileArcLength } from "../gpu/tile";
@@ -41,8 +41,8 @@ export interface TileLookupConfig {
   originX: number;
   originZ: number;
   maxLevel: number;
-  /** Surface projection; `cubeSphere` enables direction lookups. */
-  projection: SurfaceProjection;
+  /** Topology projection; `cubeSphere` enables direction lookups. */
+  projection: TopologyProjection;
   /** Sphere radius in world units (cube-sphere projection only). */
   radius: number;
 }

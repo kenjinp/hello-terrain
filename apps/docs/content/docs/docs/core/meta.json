@@ -4,6 +4,7 @@
   "pages": [
     "params",
     "elevation-function",
+    "topology",
     "...nodes",
     "---Query API---",
     "...query"

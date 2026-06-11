@@ -23,7 +23,7 @@ import {
   leafStorageTask,
   quadtreeConfigTask,
   quadtreeUpdateTask,
-  surfaceTask,
+  topologyTask,
 } from "./quadtree.task";
 import {
   createUniformsTask,
@@ -44,7 +44,7 @@ export const terrainTasks = {
   quadtreeConfig: quadtreeConfigTask,
   quadtreeUpdate: quadtreeUpdateTask,
   leafStorage: leafStorageTask,
-  surface: surfaceTask,
+  topology: topologyTask,
   leafGpuBuffer: leafGpuBufferTask,
   gpuSpatialIndexStorage: gpuSpatialIndexStorageTask,
   gpuSpatialIndexUpload: gpuSpatialIndexUploadTask,

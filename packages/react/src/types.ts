@@ -1,11 +1,11 @@
 import type {
   ElevationCallback,
-  Surface,
   TerrainGraph,
   TerrainQuery,
   TerrainRaycast,
   TerrainSphereQuery,
   TerrainTasks,
+  Topology,
 } from "@hello-terrain/three";
 import type { Task } from "@hello-terrain/work";
 import type { RootState, ThreeElements } from "@react-three/fiber";
@@ -27,7 +27,7 @@ export interface TerrainNodes {
 
 export interface TerrainRuntime {
   query: TerrainQuery | null;
-  /** Cube-sphere query; `null` unless the surface uses the cubeSphere projection. */
+  /** Cube-sphere query; `null` unless the topology uses the cubeSphere projection. */
   sphereQuery: TerrainSphereQuery | null;
   raycast: TerrainRaycast | null;
 }
@@ -37,7 +37,7 @@ export interface TerrainHandle extends TerrainNodes {
   tasks: TerrainTasks;
   runtime: TerrainRuntime;
   ready: boolean;
-  surface?: Surface | null;
+  topology?: Topology | null;
 }
 
 export interface TerrainOptions {
@@ -50,7 +50,7 @@ export interface TerrainOptions {
   elevationScale?: number;
   radius?: number;
   elevation?: ElevationCallback;
-  surface?: Surface | null;
+  topology?: Topology | null;
   terrainFieldFilter?: "nearest" | "linear";
   getCameraOrigin?: (state: RootState) => TerrainVector3Like;
   cameraHysteresis?: number;
