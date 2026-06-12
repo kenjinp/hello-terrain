@@ -2,6 +2,11 @@
 
 import { useExamplesCanvas } from "@/components/ExamplesCanvas";
 import {
+  DEBUG_MONO_FONT,
+  DEBUG_PANEL_FLOATING,
+  DEBUG_TEXT_SIZE,
+} from "@/lib/debug-overlay";
+import {
   createTerrainFieldTextureTask,
   leafGpuBufferTask,
   loadTerrainField,
@@ -47,9 +52,6 @@ type DebugInfo = {
   imageWidth: number;
   imageHeight: number;
 };
-
-const MONO_FONT =
-  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
 export function TerrainFieldTextureDebug({
   graph,
@@ -121,9 +123,7 @@ export function TerrainFieldTextureDebug({
   });
 
   const containerClass = useMemo(() => {
-    const base =
-      "fixed z-40 pointer-events-auto select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md p-2";
-    return `${base} ${className ?? ""}`;
+    return `${DEBUG_PANEL_FLOATING} ${className ?? ""}`;
   }, [className]);
 
   function ensurePreviewPass(storage: {
@@ -590,15 +590,15 @@ export function TerrainFieldTextureDebug({
         }}
       >
         <div
-          className="text-[10px] text-white/80"
-          style={{ fontFamily: MONO_FONT }}
+          className={`${DEBUG_TEXT_SIZE} text-white/80`}
+          style={{ fontFamily: DEBUG_MONO_FONT }}
         >
           terrain field texture
         </div>
         <div className="flex items-center gap-1.5">
           <div
-            className="text-[10px] text-white/40"
-            style={{ fontFamily: MONO_FONT }}
+            className={`${DEBUG_TEXT_SIZE} text-white/40`}
+            style={{ fontFamily: DEBUG_MONO_FONT }}
           >
             drag
           </div>
@@ -633,7 +633,7 @@ export function TerrainFieldTextureDebug({
         <button
           type="button"
           onClick={() => setTab("all")}
-          className={`cursor-pointer px-2 py-0.5 text-[10px] rounded border ${
+          className={`cursor-pointer px-2 py-0.5 ${DEBUG_TEXT_SIZE} rounded border ${
             tab === "all"
               ? "bg-white/20 border-white/25 text-white"
               : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
@@ -644,7 +644,7 @@ export function TerrainFieldTextureDebug({
         <button
           type="button"
           onClick={() => setTab("height")}
-          className={`cursor-pointer px-2 py-0.5 text-[10px] rounded border ${
+          className={`cursor-pointer px-2 py-0.5 ${DEBUG_TEXT_SIZE} rounded border ${
             tab === "height"
               ? "bg-white/20 border-white/25 text-white"
               : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
@@ -655,7 +655,7 @@ export function TerrainFieldTextureDebug({
         <button
           type="button"
           onClick={() => setTab("normal")}
-          className={`cursor-pointer px-2 py-0.5 text-[10px] rounded border ${
+          className={`cursor-pointer px-2 py-0.5 ${DEBUG_TEXT_SIZE} rounded border ${
             tab === "normal"
               ? "bg-white/20 border-white/25 text-white"
               : "bg-white/5 border-white/15 text-white/70 hover:bg-white/10"
@@ -718,8 +718,8 @@ export function TerrainFieldTextureDebug({
       </div>
 
       <div
-        className="mt-1.5 text-[10px] leading-4 text-white/75"
-        style={{ fontFamily: MONO_FONT }}
+        className={`mt-1.5 ${DEBUG_TEXT_SIZE} leading-4 text-white/75`}
+        style={{ fontFamily: DEBUG_MONO_FONT }}
       >
         <div>backend: {info.backend}</div>
         <div>
@@ -758,8 +758,8 @@ export function TerrainFieldTextureDebug({
             }}
           >
             <div
-              className="text-[11px] text-white/80"
-              style={{ fontFamily: MONO_FONT }}
+              className={`${DEBUG_TEXT_SIZE} text-white/80`}
+              style={{ fontFamily: DEBUG_MONO_FONT }}
             >
               tile {selectedTileIndex} (
               {selectedTileIndex < info.activeTiles ? "active" : "inactive"})
@@ -819,8 +819,8 @@ export function TerrainFieldTextureDebug({
               </svg>
             </button>
             <div
-              className="text-[10px] text-white/70"
-              style={{ fontFamily: MONO_FONT }}
+              className={`${DEBUG_TEXT_SIZE} text-white/70`}
+              style={{ fontFamily: DEBUG_MONO_FONT }}
             >
               {selectedTileIndex + 1} / {Math.max(1, info.tileCount)}
             </div>

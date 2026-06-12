@@ -1,6 +1,7 @@
 "use client";
 
 import { useExamplesCanvas } from "@/components/ExamplesCanvas";
+import { DEBUG_PANEL_INLINE, DebugStatRows } from "@/lib/debug-overlay";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 export type FpsDebugProps = {
@@ -8,9 +9,6 @@ export type FpsDebugProps = {
   /** Number of recent samples to keep for the sparkline. @default 60 */
   historySize?: number;
 };
-
-const MONO_FONT =
-  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
 function clamp(x: number, min: number, max: number) {
   return x < min ? min : x > max ? max : x;
@@ -82,104 +80,76 @@ export function FpsDebug({
   const visible = showUI && !showControls;
 
   const containerClass = useMemo(() => {
-    const base =
-      "w-full select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5 transition-opacity duration-200";
-    return `${base} ${className ?? ""}`;
+    return `${DEBUG_PANEL_INLINE} ${className ?? ""}`;
   }, [className]);
 
   const fps = fpsRef.current;
   const minFps = Number.isFinite(minFpsRef.current) ? minFpsRef.current : 0;
   const maxFps = maxFpsRef.current;
 
-  const rows: Array<{ label: string; value: string }> = [
-    { label: "fps", value: fps > 0 ? fps.toFixed(0) : "—" },
+  // Color the current FPS value
+  const fpsColor =
+    fps >= 55 ? "#22c55e" : fps >= 30 ? "#f59e0b" : fps > 0 ? "#ef4444" : "rgba(255,255,255,0.85)";
+
+  const rows = [
+    { label: "fps", value: fps > 0 ? fps.toFixed(0) : "—", valueColor: fpsColor },
     { label: "min", value: minFps > 0 ? minFps.toFixed(0) : "—" },
     { label: "max", value: maxFps > 0 ? maxFps.toFixed(0) : "—" },
   ];
 
-  const rowH = 14;
   const sparkH = 16;
-  const sparkGap = 4;
   const svgW = 180;
-  const labelW = 32;
-  const svgH = rows.length * rowH + sparkGap + sparkH;
 
   // Sparkline from history
   const history = historyRef.current;
   const sparkMax = Math.max(120, maxFps, ...history);
 
-  // Color the current FPS value
-  const fpsColor =
-    fps >= 55 ? "#22c55e" : fps >= 30 ? "#f59e0b" : fps > 0 ? "#ef4444" : "rgba(255,255,255,0.85)";
-
   return (
     <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
-      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto" role="img" aria-label="FPS debug">
-        {rows.map(({ label, value }, i) => {
-          const y = i * rowH;
-          const valueFill = label === "fps" ? fpsColor : "rgba(255,255,255,0.85)";
-          return (
-            <g key={label} transform={`translate(0, ${y})`}>
-              <text
-                x={0}
-                y={rowH - 3}
-                fontSize="9"
-                fill="rgba(255,255,255,0.5)"
-                fontFamily={MONO_FONT}
-              >
-                {label}
-              </text>
-              <text
-                x={labelW}
-                y={rowH - 3}
-                fontSize="9"
-                fill={valueFill}
-                fontFamily={MONO_FONT}
-              >
-                {value}
-              </text>
-            </g>
-          );
-        })}
+      <DebugStatRows rows={rows} />
 
-        {/* Sparkline */}
-        <g transform={`translate(0, ${rows.length * rowH + sparkGap})`}>
-          {/* Background */}
-          <rect x={0} y={0} width={svgW} height={sparkH} rx={2} fill="rgba(255,255,255,0.06)" />
+      {/* Sparkline (graphics only; stretches horizontally, fixed height) */}
+      <svg
+        viewBox={`0 0 ${svgW} ${sparkH}`}
+        preserveAspectRatio="none"
+        className="mt-1 w-full h-4"
+        role="img"
+        aria-label="FPS history"
+      >
+        <rect x={0} y={0} width={svgW} height={sparkH} rx={2} fill="rgba(255,255,255,0.06)" />
 
-          {history.length > 1 && (() => {
-            const barW = svgW / historySize;
-            return history.map((val, idx) => {
-              const h = clamp((val / sparkMax) * sparkH, 0.5, sparkH);
-              const x = idx * barW;
-              const ratio = val / 60;
-              const color =
-                ratio >= 0.92 ? "#22c55e" : ratio >= 0.5 ? "#f59e0b" : "#ef4444";
-              return (
-                <rect
-                  key={idx}
-                  x={x}
-                  y={sparkH - h}
-                  width={Math.max(0.5, barW - 0.5)}
-                  height={h}
-                  fill={color}
-                  opacity={0.8}
-                />
-              );
-            });
-          })()}
+        {history.length > 1 && (() => {
+          const barW = svgW / historySize;
+          return history.map((val, idx) => {
+            const h = clamp((val / sparkMax) * sparkH, 0.5, sparkH);
+            const x = idx * barW;
+            const ratio = val / 60;
+            const color =
+              ratio >= 0.92 ? "#22c55e" : ratio >= 0.5 ? "#f59e0b" : "#ef4444";
+            return (
+              <rect
+                key={idx}
+                x={x}
+                y={sparkH - h}
+                width={Math.max(0.5, barW - 0.5)}
+                height={h}
+                fill={color}
+                opacity={0.8}
+              />
+            );
+          });
+        })()}
 
-          {/* 60 FPS reference line */}
-          <line
-            x1={0}
-            y1={sparkH - (60 / sparkMax) * sparkH}
-            x2={svgW}
-            y2={sparkH - (60 / sparkMax) * sparkH}
-            stroke="rgba(255,255,255,0.2)"
-            strokeWidth={0.5}
-            strokeDasharray="2,2"
-          />
-        </g>
+        {/* 60 FPS reference line */}
+        <line
+          x1={0}
+          y1={sparkH - (60 / sparkMax) * sparkH}
+          x2={svgW}
+          y2={sparkH - (60 / sparkMax) * sparkH}
+          stroke="rgba(255,255,255,0.2)"
+          strokeWidth={0.5}
+          strokeDasharray="2,2"
+        />
       </svg>
     </div>
   );

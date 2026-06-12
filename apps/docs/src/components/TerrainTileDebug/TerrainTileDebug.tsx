@@ -2,6 +2,7 @@
 
 import { useExamplesCanvas } from "@/components/ExamplesCanvas";
 import { TerrainFieldTextureDebug } from "@/components/TerrainFieldTextureDebug";
+import { DEBUG_PANEL_INLINE, DebugStatRows } from "@/lib/debug-overlay";
 import {
   leafGpuBufferTask,
   leafStorageTask,
@@ -30,9 +31,6 @@ type TileStats = {
   /** Number of tiles the GPU buffer can hold */
   bufferCapacity: number;
 };
-
-const MONO_FONT =
-  'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace';
 
 export function TerrainTileDebug({
   graph,
@@ -98,9 +96,7 @@ export function TerrainTileDebug({
   const visible = showUI && !showControls;
 
   const containerClass = useMemo(() => {
-    const base =
-      "w-full select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5 transition-opacity duration-200";
-    return `${base} ${className ?? ""}`;
+    return `${DEBUG_PANEL_INLINE} ${className ?? ""}`;
   }, [className]);
 
   const { tilesRendered, maxTilesRendered, currentLevel, maxLevel, bufferCapacity } =
@@ -109,19 +105,13 @@ export function TerrainTileDebug({
   const fillRatio = bufferCapacity > 0 ? tilesRendered / bufferCapacity : 0;
   const fillPct = (fillRatio * 100).toFixed(1);
 
-  const rows: Array<{ label: string; value: string | number }> = [
+  const rows = [
     { label: "tiles", value: tilesRendered },
     { label: "max seen", value: maxTilesRendered },
     { label: "level", value: `${currentLevel} / ${maxLevel}` },
     { label: "buffer", value: `${tilesRendered} / ${bufferCapacity}` },
     { label: "fill", value: `${fillPct}%` },
   ];
-
-  const rowH = 14;
-  const barH = 4;
-  const svgW = 180;
-  const labelW = 58;
-  const svgH = rows.length * rowH + barH + 6;
 
   // Color the fill bar based on how full the buffer is
   const barColor =
@@ -131,47 +121,21 @@ export function TerrainTileDebug({
     <>
       <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
         <div className="flex items-start gap-1">
-          <svg viewBox={`0 0 ${svgW} ${svgH}`} role="img" aria-label="Terrain tile debug" className="w-full h-auto flex-1 min-w-0">
-            {rows.map(({ label, value }, i) => {
-              const y = i * rowH;
-              return (
-                <g key={label} transform={`translate(0, ${y})`}>
-                  <text
-                    x={0}
-                    y={rowH - 3}
-                    fontSize="9"
-                    fill="rgba(255,255,255,0.5)"
-                    fontFamily={MONO_FONT}
-                  >
-                    {label}
-                  </text>
-                  <text
-                    x={labelW}
-                    y={rowH - 3}
-                    fontSize="9"
-                    fill="rgba(255,255,255,0.85)"
-                    fontFamily={MONO_FONT}
-                  >
-                    {value}
-                  </text>
-                </g>
-              );
-            })}
+          <div className="flex-1 min-w-0">
+            <DebugStatRows rows={rows} />
 
-            {/* Buffer fill bar */}
-            <g transform={`translate(0, ${rows.length * rowH + 2})`}>
-              <rect x={0} y={0} width={svgW} height={barH} rx={2} fill="rgba(255,255,255,0.06)" />
-              <rect
-                x={0}
-                y={0}
-                width={Math.max(0, fillRatio * svgW)}
-                height={barH}
-                rx={2}
-                fill={barColor}
-                opacity={0.85}
+            {/* Buffer fill bar (graphics only) */}
+            <div className="mt-1 h-1 w-full rounded-sm bg-white/10 overflow-hidden">
+              <div
+                className="h-full rounded-sm transition-[width] duration-150"
+                style={{
+                  width: `${Math.max(0, Math.min(1, fillRatio)) * 100}%`,
+                  backgroundColor: barColor,
+                  opacity: 0.85,
+                }}
               />
-            </g>
-          </svg>
+            </div>
+          </div>
 
           {rendererTask && (
             <button
