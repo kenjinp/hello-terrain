@@ -128,5 +128,6 @@ const elevation: ElevationCallback = ({ rootUV }) => {
 Currently the mesh that is generated right now has some issues. 
 - Apparent pop-in, which will be later resolved with some form of geomorphing (animating in the LODs)
 - ~~Non-contiguous normals at the tile edges, which makes lighting change abruptly (to be fixed later with stitching tiles)~~ **Resolved:** normals are now derived from the cross product of neighboring **world positions** (and stored in world space), which keeps shading continuous across tile edges and cube-face seams without a separate stitching pass.
+- ~~T-junction cracks at 2:1 LOD boundaries (previously only hidden by skirts)~~ **Resolved:** a per-leaf coarse-neighbor edge mask drives true seam stitching in the vertex shader — odd boundary vertices on coarse-facing edges are snapped (position and normal) onto the chord between their even edge-neighbors, for both flat and cube-sphere topologies. Skirts remain as a safety net.
 - Perhaps it will be better to hash the quadtree in someway, that way even if the camera position changes, the downstream tasks will not
 be asked to run if the quadtree resolves to the same shape. 

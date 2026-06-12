@@ -1,6 +1,7 @@
 import { task } from "@hello-terrain/work";
 import { createTileWorldPosition } from "../gpu/worldPosition";
 import { createTerrainFieldTextureTask } from "./terrain-field.task";
+import { innerTileSegments, stitchSeams } from "./params";
 import { leafStorageTask, topologyTask } from "./quadtree.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
@@ -23,12 +24,15 @@ export const positionNodeTask = task((get, work) => {
   const terrainUniforms = get(updateUniformsTask);
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
   const topology = get(topologyTask);
+  const stitch = get(stitchSeams);
+  const innerSegments = get(innerTileSegments);
   return work(() =>
     createTileWorldPosition(
       leafStorage,
       terrainUniforms,
       terrainFieldStorage,
       topology.projection ?? "flat",
+      { stitchSeams: stitch, innerSegments },
     ),
   );
 }).displayName("positionNodeTask");

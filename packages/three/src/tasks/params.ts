@@ -22,6 +22,17 @@ export const innerTileSegments = param(61).displayName("innerTileSegments");
 /** Skirt scale factor. */
 export const skirtScale = param(100).displayName("skirtScale");
 
+/**
+ * Enable T-junction seam stitching across 2:1 LOD boundaries. The finer tile's
+ * odd boundary vertices are snapped onto the chord between their even
+ * edge-neighbors (position and normal), removing cracks and shading
+ * discontinuities at LOD transitions. Skirts remain enabled as a safety net.
+ *
+ * Watertightness is exact when `innerTileSegments` is even; with an odd value
+ * the single child-corner vertex is left to the skirt to cover.
+ */
+export const stitchSeams = param(true).displayName("stitchSeams");
+
 /** Elevation vertical scale. */
 export const elevationScale = param(1).displayName("elevationScale");
 

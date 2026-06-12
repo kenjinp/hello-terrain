@@ -39,9 +39,12 @@ The terrain library is organized in layers from pure logic to runtime integratio
 ## Data Flow (Per Frame)
 
 1. App updates params (camera origin, scales, etc.).
-2. Graph runs quadtree selection and uploads leaf storage.
+2. Graph runs quadtree selection (with 2:1 balance) and uploads leaf storage,
+   including the per-leaf coarse-neighbor edge mask packed into slot 3 for seam
+   stitching.
 3. Graph runs compute stages to produce elevation field and derived buffers.
-4. Graph exposes render nodes (position/normal related).
+4. Graph exposes render nodes (position/normal related); the vertex shader
+   stitches odd boundary vertices on coarse-facing edges.
 5. App (or sink task) applies results to mesh/material for rendering.
 
 ## Public API Shape

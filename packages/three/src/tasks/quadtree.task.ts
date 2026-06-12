@@ -1,8 +1,14 @@
 import { task } from "@hello-terrain/work";
 import { Vector3 } from "three";
 import { createLeafStorage } from "../gpu/leafStorage";
-import type { LeafSet } from "../quadtree";
-import { createFlatTopology, createState, update } from "../quadtree";
+import type { LeafSet, SpatialIndex } from "../quadtree";
+import {
+  buildCoarseEdgeMask,
+  createFlatTopology,
+  createSpatialIndex,
+  createState,
+  update,
+} from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
 import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
@@ -83,17 +89,32 @@ export const leafStorageTask = task((get, work) => {
 export const leafGpuBufferTask = task((get, work) => {
   const leafSet = get(quadtreeUpdateTask);
   const leafStorage = get(leafStorageTask);
+  const quadtreeConfig = get(quadtreeConfigTask);
+  const maxNodesVal = get(maxNodes);
+
+  // Per-frame scratch for the coarse-neighbor edge mask (allocated once).
+  const edgeMask = new Uint8Array(maxNodesVal);
+  const maskIndex: SpatialIndex = createSpatialIndex(maxNodesVal);
+
   return work(() => {
     const bufferCapacity = leafStorage.data.length / 4;
     const leafCount = Math.min(leafSet.count, bufferCapacity);
+
+    // Edges whose neighbor is one level coarser need T-junction stitching on
+    // this (finer) tile. Computed CPU-side and packed into the spare high bits
+    // of slot 3 alongside the face index.
+    buildCoarseEdgeMask(quadtreeConfig.topology, leafSet, edgeMask, maskIndex);
+
     for (let i = 0; i < leafCount; i += 1) {
       const offset = i * 4;
       leafStorage.data[offset] = leafSet.level[i] ?? 0;
       leafStorage.data[offset + 1] = leafSet.x[i] ?? 0;
       leafStorage.data[offset + 2] = leafSet.y[i] ?? 0;
-      // Slot 3 carries the surface space/face index (0 for flat surfaces,
-      // 0..5 for cube-sphere faces). Consumed by the sphere position assembly.
-      leafStorage.data[offset + 3] = leafSet.space[i] ?? 0;
+      // Slot 3 packs the surface space/face index (0 for flat, 0..5 for
+      // cube-sphere faces) in bits 0..2 and the 4-bit coarse-neighbor edge mask
+      // (LEFT,RIGHT,TOP,BOTTOM) in bits 3..6. Decoded by `decodeLeafTile`.
+      const space = leafSet.space[i] ?? 0;
+      leafStorage.data[offset + 3] = (space & 0x7) | ((edgeMask[i] ?? 0) << 3);
     }
     leafStorage.attribute.needsUpdate = true;
     leafStorage.node.needsUpdate = true;

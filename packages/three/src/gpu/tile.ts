@@ -1,4 +1,4 @@
-import { Fn, float, int, pow, vec2, vec3 } from "three/tsl";
+import { Fn, float, int, pow, uint, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TopologyProjection } from "../quadtree";
 import { cubeFaceBasis, cubeFaceDirection } from "../tsl/cubeSphere";
@@ -33,19 +33,29 @@ export type LeafTileNodes = {
   y: Node;
   /** Surface space/face index (0 for flat, 0..5 for cube-sphere faces). */
   face: Node;
+  /**
+   * 4-bit coarse-neighbor edge mask (bit `1<<dir` for LEFT,RIGHT,TOP,BOTTOM).
+   * A set bit means the neighbor across that edge is one level coarser and the
+   * edge needs T-junction stitching on this tile.
+   */
+  edgeMask: Node;
 };
 
 /**
  * Decode a leaf tile record from leaf storage. Records are packed as
- * `[level, x, y, space/face]` at `nodeIndex * 4` (see `leafGpuBufferTask`).
+ * `[level, x, y, space|edgeMask<<3]` at `nodeIndex * 4` (see `leafGpuBufferTask`):
+ * slot 3 holds the face index in bits 0..2 and the coarse-neighbor edge mask in
+ * bits 3..6.
  */
 export function decodeLeafTile(leafStorage: LeafStorageState, nodeIndex: Node): LeafTileNodes {
   const nodeOffset = int(nodeIndex).mul(int(4));
+  const packed = uint(leafStorage.node.element(nodeOffset.add(int(3))));
   return {
     level: leafStorage.node.element(nodeOffset).toInt(),
     x: leafStorage.node.element(nodeOffset.add(int(1))).toFloat(),
     y: leafStorage.node.element(nodeOffset.add(int(2))).toFloat(),
-    face: leafStorage.node.element(nodeOffset.add(int(3))).toInt(),
+    face: packed.bitAnd(uint(0x7)).toInt(),
+    edgeMask: packed.shiftRight(uint(3)).bitAnd(uint(0xf)).toInt(),
   };
 }
 

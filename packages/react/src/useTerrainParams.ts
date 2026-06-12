@@ -8,6 +8,7 @@ import {
   radius,
   rootSize,
   skirtScale,
+  stitchSeams,
   terrainFieldFilter,
   topology,
   type TerrainGraph,
@@ -43,6 +44,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     maxNodes: nextMaxNodes,
     innerTileSegments: nextInnerTileSegments,
     skirtScale: nextSkirtScale,
+    stitchSeams: nextStitchSeams,
     elevationScale: nextElevationScale,
     radius: nextRadius,
     elevation,
@@ -100,6 +102,13 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     resetOrSet(
       graph,
       ownedParamIds,
+      stitchSeams,
+      nextStitchSeams,
+      () => nextStitchSeams as boolean,
+    );
+    resetOrSet(
+      graph,
+      ownedParamIds,
       elevationScale,
       nextElevationScale,
       () => nextElevationScale as number,
@@ -143,6 +152,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     nextMaxNodes,
     nextInnerTileSegments,
     nextSkirtScale,
+    nextStitchSeams,
     nextElevationScale,
     nextRadius,
     elevation,

@@ -116,6 +116,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     maxLevel,
     innerTileSegments,
     skirtScale,
+    stitchSeams,
     elevationScale,
     radius,
     elevation,
@@ -134,6 +135,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     maxLevel,
     innerTileSegments,
     skirtScale,
+    stitchSeams,
     elevationScale,
     radius,
     elevation,
@@ -165,6 +167,7 @@ export function Terrain({
   maxLevel,
   innerTileSegments,
   skirtScale,
+  stitchSeams,
   elevationScale,
   radius,
   elevation,
@@ -196,6 +199,7 @@ export function Terrain({
       maxLevel={maxLevel}
       innerTileSegments={innerTileSegments}
       skirtScale={skirtScale}
+      stitchSeams={stitchSeams}
       elevationScale={elevationScale}
       radius={radius}
       elevation={elevation}

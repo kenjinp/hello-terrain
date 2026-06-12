@@ -8,6 +8,7 @@ export {
   origin,
   innerTileSegments,
   skirtScale,
+  stitchSeams,
   elevationScale,
   radius,
   maxNodes,

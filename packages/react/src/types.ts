@@ -47,6 +47,7 @@ export interface TerrainOptions {
   maxNodes?: number;
   innerTileSegments?: number;
   skirtScale?: number;
+  stitchSeams?: boolean;
   elevationScale?: number;
   radius?: number;
   elevation?: ElevationCallback;

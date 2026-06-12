@@ -90,6 +90,13 @@ Written by compute stage (`elevationFieldStageTask`).
 
 Texture-backed terrain payload (RGBA = `[height, Nx, Ny, Nz]`, the unit world-space surface normal) consumed by render and GPU sampler paths.
 
+### 6b) LeafStorage
+
+Per-leaf records uploaded to the GPU as `Int32Array` stride 4:
+`[level, x, y, space | edgeMask << 3]`. Slot 3 packs the surface space/face index
+(bits 0..2) and the 4-bit coarse-neighbor edge mask used for seam stitching
+(bits 3..6). Written by `leafGpuBufferTask`, decoded by `decodeLeafTile`.
+
 ### 7) GpuSpatialIndexContext
 
 GPU spatial index representation used for shader-side world->tile lookup.

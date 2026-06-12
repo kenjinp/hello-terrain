@@ -34,6 +34,28 @@ Selects active terrain leaves based on camera-relative criteria and balancing ru
   previous frame's elevation beneath the camera offsets the camera toward the
   surface during refinement — along `+Y` for flat surfaces and along the radial
   up-direction (from the planet center) for cube spheres.
+- `balance2to1` enforces that adjacent leaves differ by at most one level.
+
+## Seam Stitching
+
+Removes T-junction cracks and shading discontinuities at 2:1 LOD boundaries, for
+both flat and cube-sphere topologies.
+
+- The CPU computes a per-leaf 4-bit **coarse-neighbor edge mask**
+  (`buildCoarseEdgeMask`): a bit is set for each edge (LEFT, RIGHT, TOP, BOTTOM)
+  whose neighbor is one level coarser. Cross-face edges resolve automatically via
+  `topology.neighborSameLevel`.
+- The mask is packed into leaf storage slot 3 alongside the face index
+  (`space | edgeMask << 3`) and decoded by `decodeLeafTile`.
+- In the vertex shader, on a masked edge each **odd** interior boundary vertex is
+  snapped to the world-space midpoint of its two **even** edge-neighbors (which
+  already coincide with the coarse neighbor's vertices), and its normal to the
+  renormalized mean of those neighbors' world normals. Working in world space
+  unifies flat (Y interpolation) and sphere (arc-to-chord) and keeps cross-face
+  seams watertight.
+- Watertightness is exact when `innerTileSegments` is even; with an odd value the
+  single child-corner vertex is left for the skirt to cover. Skirts are retained
+  as a safety net (`stitchSeams` param, default on).
 
 ## Elevation Function
 

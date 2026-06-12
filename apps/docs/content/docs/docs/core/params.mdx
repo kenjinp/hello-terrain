@@ -17,6 +17,7 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `maxNodes` | `number` | `1024` | The maximum number of active terrain tiles that can be rendered and processed at once. |
 | `innerTileSegments` | `number` | `61` | The vertex resolution inside each terrain tile before skirts are added (effective edge vertex count is `innerTileSegments + 3`, so the default is a `64×64` tile grid). Higher values increase per-tile detail and cost. |
 | `skirtScale` | `number` | `100` | The length of the downward skirt geometry used to hide cracks between terrain LOD levels. |
+| `stitchSeams` | `boolean` | `true` | Stitch T-junction seams across 2:1 LOD boundaries (flat and cube-sphere): odd boundary vertices on edges facing a coarser neighbor are snapped (position and normal) onto the chord between their even edge-neighbors, removing cracks and shading discontinuities. Skirts stay enabled as a safety net. Watertight when `innerTileSegments` is even. |
 | `elevationScale` | `number` | `1` | A multiplier applied to the sampled elevation values, controlling the vertical exaggeration of the terrain. |
 | `radius` | `number` | `1000` | The sphere radius used by the cube-sphere projection. Ignored by flat topologies. See [Cube-Sphere Planet](/docs/examples/cube-sphere). |
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
