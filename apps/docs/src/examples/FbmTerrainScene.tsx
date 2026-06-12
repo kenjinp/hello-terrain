@@ -8,23 +8,7 @@ import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useMemo } from "react";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import {
-  cos,
-  dot,
-  float,
-  Fn,
-  floor,
-  fract,
-  Loop,
-  max,
-  mix,
-  normalWorld,
-  normalize,
-  sin,
-  vec2,
-  vec3,
-  vec4,
-} from "three/tsl";
+import { cos, dot, float, floor, Fn, fract, Loop, mix, sin, vec2 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend({ MeshBasicNodeMaterial: THREE.MeshBasicNodeMaterial });
@@ -32,9 +16,7 @@ extend({ MeshBasicNodeMaterial: THREE.MeshBasicNodeMaterial });
 type LevaStore = ReturnType<typeof useCreateStore>;
 
 const randomGradient = Fn(([p]: [any]) => {
-  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
-    Math.PI * 2,
-  );
+  const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(Math.PI * 2);
   return vec2(cos(angle), sin(angle));
 });
 
@@ -133,9 +115,7 @@ function FbmTerrainSceneImpl({ store }: { store: LevaStore }) {
 
   const elevation = useMemo<ElevationCallback>(() => {
     return ({ worldPosition }) => {
-      const p = vec2(worldPosition.x, worldPosition.z).mul(
-        float(controls.noiseScale),
-      );
+      const p = vec2(worldPosition.x, worldPosition.z).mul(float(controls.noiseScale));
       return fbm(p).sub(float(0.3));
     };
   }, [controls.noiseScale]);
@@ -157,20 +137,7 @@ function FbmTerrainSceneImpl({ store }: { store: LevaStore }) {
       maxNodes={controls.maxNodes}
     >
       {({ positionNode }) => (
-        <meshBasicNodeMaterial
-          positionNode={positionNode}
-          wireframe={controls.wireframe}
-          outputNode={Fn(() => {
-            const baseColor = vec3(0.42, 0.55, 0.33);
-            const lightDir = normalize(vec3(0.5, 0.8, 0.3));
-            const ambient = float(0.3);
-            const diff = max(dot(normalWorld, lightDir), float(0));
-            return vec4(
-              baseColor.mul(ambient.add(diff.mul(float(0.7)))),
-              float(1),
-            );
-          })()}
-        />
+        <meshStandardNodeMaterial positionNode={positionNode} wireframe={controls.wireframe} />
       )}
     </Terrain>
   );
@@ -186,9 +153,7 @@ export default function FbmTerrainScene() {
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
+          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
           await renderer.init();
           return renderer;
         }}

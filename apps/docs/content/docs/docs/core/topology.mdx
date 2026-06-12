@@ -15,6 +15,10 @@ Hello Terrain ships three topologies:
 
 All three are imported from `@hello-terrain/three` and assigned through the [`topology` param](/docs/core/params).
 
+The tabs below show a minimal scene for each topology, built on the low-level graph API. Only the selected example is mounted — switching tabs unloads the previous WebGPU scene — so use the tabs rather than scrolling several live canvases at once.
+
+<TopologySandpackTabs />
+
 ## How a Topology Is Selected
 
 The terrain graph reads the `topology` param to derive its tile layout. When `topology` is `null` (the default), the graph falls back to a bounded flat topology built from `rootSize` and `origin`:
@@ -58,7 +62,7 @@ const flat = createFlatTopology({
 | `origin` | `{ x, y, z }` | — | World-space origin of the root tile. |
 | `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius, so tall terrain isn't culled too early. |
 
-Because the topology is bounded, `neighborSameLevel` returns `false` at the outer edges — there is no terrain beyond the root tile.
+Because the topology is bounded, `neighborSameLevel` returns `false` at the outer edges — there is no terrain beyond the root tile. See the **Bounded flat** tab above for a runnable scene.
 
 ## Infinite Flat Topology
 
@@ -90,7 +94,9 @@ const infinite = createInfiniteFlatTopology({
 - **Camera-centered roots** — `rootTiles` recomputes which level-0 tiles surround the camera each frame.
 - **Signed tile coordinates** — roots can have negative `(x, y)` positions when the camera is near the origin.
 
-See the [Infinite Flat Terrain example](/docs/examples/infinite-flat) for an interactive demo.
+Swapping `createFlatTopology` for `createInfiniteFlatTopology` is the only change from the bounded flat scene. Try the **Infinite flat** tab above and orbit the camera — fresh root tiles stay present in every direction.
+
+See the [Infinite Flat Terrain example](/docs/examples/infinite-flat) for a richer interactive demo.
 
 ## Cube-Sphere Topology
 
@@ -118,7 +124,9 @@ Unlike the flat topologies, the cube-sphere reports `projection: "cubeSphere"` a
 
 Cross-face topology (`neighborSameLevel`) is derived numerically from a shared cube-face basis, so tiles that cross a face edge — including the rotated edges near the poles — resolve to the correct neighbor for 2:1 balancing and seam filling.
 
-See the [Cube-Sphere Planet example](/docs/examples/cube-sphere) for an interactive demo.
+The same graph wiring drives a full planet — only the topology, the `radius` param, and the camera distance change. Open the **Cube-sphere** tab above and orbit around to see the six faces refine toward the camera.
+
+See the [Cube-Sphere Planet example](/docs/examples/cube-sphere) for a richer interactive demo.
 
 ## The `Topology` Type
 

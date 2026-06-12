@@ -3,6 +3,7 @@ import { FbmTerrainSandpack } from "@/components/Sandpack/FbmTerrainSandpack";
 import { HeightmapTerrainSandpack } from "@/components/Sandpack/HeightmapTerrainSandpack";
 import { Sandpack } from "@/components/Sandpack/Sandpack";
 import { SinWaveTerrainSandpack } from "@/components/Sandpack/SinWaveTerrainSandpack";
+import { TopologySandpackTabs } from "@/components/Sandpack/TopologySandpack";
 import { Mermaid } from "fumadocs-mermaid/ui";
 import defaultMdxComponents from "fumadocs-ui/mdx";
 import type { MDXComponents } from "mdx/types";
@@ -18,6 +19,7 @@ export function getMDXComponents(components?: MDXComponents): MDXComponents {
     SinWaveTerrainSandpack,
     FbmTerrainSandpack,
     HeightmapTerrainSandpack,
+    TopologySandpackTabs,
     ...components,
   };
 }
