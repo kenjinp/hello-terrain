@@ -22,6 +22,7 @@ export function createGpuSpatialIndex(maxEntries: number): GpuSpatialIndexContex
   const size = nextPow2(Math.max(2, maxEntries * 2));
   const data = new Uint32Array(size * SLOT_STRIDE);
   const attribute = new StorageBufferAttribute(data, SLOT_STRIDE);
+  attribute.name = "gpuSpatialIndex";
   const node = storage(attribute, "u32", 1).toReadOnly().setName("gpuSpatialIndex");
   const stampGen = uniform(uint(1)).setName("uGpuSpatialIndexStampGen");
   return {

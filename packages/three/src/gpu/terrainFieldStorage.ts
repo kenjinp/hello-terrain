@@ -83,6 +83,7 @@ export function ArrayTextureBackend(
     edgeVertexCount,
     tileCount,
   );
+  tex.name = "terrainField";
   configureStorageTexture(tex, options.format, options.filter);
 
   return {
@@ -139,6 +140,7 @@ export function AtlasBackend(
   let tilesPerRow = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
   const atlasSize = tilesPerRow * edgeVertexCount;
   const tex = new StorageTexture(atlasSize, atlasSize);
+  tex.name = "terrainFieldAtlas";
   configureStorageTexture(tex, options.format, options.filter);
 
   return {

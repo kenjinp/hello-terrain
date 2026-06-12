@@ -16,7 +16,8 @@ export const createElevationFieldContextTask = task((get, work) => {
   return work(() => {
     const data = new Float32Array(totalElements);
     const attribute = new StorageBufferAttribute(data, 1);
-    const node = storage(attribute, "float", totalElements);
+    attribute.name = "elevationField";
+    const node = storage(attribute, "float", totalElements).setName("elevationField");
 
     return {
       data,

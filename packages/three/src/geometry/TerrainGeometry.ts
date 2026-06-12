@@ -21,26 +21,35 @@ export class TerrainGeometry extends BufferGeometry {
     }
 
     try {
-      this.setIndex(this.generateIndices(innerSegments, flipWinding));
-      this.setAttribute(
-        "position",
-        new BufferAttribute(new Float32Array(this.generatePositions(innerSegments)), 3),
+      const index = this.generateIndices(innerSegments, flipWinding);
+      const indexAttribute = new BufferAttribute(new Uint32Array(index), 1);
+      indexAttribute.name = "terrainIndex";
+      this.setIndex(indexAttribute);
+
+      const positionAttribute = new BufferAttribute(
+        new Float32Array(this.generatePositions(innerSegments)),
+        3,
       );
-      this.setAttribute(
-        "normal",
-        new BufferAttribute(new Float32Array(this.generateNormals(innerSegments)), 3),
+      positionAttribute.name = "terrainPosition";
+      this.setAttribute("position", positionAttribute);
+
+      const normalAttribute = new BufferAttribute(
+        new Float32Array(this.generateNormals(innerSegments)),
+        3,
       );
-      this.setAttribute(
-        "uv",
-        new BufferAttribute(
-          new Float32Array(
-            extendUV
-              ? this.generateUvsExtended(innerSegments)
-              : this.generateUvsOnlyInner(innerSegments),
-          ),
-          2,
+      normalAttribute.name = "terrainNormal";
+      this.setAttribute("normal", normalAttribute);
+
+      const uvAttribute = new BufferAttribute(
+        new Float32Array(
+          extendUV
+            ? this.generateUvsExtended(innerSegments)
+            : this.generateUvsOnlyInner(innerSegments),
         ),
+        2,
       );
+      uvAttribute.name = "terrainUv";
+      this.setAttribute("uv", uvAttribute);
     } catch (error) {
       console.error("Error creating TerrainGeometry:", error);
       throw error;

@@ -38,6 +38,7 @@ export const terrainQueryTask = task((get, work) => {
     let sphereQuery = prev?.sphereQuery ?? null;
 
     if (!cache || !query || prev?.shapeKey !== shapeKey) {
+      prev?.cache?.dispose();
       cache = createCpuTerrainCache(maxNodesValue, configValues);
       query = createTerrainQuery(cache);
       sphereQuery =

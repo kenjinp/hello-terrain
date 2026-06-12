@@ -1,6 +1,13 @@
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex } from "../quadtree";
+import {
+  type ReadbackSlot,
+  canDeviceReadback,
+  createReadbackSlot,
+  disposeReadbackSlot,
+  readStorageBufferInto,
+} from "../gpu/bufferReadback";
 import type { ElevationRange } from "./types";
 
 /**
@@ -29,6 +36,8 @@ export interface TerrainSnapshotState {
   readbackPending: boolean;
   generation: number;
   lastScheduledStampGen: number;
+  elevationReadback: ReadbackSlot;
+  boundsReadback: ReadbackSlot;
 }
 
 type RendererReadback = WebGPURenderer & {
@@ -54,6 +63,8 @@ export function createTerrainSnapshotState(
     readbackPending: false,
     generation: 0,
     lastScheduledStampGen: -1,
+    elevationReadback: createReadbackSlot(),
+    boundsReadback: createReadbackSlot(),
   };
 }
 
@@ -91,41 +102,31 @@ export function triggerSnapshotReadback(
   captured: {
     activeLeafCount: number;
     totalElements: number;
+    verticesPerNode: number;
     elevationScale: number;
     originY: number;
   },
 ): void {
   if (state.readbackPending) return;
   const withReadback = renderer as RendererReadback;
-  if (!withReadback.getArrayBufferAsync) return;
+  const useDeviceReadback = canDeviceReadback(renderer);
+  if (!useDeviceReadback && !withReadback.getArrayBufferAsync) return;
   if (spatialIndex.stampGen === state.lastScheduledStampGen) return;
 
   cloneSpatialIndex(state.backIndex, spatialIndex);
   state.lastScheduledStampGen = spatialIndex.stampGen;
 
-  const { activeLeafCount, totalElements, elevationScale, originY } = captured;
+  const { activeLeafCount, totalElements, verticesPerNode, elevationScale, originY } =
+    captured;
 
   state.readbackPending = true;
-  const elevationPromise = withReadback.getArrayBufferAsync(attribute);
-  const boundsPromise = boundsAttribute
-    ? withReadback.getArrayBufferAsync(boundsAttribute)
-    : null;
 
-  const onComplete = (
-    elevResult: ArrayBuffer,
-    boundsResult: ArrayBuffer | null,
-  ) => {
-    const data = new Float32Array(elevResult);
-    state.backElevation.fill(0);
-    state.backElevation.set(data.subarray(0, totalElements));
-
+  /** Promote the (already-populated) back buffers to front and recompute range. */
+  const applySnapshot = (boundsFilled: boolean) => {
     let boundsValid = activeLeafCount === 0;
-    if (boundsResult) {
-      const rawBounds = new Float32Array(boundsResult);
-      state.backTileBounds.fill(0);
-      state.backTileBounds.set(rawBounds.subarray(0, activeLeafCount * 2));
+    if (boundsFilled) {
       for (let i = 0; i < activeLeafCount; i += 1) {
-        if ((rawBounds[i * 2 + 1] ?? 0) !== 0) {
+        if ((state.backTileBounds[i * 2 + 1] ?? 0) !== 0) {
           boundsValid = true;
           break;
         }
@@ -139,13 +140,13 @@ export function triggerSnapshotReadback(
     state.frontLeafCount = activeLeafCount;
     state.backElevation = oldFrontElevation;
     state.backIndex = oldFrontIndex;
-    if (boundsResult && boundsValid) {
+    if (boundsFilled && boundsValid) {
       const oldFrontBounds = state.frontTileBounds;
       state.frontTileBounds = state.backTileBounds;
       state.backTileBounds = oldFrontBounds;
     }
 
-    if (boundsResult && boundsValid && activeLeafCount > 0) {
+    if (boundsFilled && boundsValid && activeLeafCount > 0) {
       let gMin = Infinity;
       let gMax = -Infinity;
       for (let i = 0; i < activeLeafCount; i++) {
@@ -163,6 +164,66 @@ export function triggerSnapshotReadback(
     state.generation += 1;
   };
 
+  if (useDeviceReadback) {
+    const runDeviceReadback = async (): Promise<void> => {
+      state.backElevation.fill(0);
+      await readStorageBufferInto(
+        renderer,
+        attribute,
+        state.elevationReadback,
+        state.backElevation,
+        activeLeafCount * verticesPerNode,
+        "terrainElevationReadback",
+      );
+
+      let boundsFilled = false;
+      if (boundsAttribute) {
+        state.backTileBounds.fill(0);
+        boundsFilled = await readStorageBufferInto(
+          renderer,
+          boundsAttribute,
+          state.boundsReadback,
+          state.backTileBounds,
+          activeLeafCount * 2,
+          "terrainBoundsReadback",
+        );
+      }
+
+      applySnapshot(boundsFilled);
+    };
+
+    runDeviceReadback().finally(() => {
+      state.readbackPending = false;
+    });
+    return;
+  }
+
+  // Fallback: Three.js' allocating readback (used when no WebGPU backend is
+  // available, e.g. in unit tests). Reads the full buffers.
+  const onComplete = (
+    elevResult: ArrayBuffer,
+    boundsResult: ArrayBuffer | null,
+  ) => {
+    const data = new Float32Array(elevResult);
+    state.backElevation.fill(0);
+    state.backElevation.set(data.subarray(0, totalElements));
+
+    let boundsFilled = false;
+    if (boundsResult) {
+      const rawBounds = new Float32Array(boundsResult);
+      state.backTileBounds.fill(0);
+      state.backTileBounds.set(rawBounds.subarray(0, activeLeafCount * 2));
+      boundsFilled = true;
+    }
+
+    applySnapshot(boundsFilled);
+  };
+
+  const elevationPromise = withReadback.getArrayBufferAsync!(attribute);
+  const boundsPromise = boundsAttribute
+    ? withReadback.getArrayBufferAsync!(boundsAttribute)
+    : null;
+
   if (boundsPromise) {
     Promise.all([elevationPromise, boundsPromise])
       .then(([elev, bounds]) => onComplete(elev, bounds))
@@ -176,4 +237,10 @@ export function triggerSnapshotReadback(
         state.readbackPending = false;
       });
   }
+}
+
+/** Destroy the GPU staging buffers held by the snapshot state. */
+export function disposeSnapshotReadback(state: TerrainSnapshotState): void {
+  disposeReadbackSlot(state.elevationReadback);
+  disposeReadbackSlot(state.boundsReadback);
 }

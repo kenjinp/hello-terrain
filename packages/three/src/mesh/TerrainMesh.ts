@@ -37,6 +37,7 @@ export class TerrainMesh extends InstancedMesh {
     const { innerTileSegments, maxNodes, material, flipWinding } = mergedParams;
     const geometry = new TerrainGeometry(innerTileSegments, true, flipWinding);
     super(geometry, material, maxNodes);
+    this.instanceMatrix.name = "terrainInstanceMatrix";
     this.frustumCulled = false;
     this._innerTileSegments = innerTileSegments;
     this._maxNodes = maxNodes;
@@ -79,6 +80,7 @@ export class TerrainMesh extends InstancedMesh {
     const oldMatrixArray = this.instanceMatrix.array as Float32Array;
     nextMatrix.set(oldMatrixArray.subarray(0, Math.min(oldMatrixArray.length, nextMatrix.length)));
     this.instanceMatrix = new InstancedBufferAttribute(nextMatrix, 16);
+    this.instanceMatrix.name = "terrainInstanceMatrix";
 
     if (this.instanceColor) {
       const itemSize = this.instanceColor.itemSize;
@@ -86,6 +88,7 @@ export class TerrainMesh extends InstancedMesh {
       const oldColorArray = this.instanceColor.array as Float32Array;
       nextColor.set(oldColorArray.subarray(0, Math.min(oldColorArray.length, nextColor.length)));
       this.instanceColor = new InstancedBufferAttribute(nextColor, itemSize);
+      this.instanceColor.name = "terrainInstanceColor";
     }
 
     this._maxNodes = maxNodes;

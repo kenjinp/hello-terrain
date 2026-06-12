@@ -18,6 +18,7 @@ import {
 import {
   type TerrainSnapshotState,
   createTerrainSnapshotState,
+  disposeSnapshotReadback,
   triggerSnapshotReadback,
 } from "./terrain-snapshot";
 import type {
@@ -60,6 +61,8 @@ export interface CpuTerrainCache {
     boundsAttribute?: StorageBufferAttribute,
     activeLeafCount?: number,
   ): void;
+  /** Release GPU readback staging buffers owned by this cache. */
+  dispose(): void;
   getElevation(worldX: number, worldZ: number): number | null;
   getNormal(worldX: number, worldZ: number): Vector3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
@@ -358,9 +361,13 @@ export function createCpuTerrainCache(
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
+        verticesPerNode: shape.verticesPerNode,
         elevationScale: config.elevationScale,
         originY: config.originY,
       });
+    },
+    dispose() {
+      disposeSnapshotReadback(state);
     },
     getElevation(worldX, worldZ) {
       const sample = getElevation(worldX, worldZ);
