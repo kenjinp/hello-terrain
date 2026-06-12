@@ -1,12 +1,6 @@
 import { Fn, float, int, vec2, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { sampleTerrainField } from "../gpu/terrainFieldStorage";
-import {
-  cubeFaceBasis,
-  cubeFaceFromDirection,
-  sphereTangentFrameNormal,
-  unpackTangentNormal,
-} from "../tsl/cubeSphere";
 import { createElevationFunction } from "../tsl/elevation";
 import {
   createTileIndexFromDirection,
@@ -42,7 +36,8 @@ function packedSampleFromTileResult(
     fieldV,
     safeTileIndex,
   ).toVar();
-  const normal = unpackTangentNormal(sampled.g, sampled.b);
+  // The terrain field stores the unit world-space normal in (g, b, a).
+  const normal = vec3(sampled.g, sampled.b, sampled.a);
 
   const valid = found.select(float(1), float(0)).toVar();
   return vec4(sampled.r, normal.x, normal.y, normal.z).mul(valid);
@@ -169,10 +164,8 @@ export function createTerrainSampler(
         .select(float(1), float(0));
     });
     sampler.sampleNormalByDirection = Fn(([direction]: [Node]) => {
-      const dir = vec3(direction).normalize().toVar();
       const packed = terrainSampleByDir(direction).toVar();
-      const basis = cubeFaceBasis(cubeFaceFromDirection(dir));
-      return sphereTangentFrameNormal(dir, basis, vec3(packed.y, packed.z, packed.w));
+      return vec3(packed.y, packed.z, packed.w).normalize();
     });
   }
 

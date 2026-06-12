@@ -15,7 +15,9 @@ assembles world positions and normals:
 - `flat`: tiles lie in the XZ plane; elevation displaces along `+Y`.
 - `cubeSphere`: each tile vertex maps from its face-local `(u, v)` onto the cube,
   normalizes to the unit sphere, scales by `radius`, and displaces radially by
-  elevation. Normals are rebuilt in the per-vertex sphere tangent frame.
+  elevation. Normals are derived in world space from the cross product of the
+  four cardinal neighbors' displaced world positions, which is continuous across
+  cube-face seams (no per-face tangent-frame rotation).
 
 Cross-face topology (`neighborSameLevel`) for the cube-sphere is derived
 numerically from a shared face basis (`CUBE_FACES`) so the CPU LOD topology and
@@ -49,7 +51,14 @@ Computed terrain elevation dataset derived from the elevation function.
 
 ## Normal Derivation
 
-Normals are generated from neighbor sampling over the elevation field and then packed/unpacked for GPU usage.
+Normals are generated from neighbor sampling over the elevation field. For flat
+surfaces the central-difference gradient is taken directly. For the cube-sphere,
+the four cardinal neighbors are lifted to their displaced world positions
+(`direction * (radius + elevation)`) and the surface normal is the cross product
+of the spanning tangents — metric-correct, curvature-aware, and frame-independent,
+so it remains continuous across cube-face seams. The resulting **unit world-space
+normal** is stored directly in the terrain field (`[height, Nx, Ny, Nz]`) and read
+back as-is by both the render path and the CPU query mirror.
 
 ## Terrain Query
 
@@ -62,8 +71,8 @@ Synchronous CPU sampling backed by an async readback of the elevation field.
   `quadtree/topology/cubeSphereInverse`), then to a quadtree tile keyed by face
   (`space`). The same `(face, level, x, y)` spatial index used for rendering is
   reused for lookup. Results report a world `position` on the displaced sphere
-  and a normal rebuilt in the sphere tangent frame, mirroring the GPU position
-  assembly. Cube-sphere sampling lives on a separate `TerrainSphereQuery`
+  and a world-space normal from the neighbor cross product, mirroring the GPU
+  position/normal assembly. Cube-sphere sampling lives on a separate `TerrainSphereQuery`
   (exposed alongside the flat `TerrainQuery`, `null` on flat surfaces) with
   explicit `ByDirection` / `ByPosition` / `ByLatLong` variants rather than
   overloading the flat query. Raycasts intersect the planet's bounding shell and

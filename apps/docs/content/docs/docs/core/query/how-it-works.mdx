@@ -90,6 +90,8 @@ scaledHeight = originY + height * elevationScale
 
 Normals are derived via central differences — sampling elevation at `(gx-1, gy)`, `(gx+1, gy)`, `(gx, gy-1)`, `(gx, gy+1)` and computing the cross product of the resulting tangent vectors.
 
+For the cube-sphere, those four neighbors are first lifted to their **world positions** on the displaced sphere (`direction * (radius + height)`) before the cross product. Differencing world positions rather than face-local `(u, v)` heights makes the normal metric- and curvature-correct and independent of the per-face parametric frame, so shading stays continuous across cube-face seams. This mirrors the GPU compute stage exactly.
+
 ### Batch queries
 
 `sampleTerrainBatch` accepts an interleaved `Float32Array` of `(x, z)` pairs and returns parallel arrays of elevations, normals, and validity flags. It caches the last tile lookup to skip redundant hash probes when consecutive points fall in the same tile.

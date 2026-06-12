@@ -88,7 +88,7 @@ Written by compute stage (`elevationFieldStageTask`).
 
 ### 6) TerrainFieldStorage
 
-Texture-backed terrain payload (height + normal xz packing) consumed by render and GPU sampler paths.
+Texture-backed terrain payload (RGBA = `[height, Nx, Ny, Nz]`, the unit world-space surface normal) consumed by render and GPU sampler paths.
 
 ### 7) GpuSpatialIndexContext
 

@@ -1,7 +1,12 @@
 import { Vector3 } from "three";
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
-import { CUBE_FACES, latLongToDirection } from "../quadtree";
+import {
+  type Vec3Mutable,
+  directionToFaceUV,
+  faceUVToCube,
+  latLongToDirection,
+} from "../quadtree";
 import type { TopologyProjection } from "../quadtree";
 import { tileLocalToFieldUVNumber } from "../gpu/tile";
 import {
@@ -112,6 +117,14 @@ export function createCpuTerrainCache(
   const llScratch: [number, number, number] = [0, 0, 0];
   const gridScratch = { gx: 0, gy: 0 };
   const gradientScratch: ElevationGradient = { dhdu: 0, dhdv: 0 };
+  // Cube-sphere normal scratch (allocation-free hot path).
+  const normalDirScratch: Vec3Mutable = [0, 0, 0];
+  const normalUvScratch: [number, number] = [0, 0];
+  const normalCubeScratch: Vec3Mutable = [0, 0, 0];
+  const posLeft: Vec3Mutable = [0, 0, 0];
+  const posRight: Vec3Mutable = [0, 0, 0];
+  const posUp: Vec3Mutable = [0, 0, 0];
+  const posDown: Vec3Mutable = [0, 0, 0];
 
   /** Fractional grid coords for a lookup; writes/returns `gridScratch`. */
   const gridCoordsFromLookup = (lookup: TileLookupResult) => {
@@ -148,62 +161,85 @@ export function createCpuTerrainCache(
     return new Vector3(-dhdu, 1, -dhdv).normalize();
   };
 
+  /** World position on the displaced sphere for a face-local (u, v) + height. */
+  const sphereNeighborPos = (
+    face: number,
+    u: number,
+    v: number,
+    height: number,
+    out: Vec3Mutable,
+  ): void => {
+    faceUVToCube(face, u, v, normalCubeScratch);
+    const len =
+      Math.hypot(normalCubeScratch[0], normalCubeScratch[1], normalCubeScratch[2]) ||
+      1;
+    const r = (config.radius + height) / len;
+    out[0] = normalCubeScratch[0] * r;
+    out[1] = normalCubeScratch[1] * r;
+    out[2] = normalCubeScratch[2] * r;
+  };
+
   /**
-   * World-space normal at a sphere sample, derived from the elevation-field
-   * gradient rotated into the sphere tangent frame `(tu, dir, tv)`.
+   * World-space normal at a sphere sample, from the cross product of the
+   * spanning tangents between the four cardinal neighbors on the displaced
+   * sphere. This is metric- and curvature-correct and frame-independent, so it
+   * stays continuous across cube-face seams.
    *
-   * Mirrors: the TSL `sphereTangentFrameNormal` in `nodes/cubeSphere.ts`
-   * (used by the GPU `createTileLocalNormal` cube-sphere branch).
+   * Mirrors: the TSL `createSphereNormalFromElevationField` in
+   * `tasks/terrain-field.task.ts`.
    */
   const computeSphereNormal = (
     leafIndex: number,
     gx: number,
     gy: number,
-    tileSize: number,
+    level: number,
     face: number,
     dirX: number,
     dirY: number,
     dirZ: number,
   ): Vector3 => {
-    const stepWorld = tileSize / config.innerTileSegments;
-    const { dhdu, dhdv } = elevationGradientAt(
-      state.frontElevation,
-      shape,
-      leafIndex,
-      gx,
-      gy,
-      stepWorld,
-      config.elevationScale,
-      gradientScratch,
-    );
+    const scale = config.elevationScale;
+    // Face-UV step that matches one elevation-field grid texel.
+    const duv = 1 / (config.innerTileSegments * 2 ** level);
 
-    const f = CUBE_FACES[face];
-    const dDotR = dirX * f.right[0] + dirY * f.right[1] + dirZ * f.right[2];
-    let tux = f.right[0] - dirX * dDotR;
-    let tuy = f.right[1] - dirY * dDotR;
-    let tuz = f.right[2] - dirZ * dDotR;
-    const tuLen = Math.hypot(tux, tuy, tuz) || 1;
-    tux /= tuLen;
-    tuy /= tuLen;
-    tuz /= tuLen;
+    normalDirScratch[0] = dirX;
+    normalDirScratch[1] = dirY;
+    normalDirScratch[2] = dirZ;
+    directionToFaceUV(face, normalDirScratch, normalUvScratch);
+    const u = normalUvScratch[0];
+    const v = normalUvScratch[1];
 
-    const dDotU = dirX * f.up[0] + dirY * f.up[1] + dirZ * f.up[2];
-    let tvx = f.up[0] - dirX * dDotU;
-    let tvy = f.up[1] - dirY * dDotU;
-    let tvz = f.up[2] - dirZ * dDotU;
-    const tvLen = Math.hypot(tvx, tvy, tvz) || 1;
-    tvx /= tvLen;
-    tvy /= tvLen;
-    tvz /= tvLen;
+    const hLeft =
+      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx - 1, gy) * scale;
+    const hRight =
+      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx + 1, gy) * scale;
+    const hUp =
+      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx, gy - 1) * scale;
+    const hDown =
+      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx, gy + 1) * scale;
 
-    const nx = -dhdu;
-    const ny = 1;
-    const nz = -dhdv;
-    return new Vector3(
-      tux * nx + dirX * ny + tvx * nz,
-      tuy * nx + dirY * ny + tvy * nz,
-      tuz * nx + dirZ * ny + tvz * nz,
-    ).normalize();
+    sphereNeighborPos(face, u - duv, v, hLeft, posLeft);
+    sphereNeighborPos(face, u + duv, v, hRight, posRight);
+    sphereNeighborPos(face, u, v - duv, hUp, posUp);
+    sphereNeighborPos(face, u, v + duv, hDown, posDown);
+
+    const tux = posRight[0] - posLeft[0];
+    const tuy = posRight[1] - posLeft[1];
+    const tuz = posRight[2] - posLeft[2];
+    const tvx = posDown[0] - posUp[0];
+    const tvy = posDown[1] - posUp[1];
+    const tvz = posDown[2] - posUp[2];
+
+    let nx = tuy * tvz - tuz * tvy;
+    let ny = tuz * tvx - tux * tvz;
+    let nz = tux * tvy - tuy * tvx;
+    // Orient radially outward.
+    if (nx * dirX + ny * dirY + nz * dirZ < 0) {
+      nx = -nx;
+      ny = -ny;
+      nz = -nz;
+    }
+    return new Vector3(nx, ny, nz).normalize();
   };
 
   const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
@@ -292,7 +328,7 @@ export function createCpuTerrainCache(
       lookup.leafIndex,
       gridScratch.gx,
       gridScratch.gy,
-      lookup.tileSize,
+      lookup.level,
       lookup.space,
       nx,
       ny,

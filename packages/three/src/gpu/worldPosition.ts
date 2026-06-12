@@ -10,12 +10,7 @@ import {
   vec3,
   vertexIndex,
 } from "three/tsl";
-import {
-  cubeFaceBasis,
-  cubeFaceDirection,
-  sphereTangentFrameNormal,
-  unpackTangentNormal,
-} from "../tsl/cubeSphere";
+import { cubeFaceBasis, cubeFaceDirection } from "../tsl/cubeSphere";
 import type { TopologyProjection } from "../quadtree";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
@@ -72,8 +67,13 @@ function createNormalAssignment(
   );
 }
 
-/** Loads the packed tangent-space normal `(nx, ny, nz)` for the current vertex. */
-function loadTangentNormal(
+/**
+ * Loads the unit world-space normal for the current vertex straight from the
+ * terrain field. The compute stage already stores normals in world space
+ * (continuous across cube-face seams), so no per-face tangent-frame rotation is
+ * needed at render time.
+ */
+function loadWorldNormal(
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage: TerrainFieldStorage,
 ) {
@@ -82,39 +82,18 @@ function loadTangentNormal(
   const localVertexIndex = int(vertexIndex);
   const ix = localVertexIndex.mod(edgeVertexCount);
   const iy = localVertexIndex.div(edgeVertexCount);
-  const normalXZ = loadTerrainFieldNormal(terrainFieldStorage, ix, iy, nodeIndex);
-  const normal = unpackTangentNormal(normalXZ.x, normalXZ.y);
-  return { ix, iy, normal };
+  return loadTerrainFieldNormal(terrainFieldStorage, ix, iy, nodeIndex);
 }
 
 function createTileLocalNormal(
-  leafStorage: LeafStorageState,
+  _leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
-  projection: TopologyProjection = "flat",
+  _projection: TopologyProjection = "flat",
 ) {
   if (!terrainFieldStorage) return vec3(0, 1, 0);
 
-  if (projection === "cubeSphere") {
-    return Fn(() => {
-      const { ix, iy, normal } = loadTangentNormal(terrainUniforms, terrainFieldStorage);
-
-      const tile = decodeLeafTile(leafStorage, int(instanceIndex));
-      const innerSeg = terrainUniforms.uInnerTileSegments.toVar().toFloat();
-      const localU = ix.toFloat().sub(float(1)).div(innerSeg).max(float(0)).min(float(1));
-      const localV = iy.toFloat().sub(float(1)).div(innerSeg).max(float(0)).min(float(1));
-      const faceUV = faceUVFromTileLocal(tile, localU, localV);
-
-      const basis = cubeFaceBasis(tile.face);
-      const dir = cubeFaceDirection(basis, faceUV.x, faceUV.y);
-      return sphereTangentFrameNormal(dir, basis, normal);
-    })();
-  }
-
-  return Fn(() => {
-    const { normal } = loadTangentNormal(terrainUniforms, terrainFieldStorage);
-    return normal;
-  })();
+  return Fn(() => loadWorldNormal(terrainUniforms, terrainFieldStorage))();
 }
 
 function createCubeSphereWorldPosition(
