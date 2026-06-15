@@ -69,17 +69,34 @@ function buildAppCode(opts: TopologyExample): string {
 import { Canvas, extend } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three/webgpu";
-import { float, vec2, Fn, Loop, dot, floor, fract, mix, sin, cos } from "three/tsl";
+import {
+  float, vec2, vec3, vec4, Fn, Loop,
+  normalize, max, dot, normalWorld,
+  floor, fract, mix, sin, cos,
+} from "three/tsl";
 import { Terrain, useTerrain } from "@hello-terrain/react";
 import { ${opts.factory} } from "@hello-terrain/three";
 import type { ElevationCallback } from "@hello-terrain/three";
 
-// Register the full three/webgpu namespace so R3F instantiates lights, meshes,
-// and node materials from the SAME three module as the WebGPU renderer. With a
-// partial extend, R3F builds AmbientLight/DirectionalLight from its default
-// (core three) catalogue, the renderer's node-lights registry can't match them
-// ("Light node not found for AmbientLight"), and the terrain renders unlit.
-extend(THREE as any);
+// Only the node material needs registering in R3F's catalogue; <Terrain>
+// attaches its own mesh via <primitive>.
+extend({ MeshBasicNodeMaterial: THREE.MeshBasicNodeMaterial });
+
+// Ignore the following terrainLighting node, this is a workaround for Sandpack:
+// Fake lighting. Sandpack's bundler loads core "three"
+// (via fiber/drei) and "three/webgpu" (via this app) as separate instances, so
+// the WebGPU renderer's node-lights registry can't match R3F scene lights
+// ("Light node not found for AmbientLight") and the terrain would render unlit.
+// Computing diffuse + ambient from the world normal sidesteps scene lights
+// entirely. The terrain pipeline assigns world-space normals, so normalWorld is
+// valid here.
+const terrainLighting = Fn(() => {
+  const baseColor = vec3(0.48, 0.52, 0.46);
+  const lightDir = normalize(vec3(0.5, 0.8, 0.3));
+  const ambient = float(0.3);
+  const diff = max(dot(normalWorld, lightDir), float(0));
+  return vec4(baseColor.mul(ambient.add(diff.mul(float(0.85)))), float(1));
+});
 
 // ── TSL Perlin / fBm elevation ─────────────────────────────
 const randomGradient = Fn(([p]) => {
@@ -126,6 +143,7 @@ function Scene() {
 ${opts.elevation}
     };
   }, []);
+  const outputNode = useMemo(() => terrainLighting(), []);
 
   const terrain = useTerrain({
     topology,
@@ -135,7 +153,7 @@ ${opts.terrainOptions}    elevation,
   return (
     <Terrain terrain={terrain} innerTileSegments={13} maxNodes={512}>
       {({ positionNode }) => (
-        <meshStandardNodeMaterial positionNode={positionNode} />
+        <meshBasicNodeMaterial positionNode={positionNode} outputNode={outputNode} />
       )}
     </Terrain>
   );
@@ -156,8 +174,6 @@ export default function App() {
       dpr={[1, 1]}
       performance={{ min: 0.5 }}
     >
-      <ambientLight intensity={0.15} />
-      <directionalLight intensity={1} position={[1, 1, 1]} />
       <Scene />
       <OrbitControls makeDefault />
     </Canvas>
