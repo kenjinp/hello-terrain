@@ -205,8 +205,9 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
       createPlanetColorNode({
         radius: controls.radius,
         elevationScale: controls.elevationScale,
+        invert: controls.invert,
       }),
-    [controls.radius, controls.elevationScale],
+    [controls.radius, controls.elevationScale, controls.invert],
   );
 
   const terrain = useTerrain({

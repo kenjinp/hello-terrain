@@ -40,10 +40,13 @@ export function createTorusColorNode(params: {
   minorRadius: number;
   elevationScale: number;
   center?: { x: number; y: number; z: number };
+  /** When true, elevation displaces inward — flip the recovered height sign. */
+  invert?: boolean;
 }) {
   const major = float(params.majorRadius);
   const minor = float(params.minorRadius);
   const elevScale = float(params.elevationScale);
+  const invert = params.invert ?? false;
   const center = params.center ?? { x: 0, y: 0, z: 0 };
   const centerNode = vec3(center.x, center.y, center.z);
   return Fn(() => {
@@ -51,7 +54,8 @@ export function createTorusColorNode(params: {
     const rho = sqrt(q.x.mul(q.x).add(q.z.mul(q.z)));
     const a = rho.sub(major);
     const tube = sqrt(a.mul(a).add(q.y.mul(q.y)));
-    const height = tube.sub(minor).div(elevScale);
+    const rawHeight = tube.sub(minor).div(elevScale);
+    const height = invert ? minor.sub(tube).div(elevScale) : rawHeight;
 
     const ocean = vec3(0.05, 0.2, 0.45);
     const beach = vec3(0.8, 0.73, 0.5);

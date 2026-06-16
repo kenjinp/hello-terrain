@@ -57,5 +57,5 @@ export function torusOutwardNormal(u: Node, v: Node, invert: boolean): Node {
   const sinP = sin(phi);
   const cosP = cos(phi);
   const normal = vec3(cosP.mul(sinT), sinP, cosP.mul(cosT)).normalize();
-  return select(bool(invert), normal.inverse(), normal);
+  return select(bool(invert), normal.negate(), normal);
 }

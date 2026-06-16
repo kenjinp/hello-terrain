@@ -227,8 +227,9 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         majorRadius: controls.majorRadius,
         minorRadius: controls.minorRadius,
         elevationScale: controls.elevationScale,
+        invert: controls.invert,
       }),
-    [controls.majorRadius, controls.minorRadius, controls.elevationScale],
+    [controls.majorRadius, controls.minorRadius, controls.elevationScale, controls.invert],
   );
 
   const terrain = useTerrain({
