@@ -26,6 +26,7 @@ export function createTerrainRaycast(params: {
       const config = params.getConfig();
       const terrainQuery = params.getTerrainQuery();
 
+      // CubeSphere
       if (config.projection === "cubeSphere") {
         const sphereQuery = params.getSphereQuery();
         if (sphereQuery) {
@@ -35,16 +36,14 @@ export function createTerrainRaycast(params: {
         return cubeSphereRaycastBoundsOnly(ray, config, options);
       }
 
+      // Flat
       if (terrainQuery) {
         const precise = cpuRaycast(terrainQuery, ray, config, options);
         if (precise) return precise;
       }
       const coarse = cpuRaycastBoundsOnly(ray, config, options);
       if (coarse && terrainQuery) {
-        const sample = terrainQuery.sampleTerrain(
-          coarse.position.x,
-          coarse.position.z,
-        );
+        const sample = terrainQuery.sampleTerrain(coarse.position.x, coarse.position.z);
         if (sample.valid) {
           coarse.position.y = sample.elevation;
           coarse.normal.copy(sample.normal);

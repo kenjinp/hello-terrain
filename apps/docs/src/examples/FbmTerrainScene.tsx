@@ -11,7 +11,7 @@ import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPU
 import { cos, dot, float, floor, Fn, fract, Loop, mix, sin, vec2 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
-extend({ MeshBasicNodeMaterial: THREE.MeshBasicNodeMaterial });
+extend({ MeshStandardNodeMaterial: THREE.MeshStandardNodeMaterial });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 
