@@ -1,3 +1,5 @@
+import type { SurfaceProjection } from "../projection/types";
+
 export const Dir = {
   LEFT: 0,
   RIGHT: 1,
@@ -28,25 +30,24 @@ export type TileBounds = {
   r: number;
 };
 
-export type TopologyProjection = "flat" | "cubeSphere";
-
 export type Topology = {
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
   maxRootCount: number;
 
   /**
-   * GPU position/normal assembly projection. Defaults to `flat` when absent.
-   * `cubeSphere` selects radial sphere mapping from cube faces.
+   * Injected surface projection strategy. Encapsulates the GPU position/normal
+   * assembly and the CPU query/raycast/LOD behavior for this topology, so the
+   * pipeline never branches on a projection kind.
    */
-  projection?: TopologyProjection;
+  projection: SurfaceProjection;
 
-  /** Sphere radius in world units (cube-sphere projection only). */
+  /** Representative surface radius in world units (curved projections only). */
   radius?: number;
 
   /**
-   * Planet center in world space (cube-sphere projection only). Used to apply
-   * the camera elevation offset along the radial up-direction during LOD.
+   * Surface center in world space (curved projections only). Used to apply the
+   * camera elevation offset along the surface up-direction during LOD.
    */
   center?: { x: number; y: number; z: number };
 

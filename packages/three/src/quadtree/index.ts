@@ -8,4 +8,12 @@ export * from "./topology/infiniteFlat";
 export * from "./topology/cubeSphere";
 export * from "./topology/cubeSphereFaces";
 export * from "./topology/cubeSphereInverse";
+export * from "./topology/torus";
+export {
+  wrap01,
+  torusUVToPoint,
+  torusOutwardNormal,
+  positionToTorusParams,
+  type TorusSurfaceParams,
+} from "./topology/torusInverse";
 

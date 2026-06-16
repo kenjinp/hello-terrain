@@ -1,3 +1,4 @@
+import { createFlatProjection } from "../../projection/flat";
 import { Dir, type TileBounds, type TileId, type Topology } from "../types";
 
 export type InfiniteFlatTopologyConfig = {
@@ -18,6 +19,7 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
   return {
     spaceCount: 1,
     maxRootCount: rootWidth * rootWidth,
+    projection: createFlatProjection(),
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       let nx = tile.x;

@@ -32,7 +32,7 @@ export const tileNodesTask = task((get, work) => {
   const uniforms = get(updateUniformsTask);
   const topology = get(topologyTask);
   return work(() => {
-    return createTileCompute(leafStorage, uniforms, topology.projection ?? "flat");
+    return createTileCompute(leafStorage, uniforms, topology.projection);
   });
 }).displayName("tileNodesTask");
 

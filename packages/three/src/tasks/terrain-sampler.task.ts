@@ -12,7 +12,7 @@ export const createTerrainSamplerTask = task((get, work) => {
   const uniforms = get(updateUniformsTask);
   const elevationCallback = get(elevationFn);
   const maxLevelValue = get(maxLevel);
-  const projection = get(topologyTask).projection ?? "flat";
+  const projection = get(topologyTask).projection;
 
   return work(() =>
     createTerrainSampler({

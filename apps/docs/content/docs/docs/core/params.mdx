@@ -3,7 +3,7 @@ title: Params
 description: Reference for the core terrain graph params and how to create your own with @hello-terrain/work
 ---
 
-Terrain configuration in Hello Terrain is built on top of `Param` values from `@hello-terrain/work`.
+Terrain configuration in Hello Terrain is built on top of the `Param` system from `@hello-terrain/work`.
 
 The core terrain graph in `@hello-terrain/three` exposes a shared set of params such as `rootSize`, `maxLevel`, `elevationScale`, and `terrainFieldFilter`. Higher-level APIs like `@hello-terrain/react` map their props and options onto these same graph inputs.
 
@@ -21,12 +21,12 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `radius` | `number` | `1000` | The sphere radius used by the cube-sphere projection. Ignored by flat topologies. See [Cube-Sphere Planet](/docs/examples/cube-sphere). |
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
 | `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
-| `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and GPU projection. Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology`. See [Topology Types](/docs/core/topology). |
+| `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
 | `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
 
 ## Where These Params Apply
 
-These params are part of the core terrain graph, not just the React wrapper.
+These params are part of the core terrain graph.
 
 - In `@hello-terrain/three`, you can import the param refs directly and set them on a graph.
 - In `@hello-terrain/react`, options like `rootSize`, `maxLevel`, `elevation`, and `terrainFieldFilter` are translated onto these same graph params.

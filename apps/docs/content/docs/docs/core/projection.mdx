@@ -1,0 +1,71 @@
+---
+title: Surface Projection
+description: The injected SurfaceProjection strategy that powers each topology's GPU position/normal assembly and CPU query/raycast/LOD — and how to add a new surface shape
+---
+
+A **surface projection** is the strategy a [topology](/docs/core/topology) injects to describe how its surface is shaped and queried. It is the single extension point for adding new surface shapes: every built-in topology carries a `SurfaceProjection`, and the rest of the pipeline — the GPU vertex/normal stages, the CPU terrain cache, the query objects, the raycaster, and the LOD camera offset — calls into it rather than branching on a projection kind.
+
+This is dependency injection rather than a `switch`/`if (projection === ...)` ladder: adding the [torus](/docs/examples/torus) required **zero** changes to the GPU pipeline, the CPU query/raycast machinery, or the React runtime.
+
+## The interface
+
+```ts
+interface SurfaceProjection {
+  /** Identifier for debugging/telemetry only — never switched on internally. */
+  readonly kind: "flat" | "cubeSphere" | "torus" | (string & {});
+  /** Representative radius (bounds/uniform helper); undefined for flat. */
+  readonly radius?: number;
+  /** Surface center in world space; undefined for flat. */
+  readonly center?: { x: number; y: number; z: number };
+  /** Closed surfaces face outward → the mesh flips its triangle winding. */
+  readonly faceOutward: boolean;
+
+  gpu: SurfaceProjectionGpu; // TSL builders for the render + compute stages
+  cpu: SurfaceProjectionCpu; // query / raycast / LOD on the CPU snapshot
+}
+```
+
+### GPU hooks (`gpu`)
+
+| Hook | Purpose |
+|:--|:--|
+| `renderVertexPosition(ctx)` | Render-stage world position for a vertex; also assigns the vertex normal varying. |
+| `createTileComputeParts(ctx)` | Projection-specific compute-stage builders: tile size, root UV, and the tile vertex world position. |
+| `createFieldNormal(ctx)` | The field-stage surface-normal reconstruction. |
+| `augmentSampler?(sampler, params)` | Optional extra GPU samplers (e.g. the cube-sphere's `ByDirection` samplers). |
+
+### CPU hooks (`cpu`)
+
+| Hook | Purpose |
+|:--|:--|
+| `cameraSurfaceOffset(cam, elevation)` | Move the camera toward the surface along the projection's up-direction so LOD distance is surface-relative. |
+| `createSurfaceOps()` | The surface math injected into the terrain cache (position → `(space, u, v)`, displaced position, normal); `null` for flat. |
+| `createRuntimeQueries(cache)` | Build the runtime query objects: the flat `query`, the generic `surfaceQuery`, and (cube-sphere) the `sphereQuery`. |
+| `raycast(ctx)` | The projection-specific CPU ray pick (precise, falling back to a coarse bounds hit). |
+
+## Built-in projections
+
+| Factory | Kind | Notes |
+|:--|:--|:--|
+| `createFlatProjection()` | `flat` | XZ heightfield; no surface query (`surfaceQuery` is `null`). |
+| `createCubeSphereProjection({ radius, center })` | `cubeSphere` | Radial sphere mapping; exposes `surfaceQuery` **and** `sphereQuery`. |
+| `createTorusProjection({ majorRadius, minorRadius, center })` | `torus` | Closed donut; exposes `surfaceQuery`. |
+
+You normally never construct these directly — the topology factories (`createFlatTopology`, `createCubeSphereTopology`, `createTorusTopology`, …) wire the matching projection for you.
+
+## Adding a new surface shape
+
+To add a new closed surface you implement one `SurfaceProjection` and a small `Topology`:
+
+1. **Map math** — write the forward map `(u, v) → world position` (GPU + CPU) and the inverse `world position → (u, v)`, plus an outward normal.
+2. **`gpu` hooks** — assemble the displaced vertex position and reconstruct the normal from displaced neighbor positions (curvature-correct, frame-independent).
+3. **`cpu` hooks** — provide `createSurfaceOps()` (used by the terrain cache), `createRuntimeQueries()` (wraps the cache as `query`/`surfaceQuery`), `cameraSurfaceOffset()`, and `raycast()`.
+4. **Topology** — emit root tiles, resolve same-level neighbors (wrap for periodic axes), and write conservative `tileBounds`. Set `projection` to your new strategy.
+
+The [torus source](/docs/examples/torus) is the reference implementation; it reuses the shared curved-surface render/normal helpers, so the projection itself is small.
+
+## Related pages
+
+- [Topology Types](/docs/core/topology) — the topologies that inject these projections
+- [Terrain Query](/docs/core/query/terrain-query) — the runtime `query` / `surfaceQuery` / `sphereQuery` objects
+- [Torus example](/docs/examples/torus) — a new surface added purely via projection injection

@@ -15,6 +15,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   const runtime = useMemo<TerrainRuntime>(
     () => ({
       query: null,
+      surfaceQuery: null,
       sphereQuery: null,
       raycast: null,
     }),

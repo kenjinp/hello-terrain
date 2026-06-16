@@ -103,18 +103,38 @@ if (range) {
 
 This is used internally by the raycast system to derive a tight AABB instead of a conservative estimate.
 
-## Cube-sphere queries
+## Closed-surface queries
 
-The `TerrainQuery` above describes a flat heightfield keyed on world XZ. On a
-cube-sphere surface there is no single ground plane, so cube-sphere sampling
-lives on a **separate** `TerrainSphereQuery` rather than being overloaded onto
-`TerrainQuery`. A surface location is identified by a **direction from the
-planet center**:
+The `TerrainQuery` above describes a flat heightfield keyed on world XZ. Closed
+surfaces (cube-sphere, torus, …) have no single ground plane, so they expose a
+**generic** `TerrainSurfaceQuery` keyed on a world position projected onto the
+surface:
 
 ```ts
-// flat
-const { query, sphereQuery } = graph.get(terrainTasks.terrainQuery);
-// react: const { query, sphereQuery } = terrain.runtime;
+const { query, surfaceQuery, sphereQuery } = graph.get(terrainTasks.terrainQuery);
+// react: const { query, surfaceQuery, sphereQuery } = terrain.runtime;
+```
+
+`surfaceQuery` is `null` on flat surfaces and present for every closed surface.
+Its methods take a `THREE.Vector3` world position (projected onto the surface):
+
+- `getElevationByPosition(position)` / `getNormalByPosition(position)`
+- `sampleTerrainByPosition(position)` → `TerrainSurfaceSample`
+- `getTileByPosition(position)` / `getTileBoundsByPosition(position)`
+- `sampleTerrainBatchByPosition(positions)` — xyz triples
+
+This is the surface API used by the [torus example](/docs/examples/torus), and it
+is identical regardless of the surface shape.
+
+## Cube-sphere queries
+
+On a cube-sphere the canonical key is a **direction from the planet center**, so
+the cube-sphere exposes a `TerrainSphereQuery` that **extends**
+`TerrainSurfaceQuery` with direction/lat-long variants:
+
+```ts
+const { sphereQuery } = graph.get(terrainTasks.terrainQuery);
+// react: const { sphereQuery } = terrain.runtime;
 ```
 
 `sphereQuery` is `null` unless the active topology uses the `cubeSphere`

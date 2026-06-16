@@ -34,6 +34,7 @@ export * from "./tsl/skirt";
 export * from "./tsl/varyings";
 export * from "./tsl/voronoi";
 
+export * from "./projection";
 export * from "./quadtree";
 export * from "./tasks";
 export * from "./types";

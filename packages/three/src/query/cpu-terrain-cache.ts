@@ -1,13 +1,7 @@
 import { Vector3 } from "three";
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
-import {
-  type Vec3Mutable,
-  directionToFaceUV,
-  faceUVToCube,
-  latLongToDirection,
-} from "../quadtree";
-import type { TopologyProjection } from "../quadtree";
+import type { CpuSurfaceOps, SurfaceKey } from "../projection/types";
 import { tileLocalToFieldUVNumber } from "../gpu/tile";
 import {
   type ElevationGradient,
@@ -16,9 +10,10 @@ import {
   sampleGridBilinear,
 } from "./elevation-field-sampling";
 import {
+  type TileLookupConfig,
   type TileLookupResult,
   lookupTile,
-  lookupTileForDirection,
+  lookupTileByFaceUV,
 } from "./tile-lookup";
 import {
   type TerrainSnapshotState,
@@ -41,7 +36,7 @@ type TerrainElevationSample = {
   valid: boolean;
 };
 
-type TerrainQueryConfig = {
+export type TerrainQueryConfig = {
   rootSize: number;
   originX: number;
   originY: number;
@@ -49,9 +44,7 @@ type TerrainQueryConfig = {
   innerTileSegments: number;
   elevationScale: number;
   maxLevel: number;
-  /** Topology projection; `cubeSphere` enables the direction/lat-long queries. */
-  projection: TopologyProjection;
-  /** Sphere radius in world units (cube-sphere projection only). */
+  /** Representative surface radius (curved projections only). */
   radius: number;
 };
 
@@ -68,6 +61,8 @@ export interface CpuTerrainCache {
   ): void;
   /** Release GPU readback staging buffers owned by this cache. */
   dispose(): void;
+
+  // ── Flat (heightfield) sampling, keyed on world XZ ──────────────────────
   getElevation(worldX: number, worldZ: number): number | null;
   getNormal(worldX: number, worldZ: number): Vector3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
@@ -76,27 +71,21 @@ export interface CpuTerrainCache {
   sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
 
-  getElevationByDirection(direction: Vector3): number | null;
-  getElevationByPosition(position: Vector3): number | null;
-  getElevationByLatLong(latitudeDeg: number, longitudeDeg: number): number | null;
-  getNormalByDirection(direction: Vector3): Vector3 | null;
-  getNormalByPosition(position: Vector3): Vector3 | null;
-  getNormalByLatLong(latitudeDeg: number, longitudeDeg: number): Vector3 | null;
-  sampleTerrainByDirection(direction: Vector3): TerrainSurfaceSample;
-  sampleTerrainByPosition(position: Vector3): TerrainSurfaceSample;
-  sampleTerrainByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainSurfaceSample;
-  getTileByDirection(direction: Vector3): TerrainTile | null;
-  getTileByPosition(position: Vector3): TerrainTile | null;
-  getTileByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTile | null;
-  getTileBoundsByDirection(direction: Vector3): TerrainTileBounds | null;
-  getTileBoundsByPosition(position: Vector3): TerrainTileBounds | null;
-  getTileBoundsByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTileBounds | null;
-  sampleTerrainBatchByDirection(directions: Float32Array): TerrainSurfaceSampleBatch;
+  // ── Generic closed-surface sampling, keyed on a world position ──────────
+  /** True when the active projection supplies surface ops. */
+  readonly hasSurface: boolean;
+  sampleSurfaceByPosition(px: number, py: number, pz: number): TerrainSurfaceSample;
+  getElevationBySurfacePosition(px: number, py: number, pz: number): number | null;
+  getNormalBySurfacePosition(px: number, py: number, pz: number): Vector3 | null;
+  getTileBySurfacePosition(px: number, py: number, pz: number): TerrainTile | null;
+  getTileBoundsBySurfacePosition(px: number, py: number, pz: number): TerrainTileBounds | null;
+  sampleSurfaceBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
 }
 
 export function createCpuTerrainCache(
   maxNodes: number,
   initialConfig: TerrainQueryConfig,
+  surfaceOps: CpuSurfaceOps | null,
 ): CpuTerrainCache {
   let config = initialConfig;
   const shape: ElevationGridShape = {
@@ -106,25 +95,20 @@ export function createCpuTerrainCache(
   shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
   let totalElements = maxNodes * shape.verticesPerNode;
 
-  const state: TerrainSnapshotState = createTerrainSnapshotState(
-    maxNodes,
-    totalElements,
-  );
+  const state: TerrainSnapshotState = createTerrainSnapshotState(maxNodes, totalElements);
 
   // Per-cache scratch (no module-scope state; the terrain may have many instances).
-  const dirScratch: [number, number, number] = [0, 0, 0];
-  const uvScratch: [number, number] = [0, 0];
-  const llScratch: [number, number, number] = [0, 0, 0];
   const gridScratch = { gx: 0, gy: 0 };
   const gradientScratch: ElevationGradient = { dhdu: 0, dhdv: 0 };
-  // Cube-sphere normal scratch (allocation-free hot path).
-  const normalDirScratch: Vec3Mutable = [0, 0, 0];
-  const normalUvScratch: [number, number] = [0, 0];
-  const normalCubeScratch: Vec3Mutable = [0, 0, 0];
-  const posLeft: Vec3Mutable = [0, 0, 0];
-  const posRight: Vec3Mutable = [0, 0, 0];
-  const posUp: Vec3Mutable = [0, 0, 0];
-  const posDown: Vec3Mutable = [0, 0, 0];
+  const keyScratch: SurfaceKey = { space: 0, u: 0, v: 0, dirX: 0, dirY: 0, dirZ: 0 };
+
+  const surfaceLookupConfig = (): TileLookupConfig => ({
+    rootSize: config.rootSize,
+    originX: config.originX,
+    originZ: config.originZ,
+    maxLevel: config.maxLevel,
+    radius: config.radius,
+  });
 
   /** Fractional grid coords for a lookup; writes/returns `gridScratch`. */
   const gridCoordsFromLookup = (lookup: TileLookupResult) => {
@@ -161,96 +145,10 @@ export function createCpuTerrainCache(
     return new Vector3(-dhdu, 1, -dhdv).normalize();
   };
 
-  /** World position on the displaced sphere for a face-local (u, v) + height. */
-  const sphereNeighborPos = (
-    face: number,
-    u: number,
-    v: number,
-    height: number,
-    out: Vec3Mutable,
-  ): void => {
-    faceUVToCube(face, u, v, normalCubeScratch);
-    const len =
-      Math.hypot(normalCubeScratch[0], normalCubeScratch[1], normalCubeScratch[2]) ||
-      1;
-    const r = (config.radius + height) / len;
-    out[0] = normalCubeScratch[0] * r;
-    out[1] = normalCubeScratch[1] * r;
-    out[2] = normalCubeScratch[2] * r;
-  };
-
-  /**
-   * World-space normal at a sphere sample, from the cross product of the
-   * spanning tangents between the four cardinal neighbors on the displaced
-   * sphere. This is metric- and curvature-correct and frame-independent, so it
-   * stays continuous across cube-face seams.
-   *
-   * Mirrors: the TSL `createSphereNormalFromElevationField` in
-   * `tasks/terrain-field.task.ts`.
-   */
-  const computeSphereNormal = (
-    leafIndex: number,
-    gx: number,
-    gy: number,
-    level: number,
-    face: number,
-    dirX: number,
-    dirY: number,
-    dirZ: number,
-  ): Vector3 => {
-    const scale = config.elevationScale;
-    // Face-UV step that matches one elevation-field grid texel.
-    const duv = 1 / (config.innerTileSegments * 2 ** level);
-
-    normalDirScratch[0] = dirX;
-    normalDirScratch[1] = dirY;
-    normalDirScratch[2] = dirZ;
-    directionToFaceUV(face, normalDirScratch, normalUvScratch);
-    const u = normalUvScratch[0];
-    const v = normalUvScratch[1];
-
-    const hLeft =
-      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx - 1, gy) * scale;
-    const hRight =
-      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx + 1, gy) * scale;
-    const hUp =
-      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx, gy - 1) * scale;
-    const hDown =
-      sampleGridBilinear(state.frontElevation, shape, leafIndex, gx, gy + 1) * scale;
-
-    sphereNeighborPos(face, u - duv, v, hLeft, posLeft);
-    sphereNeighborPos(face, u + duv, v, hRight, posRight);
-    sphereNeighborPos(face, u, v - duv, hUp, posUp);
-    sphereNeighborPos(face, u, v + duv, hDown, posDown);
-
-    const tux = posRight[0] - posLeft[0];
-    const tuy = posRight[1] - posLeft[1];
-    const tuz = posRight[2] - posLeft[2];
-    const tvx = posDown[0] - posUp[0];
-    const tvy = posDown[1] - posUp[1];
-    const tvz = posDown[2] - posUp[2];
-
-    let nx = tuy * tvz - tuz * tvy;
-    let ny = tuz * tvx - tux * tvz;
-    let nz = tux * tvy - tuy * tvx;
-    // Orient radially outward.
-    if (nx * dirX + ny * dirY + nz * dirZ < 0) {
-      nx = -nx;
-      ny = -ny;
-      nz = -nz;
-    }
-    return new Vector3(nx, ny, nz).normalize();
-  };
-
   const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
     const height = rawHeightFromLookup(lookup);
     const scaledHeight = config.originY + height * config.elevationScale;
-    const normal = computeNormal(
-      lookup.leafIndex,
-      gridScratch.gx,
-      gridScratch.gy,
-      lookup.tileSize,
-    );
+    const normal = computeNormal(lookup.leafIndex, gridScratch.gx, gridScratch.gy, lookup.tileSize);
     return { elevation: scaledHeight, normal, valid: true };
   };
 
@@ -265,10 +163,7 @@ export function createCpuTerrainCache(
     return sampleFromLookup(lookup);
   };
 
-  const getElevation = (
-    worldX: number,
-    worldZ: number,
-  ): TerrainElevationSample => {
+  const getElevation = (worldX: number, worldZ: number): TerrainElevationSample => {
     if (!state.hasSnapshot) {
       return { elevation: 0, valid: false };
     }
@@ -279,66 +174,6 @@ export function createCpuTerrainCache(
     const height = rawHeightFromLookup(lookup);
     return {
       elevation: config.originY + height * config.elevationScale,
-      valid: true,
-    };
-  };
-
-  // --- Cube-sphere queries -------------------------------------------------
-
-  const invalidSurfaceSample = (
-    dx: number,
-    dy: number,
-    dz: number,
-  ): TerrainSurfaceSample => ({
-    position: new Vector3(),
-    normal: new Vector3(0, 1, 0),
-    direction: new Vector3(dx, dy, dz),
-    elevation: 0,
-    valid: false,
-  });
-
-  const lookupDirection = (dx: number, dy: number, dz: number): TileLookupResult =>
-    lookupTileForDirection(state.frontIndex, config, dx, dy, dz, dirScratch, uvScratch);
-
-  const sampleSurfaceByDirection = (
-    dx: number,
-    dy: number,
-    dz: number,
-  ): TerrainSurfaceSample => {
-    if (!state.hasSnapshot || config.projection !== "cubeSphere") {
-      return invalidSurfaceSample(dx, dy, dz);
-    }
-    const len = Math.hypot(dx, dy, dz);
-    if (len === 0) return invalidSurfaceSample(0, 0, 0);
-    const nx = dx / len;
-    const ny = dy / len;
-    const nz = dz / len;
-    const lookup = lookupDirection(nx, ny, nz);
-    if (!lookup.found) return invalidSurfaceSample(nx, ny, nz);
-
-    const height = rawHeightFromLookup(lookup);
-    const elevation = height * config.elevationScale;
-    const r = config.radius + elevation;
-    const position = new Vector3(
-      config.originX + nx * r,
-      config.originY + ny * r,
-      config.originZ + nz * r,
-    );
-    const normal = computeSphereNormal(
-      lookup.leafIndex,
-      gridScratch.gx,
-      gridScratch.gy,
-      lookup.level,
-      lookup.space,
-      nx,
-      ny,
-      nz,
-    );
-    return {
-      position,
-      normal,
-      direction: new Vector3(nx, ny, nz),
-      elevation,
       valid: true,
     };
   };
@@ -374,6 +209,71 @@ export function createCpuTerrainCache(
     };
   };
 
+  // ── Generic surface sampling ──────────────────────────────────────────
+
+  const invalidSurfaceSample = (dx: number, dy: number, dz: number): TerrainSurfaceSample => ({
+    position: new Vector3(),
+    normal: new Vector3(0, 1, 0),
+    direction: new Vector3(dx, dy, dz),
+    elevation: 0,
+    valid: false,
+  });
+
+  const surfaceLookup = (px: number, py: number, pz: number): TileLookupResult => {
+    if (!surfaceOps || !surfaceOps.positionToKey(px, py, pz, keyScratch)) {
+      return { found: false } as TileLookupResult;
+    }
+    return lookupTileByFaceUV(
+      state.frontIndex,
+      surfaceLookupConfig(),
+      keyScratch.space,
+      keyScratch.u,
+      keyScratch.v,
+    );
+  };
+
+  const sampleSurfaceByPosition = (
+    px: number,
+    py: number,
+    pz: number,
+  ): TerrainSurfaceSample => {
+    if (!state.hasSnapshot || !surfaceOps) return invalidSurfaceSample(0, 1, 0);
+    if (!surfaceOps.positionToKey(px, py, pz, keyScratch)) {
+      return invalidSurfaceSample(0, 1, 0);
+    }
+    const key = keyScratch;
+    const lookup = lookupTileByFaceUV(
+      state.frontIndex,
+      surfaceLookupConfig(),
+      key.space,
+      key.u,
+      key.v,
+    );
+    if (!lookup.found) return invalidSurfaceSample(key.dirX, key.dirY, key.dirZ);
+
+    const height = rawHeightFromLookup(lookup);
+    const elevation = height * config.elevationScale;
+    const position = new Vector3();
+    surfaceOps.surfacePosition(key, elevation, position);
+    const normal = surfaceOps.surfaceNormal(key, {
+      elevation: state.frontElevation,
+      shape,
+      leafIndex: lookup.leafIndex,
+      gx: gridScratch.gx,
+      gy: gridScratch.gy,
+      innerTileSegments: config.innerTileSegments,
+      elevationScale: config.elevationScale,
+      level: lookup.level,
+    });
+    return {
+      position,
+      normal,
+      direction: new Vector3(key.dirX, key.dirY, key.dirZ),
+      elevation,
+      valid: true,
+    };
+  };
+
   const api: CpuTerrainCache = {
     get generation() {
       return state.generation;
@@ -381,19 +281,16 @@ export function createCpuTerrainCache(
     get ready() {
       return state.hasSnapshot;
     },
+    get hasSurface() {
+      return surfaceOps !== null;
+    },
     updateConfig(nextConfig) {
       config = nextConfig;
       shape.edgeVertexCount = config.innerTileSegments + 3;
       shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
       totalElements = maxNodes * shape.verticesPerNode;
     },
-    triggerReadback(
-      renderer,
-      attribute,
-      spatialIndex,
-      boundsAttribute,
-      activeLeafCount,
-    ) {
+    triggerReadback(renderer, attribute, spatialIndex, boundsAttribute, activeLeafCount) {
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
@@ -502,133 +399,55 @@ export function createCpuTerrainCache(
     },
     sampleTerrain,
 
-    // --- Cube-sphere queries ---
-    sampleTerrainByDirection(direction) {
-      return sampleSurfaceByDirection(direction.x, direction.y, direction.z);
-    },
-    sampleTerrainByPosition(position) {
-      return sampleSurfaceByDirection(
-        position.x - config.originX,
-        position.y - config.originY,
-        position.z - config.originZ,
-      );
-    },
-    sampleTerrainByLatLong(latitudeDeg, longitudeDeg) {
-      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
-      return sampleSurfaceByDirection(llScratch[0], llScratch[1], llScratch[2]);
-    },
-    getElevationByDirection(direction) {
-      const sample = sampleSurfaceByDirection(direction.x, direction.y, direction.z);
+    // ── Generic surface ──
+    sampleSurfaceByPosition,
+    getElevationBySurfacePosition(px, py, pz) {
+      const sample = sampleSurfaceByPosition(px, py, pz);
       return sample.valid ? sample.elevation : null;
     },
-    getElevationByPosition(position) {
-      const sample = sampleSurfaceByDirection(
-        position.x - config.originX,
-        position.y - config.originY,
-        position.z - config.originZ,
-      );
-      return sample.valid ? sample.elevation : null;
-    },
-    getElevationByLatLong(latitudeDeg, longitudeDeg) {
-      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
-      const sample = sampleSurfaceByDirection(llScratch[0], llScratch[1], llScratch[2]);
-      return sample.valid ? sample.elevation : null;
-    },
-    getNormalByDirection(direction) {
-      const sample = sampleSurfaceByDirection(direction.x, direction.y, direction.z);
+    getNormalBySurfacePosition(px, py, pz) {
+      const sample = sampleSurfaceByPosition(px, py, pz);
       return sample.valid ? sample.normal : null;
     },
-    getNormalByPosition(position) {
-      const sample = sampleSurfaceByDirection(
-        position.x - config.originX,
-        position.y - config.originY,
-        position.z - config.originZ,
-      );
-      return sample.valid ? sample.normal : null;
+    getTileBySurfacePosition(px, py, pz) {
+      if (!state.hasSnapshot || !surfaceOps) return null;
+      return tileFromLookup(surfaceLookup(px, py, pz));
     },
-    getNormalByLatLong(latitudeDeg, longitudeDeg) {
-      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
-      const sample = sampleSurfaceByDirection(llScratch[0], llScratch[1], llScratch[2]);
-      return sample.valid ? sample.normal : null;
+    getTileBoundsBySurfacePosition(px, py, pz) {
+      if (!state.hasSnapshot || !surfaceOps) return null;
+      return tileBoundsFromLookup(surfaceLookup(px, py, pz), 0);
     },
-    getTileByDirection(direction) {
-      if (!state.hasSnapshot) return null;
-      return tileFromLookup(lookupDirection(direction.x, direction.y, direction.z));
-    },
-    getTileByPosition(position) {
-      if (!state.hasSnapshot) return null;
-      return tileFromLookup(
-        lookupDirection(
-          position.x - config.originX,
-          position.y - config.originY,
-          position.z - config.originZ,
-        ),
-      );
-    },
-    getTileByLatLong(latitudeDeg, longitudeDeg) {
-      if (!state.hasSnapshot) return null;
-      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
-      return tileFromLookup(lookupDirection(llScratch[0], llScratch[1], llScratch[2]));
-    },
-    getTileBoundsByDirection(direction) {
-      if (!state.hasSnapshot) return null;
-      return tileBoundsFromLookup(
-        lookupDirection(direction.x, direction.y, direction.z),
-        0,
-      );
-    },
-    getTileBoundsByPosition(position) {
-      if (!state.hasSnapshot) return null;
-      return tileBoundsFromLookup(
-        lookupDirection(
-          position.x - config.originX,
-          position.y - config.originY,
-          position.z - config.originZ,
-        ),
-        0,
-      );
-    },
-    getTileBoundsByLatLong(latitudeDeg, longitudeDeg) {
-      if (!state.hasSnapshot) return null;
-      latLongToDirection(latitudeDeg, longitudeDeg, llScratch);
-      return tileBoundsFromLookup(
-        lookupDirection(llScratch[0], llScratch[1], llScratch[2]),
-        0,
-      );
-    },
-    sampleTerrainBatchByDirection(directions) {
-      const count = Math.floor(directions.length / 3);
-      const positions = new Float32Array(count * 3);
+    sampleSurfaceBatchByPosition(positions) {
+      const count = Math.floor(positions.length / 3);
+      const outPositions = new Float32Array(count * 3);
       const normals = new Float32Array(count * 3);
       const elevations = new Float32Array(count);
       const valid = new Uint8Array(count);
-      if (!state.hasSnapshot || config.projection !== "cubeSphere") {
-        return { positions, normals, elevations, valid, generation: state.generation };
+      if (!state.hasSnapshot || !surfaceOps) {
+        return { positions: outPositions, normals, elevations, valid, generation: state.generation };
       }
       for (let i = 0; i < count; i += 1) {
-        const sample = sampleSurfaceByDirection(
-          directions[i * 3] ?? 0,
-          directions[i * 3 + 1] ?? 0,
-          directions[i * 3 + 2] ?? 0,
+        const sample = sampleSurfaceByPosition(
+          positions[i * 3] ?? 0,
+          positions[i * 3 + 1] ?? 0,
+          positions[i * 3 + 2] ?? 0,
         );
         if (!sample.valid) {
           normals[i * 3 + 1] = 1;
           continue;
         }
-        positions[i * 3] = sample.position.x;
-        positions[i * 3 + 1] = sample.position.y;
-        positions[i * 3 + 2] = sample.position.z;
+        outPositions[i * 3] = sample.position.x;
+        outPositions[i * 3 + 1] = sample.position.y;
+        outPositions[i * 3 + 2] = sample.position.z;
         normals[i * 3] = sample.normal.x;
         normals[i * 3 + 1] = sample.normal.y;
         normals[i * 3 + 2] = sample.normal.z;
         elevations[i] = sample.elevation;
         valid[i] = 1;
       }
-      return { positions, normals, elevations, valid, generation: state.generation };
+      return { positions: outPositions, normals, elevations, valid, generation: state.generation };
     },
   };
 
   return api;
 }
-
-export type { TerrainQueryConfig };

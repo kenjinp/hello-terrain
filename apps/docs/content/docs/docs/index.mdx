@@ -4,12 +4,14 @@ description: Introduction to Hello Terrain
 ---
 
 <Callout title="Pardon our dust" type="warn">
-  Work in progress, sorry about that.
+  This is all a work in progress. Please contribute!
 </Callout>
 
 ## Overview
 
 Hello Terrain is a library for rendering large open world terrains in real time, using browser technologies. 
+
+It's an engine for terrain rendering in Threejs's WebgpuRenderer, with some tools to help with procedural terrain authoring. 
 
 It the core, it's an extensible work graph that executes and outputs data and shaders to render one or more Threejs Instanced Mesh, in the shape of your terrain. 
 The work graph can be amended via custom nodes or plugins to tweak the behavior for your game or world's use-case. 
@@ -17,31 +19,3 @@ The work graph can be amended via custom nodes or plugins to tweak the behavior 
 Each core component, such as the normals calculation stage, just to pick an example, can be swapped out and easily replaced with your own implementation. 
 
 {/* Example Goes here */}
-
-## Preparing Terrain Data
-
-Displaying terrains for your virtual world requires two things. 
-
-1. An instruction of what the terrain should be (the terrain data), and 
-2. a performant way to render that terrain data into your screen.
-
-Your terrain data can come from real-life sources (like elevation data from satellites), or from special software used to generate heightmaps (like Gaea 2).
-You can also produce that data at run-time, procedurally. Or, my personal favorite, use a mixture of these techniques. 
-More examples of the techniques are to come in it's own article. 
-
-## How Rendering Works
-
-### the Compute Graph
-
-### Terrain Tiles
-
-### Shape
-
-### Quadtree/Subdivision
-
-### Elevation
-
-### Normals
-
-### Texture Control
-

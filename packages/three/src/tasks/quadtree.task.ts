@@ -40,20 +40,20 @@ export const quadtreeConfigTask = task((get, work) => {
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
   const quadtreeUpdateConfig = get(quadtreeUpdate);
-  const { query: terrainQuery, sphereQuery } = get(terrainQueryTask);
+  const { query: terrainQuery, surfaceQuery } = get(terrainQueryTask);
 
   let outLeaves: LeafSet | undefined = undefined;
   const cameraPosition = new Vector3();
   return work(() => {
     const cam = quadtreeUpdateConfig.cameraOrigin;
     // Terrain elevation beneath the camera drives the surface-relative LOD
-    // offset applied in `update()`. On a cube sphere this is the radial
-    // displacement at the camera's direction; on a flat topology it is the
-    // height at the camera's XZ.
-    if (sphereQuery) {
+    // offset applied in `update()`. On a closed surface this is the
+    // displacement at the camera's projected position; on a flat topology it is
+    // the height at the camera's XZ.
+    if (surfaceQuery) {
       cameraPosition.set(cam.x, cam.y, cam.z);
       quadtreeUpdateConfig.elevationAtCameraXZ =
-        sphereQuery.getElevationByPosition(cameraPosition) ?? 0;
+        surfaceQuery.getElevationByPosition(cameraPosition) ?? 0;
     } else {
       quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
     }

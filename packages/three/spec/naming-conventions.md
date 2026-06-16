@@ -31,13 +31,24 @@ Prefer names that reflect **what data is** and **how it is stored**.
 
 - Use `Topology` (not `Surface`) for the pluggable adapter that defines tile
   topology: root tiles, same-level neighbors (including cross-face edges),
-  conservative bounds, and the GPU `projection`. This avoids confusion with
+  conservative bounds, and the injected `projection`. This avoids confusion with
   the geometric "terrain surface" and with texturing.
+- Use `SurfaceProjection` (with a `kind` of `flat` | `cubeSphere` | `torus` | …)
+  for the injected strategy that assembles GPU positions/normals and powers the
+  CPU query/raycast/LOD. The pipeline must never branch on a projection kind —
+  call into the projection's `gpu` / `cpu` hooks instead. `ProjectionKind` is the
+  identifier type and is for debugging/telemetry only.
 - Preferred examples:
-  - `Topology` (the adapter type), `TopologyProjection`
-  - `createFlatTopology`, `createInfiniteFlatTopology`, `createCubeSphereTopology`
-  - `FlatTopologyConfig`, `InfiniteFlatTopologyConfig`, `CubeSphereTopologyConfig`
+  - `Topology` (the adapter type), `SurfaceProjection`, `ProjectionKind`
+  - `createFlatTopology`, `createInfiniteFlatTopology`, `createCubeSphereTopology`,
+    `createTorusTopology`
+  - `createFlatProjection`, `createCubeSphereProjection`, `createTorusProjection`
+  - `FlatTopologyConfig`, `InfiniteFlatTopologyConfig`, `CubeSphereTopologyConfig`,
+    `TorusTopologyConfig`
   - the `topology` param and `topologyTask`
+- Use `TerrainSurfaceQuery` for the generic closed-surface query (position-keyed)
+  and `TerrainSphereQuery` (which extends it) for the cube-sphere direction/lat-long
+  keys.
 - Reserve `surface` wording for the actual displaced terrain surface, e.g.
   geometric query results (`TerrainSurfaceSample`) and "surface normal".
 

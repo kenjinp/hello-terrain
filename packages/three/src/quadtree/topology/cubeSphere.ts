@@ -1,3 +1,4 @@
+import { createCubeSphereProjection } from "../../projection/cubeSphere";
 import { type TileBounds, type TileId, type Topology } from "../types";
 import type { Vec3 } from "./cubeSphereFaces";
 import {
@@ -62,6 +63,9 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
   return {
     spaceCount: 6,
     maxRootCount: 6,
+    projection: createCubeSphereProjection({ radius, center }),
+    radius,
+    center,
 
     neighborSameLevel(tile: TileId, dir: 0 | 1 | 2 | 3, out: TileId): boolean {
       const level = tile.level;
@@ -156,9 +160,5 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
       }
       return 6;
     },
-
-    projection: "cubeSphere",
-    radius,
-    center,
   };
 }

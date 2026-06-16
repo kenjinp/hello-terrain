@@ -1,4 +1,5 @@
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { SurfaceProjection } from "../projection/types";
 import type { ElevationCallback } from "../tsl/elevation";
 import type { TerrainUniformsContext } from "../types";
 import type { Ray, Vector3 } from "three";
@@ -43,7 +44,8 @@ export interface CreateTerrainSamplerParams {
   elevationCallback: ElevationCallback;
   /** Maximum quadtree level to probe during tile lookup. */
   maxLevel: number;
-  projection?: import("../quadtree").TopologyProjection;
+  /** Active surface projection (drives optional GPU sampler augmentation). */
+  projection: SurfaceProjection;
 }
 
 export interface TerrainSample {
@@ -116,36 +118,49 @@ export interface TerrainQuery {
 }
 
 /**
- * Cube-sphere terrain query. A surface location is identified by a direction
- * from the planet center (the canonical form); `ByPosition` projects any world
- * point onto its direction, and `ByLatLong` takes degrees (latitude
- * `[-90, 90]`, longitude `[-180, 180]`). Elevation is the radial displacement
- * above the base radius.
+ * Generic closed-surface terrain query, keyed on a world position projected
+ * onto the surface. Exposed for every non-flat projection (cube-sphere, torus,
+ * ...); `null` on flat surfaces. Elevation is the displacement above the base
+ * surface (already scaled by `elevationScale`); `position` is the full
+ * world-space surface point.
+ */
+export interface TerrainSurfaceQuery {
+  readonly generation: number;
+
+  getElevationByPosition(position: Vector3): number | null;
+  getNormalByPosition(position: Vector3): Vector3 | null;
+  sampleTerrainByPosition(position: Vector3): TerrainSurfaceSample;
+  getTileByPosition(position: Vector3): TerrainTile | null;
+  getTileBoundsByPosition(position: Vector3): TerrainTileBounds | null;
+
+  /** Batch sample; `positions` is a Float32Array of xyz triples. */
+  sampleTerrainBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
+}
+
+/**
+ * Cube-sphere terrain query. Extends the generic surface query with the
+ * sphere-only direction/lat-long keys. A surface location is identified by a
+ * direction from the planet center (the canonical form); `ByPosition` projects
+ * any world point onto its direction, and `ByLatLong` takes degrees (latitude
+ * `[-90, 90]`, longitude `[-180, 180]`).
  *
  * Exposed only when the active surface uses the `cubeSphere` projection
  * (otherwise `null` on the query context / runtime).
  */
-export interface TerrainSphereQuery {
-  readonly generation: number;
-
+export interface TerrainSphereQuery extends TerrainSurfaceQuery {
   getElevationByDirection(direction: Vector3): number | null;
-  getElevationByPosition(position: Vector3): number | null;
   getElevationByLatLong(latitudeDeg: number, longitudeDeg: number): number | null;
 
   getNormalByDirection(direction: Vector3): Vector3 | null;
-  getNormalByPosition(position: Vector3): Vector3 | null;
   getNormalByLatLong(latitudeDeg: number, longitudeDeg: number): Vector3 | null;
 
   sampleTerrainByDirection(direction: Vector3): TerrainSurfaceSample;
-  sampleTerrainByPosition(position: Vector3): TerrainSurfaceSample;
   sampleTerrainByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainSurfaceSample;
 
   getTileByDirection(direction: Vector3): TerrainTile | null;
-  getTileByPosition(position: Vector3): TerrainTile | null;
   getTileByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTile | null;
 
   getTileBoundsByDirection(direction: Vector3): TerrainTileBounds | null;
-  getTileBoundsByPosition(position: Vector3): TerrainTileBounds | null;
   getTileBoundsByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTileBounds | null;
 
   /** Batch sample; `directions` is a Float32Array of xyz triples. */
@@ -156,6 +171,23 @@ export interface RaycastOptions {
   maxSteps?: number;
   refinementSteps?: number;
   maxDistance?: number;
+}
+
+/**
+ * Shared raycast bounds for the CPU marcher. Flat raycasts use the XZ extent +
+ * `[minY, maxY]`; curved projections derive their own radial shell from their
+ * geometry plus the query's global elevation range, and only read `center*`.
+ */
+export interface TerrainRaycastConfig {
+  rootSize: number;
+  originX: number;
+  originY: number;
+  originZ: number;
+  minY: number;
+  maxY: number;
+  centerX: number;
+  centerY: number;
+  centerZ: number;
 }
 
 export interface TerrainRaycastResult {

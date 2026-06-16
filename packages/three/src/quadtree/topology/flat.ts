@@ -1,3 +1,4 @@
+import { createFlatProjection } from "../../projection/flat";
 import { Dir, type TileBounds, type TileId, type Topology } from "../types";
 
 export type FlatTopologyConfig = {
@@ -18,6 +19,7 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
   const topology: Topology = {
     spaceCount: 1,
     maxRootCount: 1,
+    projection: createFlatProjection(),
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       const level = tile.level;
