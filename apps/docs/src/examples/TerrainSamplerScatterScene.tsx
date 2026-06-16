@@ -2,6 +2,10 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
@@ -206,6 +210,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
         label: "scatter scale",
       },
       terrainWireframe: { value: false, label: "terrain wireframe" },
+      tileColors: tileColorsLevaControl,
     },
     { store },
   );
@@ -382,6 +387,11 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
     });
   });
 
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: controls.terrainWireframe,
+  });
+
   return (
     <>
       <terrainMesh
@@ -391,8 +401,9 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
       >
         <meshStandardNodeMaterial
           ref={terrainMaterialRef}
-          wireframe={controls.terrainWireframe}
-          color="#6d7a66"
+          wireframe={materialAppearance.wireframe}
+          colorNode={materialAppearance.colorNode}
+          color={materialAppearance.color ?? "#6d7a66"}
           metalness={0.02}
           roughness={0.95}
         />

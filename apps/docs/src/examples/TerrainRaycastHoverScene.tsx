@@ -2,6 +2,10 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
+import {
+  tileColorsLevaControl,
+  tileInstanceColorNode,
+} from "@/examples/terrain/tileInstanceColor";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
@@ -153,6 +157,7 @@ function TerrainRaycastHoverSceneImpl({
         step: 1,
         label: "highlight radius",
       },
+      tileColors: tileColorsLevaControl,
     },
     { store },
   );
@@ -188,7 +193,7 @@ function TerrainRaycastHoverSceneImpl({
     g.set(elevationFn, () => elevation);
   }, [g]);
 
-  const colorNode = useMemo(
+  const hoverColorNode = useMemo(
     () =>
       Fn(() => {
         const baseColor = vec3(0.38, 0.53, 0.36);
@@ -206,6 +211,8 @@ function TerrainRaycastHoverSceneImpl({
       })(),
     [uHoverCenter, uHoverRadius],
   );
+
+  const colorNode = controls.tileColors ? tileInstanceColorNode : hoverColorNode;
 
   useFrame(async ({ camera, gl }) => {
     if (

@@ -2,6 +2,10 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
@@ -40,7 +44,6 @@ type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
-import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   float,
@@ -61,16 +64,6 @@ type TerrainMeshSceneImplProps = {
   g: Graph;
   store: LevaStore;
 };
-
-function u32ToColor(indexNode: Node) {
-  const i = float(indexNode);
-  const p = vec3(i, i.add(1.0), i.add(2.0));
-  const r = p.dot(vec3(127.1, 311.7, 74.7));
-  const g = p.dot(vec3(269.5, 183.3, 246.1));
-  const b = p.dot(vec3(113.5, 271.9, 124.6));
-
-  return vec3(r, g, b).sin().mul(43758.5453123).fract();
-}
 
 const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   const controls = useControls("TerrainGeometry", {
@@ -112,6 +105,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
     wireframe: {
       value: false,
     },
+    tileColors: tileColorsLevaControl,
     heightmapStrength: {
       value: 25,
       min: 0,
@@ -157,6 +151,23 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   albedo.wrapS = albedo.wrapT = THREE.RepeatWrapping;
   normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
   aorh.wrapS = aorh.wrapT = THREE.RepeatWrapping;
+
+  const terrainColorNode = useMemo(
+    () =>
+      Fn(() => {
+        const worldUv = vec2(positionWorld.x, positionWorld.z);
+        const tint = vec3(221, 145, 73).div(255);
+        return texture(albedo, worldUv).mul(tint);
+      })(),
+    [albedo],
+  );
+
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: controls.wireframe,
+    colorNode: terrainColorNode,
+    wireframeColor: "red",
+  });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
@@ -228,10 +239,12 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
               );
             })();
 
-            materialRef.current.colorNode = Fn(() => {
-              const tint = vec3(221, 145, 73).div(255);
-              return texture(albedo, worldUv).mul(tint);
-            })();
+            materialRef.current.colorNode =
+              materialAppearance.colorNode ?? terrainColorNode;
+            materialRef.current.wireframe = materialAppearance.wireframe;
+            if (materialAppearance.color !== undefined) {
+              materialRef.current.color.set(materialAppearance.color);
+            }
 
             materialRef.current.aoNode = Fn(() => {
               const aorhSample = texture(aorh, worldUv);
@@ -272,6 +285,17 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   }, [controls.elevationScale]);
 
   const materialNodesRef = useRef(false);
+
+  useEffect(() => {
+    const material = materialRef.current;
+    if (!material || !materialNodesRef.current) return;
+    material.colorNode = materialAppearance.colorNode ?? terrainColorNode;
+    material.wireframe = materialAppearance.wireframe;
+    if (materialAppearance.color !== undefined) {
+      material.color.set(materialAppearance.color);
+    }
+    material.needsUpdate = true;
+  }, [materialAppearance, terrainColorNode]);
 
   useEffect(() => {
     const elevation: ElevationCallback = ({ worldPosition, rootUV }) => {
@@ -325,10 +349,13 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
         maxNodes={controls.maxNodes}
       >
         <meshStandardNodeMaterial
-          wireframe={controls.wireframe}
+          wireframe={materialAppearance.wireframe}
           ref={materialRef}
           metalness={0.1}
-          color={controls.wireframe ? "red" : undefined}
+          {...(materialAppearance.color !== undefined
+            ? { color: materialAppearance.color }
+            : {})}
+          colorNode={materialAppearance.colorNode}
         />
       </terrainMesh>
     </>

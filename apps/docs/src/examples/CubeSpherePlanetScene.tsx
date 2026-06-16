@@ -9,6 +9,10 @@ import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useCallback, useMemo, useRef, useState } from "react";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
 
@@ -177,6 +181,7 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
         value: false,
         label: "invert",
       },
+      tileColors: tileColorsLevaControl,
     },
     { store },
   );
@@ -220,15 +225,21 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
     elevation,
   });
 
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: controls.wireframe,
+    colorNode,
+  });
+
   return (
     <>
       <Terrain terrain={terrain} maxNodes={controls.maxNodes} frustumCulled={false}>
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}
-            colorNode={controls.wireframe ? undefined : colorNode}
-            color={controls.wireframe ? "white" : undefined}
-            wireframe={controls.wireframe}
+            colorNode={materialAppearance.colorNode}
+            color={materialAppearance.color}
+            wireframe={materialAppearance.wireframe}
             metalness={0.05}
             roughness={0.95}
           />

@@ -2,6 +2,10 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
+import {
+  tileColorsLevaControl,
+  tileInstanceColorNode,
+} from "@/examples/terrain/tileInstanceColor";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import {
@@ -230,6 +234,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
         step: 1,
         label: "tile segments",
       },
+      tileColors: tileColorsLevaControl,
     },
     { store },
   );
@@ -257,7 +262,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
     g.set(elevationFn, () => elevation);
   }, [g]);
 
-  const colorNode = useMemo(
+  const terrainColorNode = useMemo(
     () =>
       Fn(() => {
         const baseColor = vec3(0.38, 0.53, 0.36);
@@ -268,6 +273,8 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
       })(),
     [],
   );
+
+  const colorNode = controls.tileColors ? tileInstanceColorNode : terrainColorNode;
 
   useFrame(async ({ camera, gl }) => {
     if (lastCameraRef.current.distanceToSquared(camera.position) >= 0.05 * 0.05) {

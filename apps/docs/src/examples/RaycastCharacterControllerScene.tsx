@@ -13,6 +13,10 @@ import {
   type TerrainStamp,
   useTerrainStampFieldSuspense,
 } from "@/examples/terrain/terrainStamps";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import { Terrain, TerrainProvider, useTerrain } from "@hello-terrain/react";
 import type { TerrainGraph } from "@hello-terrain/three";
 import { Environment } from "@react-three/drei";
@@ -172,6 +176,7 @@ function RaycastCharacterControllerSceneImpl({
       wireframe: {
         value: false,
       },
+      tileColors: tileColorsLevaControl,
     },
     { store },
   );
@@ -320,6 +325,11 @@ function RaycastCharacterControllerSceneImpl({
     onGraphReady(terrain.graph);
   }, [onGraphReady, terrain.graph]);
 
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: controls.wireframe,
+  });
+
   return (
     <TerrainProvider value={terrain}>
       <CharacterController
@@ -347,8 +357,9 @@ function RaycastCharacterControllerSceneImpl({
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}
-            wireframe={controls.wireframe}
-            color="#5f7655"
+            colorNode={materialAppearance.colorNode}
+            wireframe={materialAppearance.wireframe}
+            color={materialAppearance.color ?? "#5f7655"}
             metalness={0.03}
             roughness={0.94}
           />

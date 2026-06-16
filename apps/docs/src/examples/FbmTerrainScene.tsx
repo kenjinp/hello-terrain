@@ -7,6 +7,10 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useMemo } from "react";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { cos, dot, float, floor, Fn, fract, Loop, mix, sin, vec2 } from "three/tsl";
 import * as THREE from "three/webgpu";
@@ -109,6 +113,7 @@ function FbmTerrainSceneImpl({ store }: { store: LevaStore }) {
       wireframe: {
         value: false,
       },
+      tileColors: tileColorsLevaControl,
     },
     { store },
   );
@@ -130,6 +135,11 @@ function FbmTerrainSceneImpl({ store }: { store: LevaStore }) {
     elevation,
   });
 
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: controls.wireframe,
+  });
+
   return (
     <Terrain
       terrain={terrain}
@@ -137,7 +147,12 @@ function FbmTerrainSceneImpl({ store }: { store: LevaStore }) {
       maxNodes={controls.maxNodes}
     >
       {({ positionNode }) => (
-        <meshStandardNodeMaterial positionNode={positionNode} wireframe={controls.wireframe} />
+        <meshStandardNodeMaterial
+          positionNode={positionNode}
+          colorNode={materialAppearance.colorNode}
+          wireframe={materialAppearance.wireframe}
+          color={materialAppearance.color}
+        />
       )}
     </Terrain>
   );
