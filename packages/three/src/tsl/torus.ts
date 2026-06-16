@@ -1,4 +1,4 @@
-import { cos, float, sin, vec3 } from "three/tsl";
+import { bool, cos, float, select, sin, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 
 /**
@@ -16,6 +16,7 @@ export type TorusGeometry = {
   majorRadius: number;
   minorRadius: number;
   center: { x: number; y: number; z: number };
+  invert: boolean;
 };
 
 /**
@@ -37,7 +38,8 @@ export function torusPosition(
   const cosT = cos(theta);
   const sinP = sin(phi);
   const cosP = cos(phi);
-  const tube = displacement.add(float(geometry.minorRadius));
+  const disp = select(bool(geometry.invert), displacement.negate(), displacement);
+  const tube = disp.add(float(geometry.minorRadius));
   const ring = tube.mul(cosP).add(float(geometry.majorRadius));
   return vec3(
     ring.mul(sinT).add(float(geometry.center.x)),
@@ -47,12 +49,13 @@ export function torusPosition(
 }
 
 /** Outward unit surface normal of the base torus at (u, v). */
-export function torusOutwardNormal(u: Node, v: Node): Node {
+export function torusOutwardNormal(u: Node, v: Node, invert: boolean): Node {
   const theta = float(u).mul(TWO_PI);
   const phi = float(v).mul(TWO_PI);
   const sinT = sin(theta);
   const cosT = cos(theta);
   const sinP = sin(phi);
   const cosP = cos(phi);
-  return vec3(cosP.mul(sinT), sinP, cosP.mul(cosT)).normalize();
+  const normal = vec3(cosP.mul(sinT), sinP, cosP.mul(cosT)).normalize();
+  return select(bool(invert), normal.inverse(), normal);
 }

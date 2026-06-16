@@ -2,7 +2,10 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
-import { createTorusColorNode, createTorusElevation } from "@/examples/terrain/torusNoise";
+import {
+  createTorusColorNode,
+  createTorusElevation,
+} from "@/examples/terrain/torusNoise";
 import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import { createTorusTopology } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
@@ -62,7 +65,9 @@ function QueryDemo({
       return;
     }
     marker.visible = true;
-    marker.position.copy(sample.position).addScaledVector(sample.normal, markerHeight * 0.5);
+    marker.position
+      .copy(sample.position)
+      .addScaledVector(sample.normal, markerHeight * 0.5);
     marker.quaternion.setFromUnitVectors(upAxis, sample.normal);
   });
 
@@ -182,6 +187,10 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         step: 1,
         label: "marker angle",
       },
+      invert: {
+        value: false,
+        label: "invert",
+      },
     },
     { store },
   );
@@ -192,8 +201,14 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         majorRadius: controls.majorRadius,
         minorRadius: controls.minorRadius,
         maxHeight: controls.elevationScale,
+        invert: controls.invert,
       }),
-    [controls.majorRadius, controls.minorRadius, controls.elevationScale],
+    [
+      controls.majorRadius,
+      controls.minorRadius,
+      controls.elevationScale,
+      controls.invert,
+    ],
   );
 
   const elevation = useMemo(
@@ -227,7 +242,11 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
 
   return (
     <>
-      <Terrain terrain={terrain} maxNodes={controls.maxNodes} frustumCulled={false}>
+      <Terrain
+        terrain={terrain}
+        maxNodes={controls.maxNodes}
+        frustumCulled={false}
+      >
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}
@@ -264,7 +283,9 @@ export default function TorusTerrainScene() {
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
+          const renderer = new THREE.WebGPURenderer(
+            props as WebGPURendererParameters,
+          );
           renderer.logarithmicDepthBuffer = true;
           await renderer.init();
           return renderer;

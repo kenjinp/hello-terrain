@@ -27,6 +27,7 @@ export function torusUVToPoint(
   displacement: number,
   center: { x: number; y: number; z: number },
   out: Vec3Mutable,
+  invert = false,
 ): void {
   const theta = TWO_PI * u;
   const phi = TWO_PI * v;
@@ -34,7 +35,8 @@ export function torusUVToPoint(
   const cosT = Math.cos(theta);
   const sinP = Math.sin(phi);
   const cosP = Math.cos(phi);
-  const tube = minorRadius + displacement;
+  const disp = invert ? -displacement : displacement;
+  const tube = minorRadius + disp;
   const ring = majorRadius + tube * cosP;
   out[0] = center.x + ring * sinT;
   out[1] = center.y + tube * sinP;
@@ -42,16 +44,17 @@ export function torusUVToPoint(
 }
 
 /** Outward unit surface normal of the base (undisplaced) torus at (u, v). */
-export function torusOutwardNormal(u: number, v: number, out: Vec3Mutable): void {
+export function torusOutwardNormal(u: number, v: number, out: Vec3Mutable, invert = false): void {
   const theta = TWO_PI * u;
   const phi = TWO_PI * v;
   const sinT = Math.sin(theta);
   const cosT = Math.cos(theta);
   const sinP = Math.sin(phi);
   const cosP = Math.cos(phi);
-  out[0] = cosP * sinT;
-  out[1] = sinP;
-  out[2] = cosP * cosT;
+  const s = invert ? -1 : 1;
+  out[0] = cosP * sinT * s;
+  out[1] = sinP * s;
+  out[2] = cosP * cosT * s;
 }
 
 export type TorusSurfaceParams = {

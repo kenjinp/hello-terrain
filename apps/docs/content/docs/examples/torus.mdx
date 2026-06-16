@@ -1,6 +1,6 @@
 ---
 title: Torus (Donut)
-description: A closed donut-shaped terrain surface that stress-tests the topology + projection API, with the same query/raycast runtime as every other surface
+description: A donut-shaped terrain surface to demonstrate the topology + projection API
 ---
 
 import TorusTerrainScene from "@/examples/TorusTerrainScene"
@@ -11,12 +11,12 @@ import TorusTerrainScene from "@/examples/TorusTerrainScene"
 
 ## Overview
 
-This example demonstrates `createTorusTopology`, a closed donut surface that is periodic in **both** axes. It exists primarily as a stress test of the topology + projection abstraction: adding a brand-new surface shape requires no changes to the GPU pipeline, the CPU query/raycast machinery, or the React runtime. Each surface injects a `SurfaceProjection` strategy, and the rest of the system never branches on a projection kind.
+This example demonstrates `createTorusTopology`, a closed donut surface that is periodic in **both** axes.
 
 The torus parametrizes its surface by `(u, v)` in `[0, 1)`:
 
-- `u` sweeps around the **major circle** (the ring of the donut), and
-- `v` sweeps around the **tube cross-section**.
+- `u` goes around the **major circle** (the ring of the donut), and
+- `v` goes around the **tube cross-section**.
 
 Both axes wrap, so every tile has a same-level neighbor (modulo the level resolution) and there is a single root tile that covers the whole donut.
 
@@ -50,7 +50,8 @@ const hit = terrain.runtime.raycast?.pick(ray);
 | **max level** | Maximum quadtree subdivision depth |
 | **max nodes** | Total node budget |
 | **elevation scale** | Displacement applied along the surface normal |
-| **skirt scale** | Skirt drop distance (inward) to hide tile seams |
+| **skirt scale** | Skirt drop distance (inward by default, outward when inverted) to hide tile seams |
+| **invert** | Flip the surface so terrain grows inward and skirts point outward |
 | **noise frequency** | Spatial frequency of the 3D terrain noise |
 | **sea level** | Threshold below which terrain is flattened into ocean |
 | **marker angle** | Angle (around the ring) of the surface-query marker |

@@ -11,6 +11,8 @@ export type TorusTopologyConfig = {
   center?: { x: number; y: number; z: number };
   /** Optional conservative vertical/tube extent, included in bounds radius. */
   maxHeight?: number;
+  /** When true, elevation displaces inward and skirts point outward. */
+  invert?: boolean;
 };
 
 /**
@@ -32,7 +34,12 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   return {
     spaceCount: 1,
     maxRootCount: 1,
-    projection: createTorusProjection({ majorRadius, minorRadius, center }),
+    projection: createTorusProjection({
+      majorRadius,
+      minorRadius,
+      center,
+      invert: cfg.invert,
+    }),
     radius: majorRadius + minorRadius,
     center,
 

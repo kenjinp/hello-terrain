@@ -173,6 +173,10 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
         step: 1,
         label: "marker longitude",
       },
+      invert: {
+        value: false,
+        label: "invert",
+      },
     },
     { store },
   );
@@ -182,8 +186,9 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
       createCubeSphereTopology({
         radius: controls.radius,
         maxHeight: controls.elevationScale,
+        invert: controls.invert,
       }),
-    [controls.radius, controls.elevationScale],
+    [controls.radius, controls.elevationScale, controls.invert],
   );
 
   const elevation = useMemo(

@@ -43,6 +43,8 @@ import type {
 export interface CubeSphereProjectionConfig {
   radius: number;
   center?: Vec3Like;
+  /** When true, elevation displaces inward and skirts point outward. */
+  invert?: boolean;
 }
 
 const RAYCAST_PADDING = 1;
@@ -77,6 +79,7 @@ export function createCubeSphereProjection(
 ): SurfaceProjection {
   const radius = config.radius;
   const center: Vec3Like = config.center ?? { x: 0, y: 0, z: 0 };
+  const invert = config.invert ?? false;
 
   // Per-instance CPU scratch (no module-scope state).
   const cubeScratch: Vec3Mutable = [0, 0, 0];
@@ -90,7 +93,7 @@ export function createCubeSphereProjection(
   const neighborPos = (face: number, u: number, v: number, height: number, out: Vec3Mutable) => {
     faceUVToCube(face, u, v, cubeScratch);
     const len = Math.hypot(cubeScratch[0], cubeScratch[1], cubeScratch[2]) || 1;
-    const r = (radius + height) / len;
+    const r = invert ? (radius - height) / len : (radius + height) / len;
     out[0] = cubeScratch[0] * r;
     out[1] = cubeScratch[1] * r;
     out[2] = cubeScratch[2] * r;
@@ -106,6 +109,7 @@ export function createCubeSphereProjection(
       const nx = dx / len;
       const ny = dy / len;
       const nz = dz / len;
+      const dirSign = invert ? -1 : 1;
       dirScratch[0] = nx;
       dirScratch[1] = ny;
       dirScratch[2] = nz;
@@ -114,13 +118,13 @@ export function createCubeSphereProjection(
       out.space = face;
       out.u = uvScratch[0];
       out.v = uvScratch[1];
-      out.dirX = nx;
-      out.dirY = ny;
-      out.dirZ = nz;
+      out.dirX = nx * dirSign;
+      out.dirY = ny * dirSign;
+      out.dirZ = nz * dirSign;
       return true;
     },
     surfacePosition(key, elevation, outVec) {
-      const r = radius + elevation;
+      const r = invert ? radius - elevation : radius + elevation;
       outVec.set(center.x + key.dirX * r, center.y + key.dirY * r, center.z + key.dirZ * r);
     },
     surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
@@ -166,7 +170,7 @@ export function createCubeSphereProjection(
     kind: "cubeSphere",
     radius,
     center,
-    faceOutward: true,
+    faceOutward: !invert,
 
     gpu: {
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
@@ -177,7 +181,9 @@ export function createCubeSphereProjection(
           (tile, faceUV, displacement) => {
             const basis = cubeFaceBasis(tile.face);
             const dir = cubeFaceDirection(basis, faceUV.x, faceUV.y);
-            const r = ctx.uniforms.uRadius.toVar().add(displacement);
+            const r = invert
+              ? ctx.uniforms.uRadius.toVar().sub(displacement)
+              : ctx.uniforms.uRadius.toVar().add(displacement);
             return ctx.uniforms.uRootOrigin.toVar().add(dir.mul(r));
           },
         );
@@ -193,11 +199,13 @@ export function createCubeSphereProjection(
             return {
               positionAt: (gx, gy, height) => {
                 const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-                return cubeFaceDirection(basis, uv.x, uv.y).mul(r.add(height));
+                const dir = cubeFaceDirection(basis, uv.x, uv.y);
+                return invert ? dir.mul(r.sub(height)) : dir.mul(r.add(height));
               },
               dirAt: (gx, gy) => {
                 const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-                return cubeFaceDirection(basis, uv.x, uv.y);
+                const dir = cubeFaceDirection(basis, uv.x, uv.y);
+                return invert ? dir.negate() : dir;
               },
             };
           },
@@ -215,10 +223,11 @@ export function createCubeSphereProjection(
         const dz = cam.z - center.z;
         const len = Math.hypot(dx, dy, dz);
         if (len > 1e-12) {
-          const inv = elevation / len;
-          cam.x -= dx * inv;
-          cam.y -= dy * inv;
-          cam.z -= dz * inv;
+          const sign = invert ? 1 : -1;
+          const inv = (sign * elevation) / len;
+          cam.x += dx * inv;
+          cam.y += dy * inv;
+          cam.z += dz * inv;
         }
       },
       createSurfaceOps() {
@@ -233,12 +242,14 @@ export function createCubeSphereProjection(
       raycast(ctx: ProjectionRaycastContext) {
         const range = ctx.terrainQuery?.getGlobalElevationRange();
         const dispMax = range ? Math.max(0, range.max - center.y) : radius * 0.1;
+        const outerPadding = invert ? 0 : dispMax + RAYCAST_PADDING;
         const params: SphereRaycastParams = {
           centerX: center.x,
           centerY: center.y,
           centerZ: center.z,
           radius,
-          maxRadius: radius + dispMax + RAYCAST_PADDING,
+          maxRadius: radius + outerPadding,
+          invert,
         };
         if (ctx.sphereQuery) {
           const precise = cubeSphereRaycast(ctx.sphereQuery, ctx.ray, params, ctx.options);

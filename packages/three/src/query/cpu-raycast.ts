@@ -20,6 +20,8 @@ export type SphereRaycastParams = {
   radius: number;
   /** Outer shell radius (base radius + max displacement). */
   maxRadius: number;
+  /** When true, elevation displaces inward and signed distance is flipped. */
+  invert?: boolean;
 };
 
 /** Curved-shell parameters supplied by the torus projection. */
@@ -31,6 +33,8 @@ export type TorusRaycastParams = {
   minorRadius: number;
   /** Outer bounding-sphere radius (major + minor + max displacement). */
   outerRadius: number;
+  /** When true, elevation displaces inward and signed distance is flipped. */
+  invert?: boolean;
 };
 
 type RaySegment = {
@@ -297,7 +301,8 @@ function sphereSignedDistance(
   scratchDir.set(dx, dy, dz);
   const elevation = query.getElevationByDirection(scratchDir);
   if (elevation === null) return undefined;
-  return dist - (params.radius + elevation);
+  const s = params.invert ? -1 : 1;
+  return s * (dist - (params.radius + s * elevation));
 }
 
 export function cubeSphereRaycast(
@@ -367,6 +372,7 @@ export function cubeSphereRaycastBoundsOnly(
     point.y - params.centerY,
     point.z - params.centerZ,
   ).normalize();
+  if (params.invert) normal.negate();
   return { position: point, normal, distance: ray.origin.distanceTo(point) };
 }
 
@@ -390,7 +396,8 @@ function torusSignedDistance(
   scratchPoint.set(px, py, pz);
   const elevation = query.getElevationByPosition(scratchPoint);
   if (elevation === null) return undefined;
-  return scratchParams.tubeDistance - (params.minorRadius + elevation);
+  const s = params.invert ? -1 : 1;
+  return s * (scratchParams.tubeDistance - (params.minorRadius + s * elevation));
 }
 
 export function torusRaycast(
@@ -467,5 +474,6 @@ export function torusRaycastBoundsOnly(
     point.y - params.centerY,
     point.z - params.centerZ,
   ).normalize();
+  if (params.invert) normal.negate();
   return { position: point, normal, distance: ray.origin.distanceTo(point) };
 }

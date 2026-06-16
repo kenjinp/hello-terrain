@@ -118,6 +118,7 @@ const planet = createCubeSphereTopology({
 | `radius` | `number` | — | Sphere radius in world units. |
 | `center` | `{ x, y, z }` | `{ 0, 0, 0 }` | Planet center in world space. |
 | `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius. |
+| `invert` | `boolean` | `false` | When true, elevation displaces inward and skirts point outward. |
 
 Unlike the flat topologies, the cube-sphere injects a cube-sphere `projection` (its `kind` is `"cubeSphere"`) along with its `radius` and `center`. The GPU position pipeline calls into the projection to map each tile vertex from its face-local `(u, v)` onto the cube, normalize it onto the unit sphere, scale by `radius`, and displace it radially by elevation. Normals are reconstructed from the displaced neighbor positions so lighting follows the planet's curvature.
 
@@ -150,6 +151,7 @@ const donut = createTorusTopology({
 | `minorRadius` | `number` | — | Radius of the tube cross-section. |
 | `center` | `{ x, y, z }` | `{ 0, 0, 0 }` | Torus center in world space. |
 | `maxHeight` | `number` | `0` | Optional conservative extent added to each tile's bounds radius. |
+| `invert` | `boolean` | `false` | When true, elevation displaces inward and skirts point outward. |
 
 The torus injects a torus `projection` (its `kind` is `"torus"`, `faceOutward: true`). `neighborSameLevel` wraps `x`/`y` modulo `2^level` on both axes, and `tileBounds` samples a 3×3 grid across each tile so that tiles spanning a full circle still produce a conservative bounding sphere.
 

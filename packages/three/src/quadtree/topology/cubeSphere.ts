@@ -15,6 +15,8 @@ export type CubeSphereTopologyConfig = {
   center?: { x: number; y: number; z: number };
   /** Optional conservative vertical extent, included in bounds radius. */
   maxHeight?: number;
+  /** When true, elevation displaces inward and skirts point outward. */
+  invert?: boolean;
 };
 
 /**
@@ -63,7 +65,7 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
   return {
     spaceCount: 6,
     maxRootCount: 6,
-    projection: createCubeSphereProjection({ radius, center }),
+    projection: createCubeSphereProjection({ radius, center, invert: cfg.invert }),
     radius,
     center,
 

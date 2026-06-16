@@ -32,6 +32,8 @@ export interface TorusProjectionConfig {
   majorRadius: number;
   minorRadius: number;
   center?: Vec3Like;
+  /** When true, elevation displaces inward and skirts point outward. */
+  invert?: boolean;
 }
 
 const TWO_PI = Math.PI * 2;
@@ -40,7 +42,7 @@ const ZERO_CENTER = { x: 0, y: 0, z: 0 };
 
 function createTorusTileComputeParts(
   ctx: TileComputePartsContext,
-  geometry: { majorRadius: number; minorRadius: number; center: Vec3Like },
+  geometry: { majorRadius: number; minorRadius: number; center: Vec3Like; invert: boolean },
 ): TileComputeParts {
   const { shared } = ctx;
 
@@ -68,7 +70,8 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
   const majorRadius = config.majorRadius;
   const minorRadius = config.minorRadius;
   const center: Vec3Like = config.center ?? { x: 0, y: 0, z: 0 };
-  const geometry = { majorRadius, minorRadius, center };
+  const invert = config.invert ?? false;
+  const geometry = { majorRadius, minorRadius, center, invert };
 
   // Per-instance CPU scratch (no module-scope state).
   const params: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
@@ -81,7 +84,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
   const surfaceOps: CpuSurfaceOps = {
     positionToKey(px, py, pz, out: SurfaceKey): boolean {
       positionToTorusParams(px, py, pz, majorRadius, center, params);
-      torusOutwardNormal(params.u, params.v, normalScratch);
+      torusOutwardNormal(params.u, params.v, normalScratch, invert);
       out.space = 0;
       out.u = params.u;
       out.v = params.v;
@@ -91,7 +94,16 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       return true;
     },
     surfacePosition(key, elevation, outVec) {
-      torusUVToPoint(key.u, key.v, majorRadius, minorRadius, elevation, center, normalScratch);
+      torusUVToPoint(
+        key.u,
+        key.v,
+        majorRadius,
+        minorRadius,
+        elevation,
+        center,
+        normalScratch,
+        invert,
+      );
       outVec.set(normalScratch[0], normalScratch[1], normalScratch[2]);
     },
     surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
@@ -106,10 +118,10 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       const hDown = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
 
       // Translation-invariant; use a zero center to keep the math simple.
-      torusUVToPoint(u - duv, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft);
-      torusUVToPoint(u + duv, v, majorRadius, minorRadius, hRight, ZERO_CENTER, posRight);
-      torusUVToPoint(u, v - duv, majorRadius, minorRadius, hUp, ZERO_CENTER, posUp);
-      torusUVToPoint(u, v + duv, majorRadius, minorRadius, hDown, ZERO_CENTER, posDown);
+      torusUVToPoint(u - duv, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft, invert);
+      torusUVToPoint(u + duv, v, majorRadius, minorRadius, hRight, ZERO_CENTER, posRight, invert);
+      torusUVToPoint(u, v - duv, majorRadius, minorRadius, hUp, ZERO_CENTER, posUp, invert);
+      torusUVToPoint(u, v + duv, majorRadius, minorRadius, hDown, ZERO_CENTER, posDown, invert);
 
       const tux = posRight[0] - posLeft[0];
       const tuy = posRight[1] - posLeft[1];
@@ -134,7 +146,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     kind: "torus",
     radius: majorRadius + minorRadius,
     center,
-    faceOutward: true,
+    faceOutward: !invert,
 
     gpu: {
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
@@ -157,7 +169,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
             },
             dirAt: (gx, gy) => {
               const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-              return torusOutwardNormalNode(uv.x, uv.y);
+              return torusOutwardNormalNode(uv.x, uv.y, invert);
             },
           }),
         );
@@ -169,7 +181,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     cpu: {
       cameraSurfaceOffset(cam: Vec3Like, elevation: number) {
         positionToTorusParams(cam.x, cam.y, cam.z, majorRadius, center, params);
-        torusOutwardNormal(params.u, params.v, normalScratch);
+        torusOutwardNormal(params.u, params.v, normalScratch, invert);
         cam.x -= normalScratch[0] * elevation;
         cam.y -= normalScratch[1] * elevation;
         cam.z -= normalScratch[2] * elevation;
@@ -185,13 +197,15 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       raycast(ctx: ProjectionRaycastContext) {
         const range = ctx.terrainQuery?.getGlobalElevationRange();
         const dispMax = range ? Math.max(0, range.max - ctx.config.originY) : minorRadius * 0.5;
+        const outerPadding = invert ? 0 : dispMax + RAYCAST_PADDING;
         const raycastParams: TorusRaycastParams = {
           centerX: center.x,
           centerY: center.y,
           centerZ: center.z,
           majorRadius,
           minorRadius,
-          outerRadius: majorRadius + minorRadius + dispMax + RAYCAST_PADDING,
+          outerRadius: majorRadius + minorRadius + outerPadding,
+          invert,
         };
         if (ctx.surfaceQuery) {
           const precise = torusRaycast(ctx.surfaceQuery, ctx.ray, raycastParams, ctx.options);

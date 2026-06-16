@@ -48,8 +48,8 @@ interface SurfaceProjection {
 | Factory | Kind | Notes |
 |:--|:--|:--|
 | `createFlatProjection()` | `flat` | XZ heightfield; no surface query (`surfaceQuery` is `null`). |
-| `createCubeSphereProjection({ radius, center })` | `cubeSphere` | Radial sphere mapping; exposes `surfaceQuery` **and** `sphereQuery`. |
-| `createTorusProjection({ majorRadius, minorRadius, center })` | `torus` | Closed donut; exposes `surfaceQuery`. |
+| `createCubeSphereProjection({ radius, center, invert })` | `cubeSphere` | Radial sphere mapping; exposes `surfaceQuery` **and** `sphereQuery`. |
+| `createTorusProjection({ majorRadius, minorRadius, center, invert })` | `torus` | Closed donut; exposes `surfaceQuery`. |
 
 You normally never construct these directly — the topology factories (`createFlatTopology`, `createCubeSphereTopology`, `createTorusTopology`, …) wire the matching projection for you.
 
