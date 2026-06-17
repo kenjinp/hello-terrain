@@ -77,6 +77,31 @@ terrainMesh.terrainRaycast = terrainRaycast;
 
 After this, default raycasting pipelines can hit the terrain mesh and receive terrain-aware intersection data.
 
+## React: pointer events on `<Terrain>`
+
+Because the terrain mesh raycasts against the real surface, you can attach R3F
+pointer handlers (`onPointerDown`, `onPointerMove`, …) **directly** to the
+`<Terrain>` component — no invisible proxy mesh required. The handler fires only
+when the ray meets the actual terrain, and `event.point` is the precise world-space
+hit (`event.ray` is also available if you want to re-pick with custom options).
+
+```tsx
+<Terrain
+  terrain={terrain}
+  onPointerDown={(event) => {
+    event.stopPropagation();
+    // Only fires on a real surface hit; clicks that miss the terrain do nothing.
+    dropMarker(event.point);
+  }}
+>
+  {({ positionNode }) => <meshStandardNodeMaterial positionNode={positionNode} />}
+</Terrain>
+```
+
+`pick` is precise: it intersects the actual displaced surface and returns `null`
+when the ray misses (or before the query snapshot is ready), so clicks/hovers off
+the terrain report nothing.
+
 ## Options
 
 `RaycastOptions`:
@@ -85,5 +110,5 @@ After this, default raycasting pipelines can hit the terrain mesh and receive te
 - `refinementSteps` (default `8`): binary search iterations after a sign change
 - `maxDistance` (default infinite): far clip for terrain intersection distance
 
-Higher values improve precision on steep/complex terrain but increase query cost.
+Higher `maxSteps` / `refinementSteps` values improve precision on steep/complex terrain but increase query cost.
 

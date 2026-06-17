@@ -16,7 +16,6 @@ import {
 import { sampleGridBilinear } from "../query/elevation-field-sampling";
 import {
   cubeSphereRaycast,
-  cubeSphereRaycastBoundsOnly,
   type SphereRaycastParams,
 } from "../query/cpu-raycast";
 import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
@@ -240,6 +239,7 @@ export function createCubeSphereProjection(
         return { query, surfaceQuery, sphereQuery };
       },
       raycast(ctx: ProjectionRaycastContext) {
+        if (!ctx.sphereQuery) return null;
         const range = ctx.terrainQuery?.getGlobalElevationRange();
         const dispMax = range ? Math.max(0, range.max - center.y) : radius * 0.1;
         const outerPadding = invert ? 0 : dispMax + RAYCAST_PADDING;
@@ -251,11 +251,7 @@ export function createCubeSphereProjection(
           maxRadius: radius + outerPadding,
           invert,
         };
-        if (ctx.sphereQuery) {
-          const precise = cubeSphereRaycast(ctx.sphereQuery, ctx.ray, params, ctx.options);
-          if (precise) return precise;
-        }
-        return cubeSphereRaycastBoundsOnly(ctx.ray, params, ctx.options);
+        return cubeSphereRaycast(ctx.sphereQuery, ctx.ray, params, ctx.options);
       },
     },
   };

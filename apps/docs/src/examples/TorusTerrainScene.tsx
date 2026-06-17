@@ -27,8 +27,10 @@ type LevaStore = ReturnType<typeof useCreateStore>;
  * Demonstrates the generic closed-surface query API on a torus:
  * - A cone marker snapped to the surface above a moving world point
  *   (via `surfaceQuery.sampleTerrainByPosition`).
- * - Click anywhere on the donut to drop a sphere at the picked point
- *   (via `raycast.pick`).
+ * - Click on the donut to drop a sphere at the picked point. The `<Terrain>`
+ *   component receives R3F pointer events directly (its mesh raycasts against
+ *   the real surface), so `event.point` is the exact hit and clicks that miss
+ *   the donut do nothing — no invisible pick proxy required.
  *
  * Note: the exact same runtime API powers the cube-sphere example — only the
  * injected topology/projection differs.
@@ -38,21 +40,17 @@ function QueryDemo({
   majorRadius,
   minorRadius,
   angle,
+  markerHeight,
 }: {
   terrain: TerrainHandle;
   majorRadius: number;
   minorRadius: number;
   angle: number;
+  markerHeight: number;
 }) {
   const markerRef = useRef<THREE.Object3D>(null);
   const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const probe = useMemo(() => new THREE.Vector3(), []);
-  const [pick, setPick] = useState<{
-    position: [number, number, number];
-    normal: [number, number, number];
-  } | null>(null);
-
-  const markerHeight = Math.max(8, minorRadius * 0.12);
 
   useFrame(() => {
     const marker = markerRef.current;
@@ -75,45 +73,11 @@ function QueryDemo({
     marker.quaternion.setFromUnitVectors(upAxis, sample.normal);
   });
 
-  const handlePointerDown = useCallback(
-    (event: ThreeEvent<PointerEvent>) => {
-      const raycast = terrain.runtime.raycast;
-      if (!raycast) return;
-      event.stopPropagation();
-      const hit = raycast.pick(event.ray);
-      if (hit) {
-        setPick({
-          position: [hit.position.x, hit.position.y, hit.position.z],
-          normal: [hit.normal.x, hit.normal.y, hit.normal.z],
-        });
-      }
-    },
-    [terrain],
-  );
-
-  const pickRadius = majorRadius + minorRadius;
-
   return (
-    <group>
-      {/* Invisible pick target enclosing the donut so R3F pointer events fire;
-          the precise hit is resolved by `raycast.pick`. */}
-      <mesh onPointerDown={handlePointerDown}>
-        <sphereGeometry args={[pickRadius * 1.3, 32, 32]} />
-        <meshStandardNodeMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-
-      <mesh ref={markerRef} visible={false}>
-        <coneGeometry args={[markerHeight * 0.35, markerHeight, 16]} />
-        <meshStandardNodeMaterial color="#ff3b30" />
-      </mesh>
-
-      {pick && (
-        <mesh position={pick.position}>
-          <sphereGeometry args={[markerHeight * 0.45, 16, 16]} />
-          <meshStandardNodeMaterial color="#34c759" />
-        </mesh>
-      )}
-    </group>
+    <mesh ref={markerRef} visible={false}>
+      <coneGeometry args={[markerHeight * 0.35, markerHeight, 16]} />
+      <meshStandardNodeMaterial color="#ff3b30" />
+    </mesh>
   );
 }
 
@@ -207,11 +171,7 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         minorRadius: controls.minorRadius,
         invert: controls.invert,
       }),
-    [
-      controls.majorRadius,
-      controls.minorRadius,
-      controls.invert,
-    ],
+    [controls.majorRadius, controls.minorRadius, controls.invert],
   );
 
   const elevation = useMemo(
@@ -255,12 +215,23 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
     colorNode,
   });
 
+  const [pick, setPick] = useState<[number, number, number] | null>(null);
+  const markerHeight = Math.max(8, controls.minorRadius * 0.12);
+
+  // The terrain mesh raycasts against the real surface, so this only fires when
+  // the click actually lands on the donut; `event.point` is the precise hit.
+  const handlePointerDown = useCallback((event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    setPick([event.point.x, event.point.y, event.point.z]);
+  }, []);
+
   return (
     <>
       <Terrain
         terrain={terrain}
         maxNodes={controls.maxNodes}
         frustumCulled={false}
+        onPointerDown={handlePointerDown}
       >
         {({ positionNode }) => (
           <meshStandardNodeMaterial
@@ -273,12 +244,19 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
           />
         )}
       </Terrain>
+      {pick && (
+        <mesh position={pick}>
+          <sphereGeometry args={[markerHeight * 0.45, 16, 16]} />
+          <meshStandardNodeMaterial color="#34c759" />
+        </mesh>
+      )}
       {controls.showQuery && (
         <QueryDemo
           terrain={terrain}
           majorRadius={controls.majorRadius}
           minorRadius={controls.minorRadius}
           angle={controls.markerAngle}
+          markerHeight={markerHeight}
         />
       )}
     </>

@@ -3,7 +3,7 @@ import type { Node } from "three/webgpu";
 import { createFlatNormalFromElevationField } from "../gpu/normalField";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createFlatRenderVertexPosition } from "../gpu/worldPosition";
-import { cpuRaycast, cpuRaycastBoundsOnly } from "../query/cpu-raycast";
+import { cpuRaycast } from "../query/cpu-raycast";
 import { createTerrainQuery } from "../query/terrain-query";
 import type {
   FieldNormalContext,
@@ -103,19 +103,8 @@ export function createFlatProjection(): SurfaceProjection {
       },
       raycast(ctx: ProjectionRaycastContext) {
         const { ray, options, terrainQuery, config } = ctx;
-        if (terrainQuery) {
-          const precise = cpuRaycast(terrainQuery, ray, config, options);
-          if (precise) return precise;
-        }
-        const coarse = cpuRaycastBoundsOnly(ray, config, options);
-        if (coarse && terrainQuery) {
-          const sample = terrainQuery.sampleTerrain(coarse.position.x, coarse.position.z);
-          if (sample.valid) {
-            coarse.position.y = sample.elevation;
-            coarse.normal.copy(sample.normal);
-          }
-        }
-        return coarse;
+        if (!terrainQuery) return null;
+        return cpuRaycast(terrainQuery, ray, config, options);
       },
     },
   };

@@ -46,7 +46,7 @@ interface SurfaceProjection {
 | `cameraSurfaceOffset(cam, elevation)` | Move the camera toward the surface along the projection's up-direction so LOD distance is surface-relative. |
 | `createSurfaceOps()` | The surface math injected into the terrain cache (position → `(space, u, v)`, displaced position, normal); `null` for flat. |
 | `createRuntimeQueries(cache)` | Build the runtime query objects: the flat `query`, the generic `surfaceQuery`, and (cube-sphere) the `sphereQuery`. |
-| `raycast(ctx)` | The projection-specific CPU ray pick (precise, falling back to a coarse bounds hit). |
+| `raycast(ctx)` | The projection-specific CPU ray pick against the displaced surface; returns `null` when the ray misses or the query snapshot isn't ready. |
 
 ## Built-in projections
 
