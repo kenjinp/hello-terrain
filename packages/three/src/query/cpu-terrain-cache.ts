@@ -10,6 +10,9 @@ import {
   sampleGridBilinear,
 } from "./elevation-field-sampling";
 import {
+  lookupTileElevationRange,
+} from "./tile-elevation-pyramid";
+import {
   type TileLookupConfig,
   type TileLookupResult,
   lookupTile,
@@ -84,6 +87,18 @@ export interface CpuTerrainCache {
   getTileBySurfacePosition(px: number, py: number, pz: number): TerrainTile | null;
   getTileBoundsBySurfacePosition(px: number, py: number, pz: number): TerrainTileBounds | null;
   sampleSurfaceBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
+
+  /**
+   * Previous-frame raw elevation min/max for a tile (unscaled field values).
+   * Returns false when no snapshot data is available for the tile.
+   */
+  getTileElevationRange(
+    space: number,
+    level: number,
+    x: number,
+    y: number,
+    out: { min: number; max: number },
+  ): boolean;
 }
 
 export function createCpuTerrainCache(
@@ -99,7 +114,11 @@ export function createCpuTerrainCache(
   shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
   let totalElements = maxNodes * shape.verticesPerNode;
 
-  const state: TerrainSnapshotState = createTerrainSnapshotState(maxNodes, totalElements);
+  const state: TerrainSnapshotState = createTerrainSnapshotState(
+    maxNodes,
+    initialConfig.maxLevel,
+    totalElements,
+  );
 
   // Per-cache scratch (no module-scope state; the terrain may have many instances).
   const gridScratch = { gx: 0, gy: 0 };
@@ -452,6 +471,10 @@ export function createCpuTerrainCache(
         valid[i] = 1;
       }
       return { positions: outPositions, normals, elevations, valid, generation: state.generation };
+    },
+    getTileElevationRange(space, level, x, y, out) {
+      if (!state.hasSnapshot) return false;
+      return lookupTileElevationRange(state.elevationPyramid, space, level, x, y, out);
     },
   };
 

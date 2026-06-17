@@ -74,7 +74,7 @@ describe("torus inverse math", () => {
 });
 
 describe("quadtree/topology/torus", () => {
-  const cfg = { majorRadius: 1000, minorRadius: 300, maxHeight: 50 };
+  const cfg = { majorRadius: 1000, minorRadius: 300 };
   const baseU = Math.max(1, Math.round(cfg.majorRadius / cfg.minorRadius));
   const baseV = 1;
 
@@ -122,6 +122,26 @@ describe("quadtree/topology/torus", () => {
     // In-grid step stays in grid.
     expect(topology.neighborSameLevel({ space: 0, level: 2, x: 1, y: 1 }, Dir.RIGHT, out)).toBe(true);
     expect(out).toEqual({ space: 0, level: 2, x: 2, y: 1 });
+  });
+
+  it("expands bounds when an elevation range is provided", () => {
+    const topology = createTorusTopology(cfg);
+    const camera = { x: 0, y: 0, z: 0 };
+    const datum = { cx: 0, cy: 0, cz: 0, r: 0 };
+    const displaced = { cx: 0, cy: 0, cz: 0, r: 0 };
+
+    topology.tileBounds({ space: 0, level: 2, x: 1, y: 0 }, camera, datum);
+    topology.tileBounds(
+      { space: 0, level: 2, x: 1, y: 0 },
+      camera,
+      displaced,
+      { min: 0, max: 80 },
+    );
+
+    expect(displaced.r).toBeGreaterThan(datum.r);
+    const datumDist = Math.hypot(datum.cx, datum.cy, datum.cz);
+    const displacedDist = Math.hypot(displaced.cx, displaced.cy, displaced.cz);
+    expect(displacedDist).toBeGreaterThanOrEqual(datumDist);
   });
 
   it("runs a full LOD update without throwing and respects the node budget", () => {

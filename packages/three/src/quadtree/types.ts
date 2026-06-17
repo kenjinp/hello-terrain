@@ -30,6 +30,12 @@ export type TileBounds = {
   r: number;
 };
 
+/** Scaled world-space elevation displacement range for a tile. */
+export type ElevationRangeOut = {
+  min: number;
+  max: number;
+};
+
 export type Topology = {
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
@@ -62,8 +68,14 @@ export type Topology = {
   /**
    * Conservative camera-relative bounds for LOD decisions.
    * Avoids absolute world coordinates so Earth-scale worlds remain stable.
+   * When `elevationRange` is provided, bounds should account for displaced geometry.
    */
-  tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void;
+  tileBounds(
+    tile: TileId,
+    cameraOrigin: { x: number; y: number; z: number },
+    out: TileBounds,
+    elevationRange?: ElevationRangeOut,
+  ): void;
 
   /**
    * Fill root tiles for the current frame and return the count.
@@ -162,6 +174,18 @@ export type UpdateParams = {
 
   /** Prevent flicker by separating split/merge thresholds (0..1 typical) */
   hysteresis?: number;
+
+  /**
+   * Previous-frame per-tile elevation range in world-space displacement units
+   * (already scaled by `elevationScale`). Returns false when no data is available.
+   */
+  tileElevationRange?: (
+    space: number,
+    level: number,
+    x: number,
+    y: number,
+    out: ElevationRangeOut,
+  ) => boolean;
 };
 
 export type QuadtreeConfig = {

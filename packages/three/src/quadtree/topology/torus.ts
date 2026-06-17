@@ -1,5 +1,5 @@
 import { createTorusProjection } from "../../projection/torus";
-import { Dir, type TileBounds, type TileId, type Topology } from "../types";
+import { Dir, type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
 import { type Vec3Mutable, torusUVToPoint } from "./torusInverse";
 
 export type TorusTopologyConfig = {
@@ -9,8 +9,6 @@ export type TorusTopologyConfig = {
   minorRadius: number;
   /** Torus center in world space (defaults to origin). */
   center?: { x: number; y: number; z: number };
-  /** Optional conservative vertical/tube extent, included in bounds radius. */
-  maxHeight?: number;
   /** When true, elevation displaces inward and skirts point outward. */
   invert?: boolean;
 };
@@ -27,12 +25,15 @@ export type TorusTopologyConfig = {
 export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   const majorRadius = cfg.majorRadius;
   const minorRadius = cfg.minorRadius;
-  const maxHeight = cfg.maxHeight ?? 0;
   const center = cfg.center ?? { x: 0, y: 0, z: 0 };
+  const invert = cfg.invert ?? false;
   const baseU = Math.max(1, Math.round(majorRadius / minorRadius));
   const baseV = 1;
 
   const corner: Vec3Mutable = [0, 0, 0];
+  const px = new Float64Array(18);
+  const py = new Float64Array(18);
+  const pz = new Float64Array(18);
 
   const wrap = (value: number, n: number): number => ((value % n) + n) % n;
 
@@ -48,7 +49,7 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       majorRadius,
       minorRadius,
       center,
-      invert: cfg.invert,
+      invert,
       baseU,
       baseV,
     }),
@@ -83,45 +84,47 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       return true;
     },
 
-    tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void {
+    tileBounds(
+      tile: TileId,
+      cameraOrigin: { x: number; y: number; z: number },
+      out: TileBounds,
+      elevationRange?: ElevationRangeOut,
+    ): void {
       const { nU, nV } = levelResolution(tile.level);
       const u0 = tile.x / nU;
       const v0 = tile.y / nV;
       const stepU = 1 / nU;
       const stepV = 1 / nV;
 
-      // Sample a 3x3 grid across the tile (corners + edge midpoints + center).
-      // Because both axes are periodic, the four corners can collapse to a
-      // single point at low levels (a tile spanning a full circle), so corners
-      // alone underestimate the extent; the midpoints keep the bound
-      // conservative.
+      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
+      let pointCount = 0;
       let sumX = 0;
       let sumY = 0;
       let sumZ = 0;
-      const px: number[] = [];
-      const py: number[] = [];
-      const pz: number[] = [];
+
       for (let sj = 0; sj <= 2; sj++) {
         for (let si = 0; si <= 2; si++) {
           const u = u0 + (si * stepU) / 2;
           const v = v0 + (sj * stepV) / 2;
-          torusUVToPoint(u, v, majorRadius, minorRadius, 0, center, corner);
-          px.push(corner[0]);
-          py.push(corner[1]);
-          pz.push(corner[2]);
-          sumX += corner[0];
-          sumY += corner[1];
-          sumZ += corner[2];
+          for (let di = 0; di < disps.length; di++) {
+            torusUVToPoint(u, v, majorRadius, minorRadius, disps[di]!, center, corner, invert);
+            px[pointCount] = corner[0];
+            py[pointCount] = corner[1];
+            pz[pointCount] = corner[2];
+            sumX += corner[0];
+            sumY += corner[1];
+            sumZ += corner[2];
+            pointCount += 1;
+          }
         }
       }
 
-      const count = px.length;
-      const cX = sumX / count;
-      const cY = sumY / count;
-      const cZ = sumZ / count;
+      const cX = sumX / pointCount;
+      const cY = sumY / pointCount;
+      const cZ = sumZ / pointCount;
 
       let maxDistSq = 0;
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < pointCount; i++) {
         const dx = px[i]! - cX;
         const dy = py[i]! - cY;
         const dz = pz[i]! - cZ;
@@ -132,7 +135,7 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       out.cx = cX - cameraOrigin.x;
       out.cy = cY - cameraOrigin.y;
       out.cz = cZ - cameraOrigin.z;
-      out.r = Math.sqrt(maxDistSq) + maxHeight;
+      out.r = Math.sqrt(maxDistSq);
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {

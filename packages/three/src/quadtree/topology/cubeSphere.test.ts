@@ -120,14 +120,14 @@ describe("quadtree/topology/cubeSphere", () => {
   });
 
   it("produces conservative finite bounds", () => {
-    const topology = createCubeSphereTopology({ radius: 1000, maxHeight: 50 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const out = { cx: 0, cy: 0, cz: 0, r: 0 };
 
     topology.tileBounds({ space: 0, level: 0, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, out);
     expect(Number.isFinite(out.r)).toBe(true);
     expect(out.r).toBeGreaterThan(0);
-    // A whole face's bounding radius cannot exceed the sphere diameter + height.
-    expect(out.r).toBeLessThan(2000 + 50 + 1);
+    // A whole face's bounding radius cannot exceed the sphere diameter.
+    expect(out.r).toBeLessThan(2000 + 1);
 
     // Deeper tiles are smaller.
     const deep = { cx: 0, cy: 0, cz: 0, r: 0 };
@@ -144,7 +144,7 @@ describe("quadtree/topology/cubeSphere", () => {
   });
 
   it("runs a full LOD update without throwing and respects the node budget", () => {
-    const topology = createCubeSphereTopology({ radius: 1000, maxHeight: 50 });
+    const topology = createCubeSphereTopology({ radius: 1000 });
     const state = createState({ maxNodes: 8192, maxLevel: 8 }, topology);
 
     const leaves = update(state, topology, {

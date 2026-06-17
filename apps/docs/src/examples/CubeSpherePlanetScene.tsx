@@ -190,7 +190,6 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
     () =>
       createCubeSphereTopology({
         radius: controls.radius,
-        maxHeight: controls.elevationScale,
         invert: controls.invert,
       }),
     [controls.radius, controls.elevationScale, controls.invert],

@@ -1,5 +1,6 @@
 import {
   allocLeafSet,
+  type ElevationRangeOut,
   type LeafSet,
   type QuadtreeConfig,
   type TileBounds,
@@ -37,6 +38,7 @@ export type QuadtreeState = {
   scratchTile: TileId;
   scratchNeighbor: TileId;
   scratchBounds: TileBounds;
+  scratchElevationRange: ElevationRangeOut;
   scratchRootTiles: TileId[];
 
   /** topology space count is fixed for a given state */
@@ -65,6 +67,7 @@ export function createState(cfg: QuadtreeConfig, topology: Topology): QuadtreeSt
     scratchTile: { space: 0, level: 0, x: 0, y: 0 },
     scratchNeighbor: { space: 0, level: 0, x: 0, y: 0 },
     scratchBounds: { cx: 0, cy: 0, cz: 0, r: 0 },
+    scratchElevationRange: { min: 0, max: 0 },
     scratchRootTiles,
     spaceCount: topology.spaceCount,
   };

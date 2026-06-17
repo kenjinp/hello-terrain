@@ -143,7 +143,7 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         label: "max level",
       },
       maxNodes: {
-        value: 2048,
+        value: 4096,
         min: 128,
         max: 4096,
         step: 1,
@@ -205,13 +205,11 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
       createTorusTopology({
         majorRadius: controls.majorRadius,
         minorRadius: controls.minorRadius,
-        maxHeight: controls.elevationScale,
         invert: controls.invert,
       }),
     [
       controls.majorRadius,
       controls.minorRadius,
-      controls.elevationScale,
       controls.invert,
     ],
   );
@@ -234,7 +232,12 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         elevationScale: controls.elevationScale,
         invert: controls.invert,
       }),
-    [controls.majorRadius, controls.minorRadius, controls.elevationScale, controls.invert],
+    [
+      controls.majorRadius,
+      controls.minorRadius,
+      controls.elevationScale,
+      controls.invert,
+    ],
   );
 
   const terrain = useTerrain({

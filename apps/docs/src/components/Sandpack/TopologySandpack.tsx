@@ -215,7 +215,6 @@ const FLAT_CODE = buildAppCode({
   topologyExpr: `createFlatTopology({
         rootSize: 256,
         origin: { x: 0, y: 0, z: 0 },
-        maxHeight: 40,
       })`,
   terrainOptions: `    maxLevel: 10,
     maxNodes: 512,
@@ -236,7 +235,6 @@ const INFINITE_FLAT_CODE = buildAppCode({
         rootSize: 200,
         origin: { x: 0, y: 0, z: 0 },
         rootGridRadius: 1,
-        maxHeight: 30,
       })`,
   // rootSize must match the topology's root size for the GPU projection.
   terrainOptions: `    rootSize: 200,
@@ -258,7 +256,6 @@ const CUBE_SPHERE_CODE = buildAppCode({
   topologyExpr: `createCubeSphereTopology({
         radius: 1000,
         center: { x: 0, y: 0, z: 0 },
-        maxHeight: 50,
       })`,
   // radius drives the GPU sphere projection.
   terrainOptions: `    radius: 1000,

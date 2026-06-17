@@ -1,5 +1,5 @@
 import { createFlatProjection } from "../../projection/flat";
-import { Dir, type TileBounds, type TileId, type Topology } from "../types";
+import { Dir, type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
 
 export type FlatTopologyConfig = {
   /**
@@ -8,13 +8,10 @@ export type FlatTopologyConfig = {
    */
   rootSize: number;
   origin: { x: number; y: number; z: number };
-  /** optional conservative vertical extent, included in bounds radius */
-  maxHeight?: number;
 };
 
 export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
   const halfRoot = 0.5 * cfg.rootSize;
-  const maxHeight = cfg.maxHeight ?? 0;
 
   const topology: Topology = {
     spaceCount: 1,
@@ -55,7 +52,12 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
       return true;
     },
 
-    tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void {
+    tileBounds(
+      tile: TileId,
+      cameraOrigin: { x: number; y: number; z: number },
+      out: TileBounds,
+      elevationRange?: ElevationRangeOut,
+    ): void {
       const level = tile.level;
       const scale = 1 / (1 << level);
       const size = cfg.rootSize * scale;
@@ -64,15 +66,19 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
       const minZ = cfg.origin.z + (tile.y * size - halfRoot);
 
       const centerX = minX + 0.5 * size;
-      const centerY = cfg.origin.y;
       const centerZ = minZ + 0.5 * size;
+      const centerY =
+        cfg.origin.y + (elevationRange ? (elevationRange.min + elevationRange.max) * 0.5 : 0);
 
       out.cx = centerX - cameraOrigin.x;
       out.cy = centerY - cameraOrigin.y;
       out.cz = centerZ - cameraOrigin.z;
 
-      // Conservative: half-diagonal + vertical extent.
-      out.r = 0.7071067811865476 * size + maxHeight;
+      const halfDiag = 0.7071067811865476 * size;
+      const vertExtent = elevationRange
+        ? Math.max(Math.abs(elevationRange.min), Math.abs(elevationRange.max))
+        : 0;
+      out.r = halfDiag + vertExtent;
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
@@ -87,4 +93,3 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
 
   return topology;
 }
-

@@ -19,7 +19,7 @@ describe("quadtree/topology/flat", () => {
   });
 
   it("computes conservative camera-relative bounds", () => {
-    const topology = createFlatTopology({ rootSize: 100, origin: { x: 0, y: 10, z: 0 }, maxHeight: 5 });
+    const topology = createFlatTopology({ rootSize: 100, origin: { x: 0, y: 10, z: 0 } });
 
     const out = { cx: 0, cy: 0, cz: 0, r: 0 };
     topology.tileBounds({ space: 0, level: 1, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, out);

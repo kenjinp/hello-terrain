@@ -4,7 +4,7 @@ import { createLeafStorage } from "../gpu/leafStorage";
 import type { LeafSet } from "../quadtree";
 import { createFlatTopology, createState, update } from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
-import { maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
+import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
 
 /**
@@ -40,10 +40,12 @@ export const quadtreeConfigTask = task((get, work) => {
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
   const quadtreeUpdateConfig = get(quadtreeUpdate);
-  const { query: terrainQuery, surfaceQuery } = get(terrainQueryTask);
+  const { query: terrainQuery, surfaceQuery, cache } = get(terrainQueryTask);
+  const elevationScaleValue = get(elevationScale);
 
   let outLeaves: LeafSet | undefined = undefined;
   const cameraPosition = new Vector3();
+  const elevationRangeScratch = { min: 0, max: 0 };
   return work(() => {
     const cam = quadtreeUpdateConfig.cameraOrigin;
     // Terrain elevation beneath the camera drives the surface-relative LOD
@@ -57,6 +59,15 @@ export const quadtreeUpdateTask = task((get, work) => {
     } else {
       quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
     }
+
+    quadtreeUpdateConfig.tileElevationRange = (space, level, x, y, out) => {
+      if (!cache.getTileElevationRange(space, level, x, y, elevationRangeScratch)) {
+        return false;
+      }
+      out.min = elevationRangeScratch.min * elevationScaleValue;
+      out.max = elevationRangeScratch.max * elevationScaleValue;
+      return true;
+    };
 
     outLeaves = update(
       quadtreeConfig.state,

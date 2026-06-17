@@ -103,6 +103,29 @@ if (range) {
 
 This is used internally by the raycast system to derive a tight AABB instead of a conservative estimate.
 
+## Quadtree LOD feedback
+
+Per-tile elevation ranges also feed back into **quadtree subdivision**. After each readback, the cache builds a conservative elevation pyramid: every leaf's min/max values propagate up to ancestor tiles so coarse tiles know about mountains beneath them.
+
+During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot (scaled by `elevationScale`). Each topology's `tileBounds` uses that range to inflate LOD bounding spheres — tall terrain refines from farther away without a manual `maxHeight` padding knob.
+
+```ts
+type ElevationRangeOut = { min: number; max: number };
+
+type UpdateParams = {
+  // ...
+  tileElevationRange?: (
+    space: number,
+    level: number,
+    x: number,
+    y: number,
+    out: ElevationRangeOut,
+  ) => boolean;
+};
+```
+
+Returns world-space displacement min/max when data is available; `false` when the tile has no readback yet (datum-only bounds for that frame). This mirrors the one-frame latency of `elevationAtCameraXZ`.
+
 ## Closed-surface queries
 
 The `TerrainQuery` above describes a flat heightfield keyed on world XZ. Closed

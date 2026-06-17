@@ -8,6 +8,11 @@ import {
   disposeReadbackSlot,
   readStorageBufferInto,
 } from "../gpu/bufferReadback";
+import {
+  buildTileElevationPyramid,
+  createTileElevationPyramid,
+  type TileElevationPyramid,
+} from "./tile-elevation-pyramid";
 import type { ElevationRange } from "./types";
 
 /**
@@ -38,6 +43,8 @@ export interface TerrainSnapshotState {
   lastScheduledStampGen: number;
   elevationReadback: ReadbackSlot;
   boundsReadback: ReadbackSlot;
+  /** Conservative per-tile elevation range pyramid for LOD bounds. */
+  elevationPyramid: TileElevationPyramid;
 }
 
 type RendererReadback = WebGPURenderer & {
@@ -48,6 +55,7 @@ type RendererReadback = WebGPURenderer & {
 
 export function createTerrainSnapshotState(
   maxNodes: number,
+  maxLevel: number,
   totalElements: number,
 ): TerrainSnapshotState {
   return {
@@ -65,6 +73,7 @@ export function createTerrainSnapshotState(
     lastScheduledStampGen: -1,
     elevationReadback: createReadbackSlot(),
     boundsReadback: createReadbackSlot(),
+    elevationPyramid: createTileElevationPyramid(maxNodes, maxLevel),
   };
 }
 
@@ -158,6 +167,12 @@ export function triggerSnapshotReadback(
         gMax = Math.max(gMax, a, b);
       }
       state.globalRange = { min: gMin, max: gMax };
+      buildTileElevationPyramid(
+        state.elevationPyramid,
+        state.frontIndex,
+        state.frontTileBounds,
+        activeLeafCount,
+      );
     }
 
     state.hasSnapshot = true;

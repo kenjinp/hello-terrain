@@ -49,7 +49,6 @@ import { createFlatTopology } from "@hello-terrain/three";
 const flat = createFlatTopology({
   rootSize: 256,
   origin: { x: 0, y: 0, z: 0 },
-  maxHeight: 50,
 });
 ```
 
@@ -59,7 +58,6 @@ const flat = createFlatTopology({
 |:--|:--|:--|:--|
 | `rootSize` | `number` | — | World-space size of the root tile edge. The tile covers `[-rootSize/2, +rootSize/2]` around `origin` in X/Z. |
 | `origin` | `{ x, y, z }` | — | World-space origin of the root tile. |
-| `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius, so tall terrain isn't culled too early. |
 
 Because the topology is bounded, `neighborSameLevel` returns `false` at the outer edges — there is no terrain beyond the root tile. See the **Bounded flat** tab above for a runnable scene.
 
@@ -74,7 +72,6 @@ const infinite = createInfiniteFlatTopology({
   rootSize: 256,
   origin: { x: 0, y: 0, z: 0 },
   rootGridRadius: 1,
-  maxHeight: 50,
 });
 ```
 
@@ -85,7 +82,6 @@ const infinite = createInfiniteFlatTopology({
 | `rootSize` | `number` | — | World-space size of each root tile edge. |
 | `origin` | `{ x, y, z }` | — | World-space origin of the root grid. |
 | `rootGridRadius` | `number` | `1` | Half-width of the root grid in root tiles. `1` → a 3×3 grid, `2` → 5×5, etc. |
-| `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius. |
 
 ### Key differences from bounded flat
 
@@ -107,7 +103,6 @@ import { createCubeSphereTopology } from "@hello-terrain/three";
 const planet = createCubeSphereTopology({
   radius: 1000,
   center: { x: 0, y: 0, z: 0 },
-  maxHeight: 100,
 });
 ```
 
@@ -117,7 +112,6 @@ const planet = createCubeSphereTopology({
 |:--|:--|:--|:--|
 | `radius` | `number` | — | Sphere radius in world units. |
 | `center` | `{ x, y, z }` | `{ 0, 0, 0 }` | Planet center in world space. |
-| `maxHeight` | `number` | `0` | Optional conservative vertical extent added to each tile's bounds radius. |
 | `invert` | `boolean` | `false` | When true, elevation displaces inward and skirts point outward. |
 
 Unlike the flat topologies, the cube-sphere injects a cube-sphere `projection` (its `kind` is `"cubeSphere"`) along with its `radius` and `center`. The GPU position pipeline calls into the projection to map each tile vertex from its face-local `(u, v)` onto the cube, normalize it onto the unit sphere, scale by `radius`, and displace it radially by elevation. Normals are reconstructed from the displaced neighbor positions so lighting follows the planet's curvature.
@@ -146,7 +140,6 @@ const donut = createTorusTopology({
   majorRadius: 1000,
   minorRadius: 360,
   center: { x: 0, y: 0, z: 0 },
-  maxHeight: 40,
 });
 ```
 
@@ -157,12 +150,19 @@ const donut = createTorusTopology({
 | `majorRadius` | `number` | — | Distance from the donut center to the tube center. |
 | `minorRadius` | `number` | — | Radius of the tube cross-section. |
 | `center` | `{ x, y, z }` | `{ 0, 0, 0 }` | Torus center in world space. |
-| `maxHeight` | `number` | `0` | Optional conservative extent added to each tile's bounds radius. |
 | `invert` | `boolean` | `false` | When true, elevation displaces inward and skirts point outward. |
 
 The torus injects a torus `projection` (its `kind` is `"torus"`, `faceOutward: true`, `baseResolution: { u: baseU, v: baseV }`). `neighborSameLevel` wraps `x` modulo `baseU × 2^level` and `y` modulo `baseV × 2^level`, and `tileBounds` samples a 3×3 grid across each tile so that tiles spanning a full circle still produce a conservative bounding sphere.
 
 See the [Torus example](/docs/examples/torus) for a richer interactive demo.
+
+## Elevation-aware LOD bounds
+
+LOD subdivision uses each tile's **real elevation range**, not a fixed padding constant. After each GPU readback, the terrain cache builds a conservative **elevation pyramid**: every leaf's min/max field values are propagated up to all ancestor tiles so coarse tiles know about mountains beneath them.
+
+During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range. Newly-seen areas fall back to the datum surface for one frame until readback data arrives — the same latency tradeoff as `elevationAtCameraXZ`.
+
+You do not configure this manually; it is automatic when the terrain query readback is active.
 
 ## The `Topology` Type
 
@@ -178,7 +178,12 @@ type Topology = {
   center?: { x: number; y: number; z: number }; // curved surfaces only
 
   neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean;
-  tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void;
+  tileBounds(
+    tile: TileId,
+    cameraOrigin: { x: number; y: number; z: number },
+    out: TileBounds,
+    elevationRange?: { min: number; max: number },
+  ): void;
   rootTiles(cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number;
 };
 ```
@@ -187,7 +192,7 @@ type Topology = {
 - `maxRootCount` — the maximum number of roots `rootTiles` can emit in a frame.
 - `projection` — the injected [`SurfaceProjection`](/docs/core/projection) strategy. The pipeline never branches on a projection kind; it calls into the projection's GPU and CPU hooks. The built-in factories set this for you.
 - `neighborSameLevel` — fills the same-level neighbor in a direction; returns `false` when there is no neighbor (e.g. the edge of a bounded topology).
-- `tileBounds` — writes a conservative, camera-relative bounding sphere used for LOD decisions.
+- `tileBounds` — writes a conservative, camera-relative bounding sphere used for LOD decisions. When an elevation range is supplied, bounds account for displaced geometry.
 - `rootTiles` — fills the active level-0 tiles for the current frame and returns the count.
 
 ## Setting Up a Topology in react-three/fiber
