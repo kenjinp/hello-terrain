@@ -1,0 +1,163 @@
+---
+title: Changelog
+description: Release notes for the Hello Terrain packages
+---
+
+Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
+
+## 0.0.0-alpha.12 — Consensus Control
+
+Terrain can now wrap a **torus**. Let's mainstream more fantastical world shapes! LOD and terrain querying are supported just as for planes and spheres. 
+
+### Spinning up a donut
+
+```tsx
+import { Terrain, useTerrain } from "@hello-terrain/react";
+import { createTorusTopology } from "@hello-terrain/three";
+import { useMemo } from "react";
+
+function Donut({ elevation }) {
+  const topology = useMemo(
+    () => createTorusTopology({ majorRadius: 1000, minorRadius: 360 }),
+    [],
+  );
+
+  const terrain = useTerrain({
+    topology,
+    maxLevel: 16,
+    elevationScale: 40,
+    elevation,
+  });
+
+  return (
+    <Terrain terrain={terrain} frustumCulled={false}>
+      {({ positionNode }) => (
+        <meshStandardNodeMaterial positionNode={positionNode} />
+      )}
+    </Terrain>
+  );
+}
+```
+
+See it running on the [torus example page](/examples/torus).
+
+### Querying a closed surface
+
+The torus doesn't have a tidy lat/long, so it uses the generic **surface query**: give it a world point in vec3 and it projects onto the surface for you.
+
+```ts
+// `probe` is a THREE.Vector3 somewhere near the surface
+const query = terrain.runtime.surfaceQuery;
+const sample = query.sampleTerrainByPosition(probe);
+
+if (sample.valid) {
+  marker.position.copy(sample.position);
+  marker.quaternion.setFromUnitVectors(up, sample.normal);
+}
+
+// Pointer/raycast picking works identically across every topology
+const hit = terrain.runtime.raycast.pick(event.ray);
+```
+
+### Turn it inside out 
+
+Sphere and torus projections now take an **`invert`** flag. Flip it and elevation displaces _inward_ while skirts point _outward_.
+
+```ts
+createCubeSphereTopology({ radius: 1000, invert: true });
+createTorusTopology({ majorRadius: 1000, minorRadius: 360, invert: true });
+```
+
+### What's New
+
+- **`createTorusTopology(...)`**: a closed donut world with full render, LOD, query, and raycast parity.
+- **Projection dependency injection**: topologies carry a `SurfaceProjection` strategy instead of using internal switching. New `projection/` module exports `createFlatProjection`, `createCubeSphereProjection`, and `createTorusProjection` (plus `CubeSphereProjectionConfig` / `TorusProjectionConfig`) for examples.
+- **`invert` option** on the sphere and torus projection/topology configs.
+- **Elevation-aware subdivision** via a new tile elevation "pyramid" from n-1 frame readback, so LOD reacts to elevation height better.
+- New [torus example](/examples/torus).
+- GPU objects are now **labeled for the WebGPU Inspector** to make profiling easier.
+
+### Fixes 🐛
+
+- **Continuous normals at cube-sphere seams.** The terrain field now stores true world-space normals `[height, Nx, Ny, Nz]` (computed from neighbor world positions), so shading no longer breaks across cube-face seams and tile edges.
+- **GPU readback buffer leak fixed.** Three's `getArrayBufferAsync` was leaking a `_readback` buffer every frame; it's been replaced with a reused, properly destroyed staging buffer. This reduces hitching. 
+
+## 0.0.0-alpha.11 — No Cuts Appropriate
+
+You can now wrap terrain onto a **cube-sphere** and build planets, with seam-stitched LOD all the way down to the surface.
+
+This release also introduces a new **[Terrain Query API](/docs/core/query/terrain-query)** for asking the terrain questions on the CPU, and renames the old "surface" concept to **"topology"** everywhere for consistency.
+
+### Building a planet
+
+```tsx
+import { Terrain, useTerrain } from "@hello-terrain/react";
+import { createCubeSphereTopology } from "@hello-terrain/three";
+import { useMemo } from "react";
+
+function Planet({ elevation }) {
+  const topology = useMemo(
+    () => createCubeSphereTopology({ radius: 1000 }),
+    [],
+  );
+
+  const terrain = useTerrain({
+    topology,
+    radius: 1000,
+    maxLevel: 16,
+    elevationScale: 60,
+    elevation,
+  });
+
+  return (
+    <Terrain terrain={terrain} frustumCulled={false}>
+      {({ positionNode }) => (
+        <meshStandardNodeMaterial positionNode={positionNode} />
+      )}
+    </Terrain>
+  );
+}
+```
+
+There's a full runnable version on the [cube-sphere example page](/examples/cube-sphere).
+
+### Asking the planet questions
+
+Cube-sphere worlds get a **sphere query** keyed by latitude/longitude.
+
+```ts
+const query = terrain.runtime.sphereQuery;
+const sample = query.sampleTerrainByLatLong(20, 40);
+
+if (sample.valid) {
+  marker.position.copy(sample.position);
+  marker.quaternion.setFromUnitVectors(up, sample.normal);
+}
+```
+
+[Raycasting](/docs/core/query/raycasting) now lives in its own path and works on every topology:
+
+```ts
+const hit = terrain.runtime.raycast.pick(ray);
+// hit.position, hit.normal
+```
+
+### What's New
+
+- **`createCubeSphereTopology(...)`** — six quadtree faces wrapped onto a sphere, with seam-stitching and curvature-aware LOD. Assign it through the [`topology` param](/docs/core/params).
+- **[Terrain Query API](/docs/core/query/terrain-query)** — a consolidated CPU surface for elevation/position lookups, plus dedicated sphere queries for cube-sphere worlds.
+- **[Raycasting](/docs/core/query/raycasting)** split into its own `terrain-raycast` path with a generic signed-distance march.
+- **[Terrain Sampler](/docs/core/query/terrain-sampler)** unified into a single builder with cached results.
+- New docs for topologies: [Topology](/docs/core/topology), Terrain Query, Raycasting, Terrain Sampler, and the cube-sphere example.
+- `@hello-terrain/react` tracks above changes
+
+### Under the hood
+
+- **CPU/GPU terrain math deduped.** The 800+ line `cpu-terrain-cache.ts` was split into focused `terrain-snapshot`, `tile-lookup`, and `elevation-field-sampling` modules, with shared field/sphere math co-located in `gpu/tile.ts` behind CPU↔TSL parity tests.
+- **`nodes/` folded into `tsl/`.** and other small re-arranging.
+- Added a `typecheck` script and fixed the docs type-check.
+
+### Breaking ⚠️
+
+- **`surface` → `topology`.** The concept formerly called "surface" is now "topology" across the API, types, and docs. Update `surface` references and any deep imports from `quadtree/surface/*` (now `quadtree/topology/*`).
+- **Dead exports removed** during the `nodes/` → `tsl/` consolidation, including `createTileRender`, `readElevationFieldVertex`, `sampleTerrainFieldNormal`, and the public `Texture3DBackend`.
