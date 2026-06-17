@@ -230,36 +230,6 @@ export function cpuRaycast(
   };
 }
 
-export function cpuRaycastBoundsOnly(
-  ray: Ray,
-  config: TerrainRaycastConfig,
-  options?: RaycastOptions,
-): TerrainRaycastResult | null {
-  const bounds = getTerrainBounds(config);
-  const planeY = (config.minY + config.maxY) * 0.5;
-  const dirY = ray.direction.y;
-  if (Math.abs(dirY) < 1e-8) return null;
-  const t = (planeY - ray.origin.y) / dirY;
-  if (t < 0) return null;
-  const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
-  if (t > maxDistance) return null;
-  const point = new Vector3();
-  ray.at(t, point);
-  if (
-    point.x < bounds.minX ||
-    point.x > bounds.maxX ||
-    point.z < bounds.minZ ||
-    point.z > bounds.maxZ
-  ) {
-    return null;
-  }
-  return {
-    position: point,
-    normal: new Vector3(0, 1, 0),
-    distance: ray.origin.distanceTo(point),
-  };
-}
-
 type SphereSegment = { t0: number; t1: number };
 
 /** Intersect a ray with a sphere; returns near/far parametric distances. */
@@ -354,28 +324,6 @@ export function cubeSphereRaycast(
   };
 }
 
-/** Coarse fallback: intersect the base sphere and return a radial-normal hit. */
-export function cubeSphereRaycastBoundsOnly(
-  ray: Ray,
-  params: SphereRaycastParams,
-  options?: RaycastOptions,
-): TerrainRaycastResult | null {
-  const shell = intersectRaySphere(ray, params.centerX, params.centerY, params.centerZ, params.radius);
-  if (!shell) return null;
-  const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
-  const t = shell.t0 >= 0 ? shell.t0 : shell.t1;
-  if (t < 0 || t > maxDistance) return null;
-  const point = new Vector3();
-  ray.at(t, point);
-  const normal = new Vector3(
-    point.x - params.centerX,
-    point.y - params.centerY,
-    point.z - params.centerZ,
-  ).normalize();
-  if (params.invert) normal.negate();
-  return { position: point, normal, distance: ray.origin.distanceTo(point) };
-}
-
 function torusSignedDistance(
   query: TerrainSurfaceQuery,
   params: TorusRaycastParams,
@@ -448,32 +396,4 @@ export function torusRaycast(
     normal: sample.normal.clone(),
     distance: ray.origin.distanceTo(sample.position),
   };
-}
-
-/** Coarse fallback: intersect the torus bounding sphere with a radial normal. */
-export function torusRaycastBoundsOnly(
-  ray: Ray,
-  params: TorusRaycastParams,
-  options?: RaycastOptions,
-): TerrainRaycastResult | null {
-  const shell = intersectRaySphere(
-    ray,
-    params.centerX,
-    params.centerY,
-    params.centerZ,
-    params.outerRadius,
-  );
-  if (!shell) return null;
-  const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
-  const t = shell.t0 >= 0 ? shell.t0 : shell.t1;
-  if (t < 0 || t > maxDistance) return null;
-  const point = new Vector3();
-  ray.at(t, point);
-  const normal = new Vector3(
-    point.x - params.centerX,
-    point.y - params.centerY,
-    point.z - params.centerZ,
-  ).normalize();
-  if (params.invert) normal.negate();
-  return { position: point, normal, distance: ray.origin.distanceTo(point) };
 }

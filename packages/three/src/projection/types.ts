@@ -135,7 +135,10 @@ export interface SurfaceProjectionCpu {
   createSurfaceOps(): CpuSurfaceOps | null;
   /** Build the runtime query objects the projection exposes. */
   createRuntimeQueries(cache: CpuTerrainCache): RuntimeQueries;
-  /** Projection-specific CPU raycast (precise, falling back to bounds). */
+  /**
+   * Projection-specific CPU raycast against the displaced surface. Returns
+   * `null` when the ray misses the surface or the query snapshot isn't ready.
+   */
   raycast(ctx: ProjectionRaycastContext): TerrainRaycastResult | null;
 }
 

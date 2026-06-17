@@ -13,7 +13,7 @@ import {
   torusUVToPoint,
 } from "../quadtree/topology/torusInverse";
 import { sampleGridBilinear } from "../query/elevation-field-sampling";
-import { torusRaycast, torusRaycastBoundsOnly, type TorusRaycastParams } from "../query/cpu-raycast";
+import { torusRaycast, type TorusRaycastParams } from "../query/cpu-raycast";
 import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type {
@@ -213,6 +213,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         return { query, surfaceQuery, sphereQuery: null };
       },
       raycast(ctx: ProjectionRaycastContext) {
+        if (!ctx.surfaceQuery) return null;
         const range = ctx.terrainQuery?.getGlobalElevationRange();
         const dispMax = range ? Math.max(0, range.max - ctx.config.originY) : minorRadius * 0.5;
         const outerPadding = invert ? 0 : dispMax + RAYCAST_PADDING;
@@ -225,11 +226,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
           outerRadius: majorRadius + minorRadius + outerPadding,
           invert,
         };
-        if (ctx.surfaceQuery) {
-          const precise = torusRaycast(ctx.surfaceQuery, ctx.ray, raycastParams, ctx.options);
-          if (precise) return precise;
-        }
-        return torusRaycastBoundsOnly(ctx.ray, raycastParams, ctx.options);
+        return torusRaycast(ctx.surfaceQuery, ctx.ray, raycastParams, ctx.options);
       },
     },
   };

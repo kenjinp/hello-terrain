@@ -24,29 +24,24 @@ type LevaStore = ReturnType<typeof useCreateStore>;
  * Demonstrates the cube-sphere terrain query API:
  * - A cone marker snapped to the surface at a lat/long, oriented to the normal
  *   (via `query.sampleTerrainByLatLong`).
- * - Click anywhere on the planet to drop a sphere at the picked point
- *   (via `raycast.pick`).
+ * - Click on the planet to drop a sphere at the picked point. The `<Terrain>`
+ *   component receives R3F pointer events directly (its mesh raycasts against
+ *   the real surface), so `event.point` is the exact hit and clicks that miss
+ *   the planet do nothing — no invisible pick proxy required.
  */
 function QueryDemo({
   terrain,
   latitude,
   longitude,
-  radius,
+  markerHeight,
 }: {
   terrain: TerrainHandle;
   latitude: number;
   longitude: number;
-  radius: number;
+  markerHeight: number;
 }) {
   const markerRef = useRef<THREE.Object3D>(null);
   const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
-  const [pick, setPick] = useState<{
-    position: [number, number, number];
-    normal: [number, number, number];
-  } | null>(null);
-
-  // Marker height scales with the planet so it stays visible.
-  const markerHeight = Math.max(8, radius * 0.04);
 
   useFrame(() => {
     const marker = markerRef.current;
@@ -63,43 +58,11 @@ function QueryDemo({
     marker.quaternion.setFromUnitVectors(upAxis, sample.normal);
   });
 
-  const handlePointerDown = useCallback(
-    (event: ThreeEvent<PointerEvent>) => {
-      const raycast = terrain.runtime.raycast;
-      if (!raycast) return;
-      event.stopPropagation();
-      const hit = raycast.pick(event.ray);
-      if (hit) {
-        setPick({
-          position: [hit.position.x, hit.position.y, hit.position.z],
-          normal: [hit.normal.x, hit.normal.y, hit.normal.z],
-        });
-      }
-    },
-    [terrain],
-  );
-
   return (
-    <group>
-      {/* Invisible pick target: a sphere enclosing the terrain shell so R3F
-          pointer events fire, then we resolve the precise hit ourselves. */}
-      <mesh onPointerDown={handlePointerDown}>
-        <sphereGeometry args={[radius * 1.2, 32, 32]} />
-        <meshStandardNodeMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
-
-      <mesh ref={markerRef} visible={false}>
-        <coneGeometry args={[markerHeight * 0.35, markerHeight, 16]} />
-        <meshStandardNodeMaterial color="#ff3b30" />
-      </mesh>
-
-      {pick && (
-        <mesh position={pick.position}>
-          <sphereGeometry args={[markerHeight * 0.45, 16, 16]} />
-          <meshStandardNodeMaterial color="#34c759" />
-        </mesh>
-      )}
-    </group>
+    <mesh ref={markerRef} visible={false}>
+      <coneGeometry args={[markerHeight * 0.35, markerHeight, 16]} />
+      <meshStandardNodeMaterial color="#ff3b30" />
+    </mesh>
   );
 }
 
@@ -230,9 +193,25 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
     colorNode,
   });
 
+  const [pick, setPick] = useState<[number, number, number] | null>(null);
+  // Marker height scales with the planet so it stays visible.
+  const markerHeight = Math.max(8, controls.radius * 0.04);
+
+  // The terrain mesh raycasts against the real surface, so this only fires when
+  // the click actually lands on the planet; `event.point` is the precise hit.
+  const handlePointerDown = useCallback((event: ThreeEvent<PointerEvent>) => {
+    event.stopPropagation();
+    setPick([event.point.x, event.point.y, event.point.z]);
+  }, []);
+
   return (
     <>
-      <Terrain terrain={terrain} maxNodes={controls.maxNodes} frustumCulled={false}>
+      <Terrain
+        terrain={terrain}
+        maxNodes={controls.maxNodes}
+        frustumCulled={false}
+        onPointerDown={handlePointerDown}
+      >
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}
@@ -244,12 +223,18 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
           />
         )}
       </Terrain>
+      {pick && (
+        <mesh position={pick}>
+          <sphereGeometry args={[markerHeight * 0.45, 16, 16]} />
+          <meshStandardNodeMaterial color="#34c759" />
+        </mesh>
+      )}
       {controls.showQuery && (
         <QueryDemo
           terrain={terrain}
           latitude={controls.latitude}
           longitude={controls.longitude}
-          radius={controls.radius}
+          markerHeight={markerHeight}
         />
       )}
     </>
