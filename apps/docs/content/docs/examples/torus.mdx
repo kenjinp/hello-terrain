@@ -18,11 +18,11 @@ The torus parametrizes its surface by `(u, v)` in `[0, 1)`:
 - `u` goes around the **major circle** (the ring of the donut), and
 - `v` goes around the **tube cross-section**.
 
-Both axes wrap, so every tile has a same-level neighbor (modulo the level resolution) and there is a single root tile that covers the whole donut.
+Both axes wrap, so every tile has a same-level neighbor. Because the major circumference is typically much longer than the tube circumference, the topology seeds a `baseU × baseV` grid of level-0 roots (`baseU = round(major/minor)`, `baseV = 1`) so each root tile is approximately square in world space before isotropic LOD subdivision.
 
 ### How it works
 
-- **One periodic space** — `rootTiles` emits a single level-0 root. `neighborSameLevel` wraps `x`/`y` modulo `2^level` on both axes, so the surface is seamless all the way around.
+- **Anisotropic base resolution** — `rootTiles` emits `baseU × baseV` level-0 roots. `neighborSameLevel` wraps `x` modulo `baseU × 2^level` and `y` modulo `baseV × 2^level`, so the surface is seamless all the way around. The projection exposes `baseResolution: { u, v }` so GPU UV mapping and CPU tile lookup use the same per-axis divisors.
 - **Injected projection** — `createTorusProjection` supplies the GPU vertex/normal builders (torus position + outward normal) and the CPU surface math (position → `(u, v)`, displaced position, cross-product normal, camera offset, and a signed-distance raycast). The same `SurfaceProjection` interface backs the flat and cube-sphere surfaces.
 - **Conservative bounds** — `tileBounds` samples a 3×3 grid across each tile (corners alone collapse for tiles that span a full circle), producing a stable camera-relative bounding sphere for LOD.
 - **Seamless elevation** — the elevation function receives the torus `worldPosition`. Sampling 3D noise in world space keeps terrain continuous across both wrap seams without any UV-seam handling.

@@ -75,19 +75,32 @@ describe("torus inverse math", () => {
 
 describe("quadtree/topology/torus", () => {
   const cfg = { majorRadius: 1000, minorRadius: 300, maxHeight: 50 };
+  const baseU = Math.max(1, Math.round(cfg.majorRadius / cfg.minorRadius));
+  const baseV = 1;
 
-  it("emits a single level-0 root tile", () => {
+  it("emits a baseU x baseV grid of level-0 root tiles", () => {
     const topology = createTorusTopology(cfg);
-    const out: TileId[] = [{ space: -1, level: -1, x: -1, y: -1 }];
+    const out: TileId[] = Array.from({ length: baseU * baseV }, () => ({
+      space: -1,
+      level: -1,
+      x: -1,
+      y: -1,
+    }));
     const count = topology.rootTiles({ x: 0, y: 0, z: 0 }, out);
-    expect(count).toBe(1);
-    expect(out[0]).toEqual({ space: 0, level: 0, x: 0, y: 0 });
+    expect(count).toBe(baseU * baseV);
+    expect(topology.maxRootCount).toBe(baseU * baseV);
+    for (let y = 0; y < baseV; y++) {
+      for (let x = 0; x < baseU; x++) {
+        expect(out[y * baseU + x]).toEqual({ space: 0, level: 0, x, y });
+      }
+    }
   });
 
-  it("exposes the torus projection and bounding radius", () => {
+  it("exposes the torus projection with anisotropic base resolution", () => {
     const topology = createTorusTopology(cfg);
     expect(topology.projection.kind).toBe("torus");
     expect(topology.projection.faceOutward).toBe(true);
+    expect(topology.projection.baseResolution).toEqual({ u: baseU, v: baseV });
     expect(topology.radius).toBe(cfg.majorRadius + cfg.minorRadius);
     expect(topology.spaceCount).toBe(1);
   });
@@ -96,13 +109,15 @@ describe("quadtree/topology/torus", () => {
     const topology = createTorusTopology(cfg);
     const out: TileId = { space: 0, level: 0, x: 0, y: 0 };
 
-    // Level 1 (2x2): stepping LEFT from x=0 wraps to x=1.
+    // Level 1: nU = baseU*2, nV = baseV*2 — stepping LEFT from x=0 wraps to nU-1.
+    const nU1 = baseU * 2;
+    const nV1 = baseV * 2;
     expect(topology.neighborSameLevel({ space: 0, level: 1, x: 0, y: 0 }, Dir.LEFT, out)).toBe(true);
-    expect(out).toEqual({ space: 0, level: 1, x: 1, y: 0 });
+    expect(out).toEqual({ space: 0, level: 1, x: nU1 - 1, y: 0 });
 
-    // Stepping TOP from y=0 wraps to y=1.
+    // Stepping TOP from y=0 wraps to nV-1.
     expect(topology.neighborSameLevel({ space: 0, level: 1, x: 0, y: 0 }, Dir.TOP, out)).toBe(true);
-    expect(out).toEqual({ space: 0, level: 1, x: 0, y: 1 });
+    expect(out).toEqual({ space: 0, level: 1, x: 0, y: nV1 - 1 });
 
     // In-grid step stays in grid.
     expect(topology.neighborSameLevel({ space: 0, level: 2, x: 1, y: 1 }, Dir.RIGHT, out)).toBe(true);
@@ -124,12 +139,14 @@ describe("quadtree/topology/torus", () => {
 
     for (let i = 0; i < leaves.count; i++) {
       const level = leaves.level[i]!;
-      const n = 1 << level;
+      const levelScale = 1 << level;
+      const nU = baseU * levelScale;
+      const nV = baseV * levelScale;
       expect(leaves.space[i]).toBe(0);
       expect(leaves.x[i]).toBeGreaterThanOrEqual(0);
-      expect(leaves.x[i]).toBeLessThan(n);
+      expect(leaves.x[i]).toBeLessThan(nU);
       expect(leaves.y[i]).toBeGreaterThanOrEqual(0);
-      expect(leaves.y[i]).toBeLessThan(n);
+      expect(leaves.y[i]).toBeLessThan(nV);
     }
   });
 });

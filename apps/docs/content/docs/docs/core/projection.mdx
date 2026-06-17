@@ -19,6 +19,11 @@ interface SurfaceProjection {
   readonly center?: { x: number; y: number; z: number };
   /** Closed surfaces face outward → the mesh flips its triangle winding. */
   readonly faceOutward: boolean;
+  /**
+   * Per-axis level-0 tile count before LOD subdivision. Defaults to `{ u: 1, v: 1 }`.
+   * At level `L`, resolution is `baseU × 2^L` by `baseV × 2^L` tiles.
+   */
+  readonly baseResolution?: { u: number; v: number };
 
   gpu: SurfaceProjectionGpu; // TSL builders for the render + compute stages
   cpu: SurfaceProjectionCpu; // query / raycast / LOD on the CPU snapshot
@@ -49,7 +54,7 @@ interface SurfaceProjection {
 |:--|:--|:--|
 | `createFlatProjection()` | `flat` | XZ heightfield; no surface query (`surfaceQuery` is `null`). |
 | `createCubeSphereProjection({ radius, center, invert })` | `cubeSphere` | Radial sphere mapping; exposes `surfaceQuery` **and** `sphereQuery`. |
-| `createTorusProjection({ majorRadius, minorRadius, center, invert })` | `torus` | Closed donut; exposes `surfaceQuery`. |
+| `createTorusProjection({ majorRadius, minorRadius, center, invert, baseU, baseV })` | `torus` | Closed donut; exposes `surfaceQuery`. `baseU`/`baseV` default to `1`; the topology auto-sets `baseU = round(major/minor)`. |
 
 You normally never construct these directly — the topology factories (`createFlatTopology`, `createCubeSphereTopology`, `createTorusTopology`, …) wire the matching projection for you.
 

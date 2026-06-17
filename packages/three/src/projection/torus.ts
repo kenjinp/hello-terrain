@@ -34,6 +34,10 @@ export interface TorusProjectionConfig {
   center?: Vec3Like;
   /** When true, elevation displaces inward and skirts point outward. */
   invert?: boolean;
+  /** Level-0 tile count along u before LOD subdivision (defaults to 1). */
+  baseU?: number;
+  /** Level-0 tile count along v before LOD subdivision (defaults to 1). */
+  baseV?: number;
 }
 
 const TWO_PI = Math.PI * 2;
@@ -42,15 +46,22 @@ const ZERO_CENTER = { x: 0, y: 0, z: 0 };
 
 function createTorusTileComputeParts(
   ctx: TileComputePartsContext,
-  geometry: { majorRadius: number; minorRadius: number; center: Vec3Like; invert: boolean },
+  geometry: {
+    majorRadius: number;
+    minorRadius: number;
+    center: Vec3Like;
+    invert: boolean;
+    baseU: number;
+    baseV: number;
+  },
 ): TileComputeParts {
   const { shared } = ctx;
 
   const tileSize = Fn(([nodeIndex]: [Node]) => {
     const level = shared.tileLevel(nodeIndex);
-    const divisor = pow(float(2), level.toFloat());
+    const levelScale = pow(float(2), level.toFloat());
     // Representative arc length: a tile's share of the major circumference.
-    return float(TWO_PI * geometry.majorRadius).div(divisor);
+    return float(TWO_PI * geometry.majorRadius).div(float(geometry.baseU).mul(levelScale));
   });
 
   const tileVertexWorldPosition = Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
@@ -71,7 +82,9 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
   const minorRadius = config.minorRadius;
   const center: Vec3Like = config.center ?? { x: 0, y: 0, z: 0 };
   const invert = config.invert ?? false;
-  const geometry = { majorRadius, minorRadius, center, invert };
+  const baseU = config.baseU ?? 1;
+  const baseV = config.baseV ?? 1;
+  const geometry = { majorRadius, minorRadius, center, invert, baseU, baseV };
 
   // Per-instance CPU scratch (no module-scope state).
   const params: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
@@ -108,7 +121,9 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     },
     surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
       const scale = ctx.elevationScale;
-      const duv = 1 / (ctx.innerTileSegments * 2 ** ctx.level);
+      const levelScale = 2 ** ctx.level;
+      const duvU = 1 / (ctx.innerTileSegments * baseU * levelScale);
+      const duvV = 1 / (ctx.innerTileSegments * baseV * levelScale);
       const u = key.u;
       const v = key.v;
 
@@ -118,10 +133,10 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       const hDown = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
 
       // Translation-invariant; use a zero center to keep the math simple.
-      torusUVToPoint(u - duv, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft, invert);
-      torusUVToPoint(u + duv, v, majorRadius, minorRadius, hRight, ZERO_CENTER, posRight, invert);
-      torusUVToPoint(u, v - duv, majorRadius, minorRadius, hUp, ZERO_CENTER, posUp, invert);
-      torusUVToPoint(u, v + duv, majorRadius, minorRadius, hDown, ZERO_CENTER, posDown, invert);
+      torusUVToPoint(u - duvU, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft, invert);
+      torusUVToPoint(u + duvU, v, majorRadius, minorRadius, hRight, ZERO_CENTER, posRight, invert);
+      torusUVToPoint(u, v - duvV, majorRadius, minorRadius, hUp, ZERO_CENTER, posUp, invert);
+      torusUVToPoint(u, v + duvV, majorRadius, minorRadius, hDown, ZERO_CENTER, posDown, invert);
 
       const tux = posRight[0] - posLeft[0];
       const tuy = posRight[1] - posLeft[1];
@@ -147,6 +162,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     radius: majorRadius + minorRadius,
     center,
     faceOutward: !invert,
+    baseResolution: { u: baseU, v: baseV },
 
     gpu: {
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
@@ -155,6 +171,8 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
           ctx.uniforms,
           ctx.terrainFieldStorage,
           (_tile, faceUV, displacement) => torusPosition(geometry, faceUV.x, faceUV.y, displacement),
+          baseU,
+          baseV,
         );
       },
       createTileComputeParts: (ctx) => createTorusTileComputeParts(ctx, geometry),

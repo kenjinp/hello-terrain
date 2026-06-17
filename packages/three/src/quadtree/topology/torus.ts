@@ -18,34 +18,45 @@ export type TorusTopologyConfig = {
 /**
  * Torus (donut) topology: a single quadtree space whose `(u, v)` axes wrap
  * around the major circle and the tube cross-section. Both axes are periodic,
- * so every same-level neighbor exists (wrapping modulo the level resolution)
- * and there is a single root tile.
+ * so every same-level neighbor exists (wrapping modulo the level resolution).
+ *
+ * Level-0 resolution is anisotropic: `baseU = round(major/minor)` tiles along
+ * `u` and `baseV = 1` along `v`, so root tiles are approximately square in
+ * world space before isotropic LOD subdivision.
  */
 export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   const majorRadius = cfg.majorRadius;
   const minorRadius = cfg.minorRadius;
   const maxHeight = cfg.maxHeight ?? 0;
   const center = cfg.center ?? { x: 0, y: 0, z: 0 };
+  const baseU = Math.max(1, Math.round(majorRadius / minorRadius));
+  const baseV = 1;
 
   const corner: Vec3Mutable = [0, 0, 0];
 
   const wrap = (value: number, n: number): number => ((value % n) + n) % n;
 
+  const levelResolution = (level: number): { nU: number; nV: number } => {
+    const levelScale = 2 ** level;
+    return { nU: baseU * levelScale, nV: baseV * levelScale };
+  };
+
   return {
     spaceCount: 1,
-    maxRootCount: 1,
+    maxRootCount: baseU * baseV,
     projection: createTorusProjection({
       majorRadius,
       minorRadius,
       center,
       invert: cfg.invert,
+      baseU,
+      baseV,
     }),
     radius: majorRadius + minorRadius,
     center,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
-      const level = tile.level;
-      const n = 1 << level;
+      const { nU, nV } = levelResolution(tile.level);
       let nx = tile.x;
       let ny = tile.y;
 
@@ -66,18 +77,18 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
 
       // Closed in both axes: wrap to the opposite edge.
       out.space = 0;
-      out.level = level;
-      out.x = wrap(nx, n);
-      out.y = wrap(ny, n);
+      out.level = tile.level;
+      out.x = wrap(nx, nU);
+      out.y = wrap(ny, nV);
       return true;
     },
 
     tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void {
-      const level = tile.level;
-      const n = 1 << level;
-      const u0 = tile.x / n;
-      const v0 = tile.y / n;
-      const step = 1 / n;
+      const { nU, nV } = levelResolution(tile.level);
+      const u0 = tile.x / nU;
+      const v0 = tile.y / nV;
+      const stepU = 1 / nU;
+      const stepV = 1 / nV;
 
       // Sample a 3x3 grid across the tile (corners + edge midpoints + center).
       // Because both axes are periodic, the four corners can collapse to a
@@ -92,8 +103,8 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       const pz: number[] = [];
       for (let sj = 0; sj <= 2; sj++) {
         for (let si = 0; si <= 2; si++) {
-          const u = u0 + (si * step) / 2;
-          const v = v0 + (sj * step) / 2;
+          const u = u0 + (si * stepU) / 2;
+          const v = v0 + (sj * stepV) / 2;
           torusUVToPoint(u, v, majorRadius, minorRadius, 0, center, corner);
           px.push(corner[0]);
           py.push(corner[1]);
@@ -125,12 +136,18 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
-      const root = out[0]!;
-      root.space = 0;
-      root.level = 0;
-      root.x = 0;
-      root.y = 0;
-      return 1;
+      let count = 0;
+      for (let y = 0; y < baseV; y++) {
+        for (let x = 0; x < baseU; x++) {
+          const root = out[count]!;
+          root.space = 0;
+          root.level = 0;
+          root.x = x;
+          root.y = y;
+          count += 1;
+        }
+      }
+      return count;
     },
   };
 }

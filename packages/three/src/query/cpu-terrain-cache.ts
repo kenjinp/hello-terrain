@@ -46,6 +46,10 @@ export type TerrainQueryConfig = {
   maxLevel: number;
   /** Representative surface radius (curved projections only). */
   radius: number;
+  /** Level-0 tile count along u before LOD subdivision (defaults to 1). */
+  baseU?: number;
+  /** Level-0 tile count along v before LOD subdivision (defaults to 1). */
+  baseV?: number;
 };
 
 export interface CpuTerrainCache {
@@ -108,6 +112,8 @@ export function createCpuTerrainCache(
     originZ: config.originZ,
     maxLevel: config.maxLevel,
     radius: config.radius,
+    baseU: config.baseU,
+    baseV: config.baseV,
   });
 
   /** Fractional grid coords for a lookup; writes/returns `gridScratch`. */

@@ -29,6 +29,8 @@ export const terrainQueryTask = task((get, work) => {
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
       radius: topologyValue.radius ?? radiusValue,
+      baseU: projection.baseResolution?.u ?? 1,
+      baseV: projection.baseResolution?.v ?? 1,
     };
 
     let cache = prev?.cache;

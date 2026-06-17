@@ -150,6 +150,11 @@ export interface SurfaceProjection {
   readonly center?: Vec3Like;
   /** Closed surfaces face outward → flip triangle winding. */
   readonly faceOutward: boolean;
+  /**
+   * Per-axis level-0 tile count before LOD subdivision. Defaults to `{ u: 1, v: 1 }`.
+   * At level `L`, resolution is `baseU * 2^L` by `baseV * 2^L` tiles.
+   */
+  readonly baseResolution?: { u: number; v: number };
 
   gpu: SurfaceProjectionGpu;
   cpu: SurfaceProjectionCpu;

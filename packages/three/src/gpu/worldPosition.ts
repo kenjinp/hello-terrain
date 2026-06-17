@@ -102,13 +102,18 @@ export function createCurvedRenderVertexPosition(
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage: TerrainFieldStorage | undefined,
   surfacePoint: (tile: LeafTileNodes, faceUV: Node, displacement: Node) => Node,
+  baseU = 1,
+  baseV = 1,
 ): Node {
+  const fBaseU = float(baseU);
+  const fBaseV = float(baseV);
+
   return Fn(() => {
     const tile = decodeLeafTile(leafStorage, int(instanceIndex));
     const half = float(0.5);
     const localU = positionLocal.x.max(half.negate()).min(half).add(half);
     const localV = positionLocal.z.max(half.negate()).min(half).add(half);
-    const faceUV = faceUVFromTileLocal(tile, localU, localV);
+    const faceUV = faceUVFromTileLocal(tile, localU, localV, fBaseU, fBaseV);
 
     const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);

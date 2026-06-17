@@ -1,15 +1,23 @@
 import { Ray, Vector3 } from "three";
 import type { StorageBufferAttribute } from "three/webgpu";
 import { describe, expect, it } from "vitest";
-import { createSpatialIndex, insertSpatialIndexRaw } from "../quadtree/spatialIndex";
+import {
+  createSpatialIndex,
+  insertSpatialIndexRaw,
+} from "../quadtree/spatialIndex";
 import { createTorusProjection } from "../projection/torus";
 import { torusRaycast, type TorusRaycastParams } from "./cpu-raycast";
-import { createCpuTerrainCache, type TerrainQueryConfig } from "./cpu-terrain-cache";
+import {
+  createCpuTerrainCache,
+  type TerrainQueryConfig,
+} from "./cpu-terrain-cache";
 
 describe("torus CPU sampling", () => {
   const innerTileSegments = 2;
   const majorRadius = 1000;
   const minorRadius = 300;
+  const baseU = Math.max(1, Math.round(majorRadius / minorRadius));
+  const baseV = 1;
   const elevationScale = 2;
   const height = 10;
   const outerSurface = majorRadius + minorRadius + height * elevationScale;
@@ -23,14 +31,26 @@ describe("torus CPU sampling", () => {
     elevationScale,
     maxLevel: 4,
     radius: majorRadius + minorRadius,
+    baseU,
+    baseV,
   };
 
-  const projection = createTorusProjection({ majorRadius, minorRadius, center: { x: 0, y: 0, z: 0 } });
+  const projection = createTorusProjection({
+    majorRadius,
+    minorRadius,
+    center: { x: 0, y: 0, z: 0 },
+    baseU,
+    baseV,
+  });
 
   /** Build a cache + surface query with one flat-height root leaf. */
   async function seededCache() {
     const maxNodes = 4;
-    const cache = createCpuTerrainCache(maxNodes, config, projection.cpu.createSurfaceOps());
+    const cache = createCpuTerrainCache(
+      maxNodes,
+      config,
+      projection.cpu.createSurfaceOps(),
+    );
     const { surfaceQuery } = projection.cpu.createRuntimeQueries(cache);
     if (!surfaceQuery) throw new Error("expected a surface query");
 
@@ -46,7 +66,13 @@ describe("torus CPU sampling", () => {
       getArrayBufferAsync: async () => elevation.buffer,
     } as unknown as Parameters<typeof cache.triggerReadback>[0];
 
-    cache.triggerReadback(renderer, {} as unknown as StorageBufferAttribute, index, undefined, 1);
+    cache.triggerReadback(
+      renderer,
+      {} as unknown as StorageBufferAttribute,
+      index,
+      undefined,
+      1,
+    );
     await new Promise((resolve) => setTimeout(resolve, 0));
     return { cache, surfaceQuery };
   }
@@ -54,7 +80,9 @@ describe("torus CPU sampling", () => {
   it("samples displaced elevation and position for a world point", async () => {
     const { surfaceQuery } = await seededCache();
     // A point above the outer equator at +Z (u = 0, v = 0).
-    const sample = surfaceQuery.sampleTerrainByPosition(new Vector3(0, 0, 2000));
+    const sample = surfaceQuery.sampleTerrainByPosition(
+      new Vector3(0, 0, 2000),
+    );
     expect(sample.valid).toBe(true);
     expect(sample.elevation).toBeCloseTo(height * elevationScale, 4);
     expect(sample.position.z).toBeCloseTo(outerSurface, 3);
@@ -64,10 +92,9 @@ describe("torus CPU sampling", () => {
 
   it("returns elevation by position", async () => {
     const { surfaceQuery } = await seededCache();
-    expect(surfaceQuery.getElevationByPosition(new Vector3(0, 0, 2000))).toBeCloseTo(
-      height * elevationScale,
-      4,
-    );
+    expect(
+      surfaceQuery.getElevationByPosition(new Vector3(0, 0, 2000)),
+    ).toBeCloseTo(height * elevationScale, 4);
   });
 
   it("exposes a surface sampler for the torus", async () => {
@@ -87,7 +114,10 @@ describe("torus CPU sampling", () => {
     };
 
     // Ray from far out on +Z aimed at the torus center.
-    const ray = new Ray(new Vector3(0, 0, outerSurface * 2), new Vector3(0, 0, -1));
+    const ray = new Ray(
+      new Vector3(0, 0, outerSurface * 2),
+      new Vector3(0, 0, -1),
+    );
     const hit = torusRaycast(surfaceQuery, ray, params);
 
     expect(hit).not.toBeNull();

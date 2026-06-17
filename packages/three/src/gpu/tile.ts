@@ -48,15 +48,19 @@ export function decodeLeafTile(leafStorage: LeafStorageState, nodeIndex: Node): 
 
 /**
  * Face-local (u, v) in [0, 1] for a tile-local coordinate:
- * `(tile.xy + local) / 2^level`.
+ * `(tile.xy + local) / (base * 2^level)` per axis.
  */
 export function faceUVFromTileLocal(
   tile: Pick<LeafTileNodes, "level" | "x" | "y">,
   localU: Node,
   localV: Node,
+  baseU: Node = float(1),
+  baseV: Node = float(1),
 ): Node {
-  const n = pow(float(2), tile.level.toFloat());
-  return vec2(tile.x.add(localU).div(n), tile.y.add(localV).div(n));
+  const levelScale = pow(float(2), tile.level.toFloat());
+  const nU = baseU.mul(levelScale);
+  const nV = baseV.mul(levelScale);
+  return vec2(tile.x.add(localU).div(nU), tile.y.add(localV).div(nV));
 }
 
 /** Shared (projection-independent) tile-compute helpers. */
@@ -97,6 +101,9 @@ export function createTileCompute(
   uniforms: TerrainUniformsContext,
   projection: SurfaceProjection,
 ): TileCompute {
+  const baseU = float(projection.baseResolution?.u ?? 1);
+  const baseV = float(projection.baseResolution?.v ?? 1);
+
   const tileLevel = Fn(([nodeIndex]: [Node]) => decodeLeafTile(leafStorage, nodeIndex).level);
   const tileFace = Fn(([nodeIndex]: [Node]) => decodeLeafTile(leafStorage, nodeIndex).face);
   const tileOriginVec2 = Fn(([nodeIndex]: [Node]) => {
@@ -108,7 +115,7 @@ export function createTileCompute(
     const fInnerSegments = uniforms.uInnerTileSegments.toVar().toFloat();
     const localU = int(ix).toFloat().sub(float(1.0)).div(fInnerSegments);
     const localV = int(iy).toFloat().sub(float(1.0)).div(fInnerSegments);
-    return faceUVFromTileLocal(tile, localU, localV);
+    return faceUVFromTileLocal(tile, localU, localV, baseU, baseV);
   });
 
   const shared: SharedTileCompute = {

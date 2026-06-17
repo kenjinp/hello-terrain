@@ -12,7 +12,7 @@ Hello Terrain ships four topologies:
 | **Bounded flat** | `createFlatTopology` | 1 root | A single finite tile in the XZ plane (the default). |
 | **Infinite flat** | `createInfiniteFlatTopology` | 1 space | A camera-centered grid of roots that extends forever. |
 | **Cube-sphere** | `createCubeSphereTopology` | 6 roots | Six quadtree faces wrapped onto a sphere to form a planet. |
-| **Torus** | `createTorusTopology` | 1 root | A closed donut surface, periodic in both axes. |
+| **Torus** | `createTorusTopology` | `baseU × baseV` roots | A closed donut surface, periodic in both axes. |
 
 All three are imported from `@hello-terrain/three` and assigned through the [`topology` param](/docs/core/params).
 
@@ -130,7 +130,14 @@ See the [Cube-Sphere Planet example](/docs/examples/cube-sphere) for a richer in
 
 ## Torus Topology
 
-`createTorusTopology` produces a closed donut surface that is periodic in **both** axes: `u` sweeps around the major circle (the ring) and `v` sweeps around the tube cross-section. Because both axes wrap, there is a single root tile and every tile has a same-level neighbor. The torus is primarily a stress test of the topology + projection abstraction — adding it required no changes to the GPU pipeline, the CPU query/raycast machinery, or the React runtime.
+`createTorusTopology` produces a closed donut surface that is periodic in **both** axes: `u` sweeps around the major circle (the ring) and `v` sweeps around the tube cross-section. Because both axes wrap, every tile has a same-level neighbor.
+
+Because the major circumference (`2π × majorRadius`) is typically much longer than the tube circumference (`2π × minorRadius`), the topology auto-derives an **anisotropic base resolution** so root tiles are approximately square in world space:
+
+- `baseU = round(majorRadius / minorRadius)` tiles along `u`
+- `baseV = 1` tile along `v`
+
+At level `L`, resolution is `baseU × 2^L` by `baseV × 2^L` tiles. Isotropic 2×2 subdivision then keeps descendants square, so LOD distance metrics behave correctly without stretched tiles. The torus is primarily a stress test of the topology + projection abstraction — adding it required no changes to the GPU pipeline, the CPU query/raycast machinery, or the React runtime.
 
 ```ts
 import { createTorusTopology } from "@hello-terrain/three";
@@ -153,7 +160,7 @@ const donut = createTorusTopology({
 | `maxHeight` | `number` | `0` | Optional conservative extent added to each tile's bounds radius. |
 | `invert` | `boolean` | `false` | When true, elevation displaces inward and skirts point outward. |
 
-The torus injects a torus `projection` (its `kind` is `"torus"`, `faceOutward: true`). `neighborSameLevel` wraps `x`/`y` modulo `2^level` on both axes, and `tileBounds` samples a 3×3 grid across each tile so that tiles spanning a full circle still produce a conservative bounding sphere.
+The torus injects a torus `projection` (its `kind` is `"torus"`, `faceOutward: true`, `baseResolution: { u: baseU, v: baseV }`). `neighborSameLevel` wraps `x` modulo `baseU × 2^level` and `y` modulo `baseV × 2^level`, and `tileBounds` samples a 3×3 grid across each tile so that tiles spanning a full circle still produce a conservative bounding sphere.
 
 See the [Torus example](/docs/examples/torus) for a richer interactive demo.
 
