@@ -30,7 +30,8 @@ Unlike the flat topologies, the GPU position pipeline runs in `cubeSphere` proje
 | **max level** | Maximum quadtree subdivision depth per face |
 | **max nodes** | Total node budget across all six faces |
 | **elevation scale** | Vertical (radial) scale applied to the elevation function |
-| **skirt scale** | Skirt drop distance (radially inward) to hide tile seams |
+| **skirt scale** | Skirt drop distance (radially inward by default, outward when inverted) to hide tile seams |
+| **invert** | Flip the surface so terrain grows inward and skirts point outward |
 | **noise frequency** | Spatial frequency of the 3D terrain noise |
 | **sea level** | Threshold below which terrain is flattened into ocean |
 | **wireframe** | Toggle wireframe to visualize the per-face tiling |

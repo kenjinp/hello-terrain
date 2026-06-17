@@ -45,7 +45,7 @@ export function compileComputePipeline(
   ];
   const preferSingleKernelWhenPossible =
     options?.preferSingleKernelWhenPossible ?? true;
-  const uInstanceCount = uniform(0, "uint");
+  const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   let singleKernel: CompiledKernel | undefined;
   const stagedKernelCache = new Map<string, CompiledKernel[]>();
 

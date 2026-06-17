@@ -1,7 +1,7 @@
 import { shouldSplit } from "./criteria";
 import { ensureChildren, hasChildren } from "./nodeStore";
 import { type QuadtreeState } from "./state";
-import { resetLeafSet, type LeafSet, type Topology, U32_EMPTY, type UpdateParams } from "./types";
+import { resetLeafSet, type ElevationRangeOut, type LeafSet, type Topology, U32_EMPTY, type UpdateParams } from "./types";
 
 /**
  * Build a leaf set by iteratively refining from the root(s).
@@ -36,7 +36,14 @@ export function refineLeaves(state: QuadtreeState, topology: Topology, params: U
     tile.y = y;
 
     const bounds = state.scratchBounds;
-    topology.tileBounds(tile, params.cameraOrigin, bounds);
+    let elevationRange: ElevationRangeOut | undefined;
+    if (params.tileElevationRange) {
+      const range = state.scratchElevationRange;
+      if (params.tileElevationRange(space, level, x, y, range)) {
+        elevationRange = range;
+      }
+    }
+    topology.tileBounds(tile, params.cameraOrigin, bounds, elevationRange);
 
     // Forced split: if children exist, always traverse them.
     if (hasChildren(store, nodeId)) {

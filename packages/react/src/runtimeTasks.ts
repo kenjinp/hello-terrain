@@ -7,11 +7,13 @@ export function createSyncTerrainRuntimeTask(runtime: TerrainRuntime) {
   return task<{ renderer: WebGPURenderer }>((get, work) => {
     const queryContext = get(terrainTasks.terrainQuery);
     const query = queryContext.query;
+    const surfaceQuery = queryContext.surfaceQuery;
     const sphereQuery = queryContext.sphereQuery;
     const raycast = get(terrainTasks.terrainRaycast);
 
     return work(() => {
       runtime.query = query;
+      runtime.surfaceQuery = surfaceQuery;
       runtime.sphereQuery = sphereQuery;
       runtime.raycast = raycast;
       return runtime;

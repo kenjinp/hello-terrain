@@ -1,8 +1,14 @@
 import { task } from "@hello-terrain/work";
-import type { TopologyProjection } from "../quadtree";
+import type { SurfaceProjection } from "../projection/types";
 import { createTerrainRaycast } from "../query/terrain-raycast";
-import type { TerrainQuery, TerrainRaycast, TerrainSphereQuery } from "../query/types";
-import { elevationScale, origin, radius, rootSize } from "./params";
+import type {
+  TerrainQuery,
+  TerrainRaycast,
+  TerrainRaycastConfig,
+  TerrainSphereQuery,
+  TerrainSurfaceQuery,
+} from "../query/types";
+import { elevationScale, origin, rootSize } from "./params";
 import { topologyTask } from "./quadtree.task";
 import { terrainQueryTask } from "./terrain-query.task";
 
@@ -10,22 +16,11 @@ const BOUNDS_PADDING = 1;
 const RAYCAST_STATE = Symbol("terrainRaycastTaskState");
 
 type TerrainRaycastTaskState = {
+  projection: SurfaceProjection;
   terrainQuery: TerrainQuery | null;
+  surfaceQuery: TerrainSurfaceQuery | null;
   sphereQuery: TerrainSphereQuery | null;
-  bounds: {
-    rootSize: number;
-    originX: number;
-    originZ: number;
-    minY: number;
-    maxY: number;
-    projection: TopologyProjection;
-    centerX: number;
-    centerY: number;
-    centerZ: number;
-    radius: number;
-    minRadius: number;
-    maxRadius: number;
-  };
+  config: TerrainRaycastConfig;
 };
 type TerrainRaycastWithState = TerrainRaycast & {
   [RAYCAST_STATE]?: TerrainRaycastTaskState;
@@ -33,77 +28,64 @@ type TerrainRaycastWithState = TerrainRaycast & {
 
 export const terrainRaycastTask = task(
   (get, work) => {
-    const { query: terrainQuery, sphereQuery } = get(terrainQueryTask);
+    const { query: terrainQuery, surfaceQuery, sphereQuery } = get(terrainQueryTask);
     const rootSizeValue = get(rootSize);
     const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);
-    const radiusValue = get(radius);
-    const topologyValue = get(topologyTask);
-    const projection = topologyValue.projection ?? "flat";
-    const sphereRadius = topologyValue.radius ?? radiusValue;
+    const projection = get(topologyTask).projection;
 
     return work((prev?: TerrainRaycast): TerrainRaycast => {
       let raycast = prev as TerrainRaycastWithState | undefined;
       let state = raycast?.[RAYCAST_STATE];
       if (!state) {
         state = {
+          projection,
           terrainQuery: null,
+          surfaceQuery: null,
           sphereQuery: null,
-          bounds: {
+          config: {
             rootSize: 0,
             originX: 0,
+            originY: 0,
             originZ: 0,
             minY: 0,
             maxY: 0,
-            projection: "flat",
             centerX: 0,
             centerY: 0,
             centerZ: 0,
-            radius: 0,
-            minRadius: 0,
-            maxRadius: 0,
           },
         };
       }
 
+      state.projection = projection;
       state.terrainQuery = terrainQuery;
+      state.surfaceQuery = surfaceQuery;
       state.sphereQuery = sphereQuery;
-      state.bounds.rootSize = rootSizeValue;
-      state.bounds.originX = originValue.x;
-      state.bounds.originZ = originValue.z;
-      state.bounds.projection = projection;
-      state.bounds.centerX = originValue.x;
-      state.bounds.centerY = originValue.y;
-      state.bounds.centerZ = originValue.z;
-      state.bounds.radius = sphereRadius;
+      state.config.rootSize = rootSizeValue;
+      state.config.originX = originValue.x;
+      state.config.originY = originValue.y;
+      state.config.originZ = originValue.z;
+      state.config.centerX = projection.center?.x ?? originValue.x;
+      state.config.centerY = projection.center?.y ?? originValue.y;
+      state.config.centerZ = projection.center?.z ?? originValue.z;
 
       const range = terrainQuery.getGlobalElevationRange();
       if (range) {
-        state.bounds.minY = range.min - BOUNDS_PADDING;
-        state.bounds.maxY = range.max + BOUNDS_PADDING;
+        state.config.minY = range.min - BOUNDS_PADDING;
+        state.config.maxY = range.max + BOUNDS_PADDING;
       } else {
         const verticalExtent = Math.max(1, Math.abs(elevationScaleValue) * 2);
-        state.bounds.minY = originValue.y - verticalExtent;
-        state.bounds.maxY = originValue.y + verticalExtent;
+        state.config.minY = originValue.y - verticalExtent;
+        state.config.maxY = originValue.y + verticalExtent;
       }
-
-      // Radial shell bounds for cube-sphere. The cached global range stores
-      // `originY + displacement`; subtract centerY to recover the displacement.
-      const elevationExtent = Math.max(1, Math.abs(elevationScaleValue));
-      let dispMin = -elevationExtent;
-      let dispMax = elevationExtent;
-      if (range) {
-        dispMin = range.min - originValue.y;
-        dispMax = range.max - originValue.y;
-      }
-      state.bounds.minRadius = Math.max(0, sphereRadius + dispMin - BOUNDS_PADDING);
-      state.bounds.maxRadius = sphereRadius + dispMax + BOUNDS_PADDING;
 
       if (!raycast) {
         raycast = createTerrainRaycast({
+          getProjection: () => state.projection,
           getTerrainQuery: () => state.terrainQuery,
+          getSurfaceQuery: () => state.surfaceQuery,
           getSphereQuery: () => state.sphereQuery,
-          getConfig: () => state.bounds,
+          getConfig: () => state.config,
         }) as TerrainRaycastWithState;
       }
       raycast[RAYCAST_STATE] = state;

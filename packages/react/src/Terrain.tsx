@@ -84,7 +84,7 @@ function TerrainWithHandle({
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
-  const flipWinding = (terrain.topology?.projection ?? "flat") === "cubeSphere";
+  const flipWinding = terrain.topology?.projection?.faceOutward ?? false;
   const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
   const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
 

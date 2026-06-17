@@ -1,4 +1,4 @@
-import type { SpatialIndex, TopologyProjection } from "../quadtree";
+import type { SpatialIndex } from "../quadtree";
 import { U32_EMPTY, directionToFace, directionToFaceUV } from "../quadtree";
 import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
 import { sphereTileArcLength } from "../gpu/tile";
@@ -41,10 +41,12 @@ export interface TileLookupConfig {
   originX: number;
   originZ: number;
   maxLevel: number;
-  /** Topology projection; `cubeSphere` enables direction lookups. */
-  projection: TopologyProjection;
-  /** Sphere radius in world units (cube-sphere projection only). */
+  /** Representative surface radius (used to scale curved tile arc length). */
   radius: number;
+  /** Level-0 tile count along u before LOD subdivision (defaults to 1). */
+  baseU?: number;
+  /** Level-0 tile count along v before LOD subdivision (defaults to 1). */
+  baseV?: number;
 }
 
 /** Flat lookup keyed on world XZ; searches space 0 from finest to coarsest. */
@@ -84,7 +86,7 @@ function clamp01(value: number): number {
   return value < 0 ? 0 : value > 1 ? 1 : value;
 }
 
-/** Coarse-to-fine tile lookup on a cube-sphere face. */
+/** Coarse-to-fine tile lookup on a cube-sphere face or torus surface. */
 export function lookupTileByFaceUV(
   index: SpatialIndex,
   config: TileLookupConfig,
@@ -92,18 +94,23 @@ export function lookupTileByFaceUV(
   u: number,
   v: number,
 ): TileLookupResult {
+  const baseU = config.baseU ?? 1;
+  const baseV = config.baseV ?? 1;
+
   for (let level = config.maxLevel; level >= 0; level -= 1) {
-    const n = 2 ** level;
-    let tileX = Math.floor(u * n);
-    let tileY = Math.floor(v * n);
+    const levelScale = 2 ** level;
+    const nU = baseU * levelScale;
+    const nV = baseV * levelScale;
+    let tileX = Math.floor(u * nU);
+    let tileY = Math.floor(v * nV);
     if (tileX < 0) tileX = 0;
-    else if (tileX > n - 1) tileX = n - 1;
+    else if (tileX > nU - 1) tileX = nU - 1;
     if (tileY < 0) tileY = 0;
-    else if (tileY > n - 1) tileY = n - 1;
+    else if (tileY > nV - 1) tileY = nV - 1;
     const leafIndex = lookupSpatialIndexRaw(index, face, level, tileX, tileY);
     if (leafIndex !== U32_EMPTY) {
       // Arc length of a tile edge on the sphere, used to scale gradients.
-      const tileSize = sphereTileArcLength(config.radius, n);
+      const tileSize = sphereTileArcLength(config.radius, nU);
       return {
         found: true,
         leafIndex,
@@ -112,8 +119,8 @@ export function lookupTileByFaceUV(
         tileX,
         tileY,
         tileSize,
-        localU: clamp01(u * n - tileX),
-        localV: clamp01(v * n - tileY),
+        localU: clamp01(u * nU - tileX),
+        localV: clamp01(v * nV - tileY),
       };
     }
   }
@@ -134,7 +141,6 @@ export function lookupTileForDirection(
   dirScratch: [number, number, number],
   uvScratch: [number, number],
 ): TileLookupResult {
-  if (config.projection !== "cubeSphere") return MISSED_LOOKUP;
   const len = Math.hypot(dx, dy, dz);
   if (len === 0) return MISSED_LOOKUP;
   dirScratch[0] = dx / len;

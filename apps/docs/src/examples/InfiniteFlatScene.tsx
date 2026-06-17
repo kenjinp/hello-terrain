@@ -31,13 +31,14 @@ import { useControls, useCreateStore } from "leva";
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
-import Node from "three/src/nodes/core/Node.js";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   float,
   Fn,
-  instanceIndex,
-  int,
   positionWorld,
   vec2,
   vec3,
@@ -52,15 +53,12 @@ type InfiniteFlatSceneImplProps = {
   store: LevaStore;
 };
 
-function u32ToColor(indexNode: Node) {
-  const i = float(indexNode);
-  const p = vec3(i, i.add(1.0), i.add(2.0));
-  const r = p.dot(vec3(127.1, 311.7, 74.7));
-  const g = p.dot(vec3(269.5, 183.3, 246.1));
-  const b = p.dot(vec3(113.5, 271.9, 124.6));
-
-  return vec3(r, g, b).sin().mul(43758.5453123).fract();
-}
+const terrainPatternColorNode = Fn(() => {
+  const worldUv = vec2(positionWorld.x, positionWorld.z);
+  const tint = vec3(0.45, 0.55, 0.3);
+  const pattern = worldUv.mul(0.1).sin().mul(0.5).add(0.5);
+  return tint.mul(pattern.x.add(pattern.y).mul(0.5).add(0.5));
+})();
 
 const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   const controls = useControls("Infinite Flat Terrain", {
@@ -110,6 +108,7 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
       value: false,
       label: "wireframe",
     },
+    tileColors: tileColorsLevaControl,
   }, { store });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -208,6 +207,12 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
     });
   });
 
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: controls.wireframe,
+    colorNode: terrainPatternColorNode,
+  });
+
   return (
     <>
       <Environment preset="sunset" />
@@ -219,18 +224,10 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
       >
         <meshStandardNodeMaterial
           ref={materialRef}
-          wireframe={controls.wireframe}
+          wireframe={materialAppearance.wireframe}
           metalness={0.1}
-          colorNode={
-            controls.wireframe
-              ? Fn(() => u32ToColor(int(instanceIndex)))()
-              : Fn(() => {
-                  const worldUv = vec2(positionWorld.x, positionWorld.z);
-                  const tint = vec3(0.45, 0.55, 0.3);
-                  const pattern = worldUv.mul(0.1).sin().mul(0.5).add(0.5);
-                  return tint.mul(pattern.x.add(pattern.y).mul(0.5).add(0.5));
-                })()
-          }
+          colorNode={materialAppearance.colorNode}
+          color={materialAppearance.color}
         />
       </terrainMesh>
     </>

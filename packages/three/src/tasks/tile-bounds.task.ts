@@ -71,7 +71,10 @@ export const tileBoundsContextTask = task((get, work) => {
   return work((): TileBoundsContext & { kernel: ReturnType<typeof buildReductionKernel> } => {
     const data = new Float32Array(maxNodesValue * 2);
     const attribute = new StorageBufferAttribute(data, 1);
-    const node = storage(attribute, "float", maxNodesValue * 2) as StorageBufferNode;
+    attribute.name = "tileBounds";
+    const node = storage(attribute, "float", maxNodesValue * 2).setName(
+      "tileBounds",
+    ) as StorageBufferNode;
     const verticesPerNode = edgeVertexCount * edgeVertexCount;
     const kernel = buildReductionKernel(elevationFieldContext.node, node, verticesPerNode);
     return { data, attribute, node, kernel };

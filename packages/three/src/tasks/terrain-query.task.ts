@@ -1,7 +1,6 @@
 import { task } from "@hello-terrain/work";
 import type { WebGPURenderer } from "three/webgpu";
 import { createCpuTerrainCache } from "../query/cpu-terrain-cache";
-import { createTerrainQuery, createTerrainSphereQuery } from "../query/terrain-query";
 import type { TerrainQueryContext } from "./graph.types";
 import { createElevationFieldContextTask } from "./elevation-field.task";
 import { elevationScale, innerTileSegments, maxLevel, maxNodes, origin, radius, rootSize } from "./params";
@@ -17,10 +16,10 @@ export const terrainQueryTask = task((get, work) => {
   const elevationScaleValue = get(elevationScale);
   const radiusValue = get(radius);
   const topologyValue = get(topologyTask);
-  const projectionValue = topologyValue.projection ?? "flat";
+  const projection = topologyValue.projection;
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
-    const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projectionValue}`;
+    const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
     const configValues = {
       rootSize: rootSizeValue,
       originX: originValue.x,
@@ -29,24 +28,28 @@ export const terrainQueryTask = task((get, work) => {
       innerTileSegments: innerTileSegmentsValue,
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
-      projection: projectionValue,
       radius: topologyValue.radius ?? radiusValue,
+      baseU: projection.baseResolution?.u ?? 1,
+      baseV: projection.baseResolution?.v ?? 1,
     };
 
     let cache = prev?.cache;
     let query = prev?.query;
+    let surfaceQuery = prev?.surfaceQuery ?? null;
     let sphereQuery = prev?.sphereQuery ?? null;
 
     if (!cache || !query || prev?.shapeKey !== shapeKey) {
-      cache = createCpuTerrainCache(maxNodesValue, configValues);
-      query = createTerrainQuery(cache);
-      sphereQuery =
-        projectionValue === "cubeSphere" ? createTerrainSphereQuery(cache) : null;
+      prev?.cache?.dispose();
+      cache = createCpuTerrainCache(maxNodesValue, configValues, projection.cpu.createSurfaceOps());
+      const runtime = projection.cpu.createRuntimeQueries(cache);
+      query = runtime.query;
+      surfaceQuery = runtime.surfaceQuery;
+      sphereQuery = runtime.sphereQuery;
     }
 
     cache.updateConfig(configValues);
 
-    return { cache, query, sphereQuery, shapeKey };
+    return { cache, query, surfaceQuery, sphereQuery, shapeKey };
   });
 }).displayName("terrainQueryTask");
 

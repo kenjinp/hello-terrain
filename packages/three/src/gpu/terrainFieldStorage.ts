@@ -16,6 +16,7 @@ import {
   textureStore,
   uvec3,
   vec2,
+  vec3,
   vec4,
 } from "three/tsl";
 import type { Node, WebGPURenderer } from "three/webgpu";
@@ -83,6 +84,7 @@ export function ArrayTextureBackend(
     edgeVertexCount,
     tileCount,
   );
+  tex.name = "terrainField";
   configureStorageTexture(tex, options.format, options.filter);
 
   return {
@@ -139,6 +141,7 @@ export function AtlasBackend(
   let tilesPerRow = Math.max(1, Math.ceil(Math.sqrt(tileCount)));
   const atlasSize = tilesPerRow * edgeVertexCount;
   const tex = new StorageTexture(atlasSize, atlasSize);
+  tex.name = "terrainFieldAtlas";
   configureStorageTexture(tex, options.format, options.filter);
 
   return {
@@ -311,7 +314,7 @@ export function loadTerrainFieldNormal(
   tileIndex: Node,
 ): Node {
   const raw = loadTerrainField(storage, ix, iy, tileIndex);
-  return vec2(raw.g, raw.b);
+  return vec3(raw.g, raw.b, raw.a);
 }
 
 /**
@@ -336,10 +339,13 @@ export function sampleTerrainFieldElevation(
   return sampleTerrainField(storage, u, v, tileIndex).r;
 }
 
-export function packTerrainFieldSample(
-  height: Node,
-  normalXZ: Node,
-  extra: Node = float(0),
-): Node {
-  return vec4(height, normalXZ.x, normalXZ.y, extra);
+/**
+ * Pack a terrain field sample into RGBA: `[height, Nx, Ny, Nz]` where
+ * `(Nx, Ny, Nz)` is the unit world-space surface normal. Storing the full
+ * world normal (rather than a face-local tangent pair) keeps shading
+ * continuous across cube-face seams, since adjacent faces no longer rotate the
+ * normal through their own parametric tangent frame.
+ */
+export function packTerrainFieldSample(height: Node, normal: Node): Node {
+  return vec4(height, normal.x, normal.y, normal.z);
 }

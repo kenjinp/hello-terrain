@@ -17,10 +17,20 @@ The terrain library is organized in layers from pure logic to runtime integratio
    - tile/elevation field math
    - world-position assembly
 
-4. `tasks/`  
+4. `query/`  
+   CPU snapshot sampling: the terrain cache, flat/surface/sphere query objects,
+   raycasting, and the GPU sampler.
+
+5. `projection/`  
+   Surface-projection strategies (`SurfaceProjection`) that are *injected* into a
+   topology. Each projection wires the shape-specific `gpu` builders (from `gpu/`
+   + `tsl/`) and `cpu` query/raycast/LOD hooks (from `query/`) so the pipeline
+   never branches on a projection kind. Built-ins: `flat`, `cubeSphere`, `torus`.
+
+6. `tasks/`  
    Reactive task-graph orchestration: params, stages, dependencies, and execution lanes.
 
-5. `mesh/` and `geometry/`  
+7. `mesh/` and `geometry/`  
    Three.js scene primitives (`TerrainMesh`, `TerrainGeometry`).
 
 ## Ownership Boundaries

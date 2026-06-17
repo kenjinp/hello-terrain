@@ -3,7 +3,7 @@ import type {
   TerrainQuery,
   TerrainSample,
   TerrainSampleBatch,
-  TerrainSphereQuery,
+  TerrainSurfaceQuery,
   TerrainTile,
   TerrainTileBounds,
 } from "./types";
@@ -39,59 +39,32 @@ export function createTerrainQuery(cache: CpuTerrainCache): TerrainQuery {
   };
 }
 
-/** Cube-sphere query, keyed on a direction / position / lat-long. */
-export function createTerrainSphereQuery(cache: CpuTerrainCache): TerrainSphereQuery {
+/**
+ * Generic closed-surface query, keyed on a world position projected onto the
+ * surface. Cube-sphere extends this with direction/lat-long keys.
+ */
+export function createTerrainSurfaceQuery(cache: CpuTerrainCache): TerrainSurfaceQuery {
   return {
     get generation() {
       return cache.generation;
     },
-    getElevationByDirection(direction) {
-      return cache.getElevationByDirection(direction);
-    },
     getElevationByPosition(position) {
-      return cache.getElevationByPosition(position);
-    },
-    getElevationByLatLong(latitudeDeg, longitudeDeg) {
-      return cache.getElevationByLatLong(latitudeDeg, longitudeDeg);
-    },
-    getNormalByDirection(direction) {
-      return cache.getNormalByDirection(direction);
+      return cache.getElevationBySurfacePosition(position.x, position.y, position.z);
     },
     getNormalByPosition(position) {
-      return cache.getNormalByPosition(position);
-    },
-    getNormalByLatLong(latitudeDeg, longitudeDeg) {
-      return cache.getNormalByLatLong(latitudeDeg, longitudeDeg);
-    },
-    sampleTerrainByDirection(direction) {
-      return cache.sampleTerrainByDirection(direction);
+      return cache.getNormalBySurfacePosition(position.x, position.y, position.z);
     },
     sampleTerrainByPosition(position) {
-      return cache.sampleTerrainByPosition(position);
-    },
-    sampleTerrainByLatLong(latitudeDeg, longitudeDeg) {
-      return cache.sampleTerrainByLatLong(latitudeDeg, longitudeDeg);
-    },
-    getTileByDirection(direction) {
-      return cache.getTileByDirection(direction);
+      return cache.sampleSurfaceByPosition(position.x, position.y, position.z);
     },
     getTileByPosition(position) {
-      return cache.getTileByPosition(position);
-    },
-    getTileByLatLong(latitudeDeg, longitudeDeg) {
-      return cache.getTileByLatLong(latitudeDeg, longitudeDeg);
-    },
-    getTileBoundsByDirection(direction) {
-      return cache.getTileBoundsByDirection(direction);
+      return cache.getTileBySurfacePosition(position.x, position.y, position.z);
     },
     getTileBoundsByPosition(position) {
-      return cache.getTileBoundsByPosition(position);
+      return cache.getTileBoundsBySurfacePosition(position.x, position.y, position.z);
     },
-    getTileBoundsByLatLong(latitudeDeg, longitudeDeg) {
-      return cache.getTileBoundsByLatLong(latitudeDeg, longitudeDeg);
-    },
-    sampleTerrainBatchByDirection(directions) {
-      return cache.sampleTerrainBatchByDirection(directions);
+    sampleTerrainBatchByPosition(positions) {
+      return cache.sampleSurfaceBatchByPosition(positions);
     },
   };
 }

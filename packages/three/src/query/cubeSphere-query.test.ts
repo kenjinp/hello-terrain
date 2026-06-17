@@ -10,9 +10,9 @@ import {
   type Vec3Mutable,
 } from "../quadtree";
 import { createSpatialIndex, insertSpatialIndexRaw } from "../quadtree/spatialIndex";
-import { cubeSphereRaycast, type CpuRaycastConfig } from "./cpu-raycast";
+import { createCubeSphereProjection } from "../projection/cubeSphere";
+import { cubeSphereRaycast, type SphereRaycastParams } from "./cpu-raycast";
 import { createCpuTerrainCache, type TerrainQueryConfig } from "./cpu-terrain-cache";
-import { createTerrainSphereQuery } from "./terrain-query";
 
 describe("cube-sphere inverse math", () => {
   it("selects the dominant-axis face for each cardinal direction", () => {
@@ -90,14 +90,17 @@ describe("cube-sphere CPU sampling", () => {
     innerTileSegments,
     elevationScale,
     maxLevel: 4,
-    projection: "cubeSphere",
     radius,
   };
 
-  /** Build a cache with one flat-height leaf on the +Z face (space 4). */
+  const projection = createCubeSphereProjection({ radius, center: { x: 0, y: 0, z: 0 } });
+
+  /** Build a cache + sphere query with one flat-height leaf on the +Z face. */
   async function seededCache() {
     const maxNodes = 4;
-    const cache = createCpuTerrainCache(maxNodes, config);
+    const cache = createCpuTerrainCache(maxNodes, config, projection.cpu.createSurfaceOps());
+    const { sphereQuery } = projection.cpu.createRuntimeQueries(cache);
+    if (!sphereQuery) throw new Error("expected a sphere query");
 
     const index = createSpatialIndex(maxNodes);
     // +Z face root tile -> leaf index 0.
@@ -121,12 +124,12 @@ describe("cube-sphere CPU sampling", () => {
     );
     // Allow the fire-and-forget readback promise chain to resolve.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    return cache;
+    return { cache, sphereQuery };
   }
 
   it("samples radial elevation and position for a direction", async () => {
-    const cache = await seededCache();
-    const sample = cache.sampleTerrainByDirection(new Vector3(0, 0, 1));
+    const { sphereQuery } = await seededCache();
+    const sample = sphereQuery.sampleTerrainByDirection(new Vector3(0, 0, 1));
     expect(sample.valid).toBe(true);
     expect(sample.elevation).toBeCloseTo(height * elevationScale, 4);
     expect(sample.position.length()).toBeCloseTo(radius + height * elevationScale, 3);
@@ -135,53 +138,45 @@ describe("cube-sphere CPU sampling", () => {
   });
 
   it("resolves the same point via lat/long and position", async () => {
-    const cache = await seededCache();
-    const byLatLong = cache.sampleTerrainByLatLong(0, 0); // -> +Z
+    const { sphereQuery } = await seededCache();
+    const byLatLong = sphereQuery.sampleTerrainByLatLong(0, 0); // -> +Z
     expect(byLatLong.valid).toBe(true);
     expect(byLatLong.elevation).toBeCloseTo(height * elevationScale, 4);
 
     const onSurface = new Vector3(0, 0, radius + 500);
-    const byPosition = cache.sampleTerrainByPosition(onSurface);
+    const byPosition = sphereQuery.sampleTerrainByPosition(onSurface);
     expect(byPosition.valid).toBe(true);
     expect(byPosition.position.z).toBeCloseTo(radius + height * elevationScale, 3);
   });
 
   it("reports the face index as the tile space", async () => {
-    const cache = await seededCache();
-    const tile = cache.getTileByDirection(new Vector3(0, 0, 1));
+    const { sphereQuery } = await seededCache();
+    const tile = sphereQuery.getTileByDirection(new Vector3(0, 0, 1));
     expect(tile).not.toBeNull();
     expect(tile?.space).toBe(4);
     expect(tile?.level).toBe(0);
   });
 
   it("returns null for flat queries on a cube-sphere surface", async () => {
-    const cache = await seededCache();
+    const { cache } = await seededCache();
     expect(cache.getElevation(0, 0)).toBeNull();
   });
 
   it("raycasts onto the displaced sphere surface", async () => {
-    const cache = await seededCache();
-    const sphereQuery = createTerrainSphereQuery(cache);
+    const { sphereQuery } = await seededCache();
     const surfaceRadius = radius + height * elevationScale;
 
-    const config: CpuRaycastConfig = {
-      rootSize: 256,
-      originX: 0,
-      originZ: 0,
-      minY: 0,
-      maxY: 0,
-      projection: "cubeSphere",
+    const params: SphereRaycastParams = {
       centerX: 0,
       centerY: 0,
       centerZ: 0,
       radius,
-      minRadius: radius - 5,
       maxRadius: surfaceRadius + 5,
     };
 
     // Ray from far out on +Z aimed at the planet center.
     const ray = new Ray(new Vector3(0, 0, radius * 3), new Vector3(0, 0, -1));
-    const hit = cubeSphereRaycast(sphereQuery, ray, config);
+    const hit = cubeSphereRaycast(sphereQuery, ray, params);
 
     expect(hit).not.toBeNull();
     expect(hit?.position.z).toBeCloseTo(surfaceRadius, 1);

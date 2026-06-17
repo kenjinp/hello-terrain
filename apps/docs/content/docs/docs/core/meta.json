@@ -5,6 +5,7 @@
     "params",
     "elevation-function",
     "topology",
+    "projection",
     "...nodes",
     "---Query API---",
     "...query"

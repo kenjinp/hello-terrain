@@ -1,6 +1,12 @@
 "use client";
 
 import { useExamplesCanvas } from "@/components/ExamplesCanvas";
+import {
+  DEBUG_MONO_FONT,
+  DEBUG_PANEL_INLINE,
+  DEBUG_TEXT_SIZE,
+  DEBUG_TEXT_SIZE_SM,
+} from "@/lib/debug-overlay";
 import type { GraphEvent } from "@hello-terrain/work";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -126,7 +132,7 @@ function buildBar(
 export type RunTimingBarsProps = {
   graph: MinimalGraph;
   className?: string;
-  width?: number;
+  /** Pixel height of each timing bar. @default 8 */
   barHeight?: number;
   maxTasks?: number;
 };
@@ -134,7 +140,6 @@ export type RunTimingBarsProps = {
 export function RunTimingBars({
   graph,
   className,
-  width = 240,
   barHeight = 8,
   maxTasks = 10,
 }: RunTimingBarsProps) {
@@ -249,9 +254,7 @@ export function RunTimingBars({
   const visible = showUI && !showControls;
 
   const containerClass = useMemo(() => {
-    const base =
-      "w-full select-none bg-black/45 border border-white/10 backdrop-blur-sm rounded-md px-2 py-1.5 transition-opacity duration-200";
-    return `${base} ${className ?? ""}`;
+    return `${DEBUG_PANEL_INLINE} ${className ?? ""}`;
   }, [className]);
 
   const bars: Array<{ label: string; bar: Bar }> = [
@@ -260,115 +263,73 @@ export function RunTimingBars({
     { label: "max", bar: maxBarRef.current },
   ];
 
-  const labelW = 26;
-  const valueW = 40;
-  const barW = Math.max(60, width);
-  const svgW = labelW + barW + valueW;
-  const svgH = bars.length * barHeight + (bars.length - 1) * 3;
-
   return (
     <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
-      <svg viewBox={`0 0 ${svgW} ${svgH}`} className="w-full h-auto" role="img" aria-label="Task timings">
-        {bars.map(({ label, bar }, i) => {
-          const y = i * (barHeight + 3);
+      <div
+        className={`${DEBUG_TEXT_SIZE} leading-4 flex flex-col`}
+        style={{ fontFamily: DEBUG_MONO_FONT }}
+        role="img"
+        aria-label="Task timings"
+      >
+        {bars.map(({ label, bar }) => {
           const total = Math.max(1e-6, bar.totalMs);
-          let x = labelW;
-
           const isStale = staleNow && label === "now";
-          const textFill = isStale ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.7)";
-          const valueFill = isStale ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.6)";
+          const labelClass = isStale ? "text-white/35" : "text-white/70";
+          const valueClass = isStale ? "text-white/30" : "text-white/60";
           const segmentOpacity = isStale ? 0.45 : 0.95;
 
           return (
-            <g key={label} transform={`translate(0, ${y})`}>
-              <text
-                x={0}
-                y={barHeight - 1}
-                fontSize="9"
-                fill={textFill}
-                fontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'}
+            <div key={label} className="flex h-4 items-center gap-1.5">
+              <span className={`w-6 shrink-0 ${labelClass}`}>{label}</span>
+
+              {/* Bar (HTML/CSS so segment labels render at a consistent size) */}
+              <div
+                className="relative flex flex-1 min-w-0 overflow-hidden rounded-sm bg-white/[0.06]"
+                style={{ height: barHeight }}
               >
-                {label}
-              </text>
+                {bar.segments.map((s, idx) => {
+                  const pct = (s.durationMs / total) * 100;
+                  if (pct <= 0.1) return null;
 
-              {/* Background */}
-              <rect
-                x={labelW}
-                y={0}
-                width={barW}
-                height={barHeight}
-                rx={2}
-                fill="rgba(255,255,255,0.06)"
-              />
+                  const name =
+                    s.name ?? (s.taskId === "__other__" ? "Other" : s.taskId);
+                  const inline = `${name} ${s.durationMs.toFixed(2)}ms (${pct.toFixed(1)}%)${
+                    s.kind === "error" ? " (error)" : ""
+                  }`;
+                  const title = `${name}\n${s.durationMs.toFixed(2)}ms (${pct.toFixed(1)}%)${
+                    s.kind === "error" ? "\n(error)" : ""
+                  }`;
 
-              <text
-                x={labelW + barW + 4}
-                y={barHeight - 1}
-                fontSize="9"
-                fill={valueFill}
-                fontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'}
-              >
-                {bar.totalMs > 0 ? `${bar.totalMs.toFixed(1)}ms` : "—"}
-              </text>
-
-              {bar.segments.map((s, idx) => {
-                const wRaw = (s.durationMs / total) * barW;
-                const w = idx === bar.segments.length - 1 ? labelW + barW - x : wRaw;
-                const segW = Math.max(0, w);
-                const segX = x;
-                x += segW;
-
-                if (segW <= 0.25) return null;
-
-                const name = s.name ?? (s.taskId === "__other__" ? "Other" : s.taskId);
-                const pct = (s.durationMs / total) * 100;
-                const line = `${name} ${s.durationMs.toFixed(2)}ms (${pct.toFixed(1)}%)${
-                  s.kind === "error" ? " (error)" : ""
-                }`;
-                const maxChars = Math.max(0, Math.floor(segW / 4.2));
-                const inline =
-                  maxChars > 0 && line.length > maxChars
-                    ? `${line.slice(0, Math.max(0, maxChars - 1))}\u2026`
-                    : line;
-                const title = `${name}\n${s.durationMs.toFixed(2)}ms (${pct.toFixed(1)}%)${
-                  s.kind === "error" ? "\n(error)" : ""
-                }`;
-                const clipId = `clip-${label}-${i}-${idx}`.replace(/\s+/g, "-");
-
-                return (
-                  <g key={`${s.taskId}-${idx}`}>
-                    <title>{title}</title>
-                    <clipPath id={clipId}>
-                      <rect x={segX} y={0} width={segW} height={barHeight} rx={2} />
-                    </clipPath>
-                    <rect
-                      x={segX}
-                      y={0}
-                      width={segW}
-                      height={barHeight}
-                      rx={2}
-                      fill={s.kind === "error" ? "#ef4444" : s.color}
-                      opacity={segmentOpacity}
-                    />
-                    {segW >= 18 && inline.length > 0 ? (
-                      <text
-                        x={segX + 3}
-                        y={barHeight - 1}
-                        fontSize="8"
-                        fill="rgba(0,0,0,0.75)"
-                        fontFamily={'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'}
-                        clipPath={`url(#${clipId})`}
+                  return (
+                    <div
+                      key={`${s.taskId}-${idx}`}
+                      className="flex shrink-0 items-center overflow-hidden whitespace-nowrap"
+                      style={{
+                        width: `${pct}%`,
+                        backgroundColor: s.kind === "error" ? "#ef4444" : s.color,
+                        opacity: segmentOpacity,
+                      }}
+                      title={title}
+                    >
+                      <span
+                        className={`${DEBUG_TEXT_SIZE_SM} truncate px-1 leading-none text-black/75`}
                       >
                         {inline}
-                      </text>
-                    ) : null}
-                  </g>
-                );
-              })}
-            </g>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <span
+                className={`w-12 shrink-0 text-right tabular-nums whitespace-nowrap ${valueClass}`}
+              >
+                {bar.totalMs > 0 ? `${bar.totalMs.toFixed(1)}ms` : "—"}
+              </span>
+            </div>
           );
         })}
-      </svg>
+      </div>
     </div>
   );
 }

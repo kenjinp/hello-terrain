@@ -1,3 +1,5 @@
+import type { SurfaceProjection } from "../projection/types";
+
 export const Dir = {
   LEFT: 0,
   RIGHT: 1,
@@ -28,7 +30,11 @@ export type TileBounds = {
   r: number;
 };
 
-export type TopologyProjection = "flat" | "cubeSphere";
+/** Scaled world-space elevation displacement range for a tile. */
+export type ElevationRangeOut = {
+  min: number;
+  max: number;
+};
 
 export type Topology = {
   spaceCount: number;
@@ -36,17 +42,18 @@ export type Topology = {
   maxRootCount: number;
 
   /**
-   * GPU position/normal assembly projection. Defaults to `flat` when absent.
-   * `cubeSphere` selects radial sphere mapping from cube faces.
+   * Injected surface projection strategy. Encapsulates the GPU position/normal
+   * assembly and the CPU query/raycast/LOD behavior for this topology, so the
+   * pipeline never branches on a projection kind.
    */
-  projection?: TopologyProjection;
+  projection: SurfaceProjection;
 
-  /** Sphere radius in world units (cube-sphere projection only). */
+  /** Representative surface radius in world units (curved projections only). */
   radius?: number;
 
   /**
-   * Planet center in world space (cube-sphere projection only). Used to apply
-   * the camera elevation offset along the radial up-direction during LOD.
+   * Surface center in world space (curved projections only). Used to apply the
+   * camera elevation offset along the surface up-direction during LOD.
    */
   center?: { x: number; y: number; z: number };
 
@@ -61,8 +68,14 @@ export type Topology = {
   /**
    * Conservative camera-relative bounds for LOD decisions.
    * Avoids absolute world coordinates so Earth-scale worlds remain stable.
+   * When `elevationRange` is provided, bounds should account for displaced geometry.
    */
-  tileBounds(tile: TileId, cameraOrigin: { x: number; y: number; z: number }, out: TileBounds): void;
+  tileBounds(
+    tile: TileId,
+    cameraOrigin: { x: number; y: number; z: number },
+    out: TileBounds,
+    elevationRange?: ElevationRangeOut,
+  ): void;
 
   /**
    * Fill root tiles for the current frame and return the count.
@@ -161,6 +174,18 @@ export type UpdateParams = {
 
   /** Prevent flicker by separating split/merge thresholds (0..1 typical) */
   hysteresis?: number;
+
+  /**
+   * Previous-frame per-tile elevation range in world-space displacement units
+   * (already scaled by `elevationScale`). Returns false when no data is available.
+   */
+  tileElevationRange?: (
+    space: number,
+    level: number,
+    x: number,
+    y: number,
+    out: ElevationRangeOut,
+  ) => boolean;
 };
 
 export type QuadtreeConfig = {

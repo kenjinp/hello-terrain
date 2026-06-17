@@ -4,6 +4,7 @@ import type {
   TerrainQuery,
   TerrainRaycast,
   TerrainSphereQuery,
+  TerrainSurfaceQuery,
   TerrainTasks,
   Topology,
 } from "@hello-terrain/three";
@@ -27,6 +28,8 @@ export interface TerrainNodes {
 
 export interface TerrainRuntime {
   query: TerrainQuery | null;
+  /** Generic closed-surface query; `null` on flat surfaces. */
+  surfaceQuery: TerrainSurfaceQuery | null;
   /** Cube-sphere query; `null` unless the topology uses the cubeSphere projection. */
   sphereQuery: TerrainSphereQuery | null;
   raycast: TerrainRaycast | null;

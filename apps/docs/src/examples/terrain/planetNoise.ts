@@ -113,11 +113,15 @@ export function createPlanetElevation(params: {
 export function createPlanetColorNode(params: {
   radius: number;
   elevationScale: number;
+  /** When true, elevation displaces inward — flip the recovered height sign. */
+  invert?: boolean;
 }) {
   const radiusNode = float(params.radius);
   const elevScaleNode = float(params.elevationScale);
+  const invert = params.invert ?? false;
   return Fn(() => {
-    const height = positionWorld.length().sub(radiusNode).div(elevScaleNode);
+    const rawHeight = positionWorld.length().sub(radiusNode).div(elevScaleNode);
+    const height = invert ? radiusNode.sub(positionWorld.length()).div(elevScaleNode) : rawHeight;
     const ocean = vec3(0.05, 0.2, 0.45);
     const beach = vec3(0.8, 0.73, 0.5);
     const grass = vec3(0.2, 0.45, 0.18);

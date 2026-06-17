@@ -1,12 +1,6 @@
 import { Fn, float, int, vec2, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { sampleTerrainField } from "../gpu/terrainFieldStorage";
-import {
-  cubeFaceBasis,
-  cubeFaceFromDirection,
-  sphereTangentFrameNormal,
-  unpackTangentNormal,
-} from "../tsl/cubeSphere";
 import { createElevationFunction } from "../tsl/elevation";
 import {
   createTileIndexFromDirection,
@@ -42,7 +36,8 @@ function packedSampleFromTileResult(
     fieldV,
     safeTileIndex,
   ).toVar();
-  const normal = unpackTangentNormal(sampled.g, sampled.b);
+  // The terrain field stores the unit world-space normal in (g, b, a).
+  const normal = vec3(sampled.g, sampled.b, sampled.a);
 
   const valid = found.select(float(1), float(0)).toVar();
   return vec4(sampled.r, normal.x, normal.y, normal.z).mul(valid);
@@ -65,6 +60,34 @@ function createTerrainSampleNodeByDirection(params: CreateTerrainSamplerParams) 
   return Fn(([direction]: [Node]) => {
     const tileResult = tileLookup(direction).toVar();
     return packedSampleFromTileResult(params, tileResult);
+  });
+}
+
+/**
+ * Add the cube-sphere direction samplers to a base sampler. Called from the
+ * cube-sphere projection's `gpu.augmentSampler` hook.
+ */
+export function augmentCubeSphereSampler(
+  sampler: TerrainSampler,
+  params: CreateTerrainSamplerParams,
+): void {
+  const terrainSampleByDir = createTerrainSampleNodeByDirection(params);
+  sampler.sampleTerrainByDirection = Fn(([direction]: [Node]) => terrainSampleByDir(direction));
+  sampler.sampleElevationByDirection = Fn(
+    ([direction]: [Node]) => terrainSampleByDir(direction).x,
+  );
+  sampler.sampleValidityByDirection = Fn(([direction]: [Node]) => {
+    const sample = terrainSampleByDir(direction).toVar();
+    return sample.y
+      .abs()
+      .add(sample.z.abs())
+      .add(sample.w.abs())
+      .greaterThan(float(0))
+      .select(float(1), float(0));
+  });
+  sampler.sampleNormalByDirection = Fn(([direction]: [Node]) => {
+    const packed = terrainSampleByDir(direction).toVar();
+    return vec3(packed.y, packed.z, packed.w).normalize();
   });
 }
 
@@ -151,30 +174,7 @@ export function createTerrainSampler(
     evaluateNormal,
   };
 
-  if (params.projection === "cubeSphere") {
-    const terrainSampleByDir = createTerrainSampleNodeByDirection(params);
-    sampler.sampleTerrainByDirection = Fn(([direction]: [Node]) =>
-      terrainSampleByDir(direction),
-    );
-    sampler.sampleElevationByDirection = Fn(
-      ([direction]: [Node]) => terrainSampleByDir(direction).x,
-    );
-    sampler.sampleValidityByDirection = Fn(([direction]: [Node]) => {
-      const sample = terrainSampleByDir(direction).toVar();
-      return sample.y
-        .abs()
-        .add(sample.z.abs())
-        .add(sample.w.abs())
-        .greaterThan(float(0))
-        .select(float(1), float(0));
-    });
-    sampler.sampleNormalByDirection = Fn(([direction]: [Node]) => {
-      const dir = vec3(direction).normalize().toVar();
-      const packed = terrainSampleByDir(direction).toVar();
-      const basis = cubeFaceBasis(cubeFaceFromDirection(dir));
-      return sphereTangentFrameNormal(dir, basis, vec3(packed.y, packed.z, packed.w));
-    });
-  }
+  params.projection.gpu.augmentSampler?.(sampler, params);
 
   return sampler;
 }

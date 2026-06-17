@@ -29,10 +29,12 @@ import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 
 type LevaStore = ReturnType<typeof useCreateStore>;
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import { useEffect, useMemo, useRef } from "react";
-import Node from "three/src/nodes/core/Node.js";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import { float, Fn, instanceIndex, int, vec3 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
@@ -42,16 +44,6 @@ type TerrainMeshSceneImplProps = {
   g: TerrainGraph;
   store: LevaStore;
 };
-
-function u32ToColor(indexNode: Node) {
-  const i = float(indexNode);
-  const p = vec3(i, i.add(1.0), i.add(2.0));
-  const r = p.dot(vec3(127.1, 311.7, 74.7));
-  const g = p.dot(vec3(269.5, 183.3, 246.1));
-  const b = p.dot(vec3(113.5, 271.9, 124.6));
-
-  return vec3(r, g, b).sin().mul(43758.5453123).fract();
-}
 
 const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   const controls = useControls("TerrainGeometry", {
@@ -90,6 +82,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
       step: 1,
       label: "skirt scale",
     },
+    tileColors: { ...tileColorsLevaControl, value: true },
   }, { store });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
@@ -161,6 +154,11 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
     });
   });
 
+  const materialAppearance = resolveTerrainMaterialAppearance({
+    tileColors: controls.tileColors,
+    wireframe: true,
+  });
+
   return (
     <>
       <terrainMesh
@@ -170,11 +168,9 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
       >
         <meshStandardNodeMaterial
           ref={materialRef}
-          wireframe
-          colorNode={Fn(() => {
-            const nodeIndex = int(instanceIndex);
-            return u32ToColor(nodeIndex);
-          })()}
+          wireframe={materialAppearance.wireframe}
+          colorNode={materialAppearance.colorNode}
+          color={materialAppearance.color}
         />
       </terrainMesh>
     </>

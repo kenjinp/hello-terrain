@@ -74,6 +74,7 @@ function createTerrainHandle(overrides: Partial<TerrainHandle> = {}): TerrainHan
     tasks: {} as TerrainHandle["tasks"],
     runtime: {
       query: null,
+      surfaceQuery: null,
       sphereQuery: null,
       raycast: null,
     },

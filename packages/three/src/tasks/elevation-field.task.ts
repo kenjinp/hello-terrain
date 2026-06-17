@@ -16,7 +16,8 @@ export const createElevationFieldContextTask = task((get, work) => {
   return work(() => {
     const data = new Float32Array(totalElements);
     const attribute = new StorageBufferAttribute(data, 1);
-    const node = storage(attribute, "float", totalElements);
+    attribute.name = "elevationField";
+    const node = storage(attribute, "float", totalElements).setName("elevationField");
 
     return {
       data,
@@ -31,7 +32,7 @@ export const tileNodesTask = task((get, work) => {
   const uniforms = get(updateUniformsTask);
   const topology = get(topologyTask);
   return work(() => {
-    return createTileCompute(leafStorage, uniforms, topology.projection ?? "flat");
+    return createTileCompute(leafStorage, uniforms, topology.projection);
   });
 }).displayName("tileNodesTask");
 

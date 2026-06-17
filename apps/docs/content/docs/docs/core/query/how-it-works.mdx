@@ -21,8 +21,8 @@ flowchart TD
     ElevationBuffer --> BoundsReduction["tileBoundsReductionTask (GPU)"]
     BoundsReduction --> BoundsBuffer["Per-tile min/max bounds buffer"]
     QuadtreeUpdate["quadtreeUpdateTask"] --> LeafIndex["SpatialIndex (CPU)"]
-    ElevationBuffer --> ElevReadback["getArrayBufferAsync()"]
-    BoundsBuffer --> BoundsReadback["getArrayBufferAsync()"]
+    ElevationBuffer --> ElevReadback["pooled staging readback"]
+    BoundsBuffer --> BoundsReadback["pooled staging readback"]
     LeafIndex --> Clone["cloneSpatialIndex()"]
     ElevReadback --> Swap["Double-buffer swap"]
     BoundsReadback --> Swap
@@ -47,7 +47,9 @@ flowchart TD
 
 3. **GPU bounds reduction** runs immediately after the elevation compute. A dedicated compute kernel uses workgroup shared memory to parallel-reduce each tile's elevation grid into a `(min, max)` pair. The output is a compact per-tile bounds buffer on the GPU.
 
-4. **Readback** is triggered by `terrainReadbackTask` once per frame (if no readback is already in flight). It clones the current `SpatialIndex` into a back buffer (skipping the clone if the spatial index hasn't changed since the last readback), then fires two parallel `getArrayBufferAsync` calls — one for the elevation buffer and one for the small per-tile bounds buffer. Both are asynchronous and resolve on a later frame. Because readback is a separate fire-and-forget task, downstream consumers like `terrainRaycastTask` don't block on it.
+4. **Readback** is triggered by `terrainReadbackTask` once per frame (if no readback is already in flight). It clones the current `SpatialIndex` into a back buffer (skipping the clone if the spatial index hasn't changed since the last readback), then copies the elevation buffer and the small per-tile bounds buffer into the CPU back buffers. Readback reuses a persistent per-attribute staging buffer (`ReadbackSlot`) that is recreated only when the source buffer size changes — it does **not** allocate a new GPU buffer each frame. Only the active region (`activeLeafCount` tiles) is copied and mapped, so cost scales with the number of live tiles rather than the full buffer. The copies are asynchronous and resolve on a later frame. Because readback is a separate fire-and-forget task, downstream consumers like `terrainRaycastTask` don't block on it.
+
+   > A reused staging buffer is important for performance: Three.js' `WebGPURenderer.getArrayBufferAsync` allocates a fresh `_readback` GPU buffer on every call and never destroys it, so calling it every frame leaks GPU memory until garbage collection reclaims it in a large, stuttering batch. The pooled path avoids that entirely. The renderer's `getArrayBufferAsync` is kept only as a fallback when no WebGPU backend/device is available (e.g. in unit tests).
 
 5. **Double-buffer swap** happens when both readback promises resolve. The back elevation array, back spatial index, and back tile bounds become the new front buffers. The global elevation range (min/max across all tiles) is computed from the bounds during the swap. This ensures all data is from the same frame — a consistent snapshot.
 
@@ -87,6 +89,8 @@ scaledHeight = originY + height * elevationScale
 ### Normal computation
 
 Normals are derived via central differences — sampling elevation at `(gx-1, gy)`, `(gx+1, gy)`, `(gx, gy-1)`, `(gx, gy+1)` and computing the cross product of the resulting tangent vectors.
+
+For the cube-sphere, those four neighbors are first lifted to their **world positions** on the displaced sphere (`direction * (radius + height)`) before the cross product. Differencing world positions rather than face-local `(u, v)` heights makes the normal metric- and curvature-correct and independent of the per-face parametric frame, so shading stays continuous across cube-face seams. This mirrors the GPU compute stage exactly.
 
 ### Batch queries
 

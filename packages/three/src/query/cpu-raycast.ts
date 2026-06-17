@@ -1,30 +1,40 @@
 import { Vector3 } from "three";
 import type { Ray } from "three";
-import type { TopologyProjection } from "../quadtree";
+import { positionToTorusParams, type TorusSurfaceParams } from "../quadtree/topology/torusInverse";
 import type {
   RaycastOptions,
   TerrainQuery,
+  TerrainRaycastConfig,
   TerrainRaycastResult,
   TerrainSphereQuery,
+  TerrainSurfaceQuery,
 } from "./types";
 
-export type CpuRaycastConfig = {
-  rootSize: number;
-  originX: number;
-  originZ: number;
-  minY: number;
-  maxY: number;
-  /** Topology projection; `cubeSphere` selects the radial sphere raycast. */
-  projection?: TopologyProjection;
-  /** Planet center (cube-sphere only). */
-  centerX?: number;
-  centerY?: number;
-  centerZ?: number;
-  /** Base sphere radius (cube-sphere only). */
-  radius?: number;
-  /** Inner/outer radial bounds of the terrain shell (cube-sphere only). */
-  minRadius?: number;
-  maxRadius?: number;
+export type { TerrainRaycastConfig };
+
+/** Curved-shell parameters supplied by the cube-sphere projection. */
+export type SphereRaycastParams = {
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  radius: number;
+  /** Outer shell radius (base radius + max displacement). */
+  maxRadius: number;
+  /** When true, elevation displaces inward and signed distance is flipped. */
+  invert?: boolean;
+};
+
+/** Curved-shell parameters supplied by the torus projection. */
+export type TorusRaycastParams = {
+  centerX: number;
+  centerY: number;
+  centerZ: number;
+  majorRadius: number;
+  minorRadius: number;
+  /** Outer bounding-sphere radius (major + minor + max displacement). */
+  outerRadius: number;
+  /** When true, elevation displaces inward and signed distance is flipped. */
+  invert?: boolean;
 };
 
 type RaySegment = {
@@ -53,12 +63,7 @@ function intersectRayAabb(
   const origin = ray.origin;
   const dir = ray.direction;
 
-  const slab = (
-    originAxis: number,
-    dirAxis: number,
-    minAxis: number,
-    maxAxis: number,
-  ) => {
+  const slab = (originAxis: number, dirAxis: number, minAxis: number, maxAxis: number) => {
     if (Math.abs(dirAxis) < 1e-8) {
       if (originAxis < minAxis || originAxis > maxAxis) return false;
       return true;
@@ -86,7 +91,7 @@ function intersectRayAabb(
   return { tMin, tMax };
 }
 
-function getTerrainBounds(config: CpuRaycastConfig): TerrainBounds {
+function getTerrainBounds(config: TerrainRaycastConfig): TerrainBounds {
   const halfRoot = config.rootSize * 0.5;
   return {
     minX: config.originX - halfRoot,
@@ -96,17 +101,6 @@ function getTerrainBounds(config: CpuRaycastConfig): TerrainBounds {
   };
 }
 
-/**
- * Compute signed distance from a point to the terrain surface.
- * Returns positive when above, negative when below, undefined when
- * no valid tile covers the XZ position.
- *
- * When tile bounds are available, points that are clearly above the
- * tile's max elevation or below its min elevation return a conservative
- * signed distance without performing the expensive bilinear sample.
- * Binary refinement passes `skipBoundsFastPath: true` to always get the
- * full-precision bilinear elevation.
- */
 function terrainSignedDistance(
   query: TerrainQuery,
   worldX: number,
@@ -135,11 +129,6 @@ type SignedDistanceAt = (px: number, py: number, pz: number) => number | undefin
 /**
  * Generic surface march: step along the ray over `[startT, endT]`, and on a
  * positive→non-positive signed-distance crossing binary-refine the crossing.
- *
- * Returns the parametric hit distance (`startT` when the ray already starts
- * at/below the surface), or `null` when no crossing is found. `point` is a
- * caller-provided scratch vector. `refineSignedDistanceAt` is sampled during
- * refinement and may be a higher-precision variant of `stepSignedDistanceAt`.
  */
 function marchSignedDistance(
   ray: Ray,
@@ -168,11 +157,7 @@ function marchSignedDistance(
       continue;
     }
 
-    if (
-      prevSignedDistance !== undefined &&
-      prevSignedDistance > 0 &&
-      signedDistance <= 0
-    ) {
+    if (prevSignedDistance !== undefined && prevSignedDistance > 0 && signedDistance <= 0) {
       let lo = prevT;
       let hi = t;
       for (let r = 0; r < options.refinementSteps; r += 1) {
@@ -199,7 +184,7 @@ function marchSignedDistance(
 export function cpuRaycast(
   query: TerrainQuery,
   ray: Ray,
-  config: CpuRaycastConfig,
+  config: TerrainRaycastConfig,
   options?: RaycastOptions,
 ): TerrainRaycastResult | null {
   const bounds = getTerrainBounds(config);
@@ -247,7 +232,7 @@ export function cpuRaycast(
 
 export function cpuRaycastBoundsOnly(
   ray: Ray,
-  config: CpuRaycastConfig,
+  config: TerrainRaycastConfig,
   options?: RaycastOptions,
 ): TerrainRaycastResult | null {
   const bounds = getTerrainBounds(config);
@@ -301,46 +286,38 @@ function intersectRaySphere(
   return { t0: (-b - sqrtDisc) * inv2a, t1: (-b + sqrtDisc) * inv2a };
 }
 
-/**
- * Radial signed distance from a world point to the displaced sphere surface:
- * positive above the terrain, negative below, undefined when no tile covers
- * the direction. `scratchDir` is reused to avoid per-sample allocation.
- */
 function sphereSignedDistance(
   query: TerrainSphereQuery,
-  config: CpuRaycastConfig,
+  params: SphereRaycastParams,
   px: number,
   py: number,
   pz: number,
   scratchDir: Vector3,
 ): number | undefined {
-  const cx = config.centerX ?? 0;
-  const cy = config.centerY ?? 0;
-  const cz = config.centerZ ?? 0;
-  const radius = config.radius ?? 0;
-  const dx = px - cx;
-  const dy = py - cy;
-  const dz = pz - cz;
+  const dx = px - params.centerX;
+  const dy = py - params.centerY;
+  const dz = pz - params.centerZ;
   const dist = Math.hypot(dx, dy, dz);
   scratchDir.set(dx, dy, dz);
   const elevation = query.getElevationByDirection(scratchDir);
   if (elevation === null) return undefined;
-  return dist - (radius + elevation);
+  const s = params.invert ? -1 : 1;
+  return s * (dist - (params.radius + s * elevation));
 }
 
 export function cubeSphereRaycast(
   query: TerrainSphereQuery,
   ray: Ray,
-  config: CpuRaycastConfig,
+  params: SphereRaycastParams,
   options?: RaycastOptions,
 ): TerrainRaycastResult | null {
-  const cx = config.centerX ?? 0;
-  const cy = config.centerY ?? 0;
-  const cz = config.centerZ ?? 0;
-  const radius = config.radius ?? 0;
-  const outerRadius = config.maxRadius ?? radius;
-
-  const shell = intersectRaySphere(ray, cx, cy, cz, outerRadius);
+  const shell = intersectRaySphere(
+    ray,
+    params.centerX,
+    params.centerY,
+    params.centerZ,
+    params.maxRadius,
+  );
   if (!shell) return null;
 
   const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
@@ -351,7 +328,7 @@ export function cubeSphereRaycast(
   const scratchDir = new Vector3();
   const point = new Vector3();
   const signedDistanceAt: SignedDistanceAt = (px, py, pz) =>
-    sphereSignedDistance(query, config, px, py, pz, scratchDir);
+    sphereSignedDistance(query, params, px, py, pz, scratchDir);
 
   const hitT = marchSignedDistance(
     ray,
@@ -380,20 +357,123 @@ export function cubeSphereRaycast(
 /** Coarse fallback: intersect the base sphere and return a radial-normal hit. */
 export function cubeSphereRaycastBoundsOnly(
   ray: Ray,
-  config: CpuRaycastConfig,
+  params: SphereRaycastParams,
   options?: RaycastOptions,
 ): TerrainRaycastResult | null {
-  const cx = config.centerX ?? 0;
-  const cy = config.centerY ?? 0;
-  const cz = config.centerZ ?? 0;
-  const radius = config.radius ?? 0;
-  const shell = intersectRaySphere(ray, cx, cy, cz, radius);
+  const shell = intersectRaySphere(ray, params.centerX, params.centerY, params.centerZ, params.radius);
   if (!shell) return null;
   const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
   const t = shell.t0 >= 0 ? shell.t0 : shell.t1;
   if (t < 0 || t > maxDistance) return null;
   const point = new Vector3();
   ray.at(t, point);
-  const normal = new Vector3(point.x - cx, point.y - cy, point.z - cz).normalize();
+  const normal = new Vector3(
+    point.x - params.centerX,
+    point.y - params.centerY,
+    point.z - params.centerZ,
+  ).normalize();
+  if (params.invert) normal.negate();
+  return { position: point, normal, distance: ray.origin.distanceTo(point) };
+}
+
+function torusSignedDistance(
+  query: TerrainSurfaceQuery,
+  params: TorusRaycastParams,
+  px: number,
+  py: number,
+  pz: number,
+  scratchPoint: Vector3,
+  scratchParams: TorusSurfaceParams,
+): number | undefined {
+  positionToTorusParams(
+    px,
+    py,
+    pz,
+    params.majorRadius,
+    { x: params.centerX, y: params.centerY, z: params.centerZ },
+    scratchParams,
+  );
+  scratchPoint.set(px, py, pz);
+  const elevation = query.getElevationByPosition(scratchPoint);
+  if (elevation === null) return undefined;
+  const s = params.invert ? -1 : 1;
+  return s * (scratchParams.tubeDistance - (params.minorRadius + s * elevation));
+}
+
+export function torusRaycast(
+  query: TerrainSurfaceQuery,
+  ray: Ray,
+  params: TorusRaycastParams,
+  options?: RaycastOptions,
+): TerrainRaycastResult | null {
+  const shell = intersectRaySphere(
+    ray,
+    params.centerX,
+    params.centerY,
+    params.centerZ,
+    params.outerRadius,
+  );
+  if (!shell) return null;
+
+  const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
+  const startT = Math.max(0, shell.t0);
+  const endT = Math.min(shell.t1, maxDistance);
+  if (endT < startT) return null;
+
+  const scratchPoint = new Vector3();
+  const scratchParams: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
+  const point = new Vector3();
+  const signedDistanceAt: SignedDistanceAt = (px, py, pz) =>
+    torusSignedDistance(query, params, px, py, pz, scratchPoint, scratchParams);
+
+  const hitT = marchSignedDistance(
+    ray,
+    startT,
+    endT,
+    signedDistanceAt,
+    signedDistanceAt,
+    {
+      maxSteps: Math.max(8, options?.maxSteps ?? 256),
+      refinementSteps: Math.max(1, options?.refinementSteps ?? 12),
+    },
+    point,
+  );
+  if (hitT === null) return null;
+
+  ray.at(hitT, point);
+  const sample = query.sampleTerrainByPosition(point);
+  if (!sample.valid) return null;
+  return {
+    position: sample.position.clone(),
+    normal: sample.normal.clone(),
+    distance: ray.origin.distanceTo(sample.position),
+  };
+}
+
+/** Coarse fallback: intersect the torus bounding sphere with a radial normal. */
+export function torusRaycastBoundsOnly(
+  ray: Ray,
+  params: TorusRaycastParams,
+  options?: RaycastOptions,
+): TerrainRaycastResult | null {
+  const shell = intersectRaySphere(
+    ray,
+    params.centerX,
+    params.centerY,
+    params.centerZ,
+    params.outerRadius,
+  );
+  if (!shell) return null;
+  const maxDistance = options?.maxDistance ?? Number.POSITIVE_INFINITY;
+  const t = shell.t0 >= 0 ? shell.t0 : shell.t1;
+  if (t < 0 || t > maxDistance) return null;
+  const point = new Vector3();
+  ray.at(t, point);
+  const normal = new Vector3(
+    point.x - params.centerX,
+    point.y - params.centerY,
+    point.z - params.centerZ,
+  ).normalize();
+  if (params.invert) normal.negate();
   return { position: point, normal, distance: ray.origin.distanceTo(point) };
 }

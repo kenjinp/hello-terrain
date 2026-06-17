@@ -1,6 +1,6 @@
 import { task } from "@hello-terrain/work";
-import { Fn, float, int, vec2, vec3 } from "three/tsl";
-import type { Node, WebGPURenderer } from "three/webgpu";
+import { int } from "three/tsl";
+import type { WebGPURenderer } from "three/webgpu";
 import type { ComputePipeline } from "../gpu/compute";
 import {
   createTerrainFieldStorage,
@@ -12,6 +12,7 @@ import {
   createElevationFieldContextTask,
   tileNodesTask,
 } from "./elevation-field.task";
+import { topologyTask } from "./quadtree.task";
 import { innerTileSegments, maxNodes, terrainFieldFilter } from "./params";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
@@ -33,62 +34,6 @@ export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
   },
 ).displayName("createTerrainFieldTextureTask");
 
-/**
- * Build a TSL function that computes the surface normal at a grid point
- * by sampling the four cardinal neighbors in the elevation field buffer and
- * using central differences.
- *
- */
-function createNormalFromElevationField(
-  elevationFieldNode: Node,
-  edgeVertexCount: number,
-) {
-  /**
-   * Returns a TSL function `(nodeIndex, ix, iy, verticalScale) => vec2(nx, nz)`
-   * where nx/nz are the horizontal components of the unit surface normal.
-   */
-  return Fn(
-    ([nodeIndex, tileSize, ix, iy, elevationScale]: [
-      Node,
-      Node,
-      Node,
-      Node,
-      Node,
-    ]) => {
-      const iEdge = int(edgeVertexCount);
-      const verticesPerNode = iEdge.mul(iEdge);
-      const baseOffset = int(nodeIndex).mul(verticesPerNode);
-
-      const xLeft = int(ix).sub(int(1));
-      const xRight = int(ix).add(int(1));
-      const yUp = int(iy).sub(int(1));
-      const yDown = int(iy).add(int(1));
-
-      const hLeft = elevationFieldNode
-        .element(baseOffset.add(int(iy).mul(iEdge).add(xLeft)))
-        .mul(elevationScale);
-      const hRight = elevationFieldNode
-        .element(baseOffset.add(int(iy).mul(iEdge).add(xRight)))
-        .mul(elevationScale);
-      const hUp = elevationFieldNode
-        .element(baseOffset.add(yUp.mul(iEdge).add(int(ix))))
-        .mul(elevationScale);
-      const hDown = elevationFieldNode
-        .element(baseOffset.add(yDown.mul(iEdge).add(int(ix))))
-        .mul(elevationScale);
-
-      const innerSegments = float(iEdge).sub(float(3));
-      const stepWorld = tileSize.div(innerSegments);
-      const inv2Step = float(0.5).div(stepWorld);
-      const dhdx = float(hRight).sub(float(hLeft)).mul(inv2Step);
-      const dhdz = float(hDown).sub(float(hUp)).mul(inv2Step);
-
-      const normal = vec3(dhdx.negate(), float(1), dhdz.negate()).normalize();
-      return vec2(normal.x, normal.z);
-    },
-  );
-}
-
 // ── Compute stage ───────────────────────────────────────────────────────
 
 /**
@@ -106,35 +51,33 @@ export const terrainFieldStageTask = task((get, work) => {
   const tileEdgeVertexCount = get(innerTileSegments) + 3;
   const tile = get(tileNodesTask);
   const uniforms = get(updateUniformsTask);
+  const topology = get(topologyTask);
 
   return work((): ComputePipeline => {
-    const computeNormal = createNormalFromElevationField(
-      elevationFieldContext.node,
-      tileEdgeVertexCount,
-    );
+    // The projection owns the surface-normal reconstruction; no branching here.
+    const computeNormal = topology.projection.gpu.createFieldNormal({
+      elevationFieldNode: elevationFieldContext.node,
+      edgeVertexCount: tileEdgeVertexCount,
+      tile,
+      uniforms,
+    });
     return [
       ...upstream,
       (nodeIndex, globalVertexIndex, _uv, localCoordinates) => {
         const ix = int(localCoordinates.x);
         const iy = int(localCoordinates.y);
-        const tileSize = tile.tileSize(nodeIndex);
         const height = elevationFieldContext.node.element(globalVertexIndex);
 
-        // Compute normal components from the elevation field and pack into RGBA.
-        const normalXZ = computeNormal(
-          nodeIndex,
-          tileSize,
-          ix,
-          iy,
-          uniforms.uElevationScale,
-        );
+        // Compute the world-space normal from the elevation field and pack the
+        // full normal (Nx, Ny, Nz) alongside the height into RGBA.
+        const normal = computeNormal(nodeIndex, ix, iy);
 
         storeTerrainField(
           terrainFieldStorage,
           ix,
           iy,
           nodeIndex,
-          packTerrainFieldSample(height, normalXZ),
+          packTerrainFieldSample(height, normal),
         );
       },
     ];

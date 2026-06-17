@@ -1,0 +1,58 @@
+---
+title: Torus (Donut)
+description: A donut-shaped terrain surface to demonstrate the topology + projection API
+---
+
+import TorusTerrainScene from "@/examples/TorusTerrainScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<TorusTerrainScene />
+</div>
+
+## Overview
+
+This example demonstrates `createTorusTopology`, a closed donut surface that is periodic in **both** axes.
+
+The torus parametrizes its surface by `(u, v)` in `[0, 1)`:
+
+- `u` goes around the **major circle** (the ring of the donut), and
+- `v` goes around the **tube cross-section**.
+
+Both axes wrap, so every tile has a same-level neighbor. Because the major circumference is typically much longer than the tube circumference, the topology seeds a `baseU × baseV` grid of level-0 roots (`baseU = round(major/minor)`, `baseV = 1`) so each root tile is approximately square in world space before isotropic LOD subdivision.
+
+### How it works
+
+- **Anisotropic base resolution** — `rootTiles` emits `baseU × baseV` level-0 roots. `neighborSameLevel` wraps `x` modulo `baseU × 2^level` and `y` modulo `baseV × 2^level`, so the surface is seamless all the way around. The projection exposes `baseResolution: { u, v }` so GPU UV mapping and CPU tile lookup use the same per-axis divisors.
+- **Injected projection** — `createTorusProjection` supplies the GPU vertex/normal builders (torus position + outward normal) and the CPU surface math (position → `(u, v)`, displaced position, cross-product normal, camera offset, and a signed-distance raycast). The same `SurfaceProjection` interface backs the flat and cube-sphere surfaces.
+- **Conservative bounds** — `tileBounds` samples a 3×3 grid across each tile (corners alone collapse for tiles that span a full circle), producing a stable camera-relative bounding sphere for LOD.
+- **Seamless elevation** — the elevation function receives the torus `worldPosition`. Sampling 3D noise in world space keeps terrain continuous across both wrap seams without any UV-seam handling.
+
+### Same runtime, different surface
+
+The interactive marker and click-to-pick behavior use the **generic** closed-surface runtime — identical to the cube-sphere example:
+
+```ts
+// Project any world point onto the surface and read the sample back.
+const sample = terrain.runtime.surfaceQuery?.sampleTerrainByPosition(point);
+
+// CPU ray pick against the displaced surface.
+const hit = terrain.runtime.raycast?.pick(ray);
+```
+
+`surfaceQuery` is exposed for every closed surface (cube-sphere and torus); the cube-sphere additionally exposes `sphereQuery` with direction/lat-long keys. Flat surfaces expose neither — they use the XZ-keyed `query`.
+
+### Controls
+
+| Control | Description |
+|:--|:--|
+| **major radius** | Distance from the donut center to the tube center |
+| **minor radius** | Radius of the tube cross-section |
+| **max level** | Maximum quadtree subdivision depth |
+| **max nodes** | Total node budget |
+| **elevation scale** | Displacement applied along the surface normal |
+| **skirt scale** | Skirt drop distance (inward by default, outward when inverted) to hide tile seams |
+| **invert** | Flip the surface so terrain grows inward and skirts point outward |
+| **noise frequency** | Spatial frequency of the 3D terrain noise |
+| **sea level** | Threshold below which terrain is flattened into ocean |
+| **marker angle** | Angle (around the ring) of the surface-query marker |
+| **wireframe** | Toggle wireframe to visualize the tiling |
