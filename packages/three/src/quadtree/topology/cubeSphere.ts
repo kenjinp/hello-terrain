@@ -33,6 +33,34 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
   const px = new Float64Array(8);
   const py = new Float64Array(8);
   const pz = new Float64Array(8);
+  // Unit directions to the four tile corners, reused for the datum-shell
+  // footprint (LOD size) and the displaced shells (conservative radius).
+  const dirX = new Float64Array(4);
+  const dirY = new Float64Array(4);
+  const dirZ = new Float64Array(4);
+
+  function footprintRadius(): number {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let i = 0; i < 4; i++) {
+      cx += center.x + dirX[i]! * radius;
+      cy += center.y + dirY[i]! * radius;
+      cz += center.z + dirZ[i]! * radius;
+    }
+    cx /= 4;
+    cy /= 4;
+    cz /= 4;
+    let maxDistSq = 0;
+    for (let i = 0; i < 4; i++) {
+      const dx = center.x + dirX[i]! * radius - cx;
+      const dy = center.y + dirY[i]! * radius - cy;
+      const dz = center.z + dirZ[i]! * radius - cz;
+      const dSq = dx * dx + dy * dy + dz * dz;
+      if (dSq > maxDistSq) maxDistSq = dSq;
+    }
+    return Math.sqrt(maxDistSq);
+  }
 
   function crossFaceNeighbor(
     face: number,
@@ -119,22 +147,29 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
       const cornersV = [v0, v0, v1, v1];
       const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
 
+      for (let i = 0; i < 4; i++) {
+        faceUVToCube(tile.space, cornersU[i]!, cornersV[i]!, cube);
+        const len = Math.hypot(cube[0], cube[1], cube[2]);
+        dirX[i] = cube[0] / len;
+        dirY[i] = cube[1] / len;
+        dirZ[i] = cube[2] / len;
+      }
+
+      // LOD size: footprint of the four corners on the datum shell only.
+      out.lodRadius = footprintRadius();
+
+      // Conservative radius: bounding sphere over both displaced shells.
       let pointCount = 0;
       let sumX = 0;
       let sumY = 0;
       let sumZ = 0;
 
       for (let i = 0; i < 4; i++) {
-        faceUVToCube(tile.space, cornersU[i]!, cornersV[i]!, cube);
-        const len = Math.hypot(cube[0], cube[1], cube[2]);
-        const dirX = cube[0] / len;
-        const dirY = cube[1] / len;
-        const dirZ = cube[2] / len;
         for (let di = 0; di < disps.length; di++) {
           const shellRadius = radius + disps[di]!;
-          const sx = center.x + dirX * shellRadius;
-          const sy = center.y + dirY * shellRadius;
-          const sz = center.z + dirZ * shellRadius;
+          const sx = center.x + dirX[i]! * shellRadius;
+          const sy = center.y + dirY[i]! * shellRadius;
+          const sz = center.z + dirZ[i]! * shellRadius;
           px[pointCount] = sx;
           py[pointCount] = sy;
           pz[pointCount] = sz;

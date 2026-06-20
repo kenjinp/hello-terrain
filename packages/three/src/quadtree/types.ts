@@ -26,8 +26,18 @@ export type TileBounds = {
   cx: number;
   cy: number;
   cz: number;
-  /** conservative radius */
+  /**
+   * Conservative bounding radius that contains the displaced geometry (both the
+   * min and max elevation shells). Use this for containment/culling, never as
+   * the LOD subdivision-size metric.
+   */
   r: number;
+  /**
+   * Horizontal footprint radius (datum surface) used as the LOD subdivision-size
+   * metric. Unlike `r`, it excludes vertical relief so deep elevation does not
+   * drive horizontal subdivision. Equals `r` when no elevation range is supplied.
+   */
+  lodRadius: number;
 };
 
 /** Scaled world-space elevation displacement range for a tile. */
@@ -68,7 +78,9 @@ export type Topology = {
   /**
    * Conservative camera-relative bounds for LOD decisions.
    * Avoids absolute world coordinates so Earth-scale worlds remain stable.
-   * When `elevationRange` is provided, bounds should account for displaced geometry.
+   * When `elevationRange` is provided, the conservative radius `r` accounts for
+   * the displaced geometry, while `lodRadius` stays tied to the horizontal
+   * footprint so relief does not drive subdivision.
    */
   tileBounds(
     tile: TileId,

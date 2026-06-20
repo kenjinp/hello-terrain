@@ -127,8 +127,8 @@ describe("quadtree/topology/torus", () => {
   it("expands bounds when an elevation range is provided", () => {
     const topology = createTorusTopology(cfg);
     const camera = { x: 0, y: 0, z: 0 };
-    const datum = { cx: 0, cy: 0, cz: 0, r: 0 };
-    const displaced = { cx: 0, cy: 0, cz: 0, r: 0 };
+    const datum = { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 };
+    const displaced = { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 };
 
     topology.tileBounds({ space: 0, level: 2, x: 1, y: 0 }, camera, datum);
     topology.tileBounds(
@@ -139,6 +139,8 @@ describe("quadtree/topology/torus", () => {
     );
 
     expect(displaced.r).toBeGreaterThan(datum.r);
+    // Relief inflates the conservative radius but not the LOD size metric.
+    expect(displaced.lodRadius).toBeCloseTo(datum.lodRadius);
     const datumDist = Math.hypot(datum.cx, datum.cy, datum.cz);
     const displacedDist = Math.hypot(displaced.cx, displaced.cy, displaced.cz);
     expect(displacedDist).toBeGreaterThanOrEqual(datumDist);

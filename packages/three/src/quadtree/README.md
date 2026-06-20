@@ -79,7 +79,8 @@ export type TileBounds = {
   cx: number;
   cy: number;
   cz: number;
-  r: number; // conservative radius
+  r: number; // conservative radius (contains displaced geometry)
+  lodRadius: number; // horizontal footprint radius (LOD subdivision size, excludes relief)
 };
 
 export type Topology = {

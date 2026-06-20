@@ -158,9 +158,11 @@ See the [Torus example](/docs/examples/torus) for a richer interactive demo.
 
 ## Elevation-aware LOD bounds
 
-LOD subdivision uses each tile's **real elevation range**, not a fixed padding constant. After each GPU readback, the terrain cache builds a conservative **elevation pyramid**: every leaf's min/max field values are propagated up to all ancestor tiles so coarse tiles know about mountains beneath them.
+Each tile reports two radii: a conservative bounding radius `r` and an `lodRadius`. After each GPU readback, the terrain cache builds a conservative **elevation pyramid**: every leaf's min/max field values are propagated up to all ancestor tiles so coarse tiles know about mountains beneath them.
 
-During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range. Newly-seen areas fall back to the datum surface for one frame until readback data arrives — the same latency tradeoff as `elevationAtCameraXZ`.
+During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range to grow the conservative radius `r`, which keeps the bounding sphere big enough to contain displaced geometry. Newly-seen areas fall back to the datum surface for one frame until readback data arrives — the same latency tradeoff as `elevationAtCameraXZ`.
+
+Subdivision, however, is driven by `lodRadius` — the tile's **horizontal footprint** on the datum surface, which deliberately ignores relief. This decoupling matters: if relief fed the subdivision-size metric, a tile with a small footprint but deep elevation (a steep mountain face) would be treated as a huge tile and subdivide far past what its footprint warrants, exhausting the `maxNodes` budget. Because `lodRadius` tracks footprint, `elevationScale` controls how tall your terrain renders without distorting LOD depth. Distance-to-surface is still accounted for separately via the projection's camera-surface offset.
 
 You do not configure this manually; it is automatic when the terrain query readback is active.
 
@@ -192,7 +194,7 @@ type Topology = {
 - `maxRootCount` — the maximum number of roots `rootTiles` can emit in a frame.
 - `projection` — the injected [`SurfaceProjection`](/docs/core/projection) strategy. The pipeline never branches on a projection kind; it calls into the projection's GPU and CPU hooks. The built-in factories set this for you.
 - `neighborSameLevel` — fills the same-level neighbor in a direction; returns `false` when there is no neighbor (e.g. the edge of a bounded topology).
-- `tileBounds` — writes a conservative, camera-relative bounding sphere used for LOD decisions. When an elevation range is supplied, bounds account for displaced geometry.
+- `tileBounds` — writes camera-relative bounds. `r` is a conservative bounding radius that contains the displaced geometry (used for containment/culling); `lodRadius` is the horizontal footprint radius used as the subdivision-size metric. When an elevation range is supplied, only `r` grows with relief — `lodRadius` stays tied to the footprint so deep terrain does not over-subdivide.
 - `rootTiles` — fills the active level-0 tiles for the current frame and returns the count.
 
 ## Setting Up a Topology in react-three/fiber

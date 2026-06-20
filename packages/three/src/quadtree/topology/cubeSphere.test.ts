@@ -121,18 +121,39 @@ describe("quadtree/topology/cubeSphere", () => {
 
   it("produces conservative finite bounds", () => {
     const topology = createCubeSphereTopology({ radius: 1000 });
-    const out = { cx: 0, cy: 0, cz: 0, r: 0 };
+    const out = { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 };
 
     topology.tileBounds({ space: 0, level: 0, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, out);
     expect(Number.isFinite(out.r)).toBe(true);
     expect(out.r).toBeGreaterThan(0);
     // A whole face's bounding radius cannot exceed the sphere diameter.
     expect(out.r).toBeLessThan(2000 + 1);
+    // Without relief the LOD size equals the conservative radius.
+    expect(out.lodRadius).toBeCloseTo(out.r);
 
     // Deeper tiles are smaller.
-    const deep = { cx: 0, cy: 0, cz: 0, r: 0 };
+    const deep = { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 };
     topology.tileBounds({ space: 0, level: 4, x: 0, y: 0 }, { x: 0, y: 0, z: 0 }, deep);
     expect(deep.r).toBeLessThan(out.r);
+    expect(deep.lodRadius).toBeLessThan(out.lodRadius);
+  });
+
+  it("keeps lodRadius tied to the footprint while r grows with relief", () => {
+    const topology = createCubeSphereTopology({ radius: 1000 });
+    const camera = { x: 0, y: 0, z: 0 };
+    const datum = { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 };
+    const displaced = { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 };
+
+    topology.tileBounds({ space: 0, level: 4, x: 0, y: 0 }, camera, datum);
+    topology.tileBounds(
+      { space: 0, level: 4, x: 0, y: 0 },
+      camera,
+      displaced,
+      { min: 0, max: 400 },
+    );
+
+    expect(displaced.r).toBeGreaterThan(datum.r);
+    expect(displaced.lodRadius).toBeCloseTo(datum.lodRadius);
   });
 
   it("exposes the cube-sphere projection and radius", () => {

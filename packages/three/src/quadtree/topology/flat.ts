@@ -78,7 +78,10 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
       const vertExtent = elevationRange
         ? Math.max(Math.abs(elevationRange.min), Math.abs(elevationRange.max))
         : 0;
+      // `r` must contain the displaced geometry; `lodRadius` tracks only the
+      // horizontal footprint so relief does not drive subdivision.
       out.r = halfDiag + vertExtent;
+      out.lodRadius = halfDiag;
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {

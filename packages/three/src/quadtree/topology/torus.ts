@@ -34,6 +34,10 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   const px = new Float64Array(18);
   const py = new Float64Array(18);
   const pz = new Float64Array(18);
+  // Datum-shell sample grid, reused for the footprint (LOD size) reduction.
+  const fpx = new Float64Array(9);
+  const fpy = new Float64Array(9);
+  const fpz = new Float64Array(9);
 
   const wrap = (value: number, n: number): number => ((value % n) + n) % n;
 
@@ -96,6 +100,39 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       const stepU = 1 / nU;
       const stepV = 1 / nV;
 
+      // LOD size: footprint of the datum-shell sample grid (no displacement).
+      let fpSumX = 0;
+      let fpSumY = 0;
+      let fpSumZ = 0;
+      let fpCount = 0;
+      for (let sj = 0; sj <= 2; sj++) {
+        for (let si = 0; si <= 2; si++) {
+          const u = u0 + (si * stepU) / 2;
+          const v = v0 + (sj * stepV) / 2;
+          torusUVToPoint(u, v, majorRadius, minorRadius, 0, center, corner, invert);
+          fpx[fpCount] = corner[0];
+          fpy[fpCount] = corner[1];
+          fpz[fpCount] = corner[2];
+          fpSumX += corner[0];
+          fpSumY += corner[1];
+          fpSumZ += corner[2];
+          fpCount += 1;
+        }
+      }
+      const fpCx = fpSumX / fpCount;
+      const fpCy = fpSumY / fpCount;
+      const fpCz = fpSumZ / fpCount;
+      let fpMaxDistSq = 0;
+      for (let i = 0; i < fpCount; i++) {
+        const dx = fpx[i]! - fpCx;
+        const dy = fpy[i]! - fpCy;
+        const dz = fpz[i]! - fpCz;
+        const dSq = dx * dx + dy * dy + dz * dz;
+        if (dSq > fpMaxDistSq) fpMaxDistSq = dSq;
+      }
+      out.lodRadius = Math.sqrt(fpMaxDistSq);
+
+      // Conservative radius: bounding sphere over both displaced shells.
       const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
       let pointCount = 0;
       let sumX = 0;

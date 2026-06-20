@@ -13,27 +13,32 @@ export function shouldSplit(bounds: TileBounds, level: number, maxLevel: number,
   // Degenerate case: camera is inside (or extremely near) the bounds center.
   const safeDistSq = distSq > 1e-12 ? distSq : 1e-12;
 
+  // Subdivision tracks the tile's horizontal footprint, not its relief. Using
+  // the conservative `r` here would let deep elevation inflate the size metric
+  // and over-subdivide; `lodRadius` excludes the vertical shell spread.
+  const size = bounds.lodRadius;
+
   if (mode === "screen") {
     const proj = params.projectionFactor ?? 0;
     const target = params.targetPixels ?? 0;
     if (proj <= 0 || target <= 0) {
       // If screen-space inputs are missing, fall back to distance mode.
       const f = params.distanceFactor ?? 2;
-      const threshold = bounds.r * f;
+      const threshold = size * f;
       return safeDistSq < threshold * threshold;
     }
 
     // Compare squared pixel radius without sqrt:
-    // pixelRadius^2 = (r^2 * proj^2) / distSq
+    // pixelRadius^2 = (size^2 * proj^2) / distSq
     // split if pixelRadius^2 > target^2
-    const left = bounds.r * bounds.r * proj * proj;
+    const left = size * size * proj * proj;
     const right = safeDistSq * target * target;
     return left > right;
   }
 
   // distance mode
   const f = params.distanceFactor ?? 2;
-  const threshold = bounds.r * f;
+  const threshold = size * f;
   return safeDistSq < threshold * threshold;
 }
 

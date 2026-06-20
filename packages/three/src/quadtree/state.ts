@@ -66,7 +66,7 @@ export function createState(cfg: QuadtreeConfig, topology: Topology): QuadtreeSt
     splitGen: 1,
     scratchTile: { space: 0, level: 0, x: 0, y: 0 },
     scratchNeighbor: { space: 0, level: 0, x: 0, y: 0 },
-    scratchBounds: { cx: 0, cy: 0, cz: 0, r: 0 },
+    scratchBounds: { cx: 0, cy: 0, cz: 0, r: 0, lodRadius: 0 },
     scratchElevationRange: { min: 0, max: 0 },
     scratchRootTiles,
     spaceCount: topology.spaceCount,
