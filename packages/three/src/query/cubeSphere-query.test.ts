@@ -182,4 +182,75 @@ describe("cube-sphere CPU sampling", () => {
     expect(hit?.position.z).toBeCloseTo(surfaceRadius, 1);
     expect(hit?.normal.z).toBeGreaterThan(0.99);
   });
+
+  it("setSurfaceOps re-targets queries when the radius changes", async () => {
+    // Regression: changing the cube-sphere radius left the CPU surface ops
+    // bound to the old radius, so picks/markers landed at the wrong distance.
+    const { cache } = await seededCache();
+
+    const before = projection.cpu
+      .createRuntimeQueries(cache)
+      .sphereQuery!.sampleTerrainByDirection(new Vector3(0, 0, 1));
+    expect(before.valid).toBe(true);
+    expect(before.position.z).toBeCloseTo(radius + height * elevationScale, 2);
+
+    // Grow the sphere and swap the surface ops without recreating the cache.
+    const grownRadius = radius * 2;
+    const grown = createCubeSphereProjection({ radius: grownRadius, center: { x: 0, y: 0, z: 0 } });
+    cache.setSurfaceOps(grown.cpu.createSurfaceOps());
+    const after = grown.cpu
+      .createRuntimeQueries(cache)
+      .sphereQuery!.sampleTerrainByDirection(new Vector3(0, 0, 1));
+
+    expect(after.valid).toBe(true);
+    expect(after.position.z).toBeCloseTo(grownRadius + height * elevationScale, 2);
+  });
+
+  it("inverted: raycasts onto the SAME-side inward surface (not mirrored)", async () => {
+    // Regression: inverted cube-sphere previously reconstructed the hit on the
+    // opposite side of the planet (it reused the inward normal as the radial
+    // direction). The pick must land on the same side as the ray.
+    const invProjection = createCubeSphereProjection({
+      radius,
+      center: { x: 0, y: 0, z: 0 },
+      invert: true,
+    });
+    const maxNodes = 4;
+    const cache = createCpuTerrainCache(maxNodes, config, invProjection.cpu.createSurfaceOps());
+    const { sphereQuery } = invProjection.cpu.createRuntimeQueries(cache);
+    if (!sphereQuery) throw new Error("expected a sphere query");
+
+    const index = createSpatialIndex(maxNodes);
+    insertSpatialIndexRaw(index, 4, 0, 0, 0, 0); // +Z face root tile
+
+    const edge = innerTileSegments + 3;
+    const verticesPerNode = edge * edge;
+    const elevation = new Float32Array(maxNodes * verticesPerNode);
+    for (let i = 0; i < verticesPerNode; i += 1) elevation[i] = height;
+
+    const renderer = {
+      getArrayBufferAsync: async () => elevation.buffer,
+    } as unknown as Parameters<typeof cache.triggerReadback>[0];
+    cache.triggerReadback(renderer, {} as unknown as StorageBufferAttribute, index, undefined, 1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Inverted surface sits at radius - elevation along the +Z radial.
+    const innerRadius = radius - height * elevationScale;
+    // Camera at the center looking outward toward +Z.
+    const ray = new Ray(new Vector3(0, 0, 0), new Vector3(0, 0, 1));
+    const params: SphereRaycastParams = {
+      centerX: 0,
+      centerY: 0,
+      centerZ: 0,
+      radius,
+      maxRadius: radius,
+      invert: true,
+    };
+    const hit = cubeSphereRaycast(sphereQuery, ray, params);
+
+    expect(hit).not.toBeNull();
+    expect(hit?.position.z).toBeCloseTo(innerRadius, 1);
+    // Inward-facing shading normal points back toward the center (-Z here).
+    expect(hit?.normal.z).toBeLessThan(-0.99);
+  });
 });

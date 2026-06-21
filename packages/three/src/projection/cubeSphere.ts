@@ -108,7 +108,6 @@ export function createCubeSphereProjection(
       const nx = dx / len;
       const ny = dy / len;
       const nz = dz / len;
-      const dirSign = invert ? -1 : 1;
       dirScratch[0] = nx;
       dirScratch[1] = ny;
       dirScratch[2] = nz;
@@ -117,9 +116,14 @@ export function createCubeSphereProjection(
       out.space = face;
       out.u = uvScratch[0];
       out.v = uvScratch[1];
-      out.dirX = nx * dirSign;
-      out.dirY = ny * dirSign;
-      out.dirZ = nz * dirSign;
+      // `dir` is the outward geometric radial direction (center -> point). The
+      // radius sign for inverted worlds is applied in `surfacePosition`, and the
+      // inward-facing shading normal in `surfaceNormal`. Keeping `dir` outward
+      // lets both reconstruct the same-side surface point and the correct face
+      // UVs (directionToFaceUV expects the outward direction for `space`).
+      out.dirX = nx;
+      out.dirY = ny;
+      out.dirZ = nz;
       return true;
     },
     surfacePosition(key, elevation, outVec) {
@@ -156,7 +160,10 @@ export function createCubeSphereProjection(
       let nx = tuy * tvz - tuz * tvy;
       let ny = tuz * tvx - tux * tvz;
       let nz = tux * tvy - tuy * tvx;
-      if (nx * key.dirX + ny * key.dirY + nz * key.dirZ < 0) {
+      // Orient against the outward radial `dir`, then flip inward for inverted
+      // worlds so the shading normal matches the GPU (which faces the surface).
+      const outwardSign = invert ? -1 : 1;
+      if ((nx * key.dirX + ny * key.dirY + nz * key.dirZ) * outwardSign < 0) {
         nx = -nx;
         ny = -ny;
         nz = -nz;

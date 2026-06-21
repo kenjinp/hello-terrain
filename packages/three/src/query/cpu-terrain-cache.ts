@@ -81,6 +81,12 @@ export interface CpuTerrainCache {
   // ── Generic closed-surface sampling, keyed on a world position ──────────
   /** True when the active projection supplies surface ops. */
   readonly hasSurface: boolean;
+  /**
+   * Swap the projection surface ops (CPU position/normal math). Used when the
+   * surface geometry changes (e.g. cube-sphere radius/center) without changing
+   * the buffer shape, so picks/queries stay in sync without reallocating.
+   */
+  setSurfaceOps(surfaceOps: CpuSurfaceOps | null): void;
   sampleSurfaceByPosition(px: number, py: number, pz: number): TerrainSurfaceSample;
   getElevationBySurfacePosition(px: number, py: number, pz: number): number | null;
   getNormalBySurfacePosition(px: number, py: number, pz: number): Vector3 | null;
@@ -308,6 +314,9 @@ export function createCpuTerrainCache(
     },
     get hasSurface() {
       return surfaceOps !== null;
+    },
+    setSurfaceOps(nextSurfaceOps) {
+      surfaceOps = nextSurfaceOps;
     },
     updateConfig(nextConfig) {
       config = nextConfig;

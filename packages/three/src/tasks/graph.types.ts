@@ -10,6 +10,7 @@ import type { ComputePipeline } from "../gpu/compute";
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
+import type { SurfaceProjection } from "../projection/types";
 import type {
   GpuSpatialIndexContext,
   TerrainQuery,
@@ -43,7 +44,14 @@ export interface TerrainQueryContext {
   surfaceQuery: TerrainSurfaceQuery | null;
   /** Cube-sphere query; `null` unless the topology uses the cubeSphere projection. */
   sphereQuery: TerrainSphereQuery | null;
+  /** Buffer-shape identity (maxNodes/segments/projection kind); change recreates the cache. */
   shapeKey: string;
+  /**
+   * The projection these queries close over. Recreated on any geometry change
+   * (e.g. cube-sphere radius, torus major/minor); an identity change rebuilds
+   * the surface ops + queries so picks/markers stay in sync.
+   */
+  projection: SurfaceProjection;
 }
 
 /** Task refs for the standard terrain pipeline. */
