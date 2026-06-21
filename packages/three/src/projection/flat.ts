@@ -92,9 +92,6 @@ export function createFlatProjection(): SurfaceProjection {
     },
 
     cpu: {
-      cameraSurfaceOffset(cam, elevation) {
-        cam.y -= elevation;
-      },
       createSurfaceOps() {
         return null;
       },

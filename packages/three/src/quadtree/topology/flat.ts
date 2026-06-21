@@ -75,10 +75,13 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
       out.cz = centerZ - cameraOrigin.z;
 
       const halfDiag = 0.7071067811865476 * size;
-      const vertExtent = elevationRange
-        ? Math.max(Math.abs(elevationRange.min), Math.abs(elevationRange.max))
+      // Vertical extent is the half-span around the mid-elevation center, not
+      // the distance from the datum — otherwise the radius would encode the
+      // tile's absolute height and elevated tiles would over-refine from afar.
+      const vertHalfSpan = elevationRange
+        ? Math.max(0, elevationRange.max - elevationRange.min) * 0.5
         : 0;
-      out.r = halfDiag + vertExtent;
+      out.r = halfDiag + vertHalfSpan;
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {

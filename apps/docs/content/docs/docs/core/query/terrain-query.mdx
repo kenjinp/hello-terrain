@@ -124,7 +124,7 @@ type UpdateParams = {
 };
 ```
 
-Returns world-space displacement min/max when data is available; `false` when the tile has no readback yet (datum-only bounds for that frame). This mirrors the one-frame latency of `elevationAtCameraXZ`.
+Returns world-space displacement min/max when data is available; `false` when the tile has no readback yet (datum-only bounds for that frame, a one-frame latency until readback data arrives).
 
 ## Closed-surface queries
 

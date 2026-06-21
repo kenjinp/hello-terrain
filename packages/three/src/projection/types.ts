@@ -123,12 +123,6 @@ export interface RuntimeQueries {
 
 export interface SurfaceProjectionCpu {
   /**
-   * Offset the camera toward the terrain surface so LOD distance is measured
-   * from the surface, not the datum. Mutates `cam` in place by `elevation`
-   * along the projection's up-direction.
-   */
-  cameraSurfaceOffset(cam: Vec3Like, elevation: number): void;
-  /**
    * Surface sampling ops injected into the terrain cache; `null` for flat
    * surfaces (which have no closed-surface query).
    */

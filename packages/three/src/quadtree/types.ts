@@ -146,15 +146,6 @@ export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
 
   /**
-   * Terrain elevation beneath the camera (from the previous frame). During
-   * refinement it offsets the camera toward the terrain surface so LOD distance
-   * is measured relative to the surface rather than the datum:
-   * - flat: subtracted from `cameraOrigin.y`.
-   * - cube-sphere: subtracted along the radial up-direction from the planet center.
-   */
-  elevationAtCameraXZ?: number;
-
-  /**
    * Controls how subdivision decisions are made.
    * `distance` is the initial focus; `screen` is supported for future parity.
    */

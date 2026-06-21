@@ -43,7 +43,6 @@ interface SurfaceProjection {
 
 | Hook | Purpose |
 |:--|:--|
-| `cameraSurfaceOffset(cam, elevation)` | Move the camera toward the surface along the projection's up-direction so LOD distance is surface-relative. |
 | `createSurfaceOps()` | The surface math injected into the terrain cache (position → `(space, u, v)`, displaced position, normal); `null` for flat. |
 | `createRuntimeQueries(cache)` | Build the runtime query objects: the flat `query`, the generic `surfaceQuery`, and (cube-sphere) the `sphereQuery`. |
 | `raycast(ctx)` | The projection-specific CPU ray pick against the displaced surface; returns `null` when the ray misses or the query snapshot isn't ready. |
@@ -64,7 +63,7 @@ To add a new closed surface you implement one `SurfaceProjection` and a small `T
 
 1. **Map math** — write the forward map `(u, v) → world position` (GPU + CPU) and the inverse `world position → (u, v)`, plus an outward normal.
 2. **`gpu` hooks** — assemble the displaced vertex position and reconstruct the normal from displaced neighbor positions (curvature-correct, frame-independent).
-3. **`cpu` hooks** — provide `createSurfaceOps()` (used by the terrain cache), `createRuntimeQueries()` (wraps the cache as `query`/`surfaceQuery`), `cameraSurfaceOffset()`, and `raycast()`.
+3. **`cpu` hooks** — provide `createSurfaceOps()` (used by the terrain cache), `createRuntimeQueries()` (wraps the cache as `query`/`surfaceQuery`), and `raycast()`.
 4. **Topology** — emit root tiles, resolve same-level neighbors (wrap for periodic axes), and write conservative `tileBounds`. Set `projection` to your new strategy.
 
 The [torus source](/docs/examples/torus) is the reference implementation; it reuses the shared curved-surface render/normal helpers, so the projection itself is small.

@@ -216,19 +216,6 @@ export function createCubeSphereProjection(
     },
 
     cpu: {
-      cameraSurfaceOffset(cam: Vec3Like, elevation: number) {
-        const dx = cam.x - center.x;
-        const dy = cam.y - center.y;
-        const dz = cam.z - center.z;
-        const len = Math.hypot(dx, dy, dz);
-        if (len > 1e-12) {
-          const sign = invert ? 1 : -1;
-          const inv = (sign * elevation) / len;
-          cam.x += dx * inv;
-          cam.y += dy * inv;
-          cam.z += dz * inv;
-        }
-      },
       createSurfaceOps() {
         return surfaceOps;
       },

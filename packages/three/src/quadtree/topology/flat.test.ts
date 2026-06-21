@@ -30,4 +30,25 @@ describe("quadtree/topology/flat", () => {
     expect(out.cz).toBeCloseTo(-25);
     expect(out.r).toBeGreaterThan(0);
   });
+
+  it("sizes the radius from the elevation half-span, not the datum distance", () => {
+    const topology = createFlatTopology({ rootSize: 100, origin: { x: 0, y: 0, z: 0 } });
+
+    const out = { cx: 0, cy: 0, cz: 0, r: 0 };
+    // A plateau well above the datum with a small local relief: [100, 120].
+    topology.tileBounds(
+      { space: 0, level: 1, x: 0, y: 0 },
+      { x: 0, y: 0, z: 0 },
+      out,
+      { min: 100, max: 120 },
+    );
+
+    const size = 50; // rootSize / 2^level
+    const halfDiag = 0.7071067811865476 * size;
+    // Center sits at the mid-elevation, radius bounds the half-span around it.
+    expect(out.cy).toBeCloseTo(110);
+    expect(out.r).toBeCloseTo(halfDiag + 10);
+    // The old datum-relative form would have inflated this to halfDiag + 120.
+    expect(out.r).toBeLessThan(halfDiag + 120);
+  });
 });
