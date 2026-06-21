@@ -28,7 +28,7 @@ export const terrainQueryTask = task((get, work) => {
       innerTileSegments: innerTileSegmentsValue,
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
-      radius: topologyValue.radius ?? radiusValue,
+      radius: projection.radius ?? radiusValue,
       baseU: projection.baseResolution?.u ?? 1,
       baseV: projection.baseResolution?.v ?? 1,
     };

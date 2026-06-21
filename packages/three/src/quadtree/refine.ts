@@ -39,7 +39,7 @@ export function refineLeaves(state: QuadtreeState, topology: Topology, params: U
     let elevationRange: ElevationRangeOut | undefined;
     if (params.tileElevationRange) {
       const range = state.scratchElevationRange;
-      if (params.tileElevationRange(space, level, x, y, range)) {
+      if (params.tileElevationRange(tile, range)) {
         elevationRange = range;
       }
     }

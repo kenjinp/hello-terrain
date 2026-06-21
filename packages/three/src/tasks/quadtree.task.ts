@@ -44,19 +44,22 @@ export const quadtreeUpdateTask = task((get, work) => {
 
   let outLeaves: LeafSet | undefined = undefined;
   const elevationRangeScratch = { min: 0, max: 0 };
-  return work(() => {
-    // Surface-relative LOD comes from per-tile elevation bounds below, not a
-    // global camera offset — `tileBounds` places each tile's bounding sphere
-    // at its own readback elevation range.
-    quadtreeUpdateConfig.tileElevationRange = (space, level, x, y, out) => {
-      if (!cache.getTileElevationRange(space, level, x, y, elevationRangeScratch)) {
-        return false;
-      }
-      out.min = elevationRangeScratch.min * elevationScaleValue;
-      out.max = elevationRangeScratch.max * elevationScaleValue;
-      return true;
-    };
 
+  // Build the provider once: `cache` and `elevationScaleValue` are stable for
+  // this task instance and only change when their deps do (rebuilding the task).
+  // Surface-relative LOD comes from per-tile elevation bounds — `tileBounds`
+  // places each tile's bounding sphere at its own readback elevation range,
+  // so no global camera offset is needed.
+  quadtreeUpdateConfig.tileElevationRange = (tile, out) => {
+    if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
+      return false;
+    }
+    out.min = elevationRangeScratch.min * elevationScaleValue;
+    out.max = elevationRangeScratch.max * elevationScaleValue;
+    return true;
+  };
+
+  return work(() => {
     outLeaves = update(
       quadtreeConfig.state,
       quadtreeConfig.topology,

@@ -114,13 +114,7 @@ type ElevationRangeOut = { min: number; max: number };
 
 type UpdateParams = {
   // ...
-  tileElevationRange?: (
-    space: number,
-    level: number,
-    x: number,
-    y: number,
-    out: ElevationRangeOut,
-  ) => boolean;
+  tileElevationRange?: (tile: TileId, out: ElevationRangeOut) => boolean;
 };
 ```
 

@@ -174,8 +174,6 @@ type Topology = {
   maxRootCount: number;
   /** Injected surface projection (GPU position/normal + CPU query/raycast/LOD). */
   projection: SurfaceProjection;
-  radius?: number;                              // curved surfaces only
-  center?: { x: number; y: number; z: number }; // curved surfaces only
 
   neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean;
   tileBounds(

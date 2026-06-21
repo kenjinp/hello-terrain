@@ -48,15 +48,6 @@ export type Topology = {
    */
   projection: SurfaceProjection;
 
-  /** Representative surface radius in world units (curved projections only). */
-  radius?: number;
-
-  /**
-   * Surface center in world space (curved projections only). Used to apply the
-   * camera elevation offset along the surface up-direction during LOD.
-   */
-  center?: { x: number; y: number; z: number };
-
   /**
    * Compute the same-level neighbor TileId in the requested direction.
    * Returns false if the neighbor is outside the valid topology.
@@ -142,42 +133,34 @@ export function resetSeamTable(seams: SeamTable): void {
 
 export type LodMode = "distance" | "screen";
 
+/**
+ * How subdivision decisions are made. A discriminated union so each mode only
+ * carries (and requires) its own thresholds.
+ * - `distance` (default): split when the camera is within `distanceFactor × r`.
+ * - `screen`: split when the projected pixel radius exceeds `targetPixels`.
+ */
+export type LodCriteria =
+  | { mode?: "distance"; distanceFactor?: number }
+  | {
+      mode: "screen";
+      /** Screen-space projection factor = screenHeight / (2*tan(fovY/2)). */
+      projectionFactor: number;
+      /** Target pixel radius/size threshold for screen-space refinement. */
+      targetPixels: number;
+    };
+
+/**
+ * Per-tile elevation range provider: previous-frame world-space displacement
+ * min/max (already scaled by `elevationScale`). Returns false when no data is
+ * available yet. Allocation-free via the `out` scratch.
+ */
+export type TileElevationRangeFn = (tile: TileId, out: ElevationRangeOut) => boolean;
+
 export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
 
-  /**
-   * Controls how subdivision decisions are made.
-   * `distance` is the initial focus; `screen` is supported for future parity.
-   */
-  mode?: LodMode;
-
-  /**
-   * Distance-based refinement threshold.
-   * Interpretation is criteria-dependent; keep it stable across surfaces by using bounds.
-   */
-  distanceFactor?: number;
-
-  /** Screen-space projection factor = screenHeight / (2*tan(fovY/2)) */
-  projectionFactor?: number;
-
-  /** Target pixel radius/size threshold for screen-space refinement */
-  targetPixels?: number;
-
-  /** Prevent flicker by separating split/merge thresholds (0..1 typical) */
-  hysteresis?: number;
-
-  /**
-   * Previous-frame per-tile elevation range in world-space displacement units
-   * (already scaled by `elevationScale`). Returns false when no data is available.
-   */
-  tileElevationRange?: (
-    space: number,
-    level: number,
-    x: number,
-    y: number,
-    out: ElevationRangeOut,
-  ) => boolean;
-};
+  tileElevationRange?: TileElevationRangeFn;
+} & LodCriteria;
 
 export type QuadtreeConfig = {
   maxNodes: number;

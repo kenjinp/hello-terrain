@@ -45,9 +45,11 @@ describe("quadtree/topology/flat", () => {
 
     const size = 50; // rootSize / 2^level
     const halfDiag = 0.7071067811865476 * size;
-    // Center sits at the mid-elevation, radius bounds the half-span around it.
+    const vertHalfSpan = 10;
+    // Center sits at the mid-elevation; the radius is the tight bounding sphere
+    // over the 4 corners × {min, max} samples: sqrt(halfDiag² + halfSpan²).
     expect(out.cy).toBeCloseTo(110);
-    expect(out.r).toBeCloseTo(halfDiag + 10);
+    expect(out.r).toBeCloseTo(Math.hypot(halfDiag, vertHalfSpan));
     // The old datum-relative form would have inflated this to halfDiag + 120.
     expect(out.r).toBeLessThan(halfDiag + 120);
   });

@@ -1,4 +1,5 @@
 import { createFlatProjection } from "../../projection/flat";
+import { boundingSphereFromPoints } from "../bounds";
 import { Dir, type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
 
 export type InfiniteFlatTopologyConfig = {
@@ -12,6 +13,10 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
   const halfRoot = 0.5 * cfg.rootSize;
   const rootGridRadius = Math.max(0, Math.floor(cfg.rootGridRadius ?? 1));
   const rootWidth = rootGridRadius * 2 + 1;
+  // Scratch for the 4 tile corners × {min, max} elevation samples.
+  const px = new Float64Array(8);
+  const py = new Float64Array(8);
+  const pz = new Float64Array(8);
 
   return {
     spaceCount: 1,
@@ -56,24 +61,24 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
 
       const minX = cfg.origin.x + (tile.x * size - halfRoot);
       const minZ = cfg.origin.z + (tile.y * size - halfRoot);
+      const maxX = minX + size;
+      const maxZ = minZ + size;
 
-      const centerX = minX + 0.5 * size;
-      const centerZ = minZ + 0.5 * size;
-      const centerY =
-        cfg.origin.y + (elevationRange ? (elevationRange.min + elevationRange.max) * 0.5 : 0);
+      const cornersX = [minX, maxX, minX, maxX];
+      const cornersZ = [minZ, minZ, maxZ, maxZ];
+      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
 
-      out.cx = centerX - cameraOrigin.x;
-      out.cy = centerY - cameraOrigin.y;
-      out.cz = centerZ - cameraOrigin.z;
+      let pointCount = 0;
+      for (let i = 0; i < 4; i++) {
+        for (let di = 0; di < disps.length; di++) {
+          px[pointCount] = cornersX[i]!;
+          py[pointCount] = cfg.origin.y + disps[di]!;
+          pz[pointCount] = cornersZ[i]!;
+          pointCount += 1;
+        }
+      }
 
-      const halfDiag = 0.7071067811865476 * size;
-      // Vertical extent is the half-span around the mid-elevation center, not
-      // the distance from the datum — otherwise the radius would encode the
-      // tile's absolute height and elevated tiles would over-refine from afar.
-      const vertHalfSpan = elevationRange
-        ? Math.max(0, elevationRange.max - elevationRange.min) * 0.5
-        : 0;
-      out.r = halfDiag + vertHalfSpan;
+      boundingSphereFromPoints(px, py, pz, pointCount, cameraOrigin, out);
     },
 
     rootTiles(cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {
