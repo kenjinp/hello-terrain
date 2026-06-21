@@ -17,6 +17,10 @@ export function shouldSplit(bounds: TileBounds, level: number, maxLevel: number,
     // split if pixelRadius^2 > target^2
     const proj = params.projectionFactor;
     const target = params.targetPixels;
+    // Guard invalid inputs: a non-positive target would make splitting
+    // unconditional (right = 0), and a non-positive proj is meaningless.
+    // Treat either as "don't split" so refinement stays stable.
+    if (proj <= 0 || target <= 0) return false;
     const left = bounds.r * bounds.r * proj * proj;
     const right = safeDistSq * target * target;
     return left > right;

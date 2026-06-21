@@ -114,22 +114,26 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
       const v0 = tile.y / n;
       const v1 = (tile.y + 1) / n;
 
-      const cornersU = [u0, u1, u0, u1];
-      const cornersV = [v0, v0, v1, v1];
-      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
+      const shellLo = radius + (elevationRange ? elevationRange.min : 0);
+      const shellHi = elevationRange ? radius + elevationRange.max : 0;
 
       let pointCount = 0;
       for (let i = 0; i < 4; i++) {
-        faceUVToCube(tile.space, cornersU[i]!, cornersV[i]!, cube);
+        const u = (i & 1) === 0 ? u0 : u1;
+        const v = i < 2 ? v0 : v1;
+        faceUVToCube(tile.space, u, v, cube);
         const len = Math.hypot(cube[0], cube[1], cube[2]);
         const dirX = cube[0] / len;
         const dirY = cube[1] / len;
         const dirZ = cube[2] / len;
-        for (let di = 0; di < disps.length; di++) {
-          const shellRadius = radius + disps[di]!;
-          px[pointCount] = center.x + dirX * shellRadius;
-          py[pointCount] = center.y + dirY * shellRadius;
-          pz[pointCount] = center.z + dirZ * shellRadius;
+        px[pointCount] = center.x + dirX * shellLo;
+        py[pointCount] = center.y + dirY * shellLo;
+        pz[pointCount] = center.z + dirZ * shellLo;
+        pointCount += 1;
+        if (elevationRange) {
+          px[pointCount] = center.x + dirX * shellHi;
+          py[pointCount] = center.y + dirY * shellHi;
+          pz[pointCount] = center.z + dirZ * shellHi;
           pointCount += 1;
         }
       }

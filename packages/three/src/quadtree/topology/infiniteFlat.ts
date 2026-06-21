@@ -64,16 +64,23 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
       const maxX = minX + size;
       const maxZ = minZ + size;
 
-      const cornersX = [minX, maxX, minX, maxX];
-      const cornersZ = [minZ, minZ, maxZ, maxZ];
-      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
+      // Allocation-free: enumerate the 4 corners inline, emitting the low (and,
+      // when an elevation range is present, the high) displacement per corner.
+      const yLo = cfg.origin.y + (elevationRange ? elevationRange.min : 0);
+      const yHi = elevationRange ? cfg.origin.y + elevationRange.max : 0;
 
       let pointCount = 0;
       for (let i = 0; i < 4; i++) {
-        for (let di = 0; di < disps.length; di++) {
-          px[pointCount] = cornersX[i]!;
-          py[pointCount] = cfg.origin.y + disps[di]!;
-          pz[pointCount] = cornersZ[i]!;
+        const cornerX = (i & 1) === 0 ? minX : maxX;
+        const cornerZ = i < 2 ? minZ : maxZ;
+        px[pointCount] = cornerX;
+        py[pointCount] = yLo;
+        pz[pointCount] = cornerZ;
+        pointCount += 1;
+        if (elevationRange) {
+          px[pointCount] = cornerX;
+          py[pointCount] = yHi;
+          pz[pointCount] = cornerZ;
           pointCount += 1;
         }
       }

@@ -95,15 +95,23 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       const stepU = 1 / nU;
       const stepV = 1 / nV;
 
-      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
+      const dispLo = elevationRange ? elevationRange.min : 0;
+      const dispHi = elevationRange ? elevationRange.max : 0;
       let pointCount = 0;
 
+      // Allocation-free: sample a 3×3 grid of surface points, emitting the low
+      // (and, when present, high) displacement at each.
       for (let sj = 0; sj <= 2; sj++) {
         for (let si = 0; si <= 2; si++) {
           const u = u0 + (si * stepU) / 2;
           const v = v0 + (sj * stepV) / 2;
-          for (let di = 0; di < disps.length; di++) {
-            torusUVToPoint(u, v, majorRadius, minorRadius, disps[di]!, center, corner, invert);
+          torusUVToPoint(u, v, majorRadius, minorRadius, dispLo, center, corner, invert);
+          px[pointCount] = corner[0];
+          py[pointCount] = corner[1];
+          pz[pointCount] = corner[2];
+          pointCount += 1;
+          if (elevationRange) {
+            torusUVToPoint(u, v, majorRadius, minorRadius, dispHi, center, corner, invert);
             px[pointCount] = corner[0];
             py[pointCount] = corner[1];
             pz[pointCount] = corner[2];
