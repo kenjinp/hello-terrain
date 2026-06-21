@@ -1,4 +1,5 @@
 import { createTorusProjection } from "../../projection/torus";
+import { boundingSphereFromPoints } from "../bounds";
 import { Dir, type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
 import { type Vec3Mutable, torusUVToPoint } from "./torusInverse";
 
@@ -53,8 +54,6 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       baseU,
       baseV,
     }),
-    radius: majorRadius + minorRadius,
-    center,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       const { nU, nV } = levelResolution(tile.level);
@@ -96,46 +95,32 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       const stepU = 1 / nU;
       const stepV = 1 / nV;
 
-      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
+      const dispLo = elevationRange ? elevationRange.min : 0;
+      const dispHi = elevationRange ? elevationRange.max : 0;
       let pointCount = 0;
-      let sumX = 0;
-      let sumY = 0;
-      let sumZ = 0;
 
+      // Allocation-free: sample a 3×3 grid of surface points, emitting the low
+      // (and, when present, high) displacement at each.
       for (let sj = 0; sj <= 2; sj++) {
         for (let si = 0; si <= 2; si++) {
           const u = u0 + (si * stepU) / 2;
           const v = v0 + (sj * stepV) / 2;
-          for (let di = 0; di < disps.length; di++) {
-            torusUVToPoint(u, v, majorRadius, minorRadius, disps[di]!, center, corner, invert);
+          torusUVToPoint(u, v, majorRadius, minorRadius, dispLo, center, corner, invert);
+          px[pointCount] = corner[0];
+          py[pointCount] = corner[1];
+          pz[pointCount] = corner[2];
+          pointCount += 1;
+          if (elevationRange) {
+            torusUVToPoint(u, v, majorRadius, minorRadius, dispHi, center, corner, invert);
             px[pointCount] = corner[0];
             py[pointCount] = corner[1];
             pz[pointCount] = corner[2];
-            sumX += corner[0];
-            sumY += corner[1];
-            sumZ += corner[2];
             pointCount += 1;
           }
         }
       }
 
-      const cX = sumX / pointCount;
-      const cY = sumY / pointCount;
-      const cZ = sumZ / pointCount;
-
-      let maxDistSq = 0;
-      for (let i = 0; i < pointCount; i++) {
-        const dx = px[i]! - cX;
-        const dy = py[i]! - cY;
-        const dz = pz[i]! - cZ;
-        const dSq = dx * dx + dy * dy + dz * dz;
-        if (dSq > maxDistSq) maxDistSq = dSq;
-      }
-
-      out.cx = cX - cameraOrigin.x;
-      out.cy = cY - cameraOrigin.y;
-      out.cz = cZ - cameraOrigin.z;
-      out.r = Math.sqrt(maxDistSq);
+      boundingSphereFromPoints(px, py, pz, pointCount, cameraOrigin, out);
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {

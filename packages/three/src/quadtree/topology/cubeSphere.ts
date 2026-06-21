@@ -1,4 +1,5 @@
 import { createCubeSphereProjection } from "../../projection/cubeSphere";
+import { boundingSphereFromPoints } from "../bounds";
 import { type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
 import type { Vec3 } from "./cubeSphereFaces";
 import {
@@ -66,8 +67,6 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
     spaceCount: 6,
     maxRootCount: 6,
     projection: createCubeSphereProjection({ radius, center, invert: cfg.invert }),
-    radius,
-    center,
 
     neighborSameLevel(tile: TileId, dir: 0 | 1 | 2 | 3, out: TileId): boolean {
       const level = tile.level;
@@ -115,53 +114,31 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
       const v0 = tile.y / n;
       const v1 = (tile.y + 1) / n;
 
-      const cornersU = [u0, u1, u0, u1];
-      const cornersV = [v0, v0, v1, v1];
-      const disps = elevationRange ? [elevationRange.min, elevationRange.max] : [0];
+      const shellLo = radius + (elevationRange ? elevationRange.min : 0);
+      const shellHi = elevationRange ? radius + elevationRange.max : 0;
 
       let pointCount = 0;
-      let sumX = 0;
-      let sumY = 0;
-      let sumZ = 0;
-
       for (let i = 0; i < 4; i++) {
-        faceUVToCube(tile.space, cornersU[i]!, cornersV[i]!, cube);
+        const u = (i & 1) === 0 ? u0 : u1;
+        const v = i < 2 ? v0 : v1;
+        faceUVToCube(tile.space, u, v, cube);
         const len = Math.hypot(cube[0], cube[1], cube[2]);
         const dirX = cube[0] / len;
         const dirY = cube[1] / len;
         const dirZ = cube[2] / len;
-        for (let di = 0; di < disps.length; di++) {
-          const shellRadius = radius + disps[di]!;
-          const sx = center.x + dirX * shellRadius;
-          const sy = center.y + dirY * shellRadius;
-          const sz = center.z + dirZ * shellRadius;
-          px[pointCount] = sx;
-          py[pointCount] = sy;
-          pz[pointCount] = sz;
-          sumX += sx;
-          sumY += sy;
-          sumZ += sz;
+        px[pointCount] = center.x + dirX * shellLo;
+        py[pointCount] = center.y + dirY * shellLo;
+        pz[pointCount] = center.z + dirZ * shellLo;
+        pointCount += 1;
+        if (elevationRange) {
+          px[pointCount] = center.x + dirX * shellHi;
+          py[pointCount] = center.y + dirY * shellHi;
+          pz[pointCount] = center.z + dirZ * shellHi;
           pointCount += 1;
         }
       }
 
-      const cX = sumX / pointCount;
-      const cY = sumY / pointCount;
-      const cZ = sumZ / pointCount;
-
-      let maxDistSq = 0;
-      for (let i = 0; i < pointCount; i++) {
-        const dx = px[i]! - cX;
-        const dy = py[i]! - cY;
-        const dz = pz[i]! - cZ;
-        const dSq = dx * dx + dy * dy + dz * dz;
-        if (dSq > maxDistSq) maxDistSq = dSq;
-      }
-
-      out.cx = cX - cameraOrigin.x;
-      out.cy = cY - cameraOrigin.y;
-      out.cz = cZ - cameraOrigin.z;
-      out.r = Math.sqrt(maxDistSq);
+      boundingSphereFromPoints(px, py, pz, pointCount, cameraOrigin, out);
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {

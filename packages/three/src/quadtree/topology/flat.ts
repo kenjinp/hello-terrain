@@ -1,4 +1,5 @@
 import { createFlatProjection } from "../../projection/flat";
+import { boundingSphereFromPoints } from "../bounds";
 import { Dir, type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
 
 export type FlatTopologyConfig = {
@@ -12,6 +13,10 @@ export type FlatTopologyConfig = {
 
 export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
   const halfRoot = 0.5 * cfg.rootSize;
+  // Scratch for the 4 tile corners × {min, max} elevation samples.
+  const px = new Float64Array(8);
+  const py = new Float64Array(8);
+  const pz = new Float64Array(8);
 
   const topology: Topology = {
     spaceCount: 1,
@@ -64,21 +69,29 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
 
       const minX = cfg.origin.x + (tile.x * size - halfRoot);
       const minZ = cfg.origin.z + (tile.y * size - halfRoot);
+      const maxX = minX + size;
+      const maxZ = minZ + size;
 
-      const centerX = minX + 0.5 * size;
-      const centerZ = minZ + 0.5 * size;
-      const centerY =
-        cfg.origin.y + (elevationRange ? (elevationRange.min + elevationRange.max) * 0.5 : 0);
+      const yLo = cfg.origin.y + (elevationRange ? elevationRange.min : 0);
+      const yHi = elevationRange ? cfg.origin.y + elevationRange.max : 0;
 
-      out.cx = centerX - cameraOrigin.x;
-      out.cy = centerY - cameraOrigin.y;
-      out.cz = centerZ - cameraOrigin.z;
+      let pointCount = 0;
+      for (let i = 0; i < 4; i++) {
+        const cornerX = (i & 1) === 0 ? minX : maxX;
+        const cornerZ = i < 2 ? minZ : maxZ;
+        px[pointCount] = cornerX;
+        py[pointCount] = yLo;
+        pz[pointCount] = cornerZ;
+        pointCount += 1;
+        if (elevationRange) {
+          px[pointCount] = cornerX;
+          py[pointCount] = yHi;
+          pz[pointCount] = cornerZ;
+          pointCount += 1;
+        }
+      }
 
-      const halfDiag = 0.7071067811865476 * size;
-      const vertExtent = elevationRange
-        ? Math.max(Math.abs(elevationRange.min), Math.abs(elevationRange.max))
-        : 0;
-      out.r = halfDiag + vertExtent;
+      boundingSphereFromPoints(px, py, pz, pointCount, cameraOrigin, out);
     },
 
     rootTiles(_cameraOrigin: { x: number; y: number; z: number }, out: TileId[]): number {

@@ -161,6 +161,8 @@ After the elevation field compute, a separate GPU compute kernel reduces each ti
 
 The kernel dispatches one workgroup per active tile. Within each workgroup, threads cooperatively scan the tile's elevation values using a parallel tree reduction. Each thread first pre-reduces its assigned elements (handling tiles with more vertices than the workgroup size), writes to shared memory, then participates in a log2(N) barrier-synchronized reduction. Thread 0 writes the final min/max to a compact per-tile output buffer.
 
+The outermost **skirt ring** is excluded from the reduction. Skirt vertices sample elevation just outside the tile footprint, so the resulting `(min, max)` describes only the real surface relief inside the tile — keeping LOD bounding spheres and the raycast AABB tight to the actual terrain.
+
 This runs entirely on the GPU in under 0.1ms for typical tile counts. The small output buffer (2 floats per tile) is read back to the CPU alongside the elevation data, adding negligible overhead to the async readback.
 
 The yellow wireframe boxes below visualize the per-tile bounding boxes derived from the GPU reduction pass. Each box spans the tile's XZ footprint and its true min/max elevation.

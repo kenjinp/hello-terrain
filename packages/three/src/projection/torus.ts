@@ -197,13 +197,6 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     },
 
     cpu: {
-      cameraSurfaceOffset(cam: Vec3Like, elevation: number) {
-        positionToTorusParams(cam.x, cam.y, cam.z, majorRadius, center, params);
-        torusOutwardNormal(params.u, params.v, normalScratch, invert);
-        cam.x -= normalScratch[0] * elevation;
-        cam.y -= normalScratch[1] * elevation;
-        cam.z -= normalScratch[2] * elevation;
-      },
       createSurfaceOps() {
         return surfaceOps;
       },

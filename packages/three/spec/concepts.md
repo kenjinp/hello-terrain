@@ -48,11 +48,7 @@ Selects active terrain leaves based on camera-relative criteria and balancing ru
 
 - Input: camera and refinement params.
 - Output: active leaves for compute/render.
-- LOD distance is measured relative to the terrain surface, not the datum: the
-  previous frame's elevation beneath the camera offsets the camera toward the
-  surface during refinement. The projection owns this offset
-  (`cpu.cameraSurfaceOffset`) — `+Y` for flat surfaces, the radial up-direction
-  for cube spheres, and the outward tube normal for the torus.
+- LOD distance is measured relative to the terrain surface, not the datum
 
 ## Elevation Function
 

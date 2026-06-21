@@ -138,7 +138,7 @@ describe("quadtree/topology/cubeSphere", () => {
   it("exposes the cube-sphere projection and radius", () => {
     const topology = createCubeSphereTopology({ radius: 1234 });
     expect(topology.projection.kind).toBe("cubeSphere");
-    expect(topology.radius).toBe(1234);
+    expect(topology.projection.radius).toBe(1234);
     expect(topology.spaceCount).toBe(6);
     expect(topology.maxRootCount).toBe(6);
   });

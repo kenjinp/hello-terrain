@@ -104,7 +104,8 @@ CPU query facade and backing cache:
 
 - `cache: CpuTerrainCache`
 - `query: TerrainQuery`
-- `shapeKey: string`
+- `shapeKey: string` (buffer-shape identity; a change recreates the cache)
+- `projection: SurfaceProjection` (the projection the queries close over; an identity change — any surface-geometry change — swaps surface ops + rebuilds queries)
 
 This is the authoritative CPU query entrypoint for app/raycast usage.
 

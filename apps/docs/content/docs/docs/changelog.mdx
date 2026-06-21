@@ -5,6 +5,31 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## 0.0.0-alpha.13 — Freezing Venus
+
+LOD now subdivides against the **real terrain relief** instead of a flat datum. This fixes a regression from the last release.
+
+### Surface-relative subdivision
+
+Each tile's LOD bounding sphere is now built from its elevation:
+
+- **Skirts are excluded** from the per-tile elevation range, so the bounds track the visible surface rather than the downward skirt geometry.
+- **Flat topologies** measure vertical extent from the tile's own min/max displacement instead of a datum-relative height, fixing tiles that split too eagerly far from the camera.
+- Remove camera "surface offset" hack, so that elevation is accounted for in the bounds, fixing a double-count.
+
+### Fixes 🐛
+
+- **Inverted cube-sphere picking.** Raycasts and surface queries on an `invert: true` cube-sphere now land on the correct side of the planet with correctly oriented (inward) normals. Previously hits were mirrored to the opposite face.
+- **Stale picks after geometry changes.** Changing a curved surface's geometry at runtime (cube-sphere `radius`/`center`, torus `majorRadius`/`minorRadius`, `invert`) now rebuilds the CPU surface math, so markers and raycasts use the new geometry instead of the old radius.
+- **Offset tile splitting** on flat and infinite-flat topologies, caused by the datum-relative bounds radius described above.
+
+### Breaking ⚠️
+
+- **`Topology.radius` / `Topology.center` removed.** These were duplicated on the topology; read them from `topology.projection.radius` / `topology.projection.center` instead.
+- **`UpdateParams` LOD fields restructured** into a `LodCriteria` discriminated union. `mode: "screen"` now requires both `projectionFactor` and `targetPixels`; `mode: "distance"` (the default) takes an optional `distanceFactor`. The standalone `hysteresis` and `elevationAtCameraXZ` fields were removed.
+- **`tileElevationRange` callback signature** changed from `(space, level, x, y, out)` to `(tile: TileId, out)`.
+- **`SurfaceProjectionCpu.cameraSurfaceOffset` removed** along with the camera offset mechanism.
+
 ## 0.0.0-alpha.12 — Consensus Control
 
 Terrain can now wrap a **torus**. Let's mainstream more fantastical world shapes! LOD and terrain querying are supported just as for planes and spheres. 

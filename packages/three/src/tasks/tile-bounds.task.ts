@@ -19,6 +19,7 @@ function buildReductionKernel(
   elevationFieldNode: StorageBufferNode,
   boundsNode: StorageBufferNode,
   verticesPerNode: number,
+  edgeVertexCount: number,
 ) {
   const elemsPerThread = Math.ceil(verticesPerNode / WGSIZE);
 
@@ -36,10 +37,24 @@ function buildReductionKernel(
     const localMin = float(1e10).toVar("localMin");
     const localMax = float(-1e10).toVar("localMax");
 
+    // Bounds describe the real surface relief, so the outermost skirt ring
+    // (which samples elevation outside the tile) must not widen the range.
+    const edge = int(edgeVertexCount);
+    const lastEdge = int(edgeVertexCount - 1);
+
     Loop({ start, end, type: "int", condition: "<" }, ({ i }) => {
-      const h = elevationFieldNode.element(baseOffset.add(i));
-      localMin.assign(min(localMin, h));
-      localMax.assign(max(localMax, h));
+      const ix = int(i).mod(edge);
+      const iy = int(i).div(edge);
+      const isSkirt = ix
+        .equal(int(0))
+        .or(ix.equal(lastEdge))
+        .or(iy.equal(int(0)))
+        .or(iy.equal(lastEdge));
+      If(isSkirt.not(), () => {
+        const h = elevationFieldNode.element(baseOffset.add(i));
+        localMin.assign(min(localMin, h));
+        localMax.assign(max(localMax, h));
+      });
     });
 
     sharedMin.element(tid).assign(localMin);
@@ -76,7 +91,12 @@ export const tileBoundsContextTask = task((get, work) => {
       "tileBounds",
     ) as StorageBufferNode;
     const verticesPerNode = edgeVertexCount * edgeVertexCount;
-    const kernel = buildReductionKernel(elevationFieldContext.node, node, verticesPerNode);
+    const kernel = buildReductionKernel(
+      elevationFieldContext.node,
+      node,
+      verticesPerNode,
+      edgeVertexCount,
+    );
     return { data, attribute, node, kernel };
   });
 }).displayName("tileBoundsContextTask");

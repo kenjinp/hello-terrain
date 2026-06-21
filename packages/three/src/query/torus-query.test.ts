@@ -102,6 +102,36 @@ describe("torus CPU sampling", () => {
     expect(cache.hasSurface).toBe(true);
   });
 
+  it("setSurfaceOps re-targets queries when major/minor radius changes", async () => {
+    // Regression: like the cube-sphere, changing the torus geometry must rebuild
+    // the surface ops or picks/markers keep using the old major/minor radii.
+    const { cache } = await seededCache();
+
+    const before = projection.cpu
+      .createRuntimeQueries(cache)
+      .surfaceQuery!.sampleTerrainByPosition(new Vector3(0, 0, 3000));
+    expect(before.valid).toBe(true);
+    expect(before.position.z).toBeCloseTo(outerSurface, 2);
+
+    // A clearly different donut; swap the surface math without recreating buffers.
+    const nextMajor = 1200;
+    const nextMinor = 500;
+    const grown = createTorusProjection({
+      majorRadius: nextMajor,
+      minorRadius: nextMinor,
+      center: { x: 0, y: 0, z: 0 },
+      baseU,
+      baseV,
+    });
+    cache.setSurfaceOps(grown.cpu.createSurfaceOps());
+    const after = grown.cpu
+      .createRuntimeQueries(cache)
+      .surfaceQuery!.sampleTerrainByPosition(new Vector3(0, 0, 3000));
+
+    expect(after.valid).toBe(true);
+    expect(after.position.z).toBeCloseTo(nextMajor + nextMinor + height * elevationScale, 2);
+  });
+
   it("raycasts onto the displaced torus surface", async () => {
     const { surfaceQuery } = await seededCache();
     const params: TorusRaycastParams = {

@@ -101,7 +101,7 @@ describe("quadtree/topology/torus", () => {
     expect(topology.projection.kind).toBe("torus");
     expect(topology.projection.faceOutward).toBe(true);
     expect(topology.projection.baseResolution).toEqual({ u: baseU, v: baseV });
-    expect(topology.radius).toBe(cfg.majorRadius + cfg.minorRadius);
+    expect(topology.projection.radius).toBe(cfg.majorRadius + cfg.minorRadius);
     expect(topology.spaceCount).toBe(1);
   });
 

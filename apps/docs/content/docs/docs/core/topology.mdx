@@ -160,7 +160,7 @@ See the [Torus example](/docs/examples/torus) for a richer interactive demo.
 
 LOD subdivision uses each tile's **real elevation range**, not a fixed padding constant. After each GPU readback, the terrain cache builds a conservative **elevation pyramid**: every leaf's min/max field values are propagated up to all ancestor tiles so coarse tiles know about mountains beneath them.
 
-During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range. Newly-seen areas fall back to the datum surface for one frame until readback data arrives — the same latency tradeoff as `elevationAtCameraXZ`.
+During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range, which is what makes LOD distance surface-relative — no extra camera offset is applied. Newly-seen areas fall back to the datum surface for one frame until readback data arrives.
 
 You do not configure this manually; it is automatic when the terrain query readback is active.
 
@@ -174,8 +174,6 @@ type Topology = {
   maxRootCount: number;
   /** Injected surface projection (GPU position/normal + CPU query/raycast/LOD). */
   projection: SurfaceProjection;
-  radius?: number;                              // curved surfaces only
-  center?: { x: number; y: number; z: number }; // curved surfaces only
 
   neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean;
   tileBounds(

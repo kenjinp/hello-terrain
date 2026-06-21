@@ -1,9 +1,17 @@
 import { task } from "@hello-terrain/work";
 import type { WebGPURenderer } from "three/webgpu";
 import { createCpuTerrainCache } from "../query/cpu-terrain-cache";
-import type { TerrainQueryContext } from "./graph.types";
 import { createElevationFieldContextTask } from "./elevation-field.task";
-import { elevationScale, innerTileSegments, maxLevel, maxNodes, origin, radius, rootSize } from "./params";
+import type { TerrainQueryContext } from "./graph.types";
+import {
+  elevationScale,
+  innerTileSegments,
+  maxLevel,
+  maxNodes,
+  origin,
+  radius,
+  rootSize,
+} from "./params";
 import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./tile-bounds.task";
 
@@ -20,6 +28,7 @@ export const terrainQueryTask = task((get, work) => {
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
     const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
+    const resolvedRadius = projection.radius ?? radiusValue;
     const configValues = {
       rootSize: rootSizeValue,
       originX: originValue.x,
@@ -28,7 +37,7 @@ export const terrainQueryTask = task((get, work) => {
       innerTileSegments: innerTileSegmentsValue,
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
-      radius: topologyValue.radius ?? radiusValue,
+      radius: resolvedRadius,
       baseU: projection.baseResolution?.u ?? 1,
       baseV: projection.baseResolution?.v ?? 1,
     };
@@ -45,11 +54,17 @@ export const terrainQueryTask = task((get, work) => {
       query = runtime.query;
       surfaceQuery = runtime.surfaceQuery;
       sphereQuery = runtime.sphereQuery;
+    } else if (prev?.projection !== projection) {
+      cache.setSurfaceOps(projection.cpu.createSurfaceOps());
+      const runtime = projection.cpu.createRuntimeQueries(cache);
+      query = runtime.query;
+      surfaceQuery = runtime.surfaceQuery;
+      sphereQuery = runtime.sphereQuery;
     }
 
     cache.updateConfig(configValues);
 
-    return { cache, query, surfaceQuery, sphereQuery, shapeKey };
+    return { cache, query, surfaceQuery, sphereQuery, shapeKey, projection };
   });
 }).displayName("terrainQueryTask");
 

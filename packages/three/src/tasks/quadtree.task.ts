@@ -1,5 +1,4 @@
 import { task } from "@hello-terrain/work";
-import { Vector3 } from "three";
 import { createLeafStorage } from "../gpu/leafStorage";
 import type { LeafSet } from "../quadtree";
 import { createFlatTopology, createState, update } from "../quadtree";
@@ -40,35 +39,27 @@ export const quadtreeConfigTask = task((get, work) => {
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
   const quadtreeUpdateConfig = get(quadtreeUpdate);
-  const { query: terrainQuery, surfaceQuery, cache } = get(terrainQueryTask);
+  const { cache } = get(terrainQueryTask);
   const elevationScaleValue = get(elevationScale);
 
   let outLeaves: LeafSet | undefined = undefined;
-  const cameraPosition = new Vector3();
   const elevationRangeScratch = { min: 0, max: 0 };
-  return work(() => {
-    const cam = quadtreeUpdateConfig.cameraOrigin;
-    // Terrain elevation beneath the camera drives the surface-relative LOD
-    // offset applied in `update()`. On a closed surface this is the
-    // displacement at the camera's projected position; on a flat topology it is
-    // the height at the camera's XZ.
-    if (surfaceQuery) {
-      cameraPosition.set(cam.x, cam.y, cam.z);
-      quadtreeUpdateConfig.elevationAtCameraXZ =
-        surfaceQuery.getElevationByPosition(cameraPosition) ?? 0;
-    } else {
-      quadtreeUpdateConfig.elevationAtCameraXZ = terrainQuery.getElevation(cam.x, cam.z) ?? 0;
+
+  // Build the provider once: `cache` and `elevationScaleValue` are stable for
+  // this task instance and only change when their deps do (rebuilding the task).
+  // Surface-relative LOD comes from per-tile elevation bounds — `tileBounds`
+  // places each tile's bounding sphere at its own readback elevation range,
+  // so no global camera offset is needed.
+  quadtreeUpdateConfig.tileElevationRange = (tile, out) => {
+    if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
+      return false;
     }
+    out.min = elevationRangeScratch.min * elevationScaleValue;
+    out.max = elevationRangeScratch.max * elevationScaleValue;
+    return true;
+  };
 
-    quadtreeUpdateConfig.tileElevationRange = (space, level, x, y, out) => {
-      if (!cache.getTileElevationRange(space, level, x, y, elevationRangeScratch)) {
-        return false;
-      }
-      out.min = elevationRangeScratch.min * elevationScaleValue;
-      out.max = elevationRangeScratch.max * elevationScaleValue;
-      return true;
-    };
-
+  return work(() => {
     outLeaves = update(
       quadtreeConfig.state,
       quadtreeConfig.topology,
