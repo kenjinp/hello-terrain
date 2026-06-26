@@ -1,0 +1,1130 @@
+"use client";
+
+import {
+  elevationFn,
+  elevationScale,
+  getDeviceComputeLimits,
+  innerTileSegments,
+  maxLevel,
+  maxNodes,
+  origin,
+  quadtreeUpdate,
+  radius,
+  rootSize,
+  skirtScale,
+  terrainFieldFilter,
+  terrainGraph,
+  terrainTasks,
+  topology,
+  createCubeSphereTopology,
+  createTorusTopology,
+  type ElevationCallback,
+  type TerrainGraph,
+  type TerrainQueryContext,
+  type Topology,
+} from "@hello-terrain/three";
+import type { GraphEvent, RunReport } from "@hello-terrain/work";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
+import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
+import { cos, float, sin } from "three/tsl";
+import * as THREE from "three/webgpu";
+
+type AgentScenarioName =
+  | "flat-sine-smoke"
+  | "flat-zero-smoke"
+  | "earth-sphere-load"
+  | "earth-sphere-surface-load"
+  | "earth-torus-surface-load"
+  | "earth-torus-load";
+
+type ScenarioSurfaceKind = "flat" | "sphere" | "torus";
+
+type ScenarioSamplePoint =
+  | {
+      kind: "flat";
+      label: string;
+      x: number;
+      z: number;
+    }
+  | {
+      kind: "sphere-lat-long";
+      label: string;
+      latitude: number;
+      longitude: number;
+    }
+  | {
+      kind: "surface-position";
+      label: string;
+      position: [number, number, number];
+    };
+
+type AgentScenarioInput = {
+  scenario?: AgentScenarioName;
+  warmupFrames?: number;
+  measureFrames?: number;
+  readback?: boolean;
+  timeoutMs?: number;
+};
+
+type AgentAssertion = {
+  name: string;
+  pass: boolean;
+  detail?: string;
+};
+
+type AgentTaskTiming = {
+  taskId: string;
+  taskName: string;
+  count: number;
+  totalMs: number;
+  minMs: number;
+  maxMs: number;
+  meanMs: number;
+};
+
+type AgentCacheHit = {
+  taskId: string;
+  taskName: string;
+  count: number;
+};
+
+type AgentTerrainSample = {
+  label: string;
+  kind: ScenarioSamplePoint["kind"];
+  input: Record<string, number | [number, number, number]>;
+  valid: boolean;
+  elevation: number | null;
+  normal: [number, number, number] | null;
+  position: [number, number, number] | null;
+  direction: [number, number, number] | null;
+  error?: string;
+};
+
+type AgentTerrainLevelStats = {
+  min: number | null;
+  max: number | null;
+  leavesAtMaxLevel: number;
+  counts: Record<string, number>;
+};
+
+type AgentGpuReadback = {
+  supported: boolean;
+  elevationFieldHash: string | null;
+  tileBoundsHash: string | null;
+  elevationNanCount: number | null;
+  tileBoundsNanCount: number | null;
+  elevationElementCount: number;
+  tileBoundsElementCount: number;
+  error?: string;
+};
+
+type AgentGpuInfo = {
+  webgpuAvailable: boolean;
+  adapterName?: string;
+  adapterFeatures: string[];
+  deviceFeatures: string[];
+  computeLimits: ReturnType<typeof getDeviceComputeLimits> | null;
+  timestampQueryEnabled: boolean;
+  timestampDiagnostics: AgentGpuTimestampDiagnostics;
+};
+
+type AgentTimestampPoolSnapshot = {
+  exists: boolean;
+  trackTimestamp: boolean | null;
+  currentQueryIndex: number | null;
+  lastValueMs: number | null;
+  resolvedTimestampCount: number | null;
+  frames: number[];
+  pendingResolve: boolean;
+};
+
+type AgentGpuTimestampDiagnostics = {
+  hasResolver: boolean;
+  rendererTrackTimestamp: boolean | null;
+  backendTrackTimestamp: boolean | null;
+  renderPool: AgentTimestampPoolSnapshot;
+  computePool: AgentTimestampPoolSnapshot;
+};
+
+type AgentGpuTimingSample = {
+  renderMs: number | null;
+  computeMs: number | null;
+  totalMs: number | null;
+  renderQueryCount: number;
+  computeQueryCount: number;
+  renderFrames: number[];
+  computeFrames: number[];
+};
+
+type RendererGpuProfiler = {
+  enable(): boolean;
+  sample(): Promise<AgentGpuTimingSample | null>;
+};
+
+type TimestampCapableRenderer = {
+  trackTimestamp?: boolean;
+  backend?: {
+    trackTimestamp?: boolean;
+    timestampQueryPool?: Partial<Record<"render" | "compute", TimestampQueryPoolLike | null>>;
+  };
+  resolveTimestampsAsync?: (type: "render" | "compute") => Promise<number | undefined>;
+};
+
+type TimestampQueryPoolLike = {
+  trackTimestamp?: boolean;
+  currentQueryIndex?: number;
+  lastValue?: number;
+  frames?: unknown;
+  pendingResolve?: unknown;
+  timestamps?: { size?: unknown };
+};
+
+export type AgentScenarioResult = {
+  ok: boolean;
+  scenario: AgentScenarioName;
+  startedAt: string;
+  finishedAt: string;
+  warmupFrames: number;
+  measureFrames: number;
+  gpu: AgentGpuInfo;
+  graphReports: RunReport[];
+  taskTimings: AgentTaskTiming[];
+  cacheHits: AgentCacheHit[];
+  taskErrors: { taskId: string; message: string }[];
+  terrain: {
+    surfaceKind: ScenarioSurfaceKind;
+    topologyKind: string;
+    radius: number;
+    leafCount: number;
+    leafCapacity: number;
+    maxLevel: number;
+    levelStats: AgentTerrainLevelStats;
+    innerTileSegments: number;
+    elevationRange: { min: number; max: number } | null;
+    queryGeneration: number;
+    samples: AgentTerrainSample[];
+  };
+  readback: AgentGpuReadback;
+  gpuTimings: {
+    supported: boolean;
+    samples: AgentGpuTimingSample[];
+  };
+  assertions: AgentAssertion[];
+};
+
+type AgentApi = {
+  ready: boolean;
+  runScenario(input?: AgentScenarioInput): Promise<AgentScenarioResult>;
+};
+
+declare global {
+  interface Window {
+    __helloTerrainAgent?: AgentApi;
+  }
+}
+
+type ScenarioDefinition = {
+  name: AgentScenarioName;
+  surfaceKind: ScenarioSurfaceKind;
+  topology: Topology | null;
+  rootSize: number;
+  radius: number;
+  maxLevel: number;
+  maxNodes: number;
+  innerTileSegments: number;
+  skirtScale: number;
+  elevationScale: number;
+  distanceFactor: number;
+  cameraOrigin: { x: number; y: number; z: number };
+  elevation: ElevationCallback;
+  samplePoints: ScenarioSamplePoint[];
+};
+
+const DEFAULT_WARMUP_FRAMES = 4;
+const DEFAULT_MEASURE_FRAMES = 8;
+const DEFAULT_TIMEOUT_MS = 2500;
+const DEFAULT_RADIUS = 1000;
+const EARTH_RADIUS_METERS = 6_371_000;
+const TORUS_MAJOR_RADIUS_METERS = EARTH_RADIUS_METERS * 0.72;
+const TORUS_MINOR_RADIUS_METERS = EARTH_RADIUS_METERS - TORUS_MAJOR_RADIUS_METERS;
+
+const zeroElevation: ElevationCallback = () => float(0);
+
+const sineElevation: ElevationCallback = ({ worldPosition }) => {
+  const waveX = sin(worldPosition.x.mul(float(0.045)));
+  const waveZ = cos(worldPosition.z.mul(float(0.037)));
+  return waveX.mul(waveZ).mul(float(2.5));
+};
+
+const earthSphereElevation: ElevationCallback = ({ worldPosition }) => {
+  const dir = worldPosition.normalize();
+  const bands = sin(dir.y.mul(float(18)));
+  const continents = cos(dir.x.mul(float(24)).add(dir.z.mul(float(11))));
+  return bands.mul(continents).mul(float(0.5)).add(float(0.5));
+};
+
+const earthTorusElevation: ElevationCallback = ({ worldPosition }) => {
+  const p = worldPosition.mul(float(1 / EARTH_RADIUS_METERS));
+  const aroundMajor = sin(p.x.mul(float(22)).add(p.z.mul(float(17))));
+  const aroundTube = cos(p.y.mul(float(29)).add(p.z.mul(float(7))));
+  return aroundMajor.mul(aroundTube).mul(float(0.5)).add(float(0.5));
+};
+
+function resolveScenario(name: AgentScenarioName): ScenarioDefinition {
+  if (name === "flat-zero-smoke") {
+    return {
+      name,
+      surfaceKind: "flat",
+      topology: null,
+      rootSize: 128,
+      radius: DEFAULT_RADIUS,
+      maxLevel: 8,
+      maxNodes: 256,
+      innerTileSegments: 13,
+      skirtScale: 8,
+      elevationScale: 1,
+      distanceFactor: 1.4,
+      cameraOrigin: { x: 0, y: 28, z: 0 },
+      elevation: zeroElevation,
+      samplePoints: [
+        { kind: "flat", label: "origin", x: 0, z: 0 },
+        { kind: "flat", label: "northeast", x: 16, z: 16 },
+        { kind: "flat", label: "west-ridge", x: -24, z: 12 },
+      ],
+    };
+  }
+
+  if (name === "earth-sphere-load" || name === "earth-sphere-surface-load") {
+    const surfaceLoad = name === "earth-sphere-surface-load";
+    const cameraRadius = surfaceLoad ? EARTH_RADIUS_METERS : EARTH_RADIUS_METERS * 1.001;
+    return {
+      name,
+      surfaceKind: "sphere",
+      topology: createCubeSphereTopology({ radius: EARTH_RADIUS_METERS }),
+      rootSize: EARTH_RADIUS_METERS,
+      radius: EARTH_RADIUS_METERS,
+      maxLevel: 18,
+      maxNodes: surfaceLoad ? 16384 : 4096,
+      innerTileSegments: 17,
+      skirtScale: 250,
+      elevationScale: 4200,
+      distanceFactor: surfaceLoad ? 16 : 8,
+      cameraOrigin: { x: 0, y: 0, z: cameraRadius },
+      elevation: earthSphereElevation,
+      samplePoints: [
+        { kind: "sphere-lat-long", label: "equator-prime", latitude: 0, longitude: 0 },
+        { kind: "sphere-lat-long", label: "north-mid", latitude: 37, longitude: -122 },
+        { kind: "sphere-lat-long", label: "south-mid", latitude: -34, longitude: 151 },
+        { kind: "sphere-lat-long", label: "near-pole", latitude: 78, longitude: 35 },
+      ],
+    };
+  }
+
+  if (name === "earth-torus-load" || name === "earth-torus-surface-load") {
+    const outerRadius = TORUS_MAJOR_RADIUS_METERS + TORUS_MINOR_RADIUS_METERS;
+    const surfaceLoad = name === "earth-torus-surface-load";
+    const cameraRadius = surfaceLoad ? outerRadius : outerRadius * 1.001;
+    return {
+      name,
+      surfaceKind: "torus",
+      topology: createTorusTopology({
+        majorRadius: TORUS_MAJOR_RADIUS_METERS,
+        minorRadius: TORUS_MINOR_RADIUS_METERS,
+      }),
+      rootSize: outerRadius,
+      radius: outerRadius,
+      maxLevel: 18,
+      maxNodes: surfaceLoad ? 16384 : 4096,
+      innerTileSegments: 17,
+      skirtScale: 250,
+      elevationScale: 4200,
+      distanceFactor: surfaceLoad ? 16 : 8,
+      cameraOrigin: { x: 0, y: 0, z: cameraRadius },
+      elevation: earthTorusElevation,
+      samplePoints: [
+        {
+          kind: "surface-position",
+          label: "outer-prime",
+          position: [0, 0, outerRadius + TORUS_MINOR_RADIUS_METERS],
+        },
+        {
+          kind: "surface-position",
+          label: "outer-east",
+          position: [outerRadius + TORUS_MINOR_RADIUS_METERS, 0, 0],
+        },
+        {
+          kind: "surface-position",
+          label: "upper-tube",
+          position: [TORUS_MAJOR_RADIUS_METERS, TORUS_MINOR_RADIUS_METERS * 2, 0],
+        },
+        {
+          kind: "surface-position",
+          label: "inner-west",
+          position: [0, 0, -TORUS_MAJOR_RADIUS_METERS],
+        },
+      ],
+    };
+  }
+
+  return {
+    name: "flat-sine-smoke",
+    surfaceKind: "flat",
+    topology: null,
+    rootSize: 192,
+    radius: DEFAULT_RADIUS,
+    maxLevel: 10,
+    maxNodes: 512,
+    innerTileSegments: 17,
+    skirtScale: 10,
+    elevationScale: 3,
+    distanceFactor: 1.35,
+    cameraOrigin: { x: 18, y: 34, z: 26 },
+    elevation: sineElevation,
+    samplePoints: [
+      { kind: "flat", label: "origin", x: 0, z: 0 },
+      { kind: "flat", label: "northeast", x: 24, z: 24 },
+      { kind: "flat", label: "west-ridge", x: -36, z: 18 },
+      { kind: "flat", label: "southeast", x: 48, z: -32 },
+    ],
+  };
+}
+
+function graphTargets() {
+  return [terrainTasks.gpuSpatialIndexUpload, terrainTasks.terrainReadback] as const;
+}
+
+function setScenarioParams(graph: TerrainGraph, scenario: ScenarioDefinition, frame: number) {
+  graph
+    .set(topology, scenario.topology)
+    .set(origin, { x: 0, y: 0, z: 0 })
+    .set(rootSize, scenario.rootSize)
+    .set(radius, scenario.radius)
+    .set(maxLevel, scenario.maxLevel)
+    .set(maxNodes, scenario.maxNodes)
+    .set(innerTileSegments, scenario.innerTileSegments)
+    .set(skirtScale, scenario.skirtScale)
+    .set(elevationScale, scenario.elevationScale)
+    .set(terrainFieldFilter, "nearest")
+    .set(elevationFn as never, (() => scenario.elevation) as never)
+    .set(quadtreeUpdate, {
+      cameraOrigin: {
+        x: scenario.cameraOrigin.x + frame * 0.001,
+        y: scenario.cameraOrigin.y,
+        z: scenario.cameraOrigin.z,
+      },
+      mode: "distance",
+      distanceFactor: scenario.distanceFactor,
+    });
+}
+
+function tupleFromVector3(vector: THREE.Vector3): [number, number, number] {
+  return [vector.x, vector.y, vector.z];
+}
+
+function invalidTerrainSample(
+  point: ScenarioSamplePoint,
+  error: string,
+): AgentTerrainSample {
+  return {
+    label: point.label,
+    kind: point.kind,
+    input: sampleInput(point),
+    valid: false,
+    elevation: null,
+    normal: null,
+    position: null,
+    direction: null,
+    error,
+  };
+}
+
+function sampleInput(point: ScenarioSamplePoint): Record<string, number | [number, number, number]> {
+  if (point.kind === "flat") return { x: point.x, z: point.z };
+  if (point.kind === "sphere-lat-long") {
+    return { latitude: point.latitude, longitude: point.longitude };
+  }
+  return { position: point.position };
+}
+
+function terrainSurfaceSampleToAgentSample(
+  point: ScenarioSamplePoint,
+  sample: {
+    valid: boolean;
+    elevation: number;
+    normal: THREE.Vector3;
+    position: THREE.Vector3;
+    direction: THREE.Vector3;
+  },
+): AgentTerrainSample {
+  return {
+    label: point.label,
+    kind: point.kind,
+    input: sampleInput(point),
+    valid: sample.valid,
+    elevation: sample.valid ? sample.elevation : null,
+    normal: sample.valid ? tupleFromVector3(sample.normal) : null,
+    position: sample.valid ? tupleFromVector3(sample.position) : null,
+    direction: sample.valid ? tupleFromVector3(sample.direction) : null,
+  };
+}
+
+function sampleTerrainPoint(
+  queryContext: TerrainQueryContext,
+  point: ScenarioSamplePoint,
+): AgentTerrainSample {
+  if (point.kind === "flat") {
+    const sample = queryContext.query.sampleTerrain(point.x, point.z);
+    return {
+      label: point.label,
+      kind: point.kind,
+      input: sampleInput(point),
+      valid: sample.valid,
+      elevation: sample.valid ? sample.elevation : null,
+      normal: sample.valid ? tupleFromVector3(sample.normal) : null,
+      position: sample.valid ? [point.x, sample.elevation, point.z] : null,
+      direction: null,
+    };
+  }
+
+  if (point.kind === "sphere-lat-long") {
+    const query = queryContext.sphereQuery;
+    if (!query) return invalidTerrainSample(point, "sphereQuery is unavailable");
+    return terrainSurfaceSampleToAgentSample(
+      point,
+      query.sampleTerrainByLatLong(point.latitude, point.longitude),
+    );
+  }
+
+  const query = queryContext.surfaceQuery;
+  if (!query) return invalidTerrainSample(point, "surfaceQuery is unavailable");
+  return terrainSurfaceSampleToAgentSample(
+    point,
+    query.sampleTerrainByPosition(new THREE.Vector3(...point.position)),
+  );
+}
+
+function summarizeLeafLevels(
+  leafSet: { count: number; level: ArrayLike<number> },
+  targetMaxLevel: number,
+): AgentTerrainLevelStats {
+  if (leafSet.count <= 0) {
+    return { min: null, max: null, leavesAtMaxLevel: 0, counts: {} };
+  }
+
+  let min = Number.POSITIVE_INFINITY;
+  let max = Number.NEGATIVE_INFINITY;
+  let leavesAtMaxLevel = 0;
+  const counts: Record<string, number> = {};
+
+  for (let i = 0; i < leafSet.count; i += 1) {
+    const level = leafSet.level[i] ?? 0;
+    if (level < min) min = level;
+    if (level > max) max = level;
+    if (level === targetMaxLevel) leavesAtMaxLevel += 1;
+    const key = String(level);
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  return { min, max, leavesAtMaxLevel, counts };
+}
+
+function boolOrNull(value: unknown) {
+  return typeof value === "boolean" ? value : null;
+}
+
+function numberOrNull(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getTimestampCapableRenderer(renderer: WebGPURenderer) {
+  return renderer as unknown as TimestampCapableRenderer;
+}
+
+function getTimestampPoolSnapshot(
+  renderer: WebGPURenderer,
+  type: "render" | "compute",
+): AgentTimestampPoolSnapshot {
+  const pool = getTimestampCapableRenderer(renderer).backend?.timestampQueryPool?.[type];
+
+  if (!pool) {
+    return {
+      exists: false,
+      trackTimestamp: null,
+      currentQueryIndex: null,
+      lastValueMs: null,
+      resolvedTimestampCount: null,
+      frames: [],
+      pendingResolve: false,
+    };
+  }
+
+  return {
+    exists: true,
+    trackTimestamp: boolOrNull(pool.trackTimestamp),
+    currentQueryIndex: numberOrNull(pool.currentQueryIndex),
+    lastValueMs: numberOrNull(pool.lastValue),
+    resolvedTimestampCount: numberOrNull(pool.timestamps?.size),
+    frames: Array.isArray(pool.frames)
+      ? pool.frames.filter((frame): frame is number => typeof frame === "number")
+      : [],
+    pendingResolve: Boolean(pool.pendingResolve),
+  };
+}
+
+function getTimestampDiagnostics(renderer: WebGPURenderer): AgentGpuTimestampDiagnostics {
+  const gpu = getTimestampCapableRenderer(renderer);
+  return {
+    hasResolver: typeof gpu.resolveTimestampsAsync === "function",
+    rendererTrackTimestamp: boolOrNull(gpu.trackTimestamp),
+    backendTrackTimestamp: boolOrNull(gpu.backend?.trackTimestamp),
+    renderPool: getTimestampPoolSnapshot(renderer, "render"),
+    computePool: getTimestampPoolSnapshot(renderer, "compute"),
+  };
+}
+
+function freshQueryCount(snapshot: AgentTimestampPoolSnapshot) {
+  return snapshot.currentQueryIndex ?? 0;
+}
+
+function timestampFromFreshQueries(raw: number | undefined, queryCount: number) {
+  return queryCount > 0 && typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+}
+
+function createRendererGpuProfiler(renderer: WebGPURenderer): RendererGpuProfiler {
+  const gpu = getTimestampCapableRenderer(renderer);
+
+  return {
+    enable() {
+      const diagnostics = getTimestampDiagnostics(renderer);
+      return diagnostics.hasResolver && diagnostics.backendTrackTimestamp === true;
+    },
+    async sample() {
+      const diagnostics = getTimestampDiagnostics(renderer);
+      if (!diagnostics.hasResolver || diagnostics.backendTrackTimestamp !== true) {
+        return null;
+      }
+
+      const renderBefore = getTimestampPoolSnapshot(renderer, "render");
+      const computeBefore = getTimestampPoolSnapshot(renderer, "compute");
+      const renderQueryCount = freshQueryCount(renderBefore);
+      const computeQueryCount = freshQueryCount(computeBefore);
+      const rawRenderMs =
+        renderQueryCount > 0 ? await gpu.resolveTimestampsAsync?.("render") : undefined;
+      const rawComputeMs =
+        computeQueryCount > 0 ? await gpu.resolveTimestampsAsync?.("compute") : undefined;
+      const renderAfter = getTimestampPoolSnapshot(renderer, "render");
+      const computeAfter = getTimestampPoolSnapshot(renderer, "compute");
+      const renderMs = timestampFromFreshQueries(rawRenderMs, renderQueryCount);
+      const computeMs = timestampFromFreshQueries(rawComputeMs, computeQueryCount);
+      const totalMs =
+        renderMs === null && computeMs === null ? null : (renderMs ?? 0) + (computeMs ?? 0);
+
+      return {
+        renderMs,
+        computeMs,
+        totalMs,
+        renderQueryCount,
+        computeQueryCount,
+        renderFrames: renderAfter.frames,
+        computeFrames: computeAfter.frames,
+      };
+    },
+  };
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForQueryGeneration(
+  graph: TerrainGraph,
+  previousGeneration: number,
+  timeoutMs: number,
+) {
+  const started = performance.now();
+  while (performance.now() - started < timeoutMs) {
+    const queryContext = graph.peek(terrainTasks.terrainQuery);
+    if (queryContext?.cache.ready && queryContext.cache.generation > previousGeneration) {
+      return true;
+    }
+    await sleep(16);
+  }
+  return false;
+}
+
+function eventMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function taskNameById(graph: TerrainGraph) {
+  const names = new Map<string, string>();
+  for (const node of graph.inspect({ includeRuntime: true }).nodes) {
+    if (node.kind === "task") names.set(node.id, node.name ?? node.id);
+  }
+  return names;
+}
+
+function summarizeTaskTimings(
+  events: GraphEvent[],
+  names: Map<string, string>,
+): {
+  taskTimings: AgentTaskTiming[];
+  cacheHits: AgentCacheHit[];
+  taskErrors: { taskId: string; message: string }[];
+} {
+  const byTask = new Map<string, number[]>();
+  const cacheHitsByTask = new Map<string, number>();
+  const taskErrors: { taskId: string; message: string }[] = [];
+
+  for (const event of events) {
+    if (event.type === "task:finish") {
+      const durations = byTask.get(event.taskId) ?? [];
+      durations.push(event.durationMs);
+      byTask.set(event.taskId, durations);
+    } else if (event.type === "task:cacheHit") {
+      cacheHitsByTask.set(event.taskId, (cacheHitsByTask.get(event.taskId) ?? 0) + 1);
+    } else if (event.type === "task:error") {
+      taskErrors.push({ taskId: event.taskId, message: eventMessage(event.error) });
+    }
+  }
+
+  const taskTimings = [...byTask.entries()]
+    .map(([taskId, durations]) => {
+      const totalMs = durations.reduce((sum, value) => sum + value, 0);
+      return {
+        taskId,
+        taskName: names.get(taskId) ?? taskId,
+        count: durations.length,
+        totalMs,
+        minMs: Math.min(...durations),
+        maxMs: Math.max(...durations),
+        meanMs: totalMs / durations.length,
+      };
+    })
+    .sort((a, b) => b.totalMs - a.totalMs);
+  const cacheHits = [...cacheHitsByTask.entries()]
+    .map(([taskId, count]) => ({
+      taskId,
+      taskName: names.get(taskId) ?? taskId,
+      count,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  return { taskTimings, cacheHits, taskErrors };
+}
+
+function toHex32(value: number) {
+  return (value >>> 0).toString(16).padStart(8, "0");
+}
+
+function hashFloat32(data: Float32Array, elementCount: number) {
+  const bytes = new Uint8Array(data.buffer, data.byteOffset, elementCount * 4);
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < bytes.length; i += 1) {
+    hash ^= bytes[i] ?? 0;
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return toHex32(hash);
+}
+
+function countNaN(data: Float32Array, elementCount: number) {
+  let count = 0;
+  for (let i = 0; i < elementCount; i += 1) {
+    if (Number.isNaN(data[i])) count += 1;
+  }
+  return count;
+}
+
+async function readFloat32Attribute(
+  renderer: WebGPURenderer,
+  attribute: StorageBufferAttribute,
+  elementCount: number,
+) {
+  const maybeReadback = renderer as WebGPURenderer & {
+    getArrayBufferAsync?: (attribute: StorageBufferAttribute) => Promise<ArrayBuffer>;
+  };
+  if (!maybeReadback.getArrayBufferAsync) return null;
+  const buffer = await maybeReadback.getArrayBufferAsync(attribute);
+  const availableElements = Math.floor(buffer.byteLength / Float32Array.BYTES_PER_ELEMENT);
+  return new Float32Array(buffer, 0, Math.min(elementCount, availableElements));
+}
+
+async function collectReadback(
+  renderer: WebGPURenderer,
+  graph: TerrainGraph,
+  leafCount: number,
+  edgeVertexCount: number,
+  enabled: boolean,
+): Promise<AgentGpuReadback> {
+  const elevationElementCount = leafCount * edgeVertexCount * edgeVertexCount;
+  const tileBoundsElementCount = leafCount * 2;
+
+  if (!enabled) {
+    return {
+      supported: false,
+      elevationFieldHash: null,
+      tileBoundsHash: null,
+      elevationNanCount: null,
+      tileBoundsNanCount: null,
+      elevationElementCount,
+      tileBoundsElementCount,
+    };
+  }
+
+  try {
+    const elevationContext = graph.get(terrainTasks.createElevationFieldContext);
+    const boundsContext = graph.get(terrainTasks.tileBoundsReduction);
+    const elevationData = await readFloat32Attribute(
+      renderer,
+      elevationContext.attribute,
+      elevationElementCount,
+    );
+    const boundsData = await readFloat32Attribute(
+      renderer,
+      boundsContext.attribute,
+      tileBoundsElementCount,
+    );
+
+    if (!elevationData || !boundsData) {
+      return {
+        supported: false,
+        elevationFieldHash: null,
+        tileBoundsHash: null,
+        elevationNanCount: null,
+        tileBoundsNanCount: null,
+        elevationElementCount,
+        tileBoundsElementCount,
+        error: "renderer.getArrayBufferAsync is unavailable",
+      };
+    }
+
+    return {
+      supported: true,
+      elevationFieldHash: hashFloat32(elevationData, elevationData.length),
+      tileBoundsHash: hashFloat32(boundsData, boundsData.length),
+      elevationNanCount: countNaN(elevationData, elevationData.length),
+      tileBoundsNanCount: countNaN(boundsData, boundsData.length),
+      elevationElementCount,
+      tileBoundsElementCount,
+    };
+  } catch (error) {
+    return {
+      supported: false,
+      elevationFieldHash: null,
+      tileBoundsHash: null,
+      elevationNanCount: null,
+      tileBoundsNanCount: null,
+      elevationElementCount,
+      tileBoundsElementCount,
+      error: eventMessage(error),
+    };
+  }
+}
+
+function createAssertions(result: Omit<AgentScenarioResult, "ok" | "assertions">) {
+  const assertions: AgentAssertion[] = [
+    {
+      name: "webgpu-available",
+      pass: result.gpu.webgpuAvailable,
+    },
+    {
+      name: "graph-runs-ok",
+      pass: result.graphReports.every((report) => report.status === "ok"),
+    },
+    {
+      name: "leaf-count-positive",
+      pass: result.terrain.leafCount > 0,
+      detail: `leafCount=${result.terrain.leafCount}`,
+    },
+    {
+      name: "leaf-count-within-capacity",
+      pass: result.terrain.leafCount <= result.terrain.leafCapacity,
+      detail: `leafCount=${result.terrain.leafCount} capacity=${result.terrain.leafCapacity}`,
+    },
+    {
+      name: "query-ready",
+      pass: result.terrain.queryGeneration > 0,
+      detail: `generation=${result.terrain.queryGeneration}`,
+    },
+    {
+      name: "samples-valid",
+      pass: result.terrain.samples.every((sample) => sample.valid),
+    },
+    {
+      name: "readback-has-no-nans",
+      pass:
+        result.readback.elevationNanCount === null ||
+        (result.readback.elevationNanCount === 0 && result.readback.tileBoundsNanCount === 0),
+    },
+    {
+      name: "task-errors-empty",
+      pass: result.taskErrors.length === 0,
+      detail: result.taskErrors.map((error) => error.message).join("; "),
+    },
+  ];
+
+  return assertions;
+}
+
+async function collectGpuInfo(
+  renderer: WebGPURenderer,
+  timestampQueryEnabled: boolean,
+): Promise<AgentGpuInfo> {
+  const adapter = await navigator.gpu?.requestAdapter({
+    powerPreference: "high-performance",
+  });
+  const adapterLike = adapter as GPUAdapter & {
+    info?: { vendor?: string; architecture?: string; device?: string; description?: string };
+  };
+  const adapterName = adapterLike?.info
+    ? [
+        adapterLike.info.vendor,
+        adapterLike.info.architecture,
+        adapterLike.info.device,
+        adapterLike.info.description,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : undefined;
+  const backend = renderer as WebGPURenderer & {
+    backend?: { device?: { features?: Set<string> } };
+  };
+
+  return {
+    webgpuAvailable: Boolean(navigator.gpu),
+    adapterName,
+    adapterFeatures: adapter ? [...adapter.features].sort() : [],
+    deviceFeatures: backend.backend?.device?.features
+      ? [...backend.backend.device.features].sort()
+      : [],
+    computeLimits: getDeviceComputeLimits(renderer),
+    timestampQueryEnabled,
+    timestampDiagnostics: getTimestampDiagnostics(renderer),
+  };
+}
+
+async function runAgentScenario(
+  renderer: WebGPURenderer,
+  input: AgentScenarioInput = {},
+): Promise<AgentScenarioResult> {
+  const scenario = resolveScenario(input.scenario ?? "flat-sine-smoke");
+  const warmupFrames = input.warmupFrames ?? DEFAULT_WARMUP_FRAMES;
+  const measureFrames = input.measureFrames ?? DEFAULT_MEASURE_FRAMES;
+  const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const profiler = createRendererGpuProfiler(renderer);
+  const timestampQueryEnabled = profiler.enable();
+  const graph = terrainGraph();
+  const graphReports: RunReport[] = [];
+  const measureEvents: GraphEvent[] = [];
+  const gpuTimingSamples: AgentGpuTimingSample[] = [];
+  const startedAt = new Date().toISOString();
+  let recordEvents = false;
+
+  const unsubscribe = graph.on("task:*", (event) => {
+    if (recordEvents) measureEvents.push(event);
+  });
+
+  try {
+    const totalFrames = warmupFrames + measureFrames;
+    for (let frame = 0; frame < totalFrames; frame += 1) {
+      recordEvents = frame >= warmupFrames;
+      const queryGeneration = graph.peek(terrainTasks.terrainQuery)?.cache.generation ?? -1;
+      setScenarioParams(graph, scenario, frame);
+      const report = await graph.run({
+        targets: graphTargets(),
+        laneConcurrency: { gpu: 1 },
+        resources: { renderer },
+      });
+      graphReports.push(report);
+      await waitForQueryGeneration(graph, queryGeneration, timeoutMs);
+      const timing = await profiler.sample();
+      if (frame >= warmupFrames && timing) gpuTimingSamples.push(timing);
+    }
+
+    const leafSet = graph.get(terrainTasks.quadtreeUpdate);
+    const queryContext = graph.get(terrainTasks.terrainQuery);
+    const edgeVertexCount = scenario.innerTileSegments + 3;
+    const samples = scenario.samplePoints.map((point) => sampleTerrainPoint(queryContext, point));
+    const readback = await collectReadback(
+      renderer,
+      graph,
+      leafSet.count,
+      edgeVertexCount,
+      input.readback ?? true,
+    );
+    const timingSummary = summarizeTaskTimings(measureEvents, taskNameById(graph));
+    const partialResult = {
+      scenario: scenario.name,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      warmupFrames,
+      measureFrames,
+      gpu: await collectGpuInfo(renderer, timestampQueryEnabled),
+      graphReports,
+      taskTimings: timingSummary.taskTimings,
+      cacheHits: timingSummary.cacheHits,
+      taskErrors: timingSummary.taskErrors,
+      terrain: {
+        surfaceKind: scenario.surfaceKind,
+        topologyKind: scenario.topology?.projection.kind ?? "flat",
+        radius: scenario.radius,
+        leafCount: leafSet.count,
+        leafCapacity: leafSet.capacity,
+        maxLevel: scenario.maxLevel,
+        levelStats: summarizeLeafLevels(leafSet, scenario.maxLevel),
+        innerTileSegments: scenario.innerTileSegments,
+        elevationRange: queryContext.query.getGlobalElevationRange(),
+        queryGeneration: queryContext.cache.generation,
+        samples,
+      },
+      readback,
+      gpuTimings: {
+        supported:
+          timestampQueryEnabled && gpuTimingSamples.some((sample) => sample.totalMs !== null),
+        samples: gpuTimingSamples,
+      },
+    };
+    const assertions = createAssertions(partialResult);
+    return {
+      ...partialResult,
+      ok: assertions.every((assertion) => assertion.pass),
+      assertions,
+    };
+  } finally {
+    unsubscribe();
+    graph.dispose();
+  }
+}
+
+export function GpuAgentLab() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const rendererRef = useRef<WebGPURenderer | null>(null);
+  const [status, setStatus] = useState("initializing");
+  const [lastResult, setLastResult] = useState<AgentScenarioResult | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  const api = useMemo<AgentApi>(
+    () => ({
+      ready: false,
+      async runScenario(input) {
+        const renderer = rendererRef.current;
+        if (!renderer) throw new Error("GPU agent lab renderer is not ready.");
+        setStatus("running");
+        setLastError(null);
+        try {
+          const result = await runAgentScenario(renderer, input);
+          setLastResult(result);
+          setStatus(result.ok ? "ok" : "failed");
+          return result;
+        } catch (error) {
+          const message = eventMessage(error);
+          setLastError(message);
+          setStatus("error");
+          throw error;
+        }
+      },
+    }),
+    [],
+  );
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    let disposed = false;
+    let renderer: WebGPURenderer | null = null;
+
+    window.__helloTerrainAgent = api;
+
+    async function init() {
+      if (!navigator.gpu) {
+        setStatus("webgpu-unavailable");
+        return;
+      }
+
+      renderer = new THREE.WebGPURenderer({
+        canvas,
+        antialias: false,
+        alpha: false,
+        powerPreference: "high-performance",
+        trackTimestamp: true,
+      } as WebGPURendererParameters);
+      renderer.setSize(64, 64, false);
+      await renderer.init();
+      if (disposed) {
+        renderer.dispose();
+        return;
+      }
+      rendererRef.current = renderer;
+      api.ready = true;
+      setStatus("ready");
+    }
+
+    void init().catch((error) => {
+      setStatus("error");
+      setLastError(eventMessage(error));
+    });
+
+    return () => {
+      disposed = true;
+      api.ready = false;
+      rendererRef.current = null;
+      if (window.__helloTerrainAgent === api) {
+        window.__helloTerrainAgent = undefined;
+      }
+      renderer?.dispose();
+    };
+  }, [api]);
+
+  return (
+    <main className="min-h-screen bg-neutral-950 px-6 py-8 text-neutral-100">
+      <div className="mx-auto flex max-w-5xl flex-col gap-6">
+        <div>
+          <p className="text-sm uppercase tracking-wide text-emerald-300">Agent GPU Lab</p>
+          <h1 className="mt-2 text-3xl font-bold">Hello Terrain GPU Scenario Runner</h1>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-300">
+            This page initializes a real WebGPU renderer and exposes
+            <code className="mx-1 rounded bg-neutral-800 px-1 py-0.5">
+              window.__helloTerrainAgent.runScenario()
+            </code>
+            for automated GPU task inspection.
+          </p>
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-[260px_1fr]">
+          <section className="rounded border border-neutral-800 bg-neutral-900 p-4">
+            <div className="text-sm text-neutral-400">Status</div>
+            <div className="mt-1 font-mono text-lg">{status}</div>
+            <canvas
+              ref={canvasRef}
+              width={64}
+              height={64}
+              className="mt-4 h-16 w-16 border border-neutral-800"
+            />
+            <button
+              type="button"
+              className="mt-4 w-full rounded bg-emerald-500 px-3 py-2 text-sm font-bold text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-700 disabled:text-neutral-400"
+              disabled={!api.ready || status === "running"}
+              onClick={() => {
+                void api.runScenario();
+              }}
+            >
+              Run Smoke Scenario
+            </button>
+            {lastError ? (
+              <pre className="mt-4 whitespace-pre-wrap text-xs text-red-300">{lastError}</pre>
+            ) : null}
+          </section>
+
+          <section className="rounded border border-neutral-800 bg-neutral-900 p-4">
+            <div className="mb-3 text-sm text-neutral-400">Last JSON Result</div>
+            <pre className="max-h-[70vh] overflow-auto text-xs leading-5 text-neutral-200">
+              {lastResult ? JSON.stringify(lastResult, null, 2) : "Awaiting runScenario()."}
+            </pre>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}

@@ -11,6 +11,7 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "oxlint .",
     "format": "oxfmt .",
+    "agent:gpu": "node scripts/run-gpu-agent-lab.js",
     "commit": "gitmoji -c"
   },
   "devDependencies": {
