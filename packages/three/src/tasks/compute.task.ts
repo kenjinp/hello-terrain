@@ -37,6 +37,7 @@ export const { compile: compileComputeTask, execute: executeComputeTask } =
  */
 export function createComputePipelineTasks(
   leafStageTask: TaskRef<ComputePipeline>,
+  label = "terrainField",
 ) {
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
@@ -44,6 +45,7 @@ export function createComputePipelineTasks(
     return work(() =>
       compileComputePipeline(pipeline, edgeVertexCount, {
         preferSingleKernelWhenPossible: false,
+        label,
       }),
     );
   }).displayName("compileComputeTask");

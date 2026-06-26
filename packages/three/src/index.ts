@@ -21,6 +21,8 @@ export {
 export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
 export { getDeviceComputeLimits } from "./gpu/deviceLimits";
+export { createGpuProfiler } from "./gpu/gpuProfiler";
+export type { GpuProfiler, GpuFrameTimings } from "./gpu/gpuProfiler";
 export * from "./gpu/terrainFieldStorage";
 export * from "./query/terrain-sampler";
 export * from "./query/terrain-query";

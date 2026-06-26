@@ -75,7 +75,9 @@ function buildReductionKernel(
       boundsNode.element(outIdx).assign(finalMin);
       boundsNode.element(outIdx.add(int(1))).assign(finalMax);
     });
-  })().computeKernel([WGSIZE, 1, 1]);
+  })()
+    .computeKernel([WGSIZE, 1, 1])
+    .setName("tileBoundsReduction");
 }
 
 export const tileBoundsContextTask = task((get, work) => {

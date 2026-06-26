@@ -20,11 +20,20 @@ export type TerrainMeshParams = {
   flipWinding: boolean;
 };
 
+function createDefaultTerrainMaterial(): MeshStandardNodeMaterial {
+  const material = new MeshStandardNodeMaterial();
+  // Three's WebGPU backend labels render shader modules `vertex_<name>` /
+  // `fragment_<name>` from the material name, which makes the terrain draw
+  // identifiable in GPU captures (Xcode/Metal, chrome://tracing).
+  material.name = "terrain";
+  return material;
+}
+
 export const defaultTerrainMeshParams: TerrainMeshParams = {
   // Source of truth is the `innerTileSegments` param itself.
   innerTileSegments: innerTileSegmentsParam.get(),
   maxNodes: 1024,
-  material: new MeshStandardNodeMaterial(),
+  material: createDefaultTerrainMaterial(),
   flipWinding: false,
 };
 export class TerrainMesh extends InstancedMesh {
@@ -36,6 +45,7 @@ export class TerrainMesh extends InstancedMesh {
     const mergedParams = { ...defaultTerrainMeshParams, ...params };
     const { innerTileSegments, maxNodes, material, flipWinding } = mergedParams;
     const geometry = new TerrainGeometry(innerTileSegments, true, flipWinding);
+    if (!material.name) material.name = "terrain";
     super(geometry, material, maxNodes);
     this.instanceMatrix.name = "terrainInstanceMatrix";
     this.frustumCulled = false;

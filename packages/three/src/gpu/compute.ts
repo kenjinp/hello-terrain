@@ -29,6 +29,14 @@ export type CompileComputePipelineOptions = {
   bindings?: Node[];
   workgroupSize?: [number, number];
   preferSingleKernelWhenPossible?: boolean;
+  /**
+   * Human-readable name stamped onto the generated compute kernel(s). Three's
+   * WebGPU backend uses `computeNode.name` as the shader-module label
+   * (`compute_<name>`), so setting it makes GPU captures (Xcode/Metal,
+   * chrome://tracing) attributable instead of a wall of anonymous `compute`
+   * passes. Staged kernels are suffixed `<label>.stage<i>`.
+   */
+  label?: string;
 };
 
 type CompiledKernel = any;
@@ -45,6 +53,7 @@ export function compileComputePipeline(
   ];
   const preferSingleKernelWhenPossible =
     options?.preferSingleKernelWhenPossible ?? true;
+  const label = options?.label;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   let singleKernel: CompiledKernel | undefined;
   const stagedKernelCache = new Map<string, CompiledKernel[]>();
@@ -121,11 +130,13 @@ export function compileComputePipeline(
           );
         });
       }
-    })().computeKernel(workgroupSize);
+    })()
+      .computeKernel(workgroupSize)
+      .setName(label ?? "compute");
   }
 
   function buildStagedKernels(workgroupSize: [number, number, number]) {
-    return stages.map((stage) =>
+    return stages.map((stage, stageIndex) =>
       Fn(() => {
         bindings?.forEach((b) => b.toVar());
 
@@ -159,7 +170,9 @@ export function compileComputePipeline(
             texelSize,
           );
         });
-      })().computeKernel(workgroupSize),
+      })()
+        .computeKernel(workgroupSize)
+        .setName(label ? `${label}.stage${stageIndex}` : `compute.stage${stageIndex}`),
     );
   }
 
