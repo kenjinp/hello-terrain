@@ -12,7 +12,12 @@ import {
   radius,
   rootSize,
 } from "./params";
-import { leafGpuBufferTask, topologyTask, visibleLeafSetTask } from "./quadtree.task";
+import {
+  dirtyVisibleSlotBufferTask,
+  leafGpuBufferTask,
+  topologyTask,
+  visibleLeafSetTask,
+} from "./quadtree.task";
 import { tileBoundsReductionTask } from "./tile-bounds.task";
 
 export const terrainQueryTask = task((get, work) => {
@@ -74,6 +79,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
     const elevationFieldContext = get(createElevationFieldContextTask);
     const visibleLeafSet = get(visibleLeafSetTask);
     const leafState = get(leafGpuBufferTask);
+    const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
     const { cache } = get(terrainQueryTask);
 
     return work((): void => {
@@ -85,6 +91,8 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
         visibleLeafSet.index,
         boundsContext.attribute,
         leafState.activeSlotCount,
+        dirtyVisibleSlots.data,
+        dirtyVisibleSlots.count,
       );
     });
   },

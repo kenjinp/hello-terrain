@@ -1,5 +1,9 @@
 import { task } from "@hello-terrain/work";
-import { createLeafStorage, createVisibleSlotStorage } from "../gpu/leafStorage";
+import {
+  createDirtyVisibleSlotStorage,
+  createLeafStorage,
+  createVisibleSlotStorage,
+} from "../gpu/leafStorage";
 import type {
   ElevationRangeOut,
   LeafSet,
@@ -21,6 +25,7 @@ import {
 import type { QuadtreeConfigState } from "./graph.types";
 import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
+import type { VisibleSlotStorageState } from "../types";
 
 export type VisibleLeafSetState = {
   leaves: LeafSet;
@@ -31,6 +36,10 @@ export type TileIncrementalTelemetryState = {
   visibility: TileVisibilityState;
   slots: TileSlotCacheState;
   telemetry: TileSlotCacheState["telemetry"];
+};
+
+export type SlotIndexBufferState = VisibleSlotStorageState & {
+  count: number;
 };
 
 /**
@@ -194,6 +203,11 @@ export const visibleSlotStorageTask = task((get, work) => {
   return work(() => createVisibleSlotStorage(maxNodesVal));
 }).displayName("visibleSlotStorageTask");
 
+export const dirtyVisibleSlotStorageTask = task((get, work) => {
+  const maxNodesVal = get(maxNodes);
+  return work(() => createDirtyVisibleSlotStorage(maxNodesVal));
+}).displayName("dirtyVisibleSlotStorageTask");
+
 export const leafGpuBufferTask = task((get, work) => {
   const slotUpdate = get(tileSlotUpdateTask);
   const leafStorage = get(leafStorageTask);
@@ -235,3 +249,28 @@ export const leafGpuBufferTask = task((get, work) => {
     };
   });
 }).displayName("leafGpuBufferTask");
+
+export const dirtyVisibleSlotBufferTask = task((get, work) => {
+  const slotUpdate = get(tileSlotUpdateTask);
+  const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
+
+  return work((): SlotIndexBufferState => {
+    const slots = slotUpdate.slots;
+    const dirtyCount = Math.min(
+      slots.telemetry.dirtyVisibleCount,
+      dirtyVisibleSlotStorage.data.length,
+    );
+
+    for (let i = 0; i < dirtyCount; i += 1) {
+      dirtyVisibleSlotStorage.data[i] = slots.dirtyVisibleSlots[i] ?? 0;
+    }
+
+    dirtyVisibleSlotStorage.attribute.needsUpdate = true;
+    dirtyVisibleSlotStorage.node.needsUpdate = true;
+
+    return {
+      ...dirtyVisibleSlotStorage,
+      count: dirtyCount,
+    };
+  });
+}).displayName("dirtyVisibleSlotBufferTask");

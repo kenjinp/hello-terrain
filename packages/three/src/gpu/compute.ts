@@ -10,6 +10,7 @@ import {
   workgroupBarrier,
 } from "three/tsl";
 import type { Node, WebGPURenderer } from "three/webgpu";
+import type { VisibleSlotStorageState } from "../types";
 import { getDeviceComputeLimits } from "./deviceLimits";
 
 export type ComputeStageCallback = (
@@ -29,6 +30,8 @@ export type CompileComputePipelineOptions = {
   bindings?: Node[];
   workgroupSize?: [number, number];
   dispatchMode?: "linear" | "tile-grid";
+  instanceSource?: "active-index" | "dirty-visible-slot";
+  dirtyVisibleSlotStorage?: VisibleSlotStorageState;
   preferSingleKernelWhenPossible?: boolean;
   /**
    * Human-readable name stamped onto the generated compute kernel(s). Three's
@@ -55,6 +58,8 @@ export function compileComputePipeline(
   const preferSingleKernelWhenPossible =
     options?.preferSingleKernelWhenPossible ?? true;
   const label = options?.label;
+  const instanceSource = options?.instanceSource ?? "active-index";
+  const dirtyVisibleSlotStorage = options?.dirtyVisibleSlotStorage;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   const uTotalVertexCount = uniform(0, "uint").setName("uTotalVertexCount");
   let singleKernel: CompiledKernel | undefined;
@@ -94,13 +99,25 @@ export function compileComputePipeline(
     return [x, y];
   }
 
+  function fieldSlotForDispatchIndex(dispatchIndex: Node): Node {
+    if (instanceSource === "dirty-visible-slot") {
+      if (!dirtyVisibleSlotStorage) {
+        throw new Error(
+          "dirtyVisibleSlotStorage is required for dirty-visible-slot compute.",
+        );
+      }
+      return dirtyVisibleSlotStorage.node.element(int(dispatchIndex)).toInt();
+    }
+    return int(dispatchIndex);
+  }
+
   function buildSingleKernel(workgroupSize: [number, number, number]) {
     return Fn(() => {
       bindings?.forEach((b) => b.toVar());
 
       const fWidth = float(width);
       const activeIndex = globalId.z;
-      const nodeIndex = int(activeIndex).toVar();
+      const nodeIndex = fieldSlotForDispatchIndex(activeIndex).toVar();
       const iWidth = int(width);
       const ix = int(globalId.x);
       const iy = int(globalId.y);
@@ -145,7 +162,7 @@ export function compileComputePipeline(
 
         const fWidth = float(width);
         const activeIndex = globalId.z;
-        const nodeIndex = int(activeIndex).toVar();
+        const nodeIndex = fieldSlotForDispatchIndex(activeIndex).toVar();
         const iWidth = int(width);
         const ix = int(globalId.x);
         const iy = int(globalId.y);
@@ -188,7 +205,8 @@ export function compileComputePipeline(
         const iWidth = int(width);
         const verticesPerNode = iWidth.mul(iWidth);
         const linearIndex = int(globalId.x).toVar();
-        const nodeIndex = int(linearIndex.div(verticesPerNode)).toVar();
+        const dispatchIndex = int(linearIndex.div(verticesPerNode)).toVar();
+        const nodeIndex = fieldSlotForDispatchIndex(dispatchIndex).toVar();
         const localIndex = int(linearIndex.mod(verticesPerNode));
         const ix = int(localIndex.mod(iWidth));
         const iy = int(localIndex.div(iWidth));
@@ -202,9 +220,12 @@ export function compileComputePipeline(
           .toVar();
 
         If(inBounds, () => {
+          const globalIndex = int(nodeIndex)
+            .mul(verticesPerNode)
+            .add(localIndex);
           stage(
             nodeIndex,
-            linearIndex,
+            globalIndex,
             localUVCoords,
             localCoordinates,
             texelSize,
@@ -217,6 +238,7 @@ export function compileComputePipeline(
   }
 
   function execute(renderer: WebGPURenderer, instanceCount: number) {
+    if (instanceCount <= 0) return;
     const limits = getDeviceComputeLimits(renderer);
     const canUseSingleKernel =
       preferSingleKernelWhenPossible && canRunSingleKernel(width, limits);

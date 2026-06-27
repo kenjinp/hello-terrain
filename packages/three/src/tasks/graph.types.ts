@@ -26,6 +26,7 @@ import type {
   VisibleSlotStorageState,
 } from "../types";
 import type {
+  SlotIndexBufferState,
   TileIncrementalTelemetryState,
   VisibleLeafSetState,
 } from "./quadtree.task";
@@ -75,6 +76,8 @@ export interface TerrainTasks {
   topology: TaskRef<Topology>;
   leafStorage: TaskRef<LeafStorageState>;
   visibleSlotStorage: TaskRef<VisibleSlotStorageState>;
+  dirtyVisibleSlotStorage: TaskRef<VisibleSlotStorageState>;
+  dirtyVisibleSlotBuffer: TaskRef<SlotIndexBufferState>;
   leafGpuBuffer: TaskRef<LeafGpuBufferState>;
   gpuSpatialIndexStorage: TaskRef<GpuSpatialIndexContext>;
   gpuSpatialIndexUpload: TaskRef<GpuSpatialIndexContext>;

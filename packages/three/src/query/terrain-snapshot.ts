@@ -2,11 +2,12 @@ import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex } from "../quadtree";
 import {
+  type Float32ReadbackRange,
   type ReadbackSlot,
   canDeviceReadback,
   createReadbackSlot,
   disposeReadbackSlot,
-  readStorageBufferInto,
+  readStorageBufferRangesInto,
 } from "../gpu/bufferReadback";
 import {
   buildTileElevationPyramid,
@@ -53,6 +54,16 @@ type RendererReadback = WebGPURenderer & {
   ) => Promise<ArrayBuffer>;
 };
 
+type SnapshotCapture = {
+  activeLeafCount: number;
+  totalElements: number;
+  verticesPerNode: number;
+  elevationScale: number;
+  originY: number;
+  dirtySlots?: ArrayLike<number>;
+  dirtySlotCount?: number;
+};
+
 export function createTerrainSnapshotState(
   maxNodes: number,
   maxLevel: number,
@@ -93,6 +104,124 @@ function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
   target.values.set(source.values);
 }
 
+function collectDirtySlots(
+  dirtySlots: ArrayLike<number> | undefined,
+  dirtySlotCount: number | undefined,
+  activeLeafCount: number,
+): number[] {
+  const count = Math.min(dirtySlotCount ?? 0, dirtySlots?.length ?? 0);
+  const unique = new Set<number>();
+  for (let i = 0; i < count; i += 1) {
+    const slot = Math.floor(dirtySlots?.[i] ?? -1);
+    if (slot >= 0 && slot < activeLeafCount) unique.add(slot);
+  }
+  return [...unique];
+}
+
+function collectVisibleSlots(index: SpatialIndex, activeLeafCount: number): number[] {
+  const slots: number[] = [];
+  const seen = new Set<number>();
+  const stampGen = index.stampGen;
+  for (let slot = 0; slot < index.size; slot += 1) {
+    if (index.stamp[slot] !== stampGen) continue;
+    const leafIndex = index.values[slot] ?? 0;
+    if (leafIndex >= activeLeafCount || seen.has(leafIndex)) continue;
+    slots.push(leafIndex);
+    seen.add(leafIndex);
+  }
+  return slots;
+}
+
+function slotRanges(
+  slots: readonly number[],
+  elementsPerSlot: number,
+): Float32ReadbackRange[] {
+  return slots.map((slot) => ({
+    sourceOffset: slot * elementsPerSlot,
+    targetOffset: slot * elementsPerSlot,
+    elementCount: elementsPerSlot,
+  }));
+}
+
+function recomputeSnapshotRanges(
+  state: TerrainSnapshotState,
+  activeLeafCount: number,
+  elevationScale: number,
+  originY: number,
+): void {
+  if (activeLeafCount <= 0) {
+    state.globalRange = null;
+    buildTileElevationPyramid(
+      state.elevationPyramid,
+      state.frontIndex,
+      state.frontTileBounds,
+      activeLeafCount,
+    );
+    return;
+  }
+
+  let gMin = Infinity;
+  let gMax = -Infinity;
+  let found = false;
+  const stampGen = state.frontIndex.stampGen;
+  for (let slot = 0; slot < state.frontIndex.size; slot += 1) {
+    if (state.frontIndex.stamp[slot] !== stampGen) continue;
+    const leafIndex = state.frontIndex.values[slot] ?? 0;
+    if (leafIndex >= activeLeafCount) continue;
+
+    const rawMin = state.frontTileBounds[leafIndex * 2] ?? 0;
+    const rawMax = state.frontTileBounds[leafIndex * 2 + 1] ?? 0;
+    const a = originY + rawMin * elevationScale;
+    const b = originY + rawMax * elevationScale;
+    gMin = Math.min(gMin, a, b);
+    gMax = Math.max(gMax, a, b);
+    found = true;
+  }
+
+  state.globalRange = found ? { min: gMin, max: gMax } : null;
+  buildTileElevationPyramid(
+    state.elevationPyramid,
+    state.frontIndex,
+    state.frontTileBounds,
+    activeLeafCount,
+  );
+}
+
+function copyCleanVisibleSlotsToBack(
+  state: TerrainSnapshotState,
+  activeLeafCount: number,
+  verticesPerNode: number,
+  dirtySlotSet: ReadonlySet<number>,
+): void {
+  if (!state.hasSnapshot) return;
+
+  const stampGen = state.backIndex.stampGen;
+  const copied = new Set<number>();
+  for (let slot = 0; slot < state.backIndex.size; slot += 1) {
+    if (state.backIndex.stamp[slot] !== stampGen) continue;
+    const leafIndex = state.backIndex.values[slot] ?? 0;
+    if (
+      leafIndex >= activeLeafCount ||
+      dirtySlotSet.has(leafIndex) ||
+      copied.has(leafIndex)
+    ) {
+      continue;
+    }
+
+    const vertexOffset = leafIndex * verticesPerNode;
+    state.backElevation.set(
+      state.frontElevation.subarray(vertexOffset, vertexOffset + verticesPerNode),
+      vertexOffset,
+    );
+
+    const boundsOffset = leafIndex * 2;
+    state.backTileBounds[boundsOffset] = state.frontTileBounds[boundsOffset] ?? 0;
+    state.backTileBounds[boundsOffset + 1] =
+      state.frontTileBounds[boundsOffset + 1] ?? 0;
+    copied.add(leafIndex);
+  }
+}
+
 /**
  * Schedule an async GPU readback of the elevation field (and optionally tile
  * bounds) into the snapshot back-buffers, then swap front/back on completion.
@@ -108,13 +237,7 @@ export function triggerSnapshotReadback(
   attribute: StorageBufferAttribute,
   spatialIndex: SpatialIndex,
   boundsAttribute: StorageBufferAttribute | undefined,
-  captured: {
-    activeLeafCount: number;
-    totalElements: number;
-    verticesPerNode: number;
-    elevationScale: number;
-    originY: number;
-  },
+  captured: SnapshotCapture,
 ): void {
   if (state.readbackPending) return;
   const withReadback = renderer as RendererReadback;
@@ -127,21 +250,15 @@ export function triggerSnapshotReadback(
 
   const { activeLeafCount, totalElements, verticesPerNode, elevationScale, originY } =
     captured;
+  const dirtySlots = collectDirtySlots(
+    captured.dirtySlots,
+    captured.dirtySlotCount,
+    activeLeafCount,
+  );
 
   state.readbackPending = true;
 
-  /** Promote the (already-populated) back buffers to front and recompute range. */
-  const applySnapshot = (boundsFilled: boolean) => {
-    let boundsValid = activeLeafCount === 0;
-    if (boundsFilled) {
-      for (let i = 0; i < activeLeafCount; i += 1) {
-        if ((state.backTileBounds[i * 2 + 1] ?? 0) !== 0) {
-          boundsValid = true;
-          break;
-        }
-      }
-    }
-
+  const promoteBackSnapshot = (boundsFilled: boolean) => {
     const oldFrontElevation = state.frontElevation;
     const oldFrontIndex = state.frontIndex;
     state.frontElevation = state.backElevation;
@@ -149,67 +266,84 @@ export function triggerSnapshotReadback(
     state.frontLeafCount = activeLeafCount;
     state.backElevation = oldFrontElevation;
     state.backIndex = oldFrontIndex;
-    if (boundsFilled && boundsValid) {
+    if (boundsFilled) {
       const oldFrontBounds = state.frontTileBounds;
       state.frontTileBounds = state.backTileBounds;
       state.backTileBounds = oldFrontBounds;
     }
 
-    if (boundsFilled && boundsValid && activeLeafCount > 0) {
-      let gMin = Infinity;
-      let gMax = -Infinity;
-      for (let i = 0; i < activeLeafCount; i++) {
-        const rawMin = state.frontTileBounds[i * 2]!;
-        const rawMax = state.frontTileBounds[i * 2 + 1]!;
-        const a = originY + rawMin * elevationScale;
-        const b = originY + rawMax * elevationScale;
-        gMin = Math.min(gMin, a, b);
-        gMax = Math.max(gMax, a, b);
-      }
-      state.globalRange = { min: gMin, max: gMax };
-      buildTileElevationPyramid(
-        state.elevationPyramid,
-        state.frontIndex,
-        state.frontTileBounds,
-        activeLeafCount,
-      );
+    if (boundsFilled) {
+      recomputeSnapshotRanges(state, activeLeafCount, elevationScale, originY);
     }
 
     state.hasSnapshot = true;
     state.generation += 1;
   };
 
+  const promoteIndexOnlySnapshot = () => {
+    const oldFrontIndex = state.frontIndex;
+    state.frontIndex = state.backIndex;
+    state.backIndex = oldFrontIndex;
+    state.frontLeafCount = activeLeafCount;
+    recomputeSnapshotRanges(state, activeLeafCount, elevationScale, originY);
+    state.hasSnapshot = true;
+    state.generation += 1;
+  };
+
+  const effectiveDirtySlots = state.hasSnapshot
+    ? dirtySlots
+    : collectVisibleSlots(state.backIndex, activeLeafCount);
+
+  if (effectiveDirtySlots.length === 0 && state.hasSnapshot) {
+    promoteIndexOnlySnapshot();
+    state.readbackPending = false;
+    return;
+  }
+
   if (useDeviceReadback) {
     const runDeviceReadback = async (): Promise<void> => {
-      state.backElevation.fill(0);
-      await readStorageBufferInto(
+      const dirtySlotSet = new Set(effectiveDirtySlots);
+      copyCleanVisibleSlotsToBack(
+        state,
+        activeLeafCount,
+        verticesPerNode,
+        dirtySlotSet,
+      );
+
+      const elevationFilled = await readStorageBufferRangesInto(
         renderer,
         attribute,
         state.elevationReadback,
         state.backElevation,
-        activeLeafCount * verticesPerNode,
+        slotRanges(effectiveDirtySlots, verticesPerNode),
         "terrainElevationReadback",
       );
+      if (!elevationFilled) return;
 
       let boundsFilled = false;
       if (boundsAttribute) {
-        state.backTileBounds.fill(0);
-        boundsFilled = await readStorageBufferInto(
+        boundsFilled = await readStorageBufferRangesInto(
           renderer,
           boundsAttribute,
           state.boundsReadback,
           state.backTileBounds,
-          activeLeafCount * 2,
+          slotRanges(effectiveDirtySlots, 2),
           "terrainBoundsReadback",
         );
       }
 
-      applySnapshot(boundsFilled);
+      promoteBackSnapshot(boundsFilled);
     };
 
     runDeviceReadback().finally(() => {
       state.readbackPending = false;
     });
+    return;
+  }
+
+  if (dirtySlots.length === 0 && state.hasSnapshot) {
+    promoteIndexOnlySnapshot();
+    state.readbackPending = false;
     return;
   }
 
@@ -231,7 +365,7 @@ export function triggerSnapshotReadback(
       boundsFilled = true;
     }
 
-    applySnapshot(boundsFilled);
+    promoteBackSnapshot(boundsFilled);
   };
 
   const elevationPromise = withReadback.getArrayBufferAsync!(attribute);

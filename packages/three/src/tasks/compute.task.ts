@@ -4,7 +4,11 @@ import { WebGPURenderer } from "three/webgpu";
 import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
 import { terrainFieldStageTask } from "./terrain-field.task";
 import { innerTileSegments } from "./params";
-import { leafGpuBufferTask } from "./quadtree.task";
+import {
+  dirtyVisibleSlotBufferTask,
+  dirtyVisibleSlotStorageTask,
+  leafGpuBufferTask,
+} from "./quadtree.task";
 
 /**
  * Default compile + execute tasks — uses terrainFieldStageTask as the leaf.
@@ -42,9 +46,12 @@ export function createComputePipelineTasks(
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
     const edgeVertexCount = get(innerTileSegments) + 3;
+    const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
     return work(() =>
       compileComputePipeline(pipeline, edgeVertexCount, {
         preferSingleKernelWhenPossible: false,
+        instanceSource: "dirty-visible-slot",
+        dirtyVisibleSlotStorage,
         label,
       }),
     );
@@ -53,10 +60,11 @@ export function createComputePipelineTasks(
   const execute = task<{ renderer: WebGPURenderer }>(
     (get, work, { resources }) => {
       const { execute: run } = get(compile);
-      const leafState = get(leafGpuBufferTask);
+      get(leafGpuBufferTask);
+      const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
       return work(() =>
-        resources?.renderer
-          ? run(resources.renderer, leafState.activeSlotCount)
+        resources?.renderer && dirtyVisibleSlots.count > 0
+          ? run(resources.renderer, dirtyVisibleSlots.count)
           : () => {},
       );
     },
