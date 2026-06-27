@@ -1,0 +1,55 @@
+---
+title: GPU Agent Lab
+description: Browser-driven WebGPU scenarios for agentic terrain performance work
+---
+
+The GPU agent lab lives at `/agent-gpu-lab`. It creates a real
+`WebGPURenderer`, runs terrain graph scenarios, and returns JSON from
+`window.__helloTerrainAgent.runScenario()`.
+
+## Orbit-To-Surface Stress
+
+The orbit-to-surface stress scenarios replicate an earth-scaled cube-sphere
+camera zoom like the Geomancer app:
+
+- `earth-sphere-orbit-surface-center`
+- `earth-sphere-orbit-surface-edge`
+- `earth-sphere-orbit-surface-corner`
+
+Each uses:
+
+- `createCubeSphereTopology({ radius: 6371000 })`
+- `maxLevel=18`
+- `maxNodes=16384`
+- `innerTileSegments=17`
+- a logarithmic altitude descent from `2000000m` to `200m`
+- frame samples for camera altitude, path progress, leaf count, max leaf level,
+  wall time, GPU compute time, GPU render time, and compute pass dispatch sizes
+
+Run the full center/edge/corner suite:
+
+```sh
+pnpm agent:gpu:orbit-surface
+```
+
+Run one scenario with shorter smoke settings:
+
+```sh
+pnpm agent:gpu -- --scenario earth-sphere-orbit-surface-edge --measure-frames 12 --no-readback
+```
+
+Run a budget check:
+
+```sh
+pnpm agent:gpu -- --scenario earth-sphere-orbit-surface-center --budget-ms 1.5 --no-readback
+```
+
+For local development, start the docs app first:
+
+```sh
+pnpm dev
+```
+
+The runner launches Chrome with WebGPU flags and connects through the Chrome
+DevTools Protocol. Pass `--headed` if you want to watch the run.
+

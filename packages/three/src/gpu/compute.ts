@@ -28,6 +28,7 @@ const WORKGROUP_Y = 16;
 export type CompileComputePipelineOptions = {
   bindings?: Node[];
   workgroupSize?: [number, number];
+  dispatchMode?: "linear" | "tile-grid";
   preferSingleKernelWhenPossible?: boolean;
   /**
    * Human-readable name stamped onto the generated compute kernel(s). Three's
@@ -55,8 +56,10 @@ export function compileComputePipeline(
     options?.preferSingleKernelWhenPossible ?? true;
   const label = options?.label;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
+  const uTotalVertexCount = uniform(0, "uint").setName("uTotalVertexCount");
   let singleKernel: CompiledKernel | undefined;
   const stagedKernelCache = new Map<string, CompiledKernel[]>();
+  const linearStagedKernelCache = new Map<string, CompiledKernel[]>();
 
   function canRunSingleKernel(
     widthValue: number,
@@ -176,11 +179,50 @@ export function compileComputePipeline(
     );
   }
 
+  function buildLinearStagedKernels(workgroupSize: [number, number, number]) {
+    return stages.map((stage, stageIndex) =>
+      Fn(() => {
+        bindings?.forEach((b) => b.toVar());
+
+        const fWidth = float(width);
+        const iWidth = int(width);
+        const verticesPerNode = iWidth.mul(iWidth);
+        const linearIndex = int(globalId.x).toVar();
+        const nodeIndex = int(linearIndex.div(verticesPerNode)).toVar();
+        const localIndex = int(linearIndex.mod(verticesPerNode));
+        const ix = int(localIndex.mod(iWidth));
+        const iy = int(localIndex.div(iWidth));
+
+        const texelSize = vec2(1, 1).div(fWidth);
+        const localCoordinates = vec2(ix.toFloat(), iy.toFloat());
+        const localUVCoords = localCoordinates.div(fWidth);
+
+        const inBounds = uint(linearIndex)
+          .lessThan(uTotalVertexCount)
+          .toVar();
+
+        If(inBounds, () => {
+          stage(
+            nodeIndex,
+            linearIndex,
+            localUVCoords,
+            localCoordinates,
+            texelSize,
+          );
+        });
+      })()
+        .computeKernel(workgroupSize)
+        .setName(label ? `${label}.linearStage${stageIndex}` : `compute.linearStage${stageIndex}`),
+    );
+  }
+
   function execute(renderer: WebGPURenderer, instanceCount: number) {
     const limits = getDeviceComputeLimits(renderer);
     const canUseSingleKernel =
       preferSingleKernelWhenPossible && canRunSingleKernel(width, limits);
     uInstanceCount.value = instanceCount;
+    const verticesPerNode = width * width;
+    uTotalVertexCount.value = instanceCount * verticesPerNode;
 
     if (canUseSingleKernel) {
       if (!singleKernel) {
@@ -190,10 +232,31 @@ export function compileComputePipeline(
       return;
     }
 
+    const dispatchMode = options?.dispatchMode ?? "linear";
     const [workgroupX, workgroupY] = clampWorkgroupToLimits(
       preferredWorkgroup,
       limits,
     );
+    if (dispatchMode === "linear") {
+      const linearWorkgroupX = Math.min(
+        limits.maxWorkgroupSizeX,
+        limits.maxWorkgroupInvocations,
+        Math.max(1, workgroupX * workgroupY),
+      );
+      const cacheKey = `${linearWorkgroupX}`;
+      let stagedKernels = linearStagedKernelCache.get(cacheKey);
+      if (!stagedKernels) {
+        stagedKernels = buildLinearStagedKernels([linearWorkgroupX, 1, 1]);
+        linearStagedKernelCache.set(cacheKey, stagedKernels);
+      }
+
+      const dispatchX = Math.ceil((instanceCount * verticesPerNode) / linearWorkgroupX);
+      for (const kernel of stagedKernels) {
+        renderer.compute(kernel, [dispatchX, 1, 1]);
+      }
+      return;
+    }
+
     const cacheKey = `${workgroupX}x${workgroupY}`;
     let stagedKernels = stagedKernelCache.get(cacheKey);
     if (!stagedKernels) {

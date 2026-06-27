@@ -35,10 +35,15 @@ type AgentScenarioName =
   | "flat-zero-smoke"
   | "earth-sphere-load"
   | "earth-sphere-surface-load"
+  | "earth-sphere-orbit-surface-center"
+  | "earth-sphere-orbit-surface-edge"
+  | "earth-sphere-orbit-surface-corner"
   | "earth-torus-surface-load"
   | "earth-torus-load";
 
 type ScenarioSurfaceKind = "flat" | "sphere" | "torus";
+type ScenarioCameraPathKind = "static" | "orbit-surface";
+type OrbitSurfacePreset = "center" | "edge" | "corner";
 
 type ScenarioSamplePoint =
   | {
@@ -65,6 +70,14 @@ type AgentScenarioInput = {
   measureFrames?: number;
   readback?: boolean;
   timeoutMs?: number;
+  computeBudgetMs?: number;
+  overrides?: AgentScenarioOverrides;
+};
+
+type AgentScenarioOverrides = {
+  maxNodes?: number;
+  innerTileSegments?: number;
+  distanceFactor?: number;
 };
 
 type AgentAssertion = {
@@ -106,6 +119,39 @@ type AgentTerrainLevelStats = {
   max: number | null;
   leavesAtMaxLevel: number;
   counts: Record<string, number>;
+};
+
+type AgentNumberStats = {
+  count: number;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+};
+
+type AgentFrameSample = {
+  frame: number;
+  measured: boolean;
+  phase: "warmup" | "measure";
+  cameraPathKind: ScenarioCameraPathKind;
+  pathProgress: number | null;
+  altitudeMeters: number | null;
+  cameraOrigin: [number, number, number];
+  wallMs: number;
+  leafCount: number;
+  maxLeafLevel: number | null;
+  leavesAtMaxLevel: number;
+  gpu: AgentGpuTimingSample | null;
+};
+
+type AgentFrameSummary = {
+  wallMs: AgentNumberStats;
+  leafCount: AgentNumberStats;
+  maxLeafLevel: AgentNumberStats;
+  gpuComputeMs: AgentNumberStats;
+  gpuTotalMs: AgentNumberStats;
 };
 
 type AgentGpuReadback = {
@@ -155,6 +201,14 @@ type AgentGpuTimingSample = {
   computeQueryCount: number;
   renderFrames: number[];
   computeFrames: number[];
+  computePasses: AgentGpuComputePassTiming[];
+};
+
+type AgentGpuComputePassTiming = {
+  uid: string | null;
+  name: string;
+  dispatchSize: number | [number, number, number] | string | null;
+  durationMs: number | null;
 };
 
 type RendererGpuProfiler = {
@@ -180,6 +234,19 @@ type TimestampQueryPoolLike = {
   timestamps?: { size?: unknown };
 };
 
+type TimestampQueryPoolWithValues = TimestampQueryPoolLike & {
+  timestamps?: Map<string, number>;
+};
+
+type ComputeTraceRenderer = WebGPURenderer & {
+  compute: (computeNodes: unknown, dispatchSize?: unknown) => unknown;
+  backend?: TimestampCapableRenderer["backend"] & {
+    getTimestampUID?: (computeNodes: unknown) => string;
+  };
+};
+
+type PendingComputePass = Omit<AgentGpuComputePassTiming, "durationMs">;
+
 export type AgentScenarioResult = {
   ok: boolean;
   scenario: AgentScenarioName;
@@ -187,11 +254,16 @@ export type AgentScenarioResult = {
   finishedAt: string;
   warmupFrames: number;
   measureFrames: number;
+  computeBudgetMs: number | null;
   gpu: AgentGpuInfo;
   graphReports: RunReport[];
   taskTimings: AgentTaskTiming[];
   cacheHits: AgentCacheHit[];
   taskErrors: { taskId: string; message: string }[];
+  frames: {
+    samples: AgentFrameSample[];
+    summary: AgentFrameSummary;
+  };
   terrain: {
     surfaceKind: ScenarioSurfaceKind;
     topologyKind: string;
@@ -227,6 +299,9 @@ declare global {
 type ScenarioDefinition = {
   name: AgentScenarioName;
   surfaceKind: ScenarioSurfaceKind;
+  cameraPath?: ScenarioCameraPath;
+  defaultWarmupFrames?: number;
+  defaultMeasureFrames?: number;
   topology: Topology | null;
   rootSize: number;
   radius: number;
@@ -241,6 +316,22 @@ type ScenarioDefinition = {
   samplePoints: ScenarioSamplePoint[];
 };
 
+type ScenarioCameraPath = {
+  kind: "orbit-surface";
+  preset: OrbitSurfacePreset;
+  startAltitudeMeters: number;
+  endAltitudeMeters: number;
+  sweepDegrees: number;
+};
+
+type ScenarioCameraFrame = {
+  cameraOrigin: { x: number; y: number; z: number };
+  cameraPathKind: ScenarioCameraPathKind;
+  pathProgress: number | null;
+  altitudeMeters: number | null;
+  phase: "warmup" | "measure";
+};
+
 const DEFAULT_WARMUP_FRAMES = 4;
 const DEFAULT_MEASURE_FRAMES = 8;
 const DEFAULT_TIMEOUT_MS = 2500;
@@ -248,6 +339,11 @@ const DEFAULT_RADIUS = 1000;
 const EARTH_RADIUS_METERS = 6_371_000;
 const TORUS_MAJOR_RADIUS_METERS = EARTH_RADIUS_METERS * 0.72;
 const TORUS_MINOR_RADIUS_METERS = EARTH_RADIUS_METERS - TORUS_MAJOR_RADIUS_METERS;
+const ORBIT_SURFACE_START_ALTITUDE_METERS = 2_000_000;
+const ORBIT_SURFACE_END_ALTITUDE_METERS = 200;
+const ORBIT_SURFACE_SWEEP_DEGREES = 6;
+const ORBIT_SURFACE_WARMUP_FRAMES = 8;
+const ORBIT_SURFACE_MEASURE_FRAMES = 64;
 
 const zeroElevation: ElevationCallback = () => float(0);
 
@@ -271,7 +367,79 @@ const earthTorusElevation: ElevationCallback = ({ worldPosition }) => {
   return aroundMajor.mul(aroundTube).mul(float(0.5)).add(float(0.5));
 };
 
+function orbitSurfaceStartDirection(preset: OrbitSurfacePreset) {
+  if (preset === "edge") return new THREE.Vector3(1, 1, 0.24).normalize();
+  if (preset === "corner") return new THREE.Vector3(1, 1, 1).normalize();
+  return new THREE.Vector3(0.22, 0.41, 1).normalize();
+}
+
+function smooth01(value: number) {
+  const t = Math.min(1, Math.max(0, value));
+  return t * t * (3 - 2 * t);
+}
+
+function interpolateAltitude(
+  startAltitudeMeters: number,
+  endAltitudeMeters: number,
+  progress: number,
+) {
+  const start = Math.max(startAltitudeMeters, 0.01);
+  const end = Math.max(endAltitudeMeters, 0.01);
+  const t = smooth01(progress);
+  return Math.exp(Math.log(start) + (Math.log(end) - Math.log(start)) * t);
+}
+
+function resolveOrbitSurfaceScenarioName(
+  name: AgentScenarioName,
+): OrbitSurfacePreset | null {
+  if (name === "earth-sphere-orbit-surface-edge") return "edge";
+  if (name === "earth-sphere-orbit-surface-corner") return "corner";
+  if (name === "earth-sphere-orbit-surface-center") return "center";
+  return null;
+}
+
+function createOrbitSurfaceScenario(
+  name: AgentScenarioName,
+  preset: OrbitSurfacePreset,
+): ScenarioDefinition {
+  return {
+    name,
+    surfaceKind: "sphere",
+    cameraPath: {
+      kind: "orbit-surface",
+      preset,
+      startAltitudeMeters: ORBIT_SURFACE_START_ALTITUDE_METERS,
+      endAltitudeMeters: ORBIT_SURFACE_END_ALTITUDE_METERS,
+      sweepDegrees: ORBIT_SURFACE_SWEEP_DEGREES,
+    },
+    defaultWarmupFrames: ORBIT_SURFACE_WARMUP_FRAMES,
+    defaultMeasureFrames: ORBIT_SURFACE_MEASURE_FRAMES,
+    topology: createCubeSphereTopology({ radius: EARTH_RADIUS_METERS }),
+    rootSize: EARTH_RADIUS_METERS,
+    radius: EARTH_RADIUS_METERS,
+    maxLevel: 18,
+    maxNodes: 16384,
+    innerTileSegments: 17,
+    skirtScale: 250,
+    elevationScale: 4200,
+    distanceFactor: 16,
+    cameraOrigin: { x: 0, y: 0, z: EARTH_RADIUS_METERS + ORBIT_SURFACE_START_ALTITUDE_METERS },
+    elevation: earthSphereElevation,
+    samplePoints: [
+      { kind: "sphere-lat-long", label: "equator-prime", latitude: 0, longitude: 0 },
+      { kind: "sphere-lat-long", label: "north-mid", latitude: 37, longitude: -122 },
+      { kind: "sphere-lat-long", label: "south-mid", latitude: -34, longitude: 151 },
+      { kind: "sphere-lat-long", label: "near-pole", latitude: 78, longitude: 35 },
+    ],
+  };
+}
+
 function resolveScenario(name: AgentScenarioName): ScenarioDefinition {
+  const orbitSurfacePreset = resolveOrbitSurfaceScenarioName(name);
+  if (orbitSurfacePreset) {
+    return createOrbitSurfaceScenario(name, orbitSurfacePreset);
+  }
+
   if (name === "flat-zero-smoke") {
     return {
       name,
@@ -390,11 +558,108 @@ function resolveScenario(name: AgentScenarioName): ScenarioDefinition {
   };
 }
 
+function positiveIntegerOverride(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : undefined;
+}
+
+function positiveNumberOverride(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? value
+    : undefined;
+}
+
+function applyScenarioOverrides(
+  scenario: ScenarioDefinition,
+  overrides: AgentScenarioOverrides | undefined,
+): ScenarioDefinition {
+  if (!overrides) return scenario;
+
+  return {
+    ...scenario,
+    maxNodes: positiveIntegerOverride(overrides.maxNodes) ?? scenario.maxNodes,
+    innerTileSegments:
+      positiveIntegerOverride(overrides.innerTileSegments) ?? scenario.innerTileSegments,
+    distanceFactor: positiveNumberOverride(overrides.distanceFactor) ?? scenario.distanceFactor,
+  };
+}
+
 function graphTargets() {
   return [terrainTasks.gpuSpatialIndexUpload, terrainTasks.terrainReadback] as const;
 }
 
-function setScenarioParams(graph: TerrainGraph, scenario: ScenarioDefinition, frame: number) {
+function orbitSurfaceCameraFrame(
+  scenario: ScenarioDefinition,
+  frame: number,
+  warmupFrames: number,
+  measureFrames: number,
+): ScenarioCameraFrame | null {
+  const cameraPath = scenario.cameraPath;
+  if (!cameraPath || cameraPath.kind !== "orbit-surface") return null;
+
+  const measuredFrame = Math.max(0, frame - warmupFrames);
+  const progress =
+    frame < warmupFrames ? 0 : Math.min(1, measuredFrame / Math.max(1, measureFrames - 1));
+  const altitudeMeters = interpolateAltitude(
+    cameraPath.startAltitudeMeters,
+    cameraPath.endAltitudeMeters,
+    progress,
+  );
+  const direction = orbitSurfaceStartDirection(cameraPath.preset);
+  const sweepAxis = new THREE.Vector3().crossVectors(direction, new THREE.Vector3(0, 1, 0));
+  if (sweepAxis.lengthSq() < 1e-8) sweepAxis.set(0, 0, 1);
+  direction.applyAxisAngle(
+    sweepAxis.normalize(),
+    THREE.MathUtils.degToRad(cameraPath.sweepDegrees * progress),
+  );
+  const cameraRadius = scenario.radius + altitudeMeters;
+
+  return {
+    cameraOrigin: {
+      x: direction.x * cameraRadius,
+      y: direction.y * cameraRadius,
+      z: direction.z * cameraRadius,
+    },
+    cameraPathKind: cameraPath.kind,
+    pathProgress: progress,
+    altitudeMeters,
+    phase: frame < warmupFrames ? "warmup" : "measure",
+  };
+}
+
+function scenarioCameraFrame(
+  scenario: ScenarioDefinition,
+  frame: number,
+  warmupFrames: number,
+  measureFrames: number,
+): ScenarioCameraFrame {
+  const orbitSurfaceFrame = orbitSurfaceCameraFrame(
+    scenario,
+    frame,
+    warmupFrames,
+    measureFrames,
+  );
+  if (orbitSurfaceFrame) return orbitSurfaceFrame;
+
+  return {
+    cameraOrigin: {
+      x: scenario.cameraOrigin.x + frame * 0.001,
+      y: scenario.cameraOrigin.y,
+      z: scenario.cameraOrigin.z,
+    },
+    cameraPathKind: "static",
+    pathProgress: null,
+    altitudeMeters: null,
+    phase: frame < warmupFrames ? "warmup" : "measure",
+  };
+}
+
+function setScenarioParams(
+  graph: TerrainGraph,
+  scenario: ScenarioDefinition,
+  cameraFrame: ScenarioCameraFrame,
+) {
   graph
     .set(topology, scenario.topology)
     .set(origin, { x: 0, y: 0, z: 0 })
@@ -409,9 +674,9 @@ function setScenarioParams(graph: TerrainGraph, scenario: ScenarioDefinition, fr
     .set(elevationFn as never, (() => scenario.elevation) as never)
     .set(quadtreeUpdate, {
       cameraOrigin: {
-        x: scenario.cameraOrigin.x + frame * 0.001,
-        y: scenario.cameraOrigin.y,
-        z: scenario.cameraOrigin.z,
+        x: cameraFrame.cameraOrigin.x,
+        y: cameraFrame.cameraOrigin.y,
+        z: cameraFrame.cameraOrigin.z,
       },
       mode: "distance",
       distanceFactor: scenario.distanceFactor,
@@ -529,6 +794,47 @@ function summarizeLeafLevels(
   return { min, max, leavesAtMaxLevel, counts };
 }
 
+function percentile(sortedValues: number[], percentileValue: number) {
+  if (sortedValues.length === 0) return null;
+  const index = Math.min(
+    sortedValues.length - 1,
+    Math.max(0, Math.ceil((percentileValue / 100) * sortedValues.length) - 1),
+  );
+  return sortedValues[index] ?? null;
+}
+
+function summarizeNumbers(values: Array<number | null | undefined>): AgentNumberStats {
+  const finiteValues = values.filter(
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  if (finiteValues.length === 0) {
+    return { count: 0, min: null, max: null, mean: null, p50: null, p95: null, p99: null };
+  }
+
+  const sortedValues = [...finiteValues].sort((a, b) => a - b);
+  const total = finiteValues.reduce((sum, value) => sum + value, 0);
+  return {
+    count: finiteValues.length,
+    min: sortedValues[0] ?? null,
+    max: sortedValues[sortedValues.length - 1] ?? null,
+    mean: total / finiteValues.length,
+    p50: percentile(sortedValues, 50),
+    p95: percentile(sortedValues, 95),
+    p99: percentile(sortedValues, 99),
+  };
+}
+
+function summarizeFrames(frames: AgentFrameSample[]): AgentFrameSummary {
+  const measuredFrames = frames.filter((frame) => frame.measured);
+  return {
+    wallMs: summarizeNumbers(measuredFrames.map((frame) => frame.wallMs)),
+    leafCount: summarizeNumbers(measuredFrames.map((frame) => frame.leafCount)),
+    maxLeafLevel: summarizeNumbers(measuredFrames.map((frame) => frame.maxLeafLevel)),
+    gpuComputeMs: summarizeNumbers(measuredFrames.map((frame) => frame.gpu?.computeMs)),
+    gpuTotalMs: summarizeNumbers(measuredFrames.map((frame) => frame.gpu?.totalMs)),
+  };
+}
+
 function boolOrNull(value: unknown) {
   return typeof value === "boolean" ? value : null;
 }
@@ -591,6 +897,65 @@ function timestampFromFreshQueries(raw: number | undefined, queryCount: number) 
   return queryCount > 0 && typeof raw === "number" && Number.isFinite(raw) ? raw : null;
 }
 
+function computeNodeName(computeNodes: unknown) {
+  const list = Array.isArray(computeNodes) ? computeNodes : [computeNodes];
+  const names = list.map((node, index) => {
+    const maybeNode = node as { name?: unknown; id?: unknown };
+    if (typeof maybeNode.name === "string" && maybeNode.name.length > 0) {
+      return maybeNode.name;
+    }
+    if (typeof maybeNode.id === "number") return `compute#${maybeNode.id}`;
+    return `compute[${index}]`;
+  });
+  return names.join("+");
+}
+
+function computeDispatchSize(dispatchSize: unknown): AgentGpuComputePassTiming["dispatchSize"] {
+  if (typeof dispatchSize === "number") return dispatchSize;
+  if (
+    Array.isArray(dispatchSize) &&
+    dispatchSize.length === 3 &&
+    dispatchSize.every((value) => typeof value === "number")
+  ) {
+    return dispatchSize as [number, number, number];
+  }
+  if (dispatchSize == null) return null;
+  return "indirect";
+}
+
+function traceRendererCompute(renderer: WebGPURenderer, passes: PendingComputePass[]) {
+  const traced = renderer as ComputeTraceRenderer;
+  const originalCompute = traced.compute.bind(renderer);
+
+  traced.compute = ((computeNodes: unknown, dispatchSize?: unknown) => {
+    const result = originalCompute(computeNodes, dispatchSize);
+    const uid = traced.backend?.getTimestampUID?.(computeNodes);
+    passes.push({
+      uid: typeof uid === "string" ? uid : null,
+      name: computeNodeName(computeNodes),
+      dispatchSize: computeDispatchSize(dispatchSize),
+    });
+    return result;
+  }) as ComputeTraceRenderer["compute"];
+
+  return () => {
+    traced.compute = originalCompute;
+  };
+}
+
+function resolveComputePassTimings(
+  renderer: WebGPURenderer,
+  passes: PendingComputePass[],
+): AgentGpuComputePassTiming[] {
+  const pool = getTimestampCapableRenderer(renderer).backend?.timestampQueryPool
+    ?.compute as TimestampQueryPoolWithValues | null | undefined;
+  const timestamps = pool?.timestamps;
+  return passes.map((pass) => ({
+    ...pass,
+    durationMs: pass.uid ? numberOrNull(timestamps?.get(pass.uid)) : null,
+  }));
+}
+
 function createRendererGpuProfiler(renderer: WebGPURenderer): RendererGpuProfiler {
   const gpu = getTimestampCapableRenderer(renderer);
 
@@ -628,6 +993,7 @@ function createRendererGpuProfiler(renderer: WebGPURenderer): RendererGpuProfile
         computeQueryCount,
         renderFrames: renderAfter.frames,
         computeFrames: computeAfter.frames,
+        computePasses: [],
       };
     },
   };
@@ -863,7 +1229,44 @@ function createAssertions(result: Omit<AgentScenarioResult, "ok" | "assertions">
       pass: result.taskErrors.length === 0,
       detail: result.taskErrors.map((error) => error.message).join("; "),
     },
+    {
+      name: "frame-samples-present",
+      pass: result.frames.samples.length === result.warmupFrames + result.measureFrames,
+      detail: `samples=${result.frames.samples.length} expected=${
+        result.warmupFrames + result.measureFrames
+      }`,
+    },
   ];
+
+  const orbitSurfaceFrames = result.frames.samples.filter(
+    (frame) => frame.measured && frame.cameraPathKind === "orbit-surface",
+  );
+  if (orbitSurfaceFrames.length > 0) {
+    const firstFrame = orbitSurfaceFrames[0]!;
+    const lastFrame = orbitSurfaceFrames[orbitSurfaceFrames.length - 1]!;
+    assertions.push({
+      name: "orbit-surface-path-complete",
+      pass:
+        lastFrame.pathProgress === 1 &&
+        typeof firstFrame.altitudeMeters === "number" &&
+        typeof lastFrame.altitudeMeters === "number" &&
+        lastFrame.altitudeMeters < firstFrame.altitudeMeters,
+      detail: `firstAltitude=${firstFrame.altitudeMeters} lastAltitude=${lastFrame.altitudeMeters} lastProgress=${lastFrame.pathProgress}`,
+    });
+  }
+
+  if (result.computeBudgetMs !== null) {
+    const computeSamples = result.gpuTimings.samples
+      .map((sample) => sample.computeMs)
+      .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    const maxComputeMs =
+      computeSamples.length > 0 ? Math.max(...computeSamples) : Number.POSITIVE_INFINITY;
+    assertions.push({
+      name: "compute-budget",
+      pass: maxComputeMs <= result.computeBudgetMs,
+      detail: `maxComputeMs=${Number.isFinite(maxComputeMs) ? maxComputeMs.toFixed(6) : "unavailable"} budgetMs=${result.computeBudgetMs}`,
+    });
+  }
 
   return assertions;
 }
@@ -909,17 +1312,24 @@ async function runAgentScenario(
   renderer: WebGPURenderer,
   input: AgentScenarioInput = {},
 ): Promise<AgentScenarioResult> {
-  const scenario = resolveScenario(input.scenario ?? "flat-sine-smoke");
-  const warmupFrames = input.warmupFrames ?? DEFAULT_WARMUP_FRAMES;
-  const measureFrames = input.measureFrames ?? DEFAULT_MEASURE_FRAMES;
+  const scenario = applyScenarioOverrides(
+    resolveScenario(input.scenario ?? "flat-sine-smoke"),
+    input.overrides,
+  );
+  const warmupFrames = input.warmupFrames ?? scenario.defaultWarmupFrames ?? DEFAULT_WARMUP_FRAMES;
+  const measureFrames =
+    input.measureFrames ?? scenario.defaultMeasureFrames ?? DEFAULT_MEASURE_FRAMES;
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const computeBudgetMs = positiveNumberOverride(input.computeBudgetMs) ?? null;
   const profiler = createRendererGpuProfiler(renderer);
   const timestampQueryEnabled = profiler.enable();
   const graph = terrainGraph();
   const graphReports: RunReport[] = [];
   const measureEvents: GraphEvent[] = [];
   const gpuTimingSamples: AgentGpuTimingSample[] = [];
+  const frameSamples: AgentFrameSample[] = [];
   const startedAt = new Date().toISOString();
+  const waitForReadbackEachFrame = scenario.cameraPath?.kind !== "orbit-surface";
   let recordEvents = false;
 
   const unsubscribe = graph.on("task:*", (event) => {
@@ -930,17 +1340,58 @@ async function runAgentScenario(
     const totalFrames = warmupFrames + measureFrames;
     for (let frame = 0; frame < totalFrames; frame += 1) {
       recordEvents = frame >= warmupFrames;
+      const frameStartedAt = performance.now();
+      const cameraFrame = scenarioCameraFrame(scenario, frame, warmupFrames, measureFrames);
       const queryGeneration = graph.peek(terrainTasks.terrainQuery)?.cache.generation ?? -1;
-      setScenarioParams(graph, scenario, frame);
-      const report = await graph.run({
-        targets: graphTargets(),
-        laneConcurrency: { gpu: 1 },
-        resources: { renderer },
-      });
+      setScenarioParams(graph, scenario, cameraFrame);
+      const pendingComputePasses: PendingComputePass[] = [];
+      const restoreCompute = traceRendererCompute(renderer, pendingComputePasses);
+      const report = await graph
+        .run({
+          targets: graphTargets(),
+          laneConcurrency: { gpu: 1 },
+          resources: { renderer },
+        })
+        .finally(restoreCompute);
+      const graphRunWallMs = performance.now() - frameStartedAt;
       graphReports.push(report);
-      await waitForQueryGeneration(graph, queryGeneration, timeoutMs);
+      if (waitForReadbackEachFrame) {
+        await waitForQueryGeneration(graph, queryGeneration, timeoutMs);
+      }
       const timing = await profiler.sample();
-      if (frame >= warmupFrames && timing) gpuTimingSamples.push(timing);
+      const timingWithPasses = timing
+        ? {
+            ...timing,
+            computePasses: resolveComputePassTimings(renderer, pendingComputePasses),
+          }
+        : null;
+      if (frame >= warmupFrames && timing) {
+        gpuTimingSamples.push(timingWithPasses!);
+      }
+      const frameLeafSet = graph.get(terrainTasks.quadtreeUpdate);
+      const frameLevelStats = summarizeLeafLevels(frameLeafSet, scenario.maxLevel);
+      frameSamples.push({
+        frame,
+        measured: frame >= warmupFrames,
+        phase: cameraFrame.phase,
+        cameraPathKind: cameraFrame.cameraPathKind,
+        pathProgress: cameraFrame.pathProgress,
+        altitudeMeters: cameraFrame.altitudeMeters,
+        cameraOrigin: [
+          cameraFrame.cameraOrigin.x,
+          cameraFrame.cameraOrigin.y,
+          cameraFrame.cameraOrigin.z,
+        ],
+        wallMs: graphRunWallMs,
+        leafCount: frameLeafSet.count,
+        maxLeafLevel: frameLevelStats.max,
+        leavesAtMaxLevel: frameLevelStats.leavesAtMaxLevel,
+        gpu: timingWithPasses,
+      });
+    }
+
+    if (!waitForReadbackEachFrame) {
+      await waitForQueryGeneration(graph, -1, timeoutMs);
     }
 
     const leafSet = graph.get(terrainTasks.quadtreeUpdate);
@@ -961,11 +1412,16 @@ async function runAgentScenario(
       finishedAt: new Date().toISOString(),
       warmupFrames,
       measureFrames,
+      computeBudgetMs,
       gpu: await collectGpuInfo(renderer, timestampQueryEnabled),
       graphReports,
       taskTimings: timingSummary.taskTimings,
       cacheHits: timingSummary.cacheHits,
       taskErrors: timingSummary.taskErrors,
+      frames: {
+        samples: frameSamples,
+        summary: summarizeFrames(frameSamples),
+      },
       terrain: {
         surfaceKind: scenario.surfaceKind,
         topologyKind: scenario.topology?.projection.kind ?? "flat",

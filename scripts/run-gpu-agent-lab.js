@@ -1,25 +1,35 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 const DEFAULT_URL = "http://127.0.0.1:3000/agent-gpu-lab";
 const DEFAULT_PORT = 9222;
+const ORBIT_SURFACE_SCENARIOS = [
+  "earth-sphere-orbit-surface-center",
+  "earth-sphere-orbit-surface-edge",
+  "earth-sphere-orbit-surface-corner",
+];
 
 function parseArgs(argv) {
   const args = {
     url: DEFAULT_URL,
     scenario: "flat-sine-smoke",
-    warmupFrames: 4,
-    measureFrames: 8,
+    warmupFrames: undefined,
+    measureFrames: undefined,
     readback: true,
     timeoutMs: 2500,
+    computeBudgetMs: undefined,
+    overrides: {},
+    scenarios: null,
     port: DEFAULT_PORT,
     headless: true,
     launch: true,
     chrome: process.env.HELLO_TERRAIN_CHROME ?? "",
+    output: "",
+    summary: false,
   };
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -30,7 +40,10 @@ function parseArgs(argv) {
       i += 1;
     } else if (arg === "--scenario" && next) {
       args.scenario = next;
+      args.scenarios = null;
       i += 1;
+    } else if (arg === "--orbit-surface-suite") {
+      args.scenarios = ORBIT_SURFACE_SCENARIOS;
     } else if (arg === "--warmup-frames" && next) {
       args.warmupFrames = Number(next);
       i += 1;
@@ -40,12 +53,29 @@ function parseArgs(argv) {
     } else if (arg === "--timeout-ms" && next) {
       args.timeoutMs = Number(next);
       i += 1;
+    } else if (arg === "--budget-ms" && next) {
+      args.computeBudgetMs = Number(next);
+      i += 1;
+    } else if (arg === "--max-nodes" && next) {
+      args.overrides.maxNodes = Number(next);
+      i += 1;
+    } else if (arg === "--inner-tile-segments" && next) {
+      args.overrides.innerTileSegments = Number(next);
+      i += 1;
+    } else if (arg === "--distance-factor" && next) {
+      args.overrides.distanceFactor = Number(next);
+      i += 1;
     } else if (arg === "--port" && next) {
       args.port = Number(next);
       i += 1;
     } else if (arg === "--chrome" && next) {
       args.chrome = next;
       i += 1;
+    } else if (arg === "--output" && next) {
+      args.output = next;
+      i += 1;
+    } else if (arg === "--summary") {
+      args.summary = true;
     } else if (arg === "--no-readback") {
       args.readback = false;
     } else if (arg === "--headed") {
@@ -70,13 +100,24 @@ Options:
   --url <url>                GPU lab URL (default: ${DEFAULT_URL})
   --scenario <name>          Scenario name: flat-sine-smoke, flat-zero-smoke,
                              earth-sphere-load, earth-sphere-surface-load,
+                             earth-sphere-orbit-surface-center,
+                             earth-sphere-orbit-surface-edge,
+                             earth-sphere-orbit-surface-corner,
                              earth-torus-load, earth-torus-surface-load
                              (default: flat-sine-smoke)
+  --orbit-surface-suite      Run center, edge, and corner orbit-to-surface stress scenarios
   --warmup-frames <n>        Warmup graph runs before measuring
-  --measure-frames <n>       Measured graph runs
+                             (default: scenario-specific)
+  --measure-frames <n>       Measured graph runs (default: scenario-specific)
   --timeout-ms <n>           Readback wait timeout per frame
+  --budget-ms <n>            Assert measured computeMs samples are <= this budget
+  --max-nodes <n>            Override scenario maxNodes
+  --inner-tile-segments <n>  Override scenario inner tile segment count
+  --distance-factor <n>      Override scenario quadtree distance factor
   --port <n>                 Chrome remote debugging port
   --chrome <path>            Chrome/Chromium executable
+  --output <path>            Write the full JSON result to a file
+  --summary                  Print a compact JSON summary instead of the full result
   --headed                   Launch a visible browser
   --no-launch                Connect to an already-running browser
   --no-readback              Skip direct GPU buffer readback hashes
@@ -277,6 +318,117 @@ async function evaluate(client, expression, timeoutMs = 30000) {
   return result.result.value;
 }
 
+function roundMs(value) {
+  return typeof value === "number" ? Math.round(value * 1000) / 1000 : value;
+}
+
+function summarizeStats(stats) {
+  if (!stats || typeof stats !== "object") return null;
+  return {
+    count: stats.count,
+    min: roundMs(stats.min),
+    max: roundMs(stats.max),
+    mean: roundMs(stats.mean),
+    p50: roundMs(stats.p50),
+    p95: roundMs(stats.p95),
+    p99: roundMs(stats.p99),
+  };
+}
+
+function summarizeComputePasses(result) {
+  const samples = Array.isArray(result.frames?.samples) ? result.frames.samples : [];
+  const groups = new Map();
+
+  for (const frame of samples) {
+    if (!frame?.measured || !Array.isArray(frame.gpu?.computePasses)) continue;
+    for (const pass of frame.gpu.computePasses) {
+      const name = pass.name ?? "unknown";
+      const group =
+        groups.get(name) ??
+        {
+          name,
+          count: 0,
+          totalMs: 0,
+          maxMs: 0,
+          dispatchSize: pass.dispatchSize ?? null,
+        };
+      const durationMs = typeof pass.durationMs === "number" ? pass.durationMs : 0;
+      group.count += 1;
+      group.totalMs += durationMs;
+      group.maxMs = Math.max(group.maxMs, durationMs);
+      group.dispatchSize = pass.dispatchSize ?? group.dispatchSize;
+      groups.set(name, group);
+    }
+  }
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      name: group.name,
+      count: group.count,
+      totalMs: roundMs(group.totalMs),
+      meanMs: roundMs(group.totalMs / Math.max(1, group.count)),
+      maxMs: roundMs(group.maxMs),
+      dispatchSize: group.dispatchSize,
+    }))
+    .sort((a, b) => b.totalMs - a.totalMs);
+}
+
+function summarizeResult(result) {
+  const innerTileSegments = result.terrain?.innerTileSegments;
+  const tileVertexCount =
+    typeof innerTileSegments === "number" ? innerTileSegments + 3 : null;
+  const verticesPerTile =
+    typeof tileVertexCount === "number" ? tileVertexCount * tileVertexCount : null;
+  const leafCount =
+    typeof result.terrain?.leafCount === "number" ? result.terrain.leafCount : null;
+  const finalVertexCount =
+    typeof leafCount === "number" && typeof verticesPerTile === "number"
+      ? leafCount * verticesPerTile
+      : null;
+  const failedAssertions = Array.isArray(result.assertions)
+    ? result.assertions.filter((assertion) => !assertion.pass)
+    : [];
+
+  return {
+    scenario: result.scenario,
+    ok: result.ok,
+    measuredFrames: result.measureFrames,
+    terrain: {
+      surfaceKind: result.terrain?.surfaceKind,
+      topologyKind: result.terrain?.topologyKind,
+      radius: result.terrain?.radius,
+      leafCount,
+      leafCapacity: result.terrain?.leafCapacity,
+      maxLevel: result.terrain?.maxLevel,
+      finalMaxLeafLevel: result.terrain?.levelStats?.max,
+      finalLeavesAtMaxLevel: result.terrain?.levelStats?.leavesAtMaxLevel,
+      innerTileSegments,
+      tileVertexCount,
+      verticesPerTile,
+      finalVertexCount,
+    },
+    frames: {
+      wallMs: summarizeStats(result.frames?.summary?.wallMs),
+      leafCount: summarizeStats(result.frames?.summary?.leafCount),
+      maxLeafLevel: summarizeStats(result.frames?.summary?.maxLeafLevel),
+      gpuComputeMs: summarizeStats(result.frames?.summary?.gpuComputeMs),
+      gpuTotalMs: summarizeStats(result.frames?.summary?.gpuTotalMs),
+    },
+    computePasses: summarizeComputePasses(result),
+    failedAssertions,
+  };
+}
+
+function summarizeOutput(output) {
+  if (Array.isArray(output.results)) {
+    return {
+      ok: output.ok,
+      scenarios: output.results.map((result) => summarizeResult(result)),
+    };
+  }
+  return summarizeResult(output);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   let browser = null;
@@ -300,20 +452,37 @@ async function main() {
       35000,
     );
 
-    const scenarioInput = {
-      scenario: args.scenario,
-      warmupFrames: args.warmupFrames,
-      measureFrames: args.measureFrames,
-      readback: args.readback,
-      timeoutMs: args.timeoutMs,
-    };
-    const result = await evaluate(
-      client,
-      `window.__helloTerrainAgent.runScenario(${JSON.stringify(scenarioInput)})`,
-      120000,
-    );
-    console.log(JSON.stringify(result, null, 2));
-    process.exitCode = result.ok ? 0 : 1;
+    const scenarios = args.scenarios ?? [args.scenario];
+    const results = [];
+    for (const scenario of scenarios) {
+      const scenarioInput = {
+        scenario,
+        warmupFrames: args.warmupFrames,
+        measureFrames: args.measureFrames,
+        readback: args.readback,
+        timeoutMs: args.timeoutMs,
+        computeBudgetMs: args.computeBudgetMs,
+        overrides: args.overrides,
+      };
+      const result = await evaluate(
+        client,
+        `window.__helloTerrainAgent.runScenario(${JSON.stringify(scenarioInput)})`,
+        120000,
+      );
+      results.push(result);
+    }
+
+    const output =
+      results.length === 1
+        ? results[0]
+        : {
+            ok: results.every((result) => result.ok),
+            scenarios: results.map((result) => result.scenario),
+            results,
+          };
+    if (args.output) await writeFile(args.output, `${JSON.stringify(output, null, 2)}\n`);
+    console.log(JSON.stringify(args.summary ? summarizeOutput(output) : output, null, 2));
+    process.exitCode = output.ok ? 0 : 1;
   } finally {
     try {
       if (client && browser) await client.send("Browser.close");
