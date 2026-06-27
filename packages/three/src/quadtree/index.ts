@@ -3,6 +3,8 @@ export * from "./state";
 export * from "./update";
 export * from "./leafIndex";
 export * from "./seams";
+export * from "./tileSlotCache";
+export * from "./visibility";
 export * from "./topology/flat";
 export * from "./topology/infiniteFlat";
 export * from "./topology/cubeSphere";
@@ -16,4 +18,3 @@ export {
   positionToTorusParams,
   type TorusSurfaceParams,
 } from "./topology/torusInverse";
-

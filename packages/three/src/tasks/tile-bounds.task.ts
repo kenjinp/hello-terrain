@@ -110,8 +110,8 @@ export const tileBoundsReductionTask = task<{ renderer: WebGPURenderer }>(
     const leafState = get(leafGpuBufferTask);
 
     return work((): TileBoundsContext => {
-      if (resources?.renderer && leafState.count > 0) {
-        resources.renderer.compute(boundsContext.kernel, [1, 1, leafState.count]);
+      if (resources?.renderer && leafState.activeSlotCount > 0) {
+        resources.renderer.compute(boundsContext.kernel, [1, 1, leafState.activeSlotCount]);
       }
       return boundsContext;
     });

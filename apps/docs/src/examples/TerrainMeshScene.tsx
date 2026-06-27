@@ -21,6 +21,7 @@ import {
   TerrainGraph,
   TerrainMesh,
   updateUniformsTask,
+  writeUpdateParamsFromCamera,
   type UpdateParams,
 } from "@hello-terrain/three";
 import { graph } from "@hello-terrain/work";
@@ -113,7 +114,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
 
   useEffect(() => {
     return g.on("run:finish", () => {
-      const leafSet = g.peek(quadtreeUpdateTask);
+      const leafSet = g.peek(leafGpuBufferTask);
       const lastCount = meshRef.current?.count || 0;
       if (leafSet?.count && leafSet?.count !== lastCount && meshRef.current) {
         meshRef.current.count = leafSet.count;
@@ -139,10 +140,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
       cameraHysteresis * cameraHysteresis
     ) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
+        return writeUpdateParamsFromCamera(prev, camera);
       });
       lastCameraRef.current.copy(camera.position);
     }

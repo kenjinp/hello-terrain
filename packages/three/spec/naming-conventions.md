@@ -35,9 +35,10 @@ Prefer names that reflect **what data is** and **how it is stored**.
   the geometric "terrain surface" and with texturing.
 - Use `SurfaceProjection` (with a `kind` of `flat` | `cubeSphere` | `torus` | …)
   for the injected strategy that assembles GPU positions/normals and powers the
-  CPU query/raycast/LOD. The pipeline must never branch on a projection kind —
-  call into the projection's `gpu` / `cpu` hooks instead. `ProjectionKind` is the
-  identifier type and is for debugging/telemetry only.
+  CPU query/raycast/visibility/LOD. The pipeline must never branch on a
+  projection kind — call into the projection's `gpu` / `cpu` hooks instead.
+  `ProjectionKind` is the identifier type and is for debugging, telemetry, and
+  cache identity only.
 - Preferred examples:
   - `Topology` (the adapter type), `SurfaceProjection`, `ProjectionKind`
   - `createFlatTopology`, `createInfiniteFlatTopology`, `createCubeSphereTopology`,

@@ -56,7 +56,7 @@ export function createComputePipelineTasks(
       const leafState = get(leafGpuBufferTask);
       return work(() =>
         resources?.renderer
-          ? run(resources.renderer, leafState.count)
+          ? run(resources.renderer, leafState.activeSlotCount)
           : () => {},
       );
     },

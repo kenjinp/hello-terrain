@@ -23,7 +23,11 @@ import {
   leafStorageTask,
   quadtreeConfigTask,
   quadtreeUpdateTask,
+  tileSlotUpdateTask,
+  tileVisibilityTask,
   topologyTask,
+  visibleLeafSetTask,
+  visibleSlotStorageTask,
 } from "./quadtree.task";
 import {
   createUniformsTask,
@@ -43,7 +47,11 @@ export const terrainTasks = {
   instanceId: instanceIdTask,
   quadtreeConfig: quadtreeConfigTask,
   quadtreeUpdate: quadtreeUpdateTask,
+  tileVisibility: tileVisibilityTask,
+  visibleLeafSet: visibleLeafSetTask,
+  tileSlotUpdate: tileSlotUpdateTask,
   leafStorage: leafStorageTask,
+  visibleSlotStorage: visibleSlotStorageTask,
   topology: topologyTask,
   leafGpuBuffer: leafGpuBufferTask,
   gpuSpatialIndexStorage: gpuSpatialIndexStorageTask,

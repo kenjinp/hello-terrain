@@ -19,9 +19,13 @@ import type {
   TerrainSphereQuery,
   TerrainSurfaceQuery,
 } from "../query/types";
-import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type {
+  LeafStorageState,
+  TerrainUniformsContext,
+  VisibleSlotStorageState,
+} from "../types";
 
-/** Stable projection identifier — for debugging/telemetry only, never switched on. */
+/** Stable projection identifier for diagnostics/telemetry/cache identity only. */
 export type ProjectionKind = "flat" | "cubeSphere" | "torus" | (string & {});
 
 export interface Vec3Like {
@@ -34,6 +38,7 @@ export interface Vec3Like {
 
 export interface RenderVertexPositionContext {
   leafStorage: LeafStorageState;
+  visibleSlotStorage?: VisibleSlotStorageState;
   uniforms: TerrainUniformsContext;
   terrainFieldStorage?: TerrainFieldStorage;
 }
@@ -113,6 +118,19 @@ export interface ProjectionRaycastContext {
   config: TerrainRaycastConfig;
 }
 
+export interface TileBoundsLike {
+  cx: number;
+  cy: number;
+  cz: number;
+  r: number;
+}
+
+export interface ProjectionHorizonContext {
+  cameraOrigin: Vec3Like;
+  bounds: TileBoundsLike;
+  guardBandFactor: number;
+}
+
 export interface RuntimeQueries {
   query: TerrainQuery;
   /** Generic surface query (position/uv keyed); `null` on flat surfaces. */
@@ -134,12 +152,17 @@ export interface SurfaceProjectionCpu {
    * `null` when the ray misses the surface or the query snapshot isn't ready.
    */
   raycast(ctx: ProjectionRaycastContext): TerrainRaycastResult | null;
+  /**
+   * Optional conservative horizon/shape occlusion. Shared visibility code must
+   * call this hook and never branch on `SurfaceProjection.kind`.
+   */
+  isTileBehindHorizon?(ctx: ProjectionHorizonContext): boolean;
 }
 
 // ── The injected strategy ──────────────────────────────────────────────────
 
 export interface SurfaceProjection {
-  /** Identifier; never switched on internally. */
+  /** Identifier for diagnostics/telemetry/cache identity; never switched on internally. */
   readonly kind: ProjectionKind;
   /** Representative radius (bounds/uniform helper); undefined for flat. */
   readonly radius?: number;

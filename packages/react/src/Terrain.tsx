@@ -37,7 +37,7 @@ function useTerrainMesh(
 }
 
 function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
-  const leaves = terrain.graph.peek(terrainTasks.quadtreeUpdate);
+  const leaves = terrain.graph.peek(terrainTasks.visibleLeafSet)?.leaves;
   if (leaves && mesh.count !== leaves.count) {
     mesh.count = leaves.count;
     mesh.instanceMatrix.needsUpdate = true;

@@ -31,6 +31,7 @@ import type {
   CpuSurfaceOps,
   FieldNormalContext,
   FieldNormalFn,
+  ProjectionHorizonContext,
   ProjectionRaycastContext,
   RenderVertexPositionContext,
   SurfaceKey,
@@ -88,6 +89,27 @@ export function createCubeSphereProjection(
   const posRight: Vec3Mutable = [0, 0, 0];
   const posUp: Vec3Mutable = [0, 0, 0];
   const posDown: Vec3Mutable = [0, 0, 0];
+
+  const isTileBehindHorizon = (ctx: ProjectionHorizonContext): boolean => {
+    const cameraX = ctx.cameraOrigin.x - center.x;
+    const cameraY = ctx.cameraOrigin.y - center.y;
+    const cameraZ = ctx.cameraOrigin.z - center.z;
+    const cameraDistance = Math.hypot(cameraX, cameraY, cameraZ);
+    if (cameraDistance <= radius) return false;
+
+    const invCameraDistance = 1 / cameraDistance;
+    const dirX = cameraX * invCameraDistance;
+    const dirY = cameraY * invCameraDistance;
+    const dirZ = cameraZ * invCameraDistance;
+
+    const tileX = ctx.cameraOrigin.x + ctx.bounds.cx - center.x;
+    const tileY = ctx.cameraOrigin.y + ctx.bounds.cy - center.y;
+    const tileZ = ctx.cameraOrigin.z + ctx.bounds.cz - center.z;
+    const projection = tileX * dirX + tileY * dirY + tileZ * dirZ;
+    const maxTileProjection = projection + ctx.bounds.r * ctx.guardBandFactor;
+
+    return cameraDistance * maxTileProjection < radius * radius;
+  };
 
   const neighborPos = (face: number, u: number, v: number, height: number, out: Vec3Mutable) => {
     faceUVToCube(face, u, v, cubeScratch);
@@ -192,6 +214,9 @@ export function createCubeSphereProjection(
               : ctx.uniforms.uRadius.toVar().add(displacement);
             return ctx.uniforms.uRootOrigin.toVar().add(dir.mul(r));
           },
+          1,
+          1,
+          ctx.visibleSlotStorage,
         );
       },
       createTileComputeParts: createSphereTileComputeParts,
@@ -247,6 +272,7 @@ export function createCubeSphereProjection(
         };
         return cubeSphereRaycast(ctx.sphereQuery, ctx.ray, params, ctx.options);
       },
+      isTileBehindHorizon,
     },
   };
 }

@@ -27,6 +27,7 @@ import {
   type TerrainGraph,
   type TerrainTileBounds,
   type UpdateParams,
+  writeUpdateParamsFromCamera,
 } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
@@ -141,7 +142,7 @@ function TileBoundsViz({ g, currentRootSize }: { g: TerrainGraph; currentRootSiz
   const geo = useMemo(makeBoxGeo, []);
 
   useFrame(() => {
-    const leafSet = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
+    const leafSet = g.peek(terrainTasks.visibleLeafSet)?.leaves as LeafSet | undefined;
     const terrainQuery = g.peek(terrainTasks.terrainQuery)?.query;
 
     if (!leafSet || !terrainQuery) {
@@ -279,10 +280,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
   useFrame(async ({ camera, gl }) => {
     if (lastCameraRef.current.distanceToSquared(camera.position) >= 0.05 * 0.05) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
+        return writeUpdateParamsFromCamera(prev, camera);
       });
       lastCameraRef.current.copy(camera.position);
     }
@@ -294,7 +292,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
     const mesh = meshRef.current;
     if (!mesh) return;
 
-    const leaves = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
+    const leaves = g.peek(terrainTasks.visibleLeafSet)?.leaves as LeafSet | undefined;
     if (leaves && mesh.count !== leaves.count) {
       mesh.count = leaves.count;
       mesh.instanceMatrix.needsUpdate = true;

@@ -6,6 +6,7 @@
     "index",
     "quadtree-2d",
     "infinite-flat",
+    "frustum-culling",
     "cube-sphere",
     "torus",
     "raycast-character-controller",

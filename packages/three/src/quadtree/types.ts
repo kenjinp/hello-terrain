@@ -43,8 +43,8 @@ export type Topology = {
 
   /**
    * Injected surface projection strategy. Encapsulates the GPU position/normal
-   * assembly and the CPU query/raycast/LOD behavior for this topology, so the
-   * pipeline never branches on a projection kind.
+   * assembly and the CPU query/raycast/visibility/LOD behavior for this
+   * topology, so the pipeline never branches on a projection kind.
    */
   projection: SurfaceProjection;
 
@@ -156,8 +156,18 @@ export type LodCriteria =
  */
 export type TileElevationRangeFn = (tile: TileId, out: ElevationRangeOut) => boolean;
 
+/**
+ * Column-major world-to-clip matrix, matching Three.js `Matrix4.elements`.
+ * Stored as plain mutable data so culling code does not depend on Three.
+ */
+export type ViewProjectionMatrix = {
+  readonly length: number;
+  [index: number]: number;
+};
+
 export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
+  viewProjectionMatrix?: ViewProjectionMatrix;
 
   tileElevationRange?: TileElevationRangeFn;
 } & LodCriteria;
@@ -166,4 +176,3 @@ export type QuadtreeConfig = {
   maxNodes: number;
   maxLevel: number;
 };
-

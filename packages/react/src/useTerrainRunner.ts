@@ -1,4 +1,8 @@
-import { quadtreeUpdate, type TerrainGraph } from "@hello-terrain/three";
+import {
+  quadtreeUpdate,
+  writeUpdateParamsFromCamera,
+  type TerrainGraph,
+} from "@hello-terrain/three";
 import { useFrame, type RootState } from "@react-three/fiber";
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { Vector3 } from "three";
@@ -94,10 +98,7 @@ export function useTerrainRunner({
         lastOrigin.distanceToSquared(nextOrigin) >= hysteresisSq
       ) {
         activeGraph.set(quadtreeUpdate, (prev) => {
-          prev.cameraOrigin.x = nextOrigin.x;
-          prev.cameraOrigin.y = nextOrigin.y;
-          prev.cameraOrigin.z = nextOrigin.z;
-          return prev;
+          return writeUpdateParamsFromCamera(prev, state.camera, nextOrigin);
         });
         lastCameraOriginRef.current = nextOrigin;
       }

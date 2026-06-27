@@ -225,7 +225,7 @@ The elevation function will be ran when it's upstream dependencies change, which
  2. configuration params such as `maxNodes` or `rootSize`, for example.
  3. your `elevationFn` itself changes.
 
-You should update the `quadtreeUpdate` function whenever your camera changes position. 
+You should update the `quadtreeUpdate` function whenever your camera changes position or view projection.
 However, there is no equality checking inside `.set()`, so doing this always triggers the quadtree tasks to run. 
 Also, because position floats are noisy, it's likely that position would not be exactly the same anyways. 
 
@@ -238,10 +238,7 @@ useFrame(async ({ camera, gl }) => {
       cameraHysteresis * cameraHysteresis
     ) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
+        return writeUpdateParamsFromCamera(prev, camera);
       });
       lastCameraRef.current.copy(camera.position);
     }

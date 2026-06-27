@@ -1,0 +1,16 @@
+---
+title: Frustum Culling
+description: Demonstrates view-projection culling by driving terrain updates from a second camera
+---
+
+import FrustumCullingScene from "@/examples/FrustumCullingScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<FrustumCullingScene />
+</div>
+
+## Overview
+
+This example renders the terrain from the main viewer camera while a second animated camera drives `quadtreeUpdate`. The visible wireframe terrain is the set of tiles inside that second camera's view frustum.
+
+The important bit is passing the culling camera into `writeUpdateParamsFromCamera`, which copies both its `cameraOrigin` and its world-to-clip view-projection matrix into the update params.

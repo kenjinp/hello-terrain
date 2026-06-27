@@ -78,7 +78,12 @@ export function createFlatProjection(): SurfaceProjection {
 
     gpu: {
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
-        return createFlatRenderVertexPosition(ctx.leafStorage, ctx.uniforms, ctx.terrainFieldStorage);
+        return createFlatRenderVertexPosition(
+          ctx.leafStorage,
+          ctx.uniforms,
+          ctx.terrainFieldStorage,
+          ctx.visibleSlotStorage,
+        );
       },
       createTileComputeParts: createFlatTileComputeParts,
       createFieldNormal(ctx: FieldNormalContext): FieldNormalFn {

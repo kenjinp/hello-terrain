@@ -1,3 +1,4 @@
+export * from "./camera";
 export * from "./compute.task";
 export * from "./graph";
 export * from "./graph.types";

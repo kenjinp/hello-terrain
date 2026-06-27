@@ -12,22 +12,34 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { isSkirtVertex } from "../tsl/skirt";
-import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type {
+  LeafStorageState,
+  TerrainUniformsContext,
+  VisibleSlotStorageState,
+} from "../types";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
 import { loadTerrainFieldNormal, sampleTerrainFieldElevation } from "./terrainFieldStorage";
 import { type LeafTileNodes, decodeLeafTile, faceUVFromTileLocal, tileLocalToFieldUV } from "./tile";
 
 function createTileElevation(
   terrainUniforms: TerrainUniformsContext,
+  fieldSlot: Node,
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
   if (!terrainFieldStorage) return float(0);
   const innerSegs = terrainUniforms.uInnerTileSegments;
   const u = tileLocalToFieldUV(positionLocal.x.add(float(0.5)), innerSegs);
   const v = tileLocalToFieldUV(positionLocal.z.add(float(0.5)), innerSegs);
-  return sampleTerrainFieldElevation(terrainFieldStorage, u, v, int(instanceIndex)).mul(
+  return sampleTerrainFieldElevation(terrainFieldStorage, u, v, fieldSlot).mul(
     terrainUniforms.uElevationScale,
   );
+}
+
+function renderFieldSlot(visibleSlotStorage?: VisibleSlotStorageState): Node {
+  const drawIndex = int(instanceIndex);
+  return visibleSlotStorage
+    ? visibleSlotStorage.node.element(drawIndex).toInt()
+    : drawIndex;
 }
 
 /**
@@ -39,21 +51,22 @@ function createTileElevation(
 function loadWorldNormal(
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage: TerrainFieldStorage,
+  fieldSlot: Node,
 ) {
-  const nodeIndex = int(instanceIndex);
   const edgeVertexCount = int(terrainUniforms.uInnerTileSegments.add(3));
   const localVertexIndex = int(vertexIndex);
   const ix = localVertexIndex.mod(edgeVertexCount);
   const iy = localVertexIndex.div(edgeVertexCount);
-  return loadTerrainFieldNormal(terrainFieldStorage, ix, iy, nodeIndex);
+  return loadTerrainFieldNormal(terrainFieldStorage, ix, iy, fieldSlot);
 }
 
 function assignWorldNormal(
   terrainUniforms: TerrainUniformsContext,
+  fieldSlot: Node,
   terrainFieldStorage?: TerrainFieldStorage,
 ) {
   if (!terrainFieldStorage) return;
-  normalLocal.assign(Fn(() => loadWorldNormal(terrainUniforms, terrainFieldStorage))());
+  normalLocal.assign(Fn(() => loadWorldNormal(terrainUniforms, terrainFieldStorage, fieldSlot))());
 }
 
 /** Flat heightfield: tiles lie in the XZ plane; elevation displaces along +Y. */
@@ -61,9 +74,11 @@ export function createFlatRenderVertexPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
+  visibleSlotStorage?: VisibleSlotStorageState,
 ): Node {
   return Fn(() => {
-    const tile = decodeLeafTile(leafStorage, int(instanceIndex));
+    const fieldSlot = renderFieldSlot(visibleSlotStorage);
+    const tile = decodeLeafTile(leafStorage, fieldSlot);
 
     const rootSize = terrainUniforms.uRootSize.toVar();
     const rootOrigin = terrainUniforms.uRootOrigin.toVar();
@@ -79,13 +94,13 @@ export function createFlatRenderVertexPosition(
     const worldX = centerX.add(clampedX.mul(size));
     const worldZ = centerZ.add(clampedZ.mul(size));
 
-    const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
+    const yElevation = createTileElevation(terrainUniforms, fieldSlot, terrainFieldStorage);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
     const baseY = rootOrigin.y.add(yElevation);
     const skirtY = baseY.sub(terrainUniforms.uSkirtScale.toVar());
     const worldY = select(skirtVertex, skirtY, baseY);
 
-    assignWorldNormal(terrainUniforms, terrainFieldStorage);
+    assignWorldNormal(terrainUniforms, fieldSlot, terrainFieldStorage);
     return vec3(worldX, worldY, worldZ);
   })();
 }
@@ -104,18 +119,20 @@ export function createCurvedRenderVertexPosition(
   surfacePoint: (tile: LeafTileNodes, faceUV: Node, displacement: Node) => Node,
   baseU = 1,
   baseV = 1,
+  visibleSlotStorage?: VisibleSlotStorageState,
 ): Node {
   const fBaseU = float(baseU);
   const fBaseV = float(baseV);
 
   return Fn(() => {
-    const tile = decodeLeafTile(leafStorage, int(instanceIndex));
+    const fieldSlot = renderFieldSlot(visibleSlotStorage);
+    const tile = decodeLeafTile(leafStorage, fieldSlot);
     const half = float(0.5);
     const localU = positionLocal.x.max(half.negate()).min(half).add(half);
     const localV = positionLocal.z.max(half.negate()).min(half).add(half);
     const faceUV = faceUVFromTileLocal(tile, localU, localV, fBaseU, fBaseV);
 
-    const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
+    const yElevation = createTileElevation(terrainUniforms, fieldSlot, terrainFieldStorage);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
     const displacement = select(
       skirtVertex,
@@ -123,7 +140,7 @@ export function createCurvedRenderVertexPosition(
       yElevation,
     );
 
-    assignWorldNormal(terrainUniforms, terrainFieldStorage);
+    assignWorldNormal(terrainUniforms, fieldSlot, terrainFieldStorage);
     return surfacePoint(tile, faceUV, displacement);
   })();
 }

@@ -24,8 +24,13 @@ The terrain library is organized in layers from pure logic to runtime integratio
 5. `projection/`  
    Surface-projection strategies (`SurfaceProjection`) that are *injected* into a
    topology. Each projection wires the shape-specific `gpu` builders (from `gpu/`
-   + `tsl/`) and `cpu` query/raycast/LOD hooks (from `query/`) so the pipeline
-   never branches on a projection kind. Built-ins: `flat`, `cubeSphere`, `torus`.
+   + `tsl/`) and `cpu` query/raycast/visibility/LOD hooks (from `query/`) so
+   the pipeline never branches on a projection kind. Built-ins: `flat`,
+   `cubeSphere`, `torus`.
+
+   Behavioral differences must be expressed as injected hooks. `kind` is allowed
+   for diagnostics, telemetry, and cache identity only; it must not select
+   projection-specific code paths inside shared components.
 
 6. `tasks/`  
    Reactive task-graph orchestration: params, stages, dependencies, and execution lanes.

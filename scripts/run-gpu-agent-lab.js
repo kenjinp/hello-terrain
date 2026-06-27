@@ -406,11 +406,27 @@ function summarizeResult(result) {
       tileVertexCount,
       verticesPerTile,
       finalVertexCount,
+      incremental: result.terrain?.incremental ?? null,
     },
     frames: {
       wallMs: summarizeStats(result.frames?.summary?.wallMs),
       leafCount: summarizeStats(result.frames?.summary?.leafCount),
       maxLeafLevel: summarizeStats(result.frames?.summary?.maxLeafLevel),
+      visibleCount: summarizeStats(result.frames?.summary?.incremental?.visibleCount),
+      activeSlotCount: summarizeStats(
+        result.frames?.summary?.incremental?.activeSlotCount,
+      ),
+      horizonCulledCount: summarizeStats(
+        result.frames?.summary?.incremental?.horizonCulledCount,
+      ),
+      dirtyVisibleCount: summarizeStats(
+        result.frames?.summary?.incremental?.dirtyVisibleCount,
+      ),
+      visibleRatio: summarizeStats(result.frames?.summary?.incremental?.visibleRatio),
+      dirtyVisibleRatio: summarizeStats(
+        result.frames?.summary?.incremental?.dirtyVisibleRatio,
+      ),
+      reuseRatio: summarizeStats(result.frames?.summary?.incremental?.reuseRatio),
       gpuComputeMs: summarizeStats(result.frames?.summary?.gpuComputeMs),
       gpuTotalMs: summarizeStats(result.frames?.summary?.gpuTotalMs),
     },

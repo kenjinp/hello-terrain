@@ -13,14 +13,15 @@ import {
   maxNodes,
   positionNodeTask,
   quadtreeUpdate,
-  quadtreeUpdateTask,
   rootSize,
   skirtScale,
   TerrainGeometry,
   terrainGraph,
   TerrainMesh,
   topology,
+  visibleLeafSetTask,
   voronoiCells,
+  writeUpdateParamsFromCamera,
   type ElevationParams,
   type UpdateParams,
 } from "@hello-terrain/three";
@@ -118,7 +119,7 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   useEffect(() => {
     g.add(
       task((get, work) => {
-        const leafSet = get(quadtreeUpdateTask);
+        const leafSet = get(visibleLeafSetTask).leaves;
         const positionNode = get(positionNodeTask);
         return work(() => {
           const mesh = meshRef.current;
@@ -192,10 +193,7 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
       cameraHysteresis * cameraHysteresis
     ) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
+        return writeUpdateParamsFromCamera(prev, camera);
       });
       lastCameraRef.current.copy(camera.position);
     }

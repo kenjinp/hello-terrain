@@ -25,3 +25,9 @@ export interface LeafStorageState {
   attribute: StorageBufferAttribute;
   node: StorageBufferNode;
 }
+
+export interface VisibleSlotStorageState {
+  data: Uint32Array<ArrayBuffer>;
+  attribute: StorageBufferAttribute;
+  node: StorageBufferNode;
+}

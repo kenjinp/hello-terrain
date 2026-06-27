@@ -131,6 +131,37 @@ type AgentNumberStats = {
   p99: number | null;
 };
 
+type AgentIncrementalTelemetry = {
+  candidateCount: number;
+  visibleCount: number;
+  guardCount: number;
+  frustumCulledCount: number;
+  horizonCulledCount: number;
+  unculledCount: number;
+  visibleRatio: number;
+  visibleSlotCount: number;
+  activeSlotCount?: number;
+  dirtyVisibleCount: number;
+  reusedCount: number;
+  allocatedCount: number;
+  evictedCount: number;
+  retainedInactiveCount: number;
+  overflowCount: number;
+  dirtyVisibleRatio: number;
+  reuseRatio: number;
+};
+
+type AgentIncrementalSummary = {
+  candidateCount: AgentNumberStats;
+  visibleCount: AgentNumberStats;
+  activeSlotCount: AgentNumberStats;
+  horizonCulledCount: AgentNumberStats;
+  dirtyVisibleCount: AgentNumberStats;
+  visibleRatio: AgentNumberStats;
+  dirtyVisibleRatio: AgentNumberStats;
+  reuseRatio: AgentNumberStats;
+};
+
 type AgentFrameSample = {
   frame: number;
   measured: boolean;
@@ -143,6 +174,7 @@ type AgentFrameSample = {
   leafCount: number;
   maxLeafLevel: number | null;
   leavesAtMaxLevel: number;
+  incremental: AgentIncrementalTelemetry;
   gpu: AgentGpuTimingSample | null;
 };
 
@@ -150,6 +182,7 @@ type AgentFrameSummary = {
   wallMs: AgentNumberStats;
   leafCount: AgentNumberStats;
   maxLeafLevel: AgentNumberStats;
+  incremental: AgentIncrementalSummary;
   gpuComputeMs: AgentNumberStats;
   gpuTotalMs: AgentNumberStats;
 };
@@ -273,6 +306,7 @@ export type AgentScenarioResult = {
     maxLevel: number;
     levelStats: AgentTerrainLevelStats;
     innerTileSegments: number;
+    incremental: AgentIncrementalTelemetry;
     elevationRange: { min: number; max: number } | null;
     queryGeneration: number;
     samples: AgentTerrainSample[];
@@ -586,7 +620,36 @@ function applyScenarioOverrides(
 }
 
 function graphTargets() {
-  return [terrainTasks.gpuSpatialIndexUpload, terrainTasks.terrainReadback] as const;
+  return [
+    terrainTasks.visibleLeafSet,
+    terrainTasks.tileSlotUpdate,
+    terrainTasks.gpuSpatialIndexUpload,
+    terrainTasks.terrainReadback,
+  ] as const;
+}
+
+function cloneIncrementalTelemetry(
+  telemetry: AgentIncrementalTelemetry,
+): AgentIncrementalTelemetry {
+  return {
+    candidateCount: telemetry.candidateCount,
+    visibleCount: telemetry.visibleCount,
+    guardCount: telemetry.guardCount,
+    frustumCulledCount: telemetry.frustumCulledCount,
+    horizonCulledCount: telemetry.horizonCulledCount,
+    unculledCount: telemetry.unculledCount,
+    visibleRatio: telemetry.visibleRatio,
+    visibleSlotCount: telemetry.visibleSlotCount,
+    activeSlotCount: telemetry.activeSlotCount ?? telemetry.visibleSlotCount,
+    dirtyVisibleCount: telemetry.dirtyVisibleCount,
+    reusedCount: telemetry.reusedCount,
+    allocatedCount: telemetry.allocatedCount,
+    evictedCount: telemetry.evictedCount,
+    retainedInactiveCount: telemetry.retainedInactiveCount,
+    overflowCount: telemetry.overflowCount,
+    dirtyVisibleRatio: telemetry.dirtyVisibleRatio,
+    reuseRatio: telemetry.reuseRatio,
+  };
 }
 
 function orbitSurfaceCameraFrame(
@@ -830,6 +893,32 @@ function summarizeFrames(frames: AgentFrameSample[]): AgentFrameSummary {
     wallMs: summarizeNumbers(measuredFrames.map((frame) => frame.wallMs)),
     leafCount: summarizeNumbers(measuredFrames.map((frame) => frame.leafCount)),
     maxLeafLevel: summarizeNumbers(measuredFrames.map((frame) => frame.maxLeafLevel)),
+    incremental: {
+      candidateCount: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.candidateCount),
+      ),
+      visibleCount: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.visibleCount),
+      ),
+      activeSlotCount: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.activeSlotCount),
+      ),
+      horizonCulledCount: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.horizonCulledCount),
+      ),
+      dirtyVisibleCount: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.dirtyVisibleCount),
+      ),
+      visibleRatio: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.visibleRatio),
+      ),
+      dirtyVisibleRatio: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.dirtyVisibleRatio),
+      ),
+      reuseRatio: summarizeNumbers(
+        measuredFrames.map((frame) => frame.incremental.reuseRatio),
+      ),
+    },
     gpuComputeMs: summarizeNumbers(measuredFrames.map((frame) => frame.gpu?.computeMs)),
     gpuTotalMs: summarizeNumbers(measuredFrames.map((frame) => frame.gpu?.totalMs)),
   };
@@ -1120,12 +1209,12 @@ async function readFloat32Attribute(
 async function collectReadback(
   renderer: WebGPURenderer,
   graph: TerrainGraph,
-  leafCount: number,
+  activeSlotCount: number,
   edgeVertexCount: number,
   enabled: boolean,
 ): Promise<AgentGpuReadback> {
-  const elevationElementCount = leafCount * edgeVertexCount * edgeVertexCount;
-  const tileBoundsElementCount = leafCount * 2;
+  const elevationElementCount = activeSlotCount * edgeVertexCount * edgeVertexCount;
+  const tileBoundsElementCount = activeSlotCount * 2;
 
   if (!enabled) {
     return {
@@ -1190,6 +1279,13 @@ async function collectReadback(
 }
 
 function createAssertions(result: Omit<AgentScenarioResult, "ok" | "assertions">) {
+  const validSampleCount = result.terrain.samples.filter((sample) => sample.valid).length;
+  const sampleCullingActive =
+    result.terrain.incremental.frustumCulledCount > 0 ||
+    result.terrain.incremental.horizonCulledCount > 0;
+  const samplesValid = sampleCullingActive
+    ? validSampleCount > 0
+    : validSampleCount === result.terrain.samples.length;
   const assertions: AgentAssertion[] = [
     {
       name: "webgpu-available",
@@ -1216,7 +1312,10 @@ function createAssertions(result: Omit<AgentScenarioResult, "ok" | "assertions">
     },
     {
       name: "samples-valid",
-      pass: result.terrain.samples.every((sample) => sample.valid),
+      pass: samplesValid,
+      detail: `valid=${validSampleCount}/${result.terrain.samples.length}${
+        sampleCullingActive ? " culling=active" : ""
+      }`,
     },
     {
       name: "readback-has-no-nans",
@@ -1326,6 +1425,7 @@ async function runAgentScenario(
   const graph = terrainGraph();
   const graphReports: RunReport[] = [];
   const measureEvents: GraphEvent[] = [];
+  const taskErrorEvents: GraphEvent[] = [];
   const gpuTimingSamples: AgentGpuTimingSample[] = [];
   const frameSamples: AgentFrameSample[] = [];
   const startedAt = new Date().toISOString();
@@ -1333,6 +1433,7 @@ async function runAgentScenario(
   let recordEvents = false;
 
   const unsubscribe = graph.on("task:*", (event) => {
+    if (event.type === "task:error") taskErrorEvents.push(event);
     if (recordEvents) measureEvents.push(event);
   });
 
@@ -1346,6 +1447,7 @@ async function runAgentScenario(
       setScenarioParams(graph, scenario, cameraFrame);
       const pendingComputePasses: PendingComputePass[] = [];
       const restoreCompute = traceRendererCompute(renderer, pendingComputePasses);
+      const taskErrorStart = taskErrorEvents.length;
       const report = await graph
         .run({
           targets: graphTargets(),
@@ -1355,6 +1457,20 @@ async function runAgentScenario(
         .finally(restoreCompute);
       const graphRunWallMs = performance.now() - frameStartedAt;
       graphReports.push(report);
+      if (report.status !== "ok") {
+        const names = taskNameById(graph);
+        const frameTaskErrors = taskErrorEvents.slice(taskErrorStart);
+        const detail =
+          frameTaskErrors
+            .map((event) =>
+              event.type === "task:error"
+                ? `${names.get(event.taskId) ?? event.taskId}: ${eventMessage(event.error)}`
+                : null,
+            )
+            .filter((value): value is string => value !== null)
+            .join("; ") || `graph status ${report.status}`;
+        throw new Error(`Graph run failed on frame ${frame} (${cameraFrame.phase}): ${detail}`);
+      }
       if (waitForReadbackEachFrame) {
         await waitForQueryGeneration(graph, queryGeneration, timeoutMs);
       }
@@ -1368,8 +1484,11 @@ async function runAgentScenario(
       if (frame >= warmupFrames && timing) {
         gpuTimingSamples.push(timingWithPasses!);
       }
-      const frameLeafSet = graph.get(terrainTasks.quadtreeUpdate);
+      const frameLeafSet = graph.get(terrainTasks.visibleLeafSet).leaves;
       const frameLevelStats = summarizeLeafLevels(frameLeafSet, scenario.maxLevel);
+      const frameIncremental = cloneIncrementalTelemetry(
+        graph.get(terrainTasks.tileSlotUpdate).telemetry,
+      );
       frameSamples.push({
         frame,
         measured: frame >= warmupFrames,
@@ -1386,6 +1505,7 @@ async function runAgentScenario(
         leafCount: frameLeafSet.count,
         maxLeafLevel: frameLevelStats.max,
         leavesAtMaxLevel: frameLevelStats.leavesAtMaxLevel,
+        incremental: frameIncremental,
         gpu: timingWithPasses,
       });
     }
@@ -1394,14 +1514,17 @@ async function runAgentScenario(
       await waitForQueryGeneration(graph, -1, timeoutMs);
     }
 
-    const leafSet = graph.get(terrainTasks.quadtreeUpdate);
+    const leafSet = graph.get(terrainTasks.visibleLeafSet).leaves;
+    const incrementalTelemetry = cloneIncrementalTelemetry(
+      graph.get(terrainTasks.tileSlotUpdate).telemetry,
+    );
     const queryContext = graph.get(terrainTasks.terrainQuery);
     const edgeVertexCount = scenario.innerTileSegments + 3;
     const samples = scenario.samplePoints.map((point) => sampleTerrainPoint(queryContext, point));
     const readback = await collectReadback(
       renderer,
       graph,
-      leafSet.count,
+      incrementalTelemetry.activeSlotCount ?? leafSet.count,
       edgeVertexCount,
       input.readback ?? true,
     );
@@ -1431,6 +1554,7 @@ async function runAgentScenario(
         maxLevel: scenario.maxLevel,
         levelStats: summarizeLeafLevels(leafSet, scenario.maxLevel),
         innerTileSegments: scenario.innerTileSegments,
+        incremental: incrementalTelemetry,
         elevationRange: queryContext.query.getGlobalElevationRange(),
         queryGeneration: queryContext.cache.generation,
         samples,

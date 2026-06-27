@@ -173,6 +173,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
           (_tile, faceUV, displacement) => torusPosition(geometry, faceUV.x, faceUV.y, displacement),
           baseU,
           baseV,
+          ctx.visibleSlotStorage,
         );
       },
       createTileComputeParts: (ctx) => createTorusTileComputeParts(ctx, geometry),

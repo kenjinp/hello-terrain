@@ -23,10 +23,10 @@ wraps tile coordinates modulo the level resolution on both axes.
 
 The injected strategy a topology carries (`SurfaceProjection`, in
 `projection/`). It encapsulates everything shape-specific so the GPU pipeline,
-the CPU terrain cache, the query objects, the raycaster, and the LOD camera
-offset never branch on a projection kind — they call into the projection's
-`gpu` and `cpu` hooks. `kind` (`flat` | `cubeSphere` | `torus` | …) is an
-identifier for debugging only.
+the CPU terrain cache, the query objects, the raycaster, visibility/occlusion,
+and the LOD camera offset never branch on a projection kind — they call into the
+projection's `gpu` and `cpu` hooks. `kind` (`flat` | `cubeSphere` | `torus` |
+…) is an identifier for debugging, telemetry, and cache identity only.
 
 - `flat` (`createFlatProjection`): tiles lie in the XZ plane; elevation
   displaces along `+Y`. No closed-surface query.
@@ -39,8 +39,10 @@ identifier for debugging only.
 For all curved projections, normals are derived in world space from the cross
 product of the four cardinal neighbors' displaced world positions — continuous
 across seams (no per-tile tangent-frame rotation). Adding a new surface shape is
-done by implementing one `SurfaceProjection` plus a small `Topology`; the torus
-is the reference example.
+done by implementing one `SurfaceProjection` plus a small `Topology`. If the
+shape can conservatively occlude its own tiles, expose that as a projection CPU
+hook rather than teaching shared visibility code about the shape. The torus is
+the reference example.
 
 ## Quadtree
 

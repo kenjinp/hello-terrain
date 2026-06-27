@@ -16,13 +16,14 @@ import {
   maxNodes,
   positionNodeTask,
   quadtreeUpdate,
-  quadtreeUpdateTask,
   rootSize,
   skirtScale,
   TerrainGeometry,
   terrainGraph,
   terrainTasks,
   TerrainMesh,
+  visibleLeafSetTask,
+  writeUpdateParamsFromCamera,
   type ElevationCallback,
   type TerrainSampler,
   type TerrainGraph,
@@ -293,7 +294,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
   const renderStateTask = useMemo(
     () =>
       task((get, work) => {
-        const leaves = get(quadtreeUpdateTask);
+        const leaves = get(visibleLeafSetTask).leaves;
         const terrainPositionNode = get(positionNodeTask);
         const scatter = get(scatterNodesTask);
 
@@ -374,10 +375,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
       0.05 * 0.05
     ) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
+        return writeUpdateParamsFromCamera(prev, camera);
       });
       lastCameraRef.current.copy(camera.position);
     }

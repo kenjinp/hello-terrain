@@ -20,7 +20,15 @@ import type {
   TerrainSurfaceQuery,
 } from "../query/types";
 import type { TileBoundsContext } from "./tile-bounds.task";
-import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type {
+  LeafStorageState,
+  TerrainUniformsContext,
+  VisibleSlotStorageState,
+} from "../types";
+import type {
+  TileIncrementalTelemetryState,
+  VisibleLeafSetState,
+} from "./quadtree.task";
 
 export interface QuadtreeConfigState {
   state: QuadtreeState;
@@ -29,6 +37,8 @@ export interface QuadtreeConfigState {
 
 export interface LeafGpuBufferState extends LeafStorageState {
   count: number;
+  activeSlotCount: number;
+  visibleSlotStorage: VisibleSlotStorageState;
 }
 
 export interface ElevationFieldContext {
@@ -59,8 +69,12 @@ export interface TerrainTasks {
   instanceId: TaskRef<string>;
   quadtreeConfig: TaskRef<QuadtreeConfigState>;
   quadtreeUpdate: TaskRef<LeafSet>;
+  tileVisibility: TaskRef<TileIncrementalTelemetryState["visibility"]>;
+  visibleLeafSet: TaskRef<VisibleLeafSetState>;
+  tileSlotUpdate: TaskRef<TileIncrementalTelemetryState>;
   topology: TaskRef<Topology>;
   leafStorage: TaskRef<LeafStorageState>;
+  visibleSlotStorage: TaskRef<VisibleSlotStorageState>;
   leafGpuBuffer: TaskRef<LeafGpuBufferState>;
   gpuSpatialIndexStorage: TaskRef<GpuSpatialIndexContext>;
   gpuSpatialIndexUpload: TaskRef<GpuSpatialIndexContext>;

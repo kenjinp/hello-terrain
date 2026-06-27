@@ -33,6 +33,9 @@ selected by the quadtree.
   only.
 - Preserve the current projection model: no branching on projection kind in the
   pipeline; projection hooks continue to own shape-specific math.
+- Treat `projection.kind` as metadata for diagnostics, telemetry, and cache
+  identity only. New behavior must be added through injected topology or
+  projection hooks.
 - Keep task-local state instance-scoped. Do not use module-scope caches.
 - Keep first implementation conservative enough to verify against existing
   readback/query behavior.
@@ -44,7 +47,8 @@ selected by the quadtree.
 
 - No GPU-driven quadtree selection in the first milestone.
 - No GPU occlusion queries or hierarchical-Z occlusion in the first milestone.
-  Start with deterministic frustum culling and planet-horizon culling.
+  Start with deterministic frustum culling and projection-provided horizon
+  culling.
 - No background streaming or disk cache in the first milestone.
 - No change to the public elevation callback API.
 - No attempt to make camera teleports cheap. A teleport may dirty most slots.
@@ -148,7 +152,8 @@ Responsibilities:
 
 - Treat `LeafSet` as candidate input, not as the render/compute set.
 - Cull candidates against an expanded camera frustum.
-- Cull planet tiles hidden behind the horizon for sphere/cube-sphere topology.
+- Cull candidates with projection-provided horizon/shape occlusion when the
+  projection injects a conservative hook.
 - Keep a guard band of near-visible tiles so small camera movements do not cause
   popping or constant cache churn.
 - Emit the dense visible/guard tile list used by slot assignment.
@@ -175,7 +180,7 @@ type TileVisibilityState = {
 - `0`: visible draw tile
 - `1`: guard-band tile
 - `2`: frustum culled
-- `3`: horizon culled
+- `3`: horizon/shape culled by an injected projection hook
 - `4`: unculled because no conservative bounds are available
 
 ### TileSlotCacheState
@@ -274,17 +279,20 @@ The visibility stage must not depend on computed terrain bounds, because its job
 is to decide which terrain fields need to be computed. Use conservative analytic
 bounds from topology metadata:
 
-- Flat topology: tile plane bounds expanded by max elevation envelope.
-- Cube-sphere topology: tile corner directions projected to the planet radius,
-  plus max elevation envelope.
-- Torus topology: topology-provided conservative patch bounds; if unavailable,
-  mark as unculled until a torus-specific bound exists.
+- Flat topology hooks provide tile plane bounds expanded by max elevation
+  envelope.
+- Cube-sphere topology hooks provide tile corner directions projected to the
+  planet radius, plus max elevation envelope.
+- Torus topology hooks provide conservative patch bounds; if unavailable, mark
+  as unculled until the topology supplies a bound.
 
 False positives are acceptable. False negatives are correctness bugs because
 they can drop visible terrain.
 
 Projection/topology hooks should own bound construction. The main pipeline should
 ask for a tile visibility bound and run generic tests over that bound.
+The main pipeline must not branch on `projection.kind` to choose bound or
+occlusion behavior.
 
 ### Frustum Culling
 
@@ -304,7 +312,12 @@ For earth-scale cube-sphere terrain, horizon culling is likely more valuable
 than generic occlusion queries. A tile fully behind the planet horizon should not
 need field compute or rendering.
 
-For a spherical occluder centered at the topology origin:
+Horizon culling is projection-specific. Shared visibility code should call an
+optional projection CPU hook, such as `projection.cpu.isTileBehindHorizon(ctx)`,
+and mark tiles unculled when no hook is present. It must not test
+`projection.kind`, topology names, or built-in factory identities.
+
+For the cube-sphere projection, the hook can implement a spherical occluder:
 
 ```ts
 const cameraDistance = length(cameraFromCenter);
@@ -317,6 +330,9 @@ const fullyBehindHorizon =
 Use an occluder radius that is conservative for elevated terrain. Starting with
 the base planet radius, or base radius plus a known minimum elevation, avoids
 culling peaks that may rise above the geometric horizon.
+
+For torus or custom surfaces, leave horizon/shape occlusion disabled until the
+projection can inject a conservative test for its own geometry.
 
 ### Generic Occlusion Culling
 
@@ -339,8 +355,8 @@ deterministic frustum and horizon culling.
 - `tileVisibilityTask`
   - Depends on `quadtreeUpdateTask` and camera/projection state.
   - Produces visible/guard candidate indices.
-  - Reports candidate, visible, guard, frustum-culled, and horizon-culled
-    counts.
+  - Reports candidate, visible, guard, frustum-culled, horizon/shape-culled,
+    and unculled counts.
 
 - `tileSlotCacheTask`
   - Owns `TileSlotCacheState`.
@@ -549,7 +565,8 @@ Suggested first acceptance criteria:
 
 ### Phase 1: CPU visibility and slot assignment telemetry
 
-- Add topology visibility bounds for cube-sphere first.
+- Add topology-provided visibility bounds and a cube-sphere projection horizon
+  hook first.
 - Add `TileVisibilityState` and `tileVisibilityTask`.
 - Add `TileSlotCacheState`.
 - Add unit tests for stable assignment, reuse, capacity pressure, and invalidation.
@@ -643,6 +660,12 @@ Exit criteria:
 - **Occlusion-query latency:** generic occlusion should remain a later optional
   accelerator, not the first correctness path.
 
+## Resolved Design Decisions
+
+- Horizon/shape occlusion lives behind projection CPU hooks. The core visibility
+  stage may provide generic helper functions, but it must not branch on
+  `projection.kind` to decide which helper to run.
+
 ## Open Questions
 
 - Should visible leaf storage expand to include `fieldSlot`, or should
@@ -655,8 +678,6 @@ Exit criteria:
 - Can tile bounds be made incremental before CPU query readback is incremental?
 - What guard-band heuristic works best for surface flight: angular margin,
   screen-space margin, or time-to-visible prediction?
-- Should horizon culling live entirely in topology hooks, or should the core
-  pipeline provide a sphere-occluder helper used by cube-sphere topology?
 
 ## Recommended First PR
 
