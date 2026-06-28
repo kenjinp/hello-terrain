@@ -125,8 +125,16 @@ export interface TileBoundsLike {
   r: number;
 }
 
+export interface ProjectionTileLike {
+  space: number;
+  level: number;
+  x: number;
+  y: number;
+}
+
 export interface ProjectionHorizonContext {
   cameraOrigin: Vec3Like;
+  tile: ProjectionTileLike;
   bounds: TileBoundsLike;
   guardBandFactor: number;
 }

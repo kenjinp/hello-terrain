@@ -31,6 +31,10 @@ export type TileVisibilityTelemetry = {
 export type TileVisibilityState = {
   visibleCandidateIndices: Uint32Array;
   visibilityState: Uint8Array;
+  boundsCenterX?: Float64Array;
+  boundsCenterY?: Float64Array;
+  boundsCenterZ?: Float64Array;
+  boundsRadius?: Float64Array;
   telemetry: TileVisibilityTelemetry;
 };
 
@@ -59,10 +63,22 @@ const EMPTY_TELEMETRY: TileVisibilityTelemetry = {
 };
 
 function ensureVisibilityState(prev: TileVisibilityState | undefined, capacity: number) {
+  const boundsCenterX = prev?.boundsCenterX;
+  const boundsCenterY = prev?.boundsCenterY;
+  const boundsCenterZ = prev?.boundsCenterZ;
+  const boundsRadius = prev?.boundsRadius;
   if (
     prev &&
     prev.visibleCandidateIndices.length >= capacity &&
-    prev.visibilityState.length >= capacity
+    prev.visibilityState.length >= capacity &&
+    boundsCenterX !== undefined &&
+    boundsCenterX.length >= capacity &&
+    boundsCenterY !== undefined &&
+    boundsCenterY.length >= capacity &&
+    boundsCenterZ !== undefined &&
+    boundsCenterZ.length >= capacity &&
+    boundsRadius !== undefined &&
+    boundsRadius.length >= capacity
   ) {
     return prev;
   }
@@ -70,6 +86,10 @@ function ensureVisibilityState(prev: TileVisibilityState | undefined, capacity: 
   return {
     visibleCandidateIndices: new Uint32Array(capacity),
     visibilityState: new Uint8Array(capacity),
+    boundsCenterX: new Float64Array(capacity),
+    boundsCenterY: new Float64Array(capacity),
+    boundsCenterZ: new Float64Array(capacity),
+    boundsRadius: new Float64Array(capacity),
     telemetry: { ...EMPTY_TELEMETRY },
   };
 }
@@ -222,6 +242,10 @@ export function computeTileVisibility(
       bounds,
       hasElevationRange ? elevationRange : undefined,
     );
+    state.boundsCenterX![i] = bounds.cx;
+    state.boundsCenterY![i] = bounds.cy;
+    state.boundsCenterZ![i] = bounds.cz;
+    state.boundsRadius![i] = bounds.r;
 
     if (
       canUseFrustum &&
@@ -235,6 +259,7 @@ export function computeTileVisibility(
     if (
       projectionCpu.isTileBehindHorizon?.({
         cameraOrigin,
+        tile,
         bounds,
         guardBandFactor,
       })

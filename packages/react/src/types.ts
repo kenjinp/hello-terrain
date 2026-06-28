@@ -60,6 +60,18 @@ export interface TerrainOptions {
   getResidencyAnchors?: (state: RootState) => readonly TerrainResidencyAnchor[] | undefined;
   residencyHysteresis?: number;
   cameraHysteresis?: number;
+  /**
+   * Execute terrain field compute for dirty slots. Disable to freeze computed
+   * field contents while still updating draw buffers and CPU visibility.
+   */
+  runCompute?: boolean;
+  /**
+   * Trigger elevation/bounds readback after compute. Ignored when
+   * `runCompute` is false.
+   */
+  runReadback?: boolean;
+  /** Upload the resident tile spatial index used by GPU samplers. */
+  runGpuSpatialIndex?: boolean;
   tasks?: readonly TerrainTask[];
 }
 

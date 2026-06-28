@@ -12,6 +12,19 @@ export type GpuFrameTimings = {
   computeMs: number;
   /** `renderMs + computeMs`. */
   totalMs: number;
+  /** Number of render timestamp queries submitted since the last resolve. */
+  renderQueryCount: number;
+  /** Number of compute timestamp queries submitted since the last resolve. */
+  computeQueryCount: number;
+  /** Compute dispatches captured since the previous sample. */
+  computePasses: GpuComputePassTiming[];
+};
+
+export type GpuComputePassTiming = {
+  uid: string | null;
+  name: string;
+  dispatchSize: number | [number, number, number] | "indirect" | null;
+  durationMs: number | null;
 };
 
 export type GpuProfiler = {
@@ -38,6 +51,8 @@ export type GpuProfiler = {
    * `null` until the first {@link sample} resolves.
    */
   readonly last: GpuFrameTimings | null;
+  /** Restore renderer hooks installed by the profiler. */
+  dispose(): void;
 };
 
 /**
@@ -45,10 +60,74 @@ export type GpuProfiler = {
  * `trackTimestamp` exist on the WebGPU renderer but are not always present in
  * the published typings, so we narrow to just what we touch.
  */
-type TimestampCapableRenderer = {
-  trackTimestamp: boolean;
-  resolveTimestampsAsync(type: "render" | "compute"): Promise<number | undefined>;
+type TimestampCapableRenderer = WebGPURenderer & {
+  trackTimestamp?: boolean;
+  backend?: {
+    trackTimestamp?: boolean;
+    timestampQueryPool?: Partial<Record<"render" | "compute", TimestampQueryPoolLike | null>>;
+    getTimestampUID?: (computeNodes: unknown) => string;
+  };
+  compute: (computeNodes: unknown, dispatchSize?: unknown) => unknown;
+  resolveTimestampsAsync?: (type: "render" | "compute") => Promise<number | undefined>;
 };
+
+type TimestampQueryPoolLike = {
+  currentQueryIndex?: number;
+  timestamps?: Map<string, number>;
+};
+
+type PendingComputePass = Omit<GpuComputePassTiming, "durationMs">;
+
+function numberOrNull(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function timestampQueryCount(
+  renderer: TimestampCapableRenderer,
+  type: "render" | "compute",
+) {
+  return numberOrNull(renderer.backend?.timestampQueryPool?.[type]?.currentQueryIndex) ?? 0;
+}
+
+function computeNodeName(computeNodes: unknown) {
+  const list = Array.isArray(computeNodes) ? computeNodes : [computeNodes];
+  return list
+    .map((node, index) => {
+      const maybeNode = node as { name?: unknown; id?: unknown };
+      if (typeof maybeNode.name === "string" && maybeNode.name.length > 0) {
+        return maybeNode.name;
+      }
+      if (typeof maybeNode.id === "number") return `compute#${maybeNode.id}`;
+      return `compute[${index}]`;
+    })
+    .join("+");
+}
+
+function computeDispatchSize(
+  dispatchSize: unknown,
+): GpuComputePassTiming["dispatchSize"] {
+  if (typeof dispatchSize === "number") return dispatchSize;
+  if (
+    Array.isArray(dispatchSize) &&
+    dispatchSize.length === 3 &&
+    dispatchSize.every((value) => typeof value === "number")
+  ) {
+    return dispatchSize as [number, number, number];
+  }
+  if (dispatchSize == null) return null;
+  return "indirect";
+}
+
+function resolveComputePassTimings(
+  renderer: TimestampCapableRenderer,
+  passes: PendingComputePass[],
+): GpuComputePassTiming[] {
+  const timestamps = renderer.backend?.timestampQueryPool?.compute?.timestamps;
+  return passes.map((pass) => ({
+    ...pass,
+    durationMs: pass.uid ? numberOrNull(timestamps?.get(pass.uid)) : null,
+  }));
+}
 
 /**
  * Wrap a {@link WebGPURenderer} with GPU timestamp profiling. Pair this with
@@ -67,29 +146,86 @@ type TimestampCapableRenderer = {
 export function createGpuProfiler(renderer: WebGPURenderer): GpuProfiler {
   const gpu = renderer as unknown as TimestampCapableRenderer;
   let last: GpuFrameTimings | null = null;
+  let disposed = false;
+  let wrapped = false;
+  let pendingComputePasses: PendingComputePass[] = [];
+  let originalCompute: TimestampCapableRenderer["compute"] | null = null;
+
+  const wrapCompute = () => {
+    if (wrapped) return;
+    originalCompute = gpu.compute.bind(renderer);
+    gpu.compute = ((computeNodes: unknown, dispatchSize?: unknown) => {
+      const result = originalCompute!(computeNodes, dispatchSize);
+      const uid = gpu.backend?.getTimestampUID?.(computeNodes);
+      pendingComputePasses.push({
+        uid: typeof uid === "string" ? uid : null,
+        name: computeNodeName(computeNodes),
+        dispatchSize: computeDispatchSize(dispatchSize),
+      });
+      return result;
+    }) as TimestampCapableRenderer["compute"];
+    wrapped = true;
+  };
+
+  const dispose = () => {
+    disposed = true;
+    pendingComputePasses = [];
+    if (wrapped && originalCompute) {
+      gpu.compute = originalCompute;
+      originalCompute = null;
+      wrapped = false;
+    }
+  };
 
   return {
     enable(): boolean {
+      if (disposed) return false;
       // The backend clamps this to `false` during init if the device lacks the
       // `timestamp-query` feature, so reading it back reports real support.
       gpu.trackTimestamp = true;
-      return gpu.trackTimestamp === true;
+      wrapCompute();
+      return gpu.trackTimestamp === true && typeof gpu.resolveTimestampsAsync === "function";
     },
     get enabled(): boolean {
-      return gpu.trackTimestamp === true;
+      return !disposed && gpu.trackTimestamp === true;
     },
     get last(): GpuFrameTimings | null {
       return last;
     },
+    dispose,
     async sample(): Promise<GpuFrameTimings | null> {
-      if (gpu.trackTimestamp !== true) return null;
+      if (disposed || gpu.trackTimestamp !== true || !gpu.resolveTimestampsAsync) {
+        return null;
+      }
+
+      const computePasses = pendingComputePasses;
+      pendingComputePasses = [];
+      const renderQueryCount = timestampQueryCount(gpu, "render");
+      const computeQueryCount = timestampQueryCount(gpu, "compute");
 
       // Resolve serially: both share the renderer's pending-resolve guard, and
       // serial keeps the staging-buffer mapping uncontended.
-      const renderMs = (await gpu.resolveTimestampsAsync("render")) ?? last?.renderMs ?? 0;
-      const computeMs = (await gpu.resolveTimestampsAsync("compute")) ?? last?.computeMs ?? 0;
+      const renderMs =
+        (renderQueryCount > 0
+          ? await gpu.resolveTimestampsAsync("render")
+          : undefined) ??
+        last?.renderMs ??
+        0;
+      const computeMs =
+        (computeQueryCount > 0
+          ? await gpu.resolveTimestampsAsync("compute")
+          : undefined) ??
+        last?.computeMs ??
+        0;
 
-      last = { renderMs, computeMs, totalMs: renderMs + computeMs };
+      last = {
+        renderMs,
+        computeMs,
+        totalMs: renderMs + computeMs,
+        renderQueryCount,
+        computeQueryCount,
+        computePasses: resolveComputePassTimings(gpu, computePasses),
+      };
       return last;
     },
   };

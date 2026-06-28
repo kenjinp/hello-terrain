@@ -1,5 +1,9 @@
 import type { LeafSet } from "./types";
-import type { TileResidencyState, TileResidencyTelemetry } from "./residency";
+import {
+  TileResidencyStateKind,
+  type TileResidencyState,
+  type TileResidencyTelemetry,
+} from "./residency";
 import type { TileVisibilityState, TileVisibilityTelemetry } from "./visibility";
 
 export type TileSlotTelemetry = TileVisibilityTelemetry &
@@ -206,15 +210,14 @@ export function updateTileSlotCache(
       ? prev
       : createTileSlotCacheState(capacity, shapeKey, contentEpoch);
   const telemetry = state.telemetry;
-  const visibleKeys = new Set<string>();
   const residentKeys = new Set<string>();
-  const visibleCount = Math.min(
-    visibility.telemetry.visibleCount,
-    visibility.visibleCandidateIndices.length,
-  );
   const residentCount = Math.min(
     residency.telemetry.residentCount,
     residency.residentCandidateIndices.length,
+  );
+  const visibleResidentCount = Math.min(
+    residency.telemetry.visibleResidentCount,
+    residentCount,
   );
 
   state.generation += 1;
@@ -222,23 +225,15 @@ export function updateTileSlotCache(
   state.contentEpoch = contentEpoch;
   resetTelemetry(telemetry, visibility.telemetry, residency.telemetry);
 
-  for (let visibleIndex = 0; visibleIndex < visibleCount; visibleIndex += 1) {
-    const leafIndex = visibility.visibleCandidateIndices[visibleIndex] ?? 0;
+  for (let residentIndex = 0; residentIndex < residentCount; residentIndex += 1) {
+    const leafIndex = residency.residentCandidateIndices[residentIndex] ?? 0;
     const space = leaves.space[leafIndex] ?? 0;
     const level = leaves.level[leafIndex] ?? 0;
     const x = leaves.x[leafIndex] ?? 0;
     const y = leaves.y[leafIndex] ?? 0;
-    visibleKeys.add(tileKeyString(space, level, x, y));
+    residentKeys.add(tileKeyString(space, level, x, y));
   }
 
-  const residentTiles: Array<{
-    key: string;
-    space: number;
-    level: number;
-    x: number;
-    y: number;
-    visible: boolean;
-  }> = [];
   for (let residentIndex = 0; residentIndex < residentCount; residentIndex += 1) {
     const leafIndex = residency.residentCandidateIndices[residentIndex] ?? 0;
     const space = leaves.space[leafIndex] ?? 0;
@@ -246,12 +241,12 @@ export function updateTileSlotCache(
     const x = leaves.x[leafIndex] ?? 0;
     const y = leaves.y[leafIndex] ?? 0;
     const key = tileKeyString(space, level, x, y);
-    residentTiles.push({ key, space, level, x, y, visible: visibleKeys.has(key) });
-    residentKeys.add(key);
-  }
-
-  for (const tile of residentTiles) {
-    let slot = state.keyToSlot.get(tile.key);
+    const residencyKind = residency.residencyState[leafIndex];
+    const visible =
+      residencyKind === TileResidencyStateKind.Visible ||
+      (residencyKind !== TileResidencyStateKind.Anchor &&
+        residentIndex < visibleResidentCount);
+    let slot = state.keyToSlot.get(key);
     let allocated = false;
 
     if (slot === undefined) {
@@ -262,8 +257,8 @@ export function updateTileSlotCache(
         continue;
       }
       if (allocation.evicted) telemetry.evictedCount += 1;
-      state.keyToSlot.set(tile.key, slot);
-      state.slotKey[slot] = tile.key;
+      state.keyToSlot.set(key, slot);
+      state.slotKey[slot] = key;
       state.slotState[slot] = SlotState.Resident;
       telemetry.allocatedCount += 1;
       allocated = true;
@@ -271,16 +266,16 @@ export function updateTileSlotCache(
       telemetry.reusedCount += 1;
     }
 
-    state.slotSpace[slot] = tile.space;
-    state.slotLevel[slot] = tile.level;
-    state.slotX[slot] = tile.x;
-    state.slotY[slot] = tile.y;
+    state.slotSpace[slot] = space;
+    state.slotLevel[slot] = level;
+    state.slotX[slot] = x;
+    state.slotY[slot] = y;
     const wasResidentLastFrame =
       state.slotLastResidentGeneration[slot] === state.generation - 1;
     state.slotLastResidentGeneration[slot] = state.generation;
     state.residentSlots[telemetry.residentSlotCount] = slot;
     telemetry.residentSlotCount += 1;
-    if (tile.visible) {
+    if (visible) {
       state.slotLastVisibleGeneration[slot] = state.generation;
       state.visibleSlots[telemetry.visibleSlotCount] = slot;
       telemetry.visibleSlotCount += 1;

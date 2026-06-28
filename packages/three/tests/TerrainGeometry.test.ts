@@ -86,6 +86,15 @@ describe("TerrainGeometry", () => {
     }
   });
 
+  it("can omit generated normals for shader-driven terrain meshes", () => {
+    const g = new TerrainGeometry(8, true, false, { includeNormals: false });
+
+    expect(g.getAttribute("position")).toBeDefined();
+    expect(g.getAttribute("uv")).toBeDefined();
+    expect(g.getAttribute("normal")).toBeUndefined();
+    expect(g.getIndex()).not.toBeNull();
+  });
+
   it("positions are clamped to [-0.5,0.5] and skirt duplicates edge ring", () => {
     const innerSegments = 2;
     const edgeVertexCountWithSkirt = innerSegments + 3;

@@ -125,6 +125,9 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     getResidencyAnchors,
     residencyHysteresis,
     cameraHysteresis,
+    runCompute,
+    runReadback,
+    runGpuSpatialIndex,
     tasks,
     maxNodes,
     ...primitiveProps
@@ -145,6 +148,9 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     getResidencyAnchors,
     residencyHysteresis,
     cameraHysteresis,
+    runCompute,
+    runReadback,
+    runGpuSpatialIndex,
     tasks,
     maxNodes,
   });
@@ -178,6 +184,9 @@ export function Terrain({
   getResidencyAnchors,
   residencyHysteresis,
   cameraHysteresis,
+  runCompute,
+  runReadback,
+  runGpuSpatialIndex,
   tasks,
   maxNodes,
   ...primitiveProps
@@ -211,6 +220,9 @@ export function Terrain({
       getResidencyAnchors={getResidencyAnchors}
       residencyHysteresis={residencyHysteresis}
       cameraHysteresis={cameraHysteresis}
+      runCompute={runCompute}
+      runReadback={runReadback}
+      runGpuSpatialIndex={runGpuSpatialIndex}
       tasks={tasks}
       maxNodes={maxNodes}
       {...primitiveProps}

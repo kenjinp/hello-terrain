@@ -90,23 +90,21 @@ describe("quadtree/visibility", () => {
     expect(visibility.telemetry.unculledCount).toBe(0);
   });
 
-  it("leaves torus unculled when projection does not provide horizon occlusion", () => {
+  it("uses torus projection self-occlusion for tube back-side tiles", () => {
     const topology = createTorusTopology({ majorRadius: 1000, minorRadius: 250 });
-    const leaves = allocLeafSet(topology.maxRootCount);
-    const roots = Array.from({ length: topology.maxRootCount }, () => ({
-      space: 0,
-      level: 0,
-      x: 0,
-      y: 0,
-    }));
-    leaves.count = topology.rootTiles({ x: 0, y: 0, z: 0 }, roots);
-    for (let i = 0; i < leaves.count; i += 1) {
-      const root = roots[i]!;
-      leaves.space[i] = root.space;
-      leaves.level[i] = root.level;
-      leaves.x[i] = root.x;
-      leaves.y[i] = root.y;
-    }
+    const leaves = allocLeafSet(2);
+    leaves.count = 2;
+
+    const level = 5;
+    leaves.space[0] = 0;
+    leaves.level[0] = level;
+    leaves.x[0] = 0;
+    leaves.y[0] = 0;
+
+    leaves.space[1] = 0;
+    leaves.level[1] = level;
+    leaves.x[1] = 0;
+    leaves.y[1] = 16;
 
     const visibility = computeTileVisibility({
       leaves,
@@ -115,8 +113,8 @@ describe("quadtree/visibility", () => {
       guardBandFactor: 1,
     });
 
-    expect(visibility.telemetry.horizonCulledCount).toBe(0);
-    expect(visibility.telemetry.unculledCount).toBe(leaves.count);
-    expect(visibility.telemetry.visibleCount).toBe(leaves.count);
+    expect(visibility.telemetry.horizonCulledCount).toBe(1);
+    expect(visibility.telemetry.visibleCount).toBe(1);
+    expect(visibility.visibleCandidateIndices[0]).toBe(0);
   });
 });

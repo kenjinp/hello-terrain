@@ -66,15 +66,30 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
   const runnerTargets = useMemo(() => {
     const userTasks = options.tasks ?? [];
-    return [
+    const runCompute = options.runCompute ?? true;
+    const runReadback = options.runReadback ?? true;
+    const runGpuSpatialIndex = options.runGpuSpatialIndex ?? true;
+    const targets: TerrainTask[] = [
       ...userTasks,
-      terrainTasks.executeCompute,
-      terrainTasks.terrainReadback,
-      terrainTasks.gpuSpatialIndexUpload,
-      syncTerrainRuntimeTask,
-      syncTerrainNodesTask,
-    ] satisfies readonly TerrainTask[];
-  }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
+      terrainTasks.leafGpuBuffer,
+    ];
+
+    if (runCompute) {
+      targets.push(terrainTasks.executeCompute);
+      if (runReadback) targets.push(terrainTasks.terrainReadback);
+    }
+    if (runGpuSpatialIndex) targets.push(terrainTasks.gpuSpatialIndexUpload);
+
+    targets.push(syncTerrainRuntimeTask, syncTerrainNodesTask);
+    return targets;
+  }, [
+    options.runCompute,
+    options.runGpuSpatialIndex,
+    options.runReadback,
+    options.tasks,
+    syncTerrainNodesTask,
+    syncTerrainRuntimeTask,
+  ]);
   const stopTerrainRunner = useTerrainRunner({
     graph,
     targets: runnerTargets,

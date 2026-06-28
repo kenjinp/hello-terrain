@@ -5,7 +5,7 @@ import {
   MeshStandardNodeMaterial,
   NodeMaterial,
 } from "three/webgpu";
-import { TerrainGeometry } from "../geometry/TerrainGeometry";
+import { TerrainGeometry, type TerrainGeometryOptions } from "../geometry/TerrainGeometry";
 import type { TerrainRaycast } from "../query/types";
 import { innerTileSegments as innerTileSegmentsParam } from "../tasks/params";
 
@@ -18,6 +18,13 @@ export type TerrainMeshParams = {
    * planet's outer shell is front-facing and renders with `FrontSide`.
    */
   flipWinding: boolean;
+  /**
+   * Keep the CPU-generated normal attribute on the tile geometry. The default
+   * terrain shader writes normals from the computed terrain field, but Three's
+   * standard WebGPU material path still uses the presence of the geometry
+   * normal attribute to select the fast normal pipeline.
+   */
+  includeGeometryNormals: boolean;
 };
 
 function createDefaultTerrainMaterial(): MeshStandardNodeMaterial {
@@ -35,16 +42,35 @@ export const defaultTerrainMeshParams: TerrainMeshParams = {
   maxNodes: 1024,
   material: createDefaultTerrainMaterial(),
   flipWinding: false,
+  includeGeometryNormals: true,
 };
+
+function createTerrainMeshGeometry(
+  innerTileSegments: number,
+  flipWinding: boolean,
+  includeGeometryNormals: boolean,
+) {
+  const options: TerrainGeometryOptions = {
+    includeNormals: includeGeometryNormals,
+  };
+  return new TerrainGeometry(innerTileSegments, true, flipWinding, options);
+}
+
 export class TerrainMesh extends InstancedMesh {
   private _innerTileSegments: number;
   private _maxNodes: number;
   private _flipWinding: boolean;
+  private _includeGeometryNormals: boolean;
   terrainRaycast: TerrainRaycast | null = null;
   constructor(params: Partial<TerrainMeshParams> = defaultTerrainMeshParams) {
     const mergedParams = { ...defaultTerrainMeshParams, ...params };
-    const { innerTileSegments, maxNodes, material, flipWinding } = mergedParams;
-    const geometry = new TerrainGeometry(innerTileSegments, true, flipWinding);
+    const { innerTileSegments, maxNodes, material, flipWinding, includeGeometryNormals } =
+      mergedParams;
+    const geometry = createTerrainMeshGeometry(
+      innerTileSegments,
+      flipWinding,
+      includeGeometryNormals,
+    );
     if (!material.name) material.name = "terrain";
     super(geometry, material, maxNodes);
     this.instanceMatrix.name = "terrainInstanceMatrix";
@@ -52,6 +78,7 @@ export class TerrainMesh extends InstancedMesh {
     this._innerTileSegments = innerTileSegments;
     this._maxNodes = maxNodes;
     this._flipWinding = flipWinding;
+    this._includeGeometryNormals = includeGeometryNormals;
   }
 
   get innerTileSegments() {
@@ -60,7 +87,11 @@ export class TerrainMesh extends InstancedMesh {
   set innerTileSegments(tileSegments: number) {
     if (tileSegments === this._innerTileSegments) return;
     const oldGeometry = this.geometry;
-    this.geometry = new TerrainGeometry(tileSegments, true, this._flipWinding);
+    this.geometry = createTerrainMeshGeometry(
+      tileSegments,
+      this._flipWinding,
+      this._includeGeometryNormals,
+    );
     this._innerTileSegments = tileSegments;
     setTimeout(() => oldGeometry.dispose());
   }
@@ -71,7 +102,11 @@ export class TerrainMesh extends InstancedMesh {
   set flipWinding(flip: boolean) {
     if (flip === this._flipWinding) return;
     const oldGeometry = this.geometry;
-    this.geometry = new TerrainGeometry(this._innerTileSegments, true, flip);
+    this.geometry = createTerrainMeshGeometry(
+      this._innerTileSegments,
+      flip,
+      this._includeGeometryNormals,
+    );
     this._flipWinding = flip;
     setTimeout(() => oldGeometry.dispose());
   }

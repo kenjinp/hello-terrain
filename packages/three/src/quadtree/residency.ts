@@ -78,6 +78,21 @@ function boundsIntersectsAnchor(
   return dx * dx + dy * dy + dz * dz <= radius * radius;
 }
 
+function cachedBoundsIntersectsAnchor(
+  cameraOrigin: { x: number; y: number; z: number },
+  cx: number,
+  cy: number,
+  cz: number,
+  r: number,
+  anchor: NonNullable<TerrainResidencyParams["anchors"]>[number],
+) {
+  const radius = Math.max(0, anchor.radius) + r;
+  const dx = cameraOrigin.x + cx - anchor.position.x;
+  const dy = cameraOrigin.y + cy - anchor.position.y;
+  const dz = cameraOrigin.z + cz - anchor.position.z;
+  return dx * dx + dy * dy + dz * dz <= radius * radius;
+}
+
 export function computeTileResidency(
   options: TileResidencyOptions,
   prev?: TileResidencyState,
@@ -90,6 +105,11 @@ export function computeTileResidency(
   const tile: TileId = { space: 0, level: 0, x: 0, y: 0 };
   const bounds: TileBounds = { cx: 0, cy: 0, cz: 0, r: 0 };
   const elevationRange: ElevationRangeOut = { min: 0, max: 0 };
+  const cachedBoundsAvailable =
+    (visibility.boundsCenterX?.length ?? 0) >= candidateCount &&
+    (visibility.boundsCenterY?.length ?? 0) >= candidateCount &&
+    (visibility.boundsCenterZ?.length ?? 0) >= candidateCount &&
+    (visibility.boundsRadius?.length ?? 0) >= candidateCount;
 
   telemetry.candidateCount = candidateCount;
   telemetry.visibleResidentCount = 0;
@@ -118,27 +138,44 @@ export function computeTileResidency(
         continue;
       }
 
-      tile.space = leaves.space[i] ?? 0;
-      tile.level = leaves.level[i] ?? 0;
-      tile.x = leaves.x[i] ?? 0;
-      tile.y = leaves.y[i] ?? 0;
-      const hasElevationRange =
-        options.elevationRangeForTile?.(tile, elevationRange) ?? false;
+      if (cachedBoundsAvailable) {
+        const cx = visibility.boundsCenterX![i] ?? 0;
+        const cy = visibility.boundsCenterY![i] ?? 0;
+        const cz = visibility.boundsCenterZ![i] ?? 0;
+        const r = visibility.boundsRadius![i] ?? 0;
+        for (const anchor of anchors) {
+          if (!cachedBoundsIntersectsAnchor(cameraOrigin, cx, cy, cz, r, anchor)) {
+            continue;
+          }
+          state.residencyState[i] = TileResidencyStateKind.Anchor;
+          state.residentCandidateIndices[telemetry.residentCount] = i;
+          telemetry.residentCount += 1;
+          telemetry.anchorResidentCount += 1;
+          break;
+        }
+      } else {
+        tile.space = leaves.space[i] ?? 0;
+        tile.level = leaves.level[i] ?? 0;
+        tile.x = leaves.x[i] ?? 0;
+        tile.y = leaves.y[i] ?? 0;
+        const hasElevationRange =
+          options.elevationRangeForTile?.(tile, elevationRange) ?? false;
 
-      topology.tileBounds(
-        tile,
-        cameraOrigin,
-        bounds,
-        hasElevationRange ? elevationRange : undefined,
-      );
+        topology.tileBounds(
+          tile,
+          cameraOrigin,
+          bounds,
+          hasElevationRange ? elevationRange : undefined,
+        );
 
-      for (const anchor of anchors) {
-        if (!boundsIntersectsAnchor(cameraOrigin, bounds, anchor)) continue;
-        state.residencyState[i] = TileResidencyStateKind.Anchor;
-        state.residentCandidateIndices[telemetry.residentCount] = i;
-        telemetry.residentCount += 1;
-        telemetry.anchorResidentCount += 1;
-        break;
+        for (const anchor of anchors) {
+          if (!boundsIntersectsAnchor(cameraOrigin, bounds, anchor)) continue;
+          state.residencyState[i] = TileResidencyStateKind.Anchor;
+          state.residentCandidateIndices[telemetry.residentCount] = i;
+          telemetry.residentCount += 1;
+          telemetry.anchorResidentCount += 1;
+          break;
+        }
       }
     }
   }
