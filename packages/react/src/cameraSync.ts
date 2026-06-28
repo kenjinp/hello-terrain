@@ -1,7 +1,4 @@
-import {
-  writeViewProjectionMatrix,
-  type ViewProjectionMatrix,
-} from "@hello-terrain/three";
+import { writeViewProjectionMatrix, type ViewProjectionMatrix } from "@hello-terrain/three";
 import type { Camera } from "three";
 import type { TerrainVector3Like } from "./types";
 

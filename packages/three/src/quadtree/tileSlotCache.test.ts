@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { allocLeafSet } from "./types.js";
-import { updateTileSlotCache } from "./tileSlotCache.js";
 import type { TileResidencyState } from "./residency.js";
+import { updateTileSlotCache } from "./tileSlotCache.js";
+import { allocLeafSet } from "./types.js";
 import type { TileVisibilityState } from "./visibility.js";
 
 function makeLeaves(keys: Array<[number, number, number, number]>) {
@@ -17,7 +17,10 @@ function makeLeaves(keys: Array<[number, number, number, number]>) {
 }
 
 function allVisible(count: number): TileVisibilityState {
-  return visibilityForIndices(count, Array.from({ length: count }, (_value, index) => index));
+  return visibilityForIndices(
+    count,
+    Array.from({ length: count }, (_value, index) => index),
+  );
 }
 
 function visibilityForIndices(count: number, indices: number[]): TileVisibilityState {
@@ -62,7 +65,10 @@ function residencyForIndices(
 }
 
 function allVisibleResident(count: number): TileResidencyState {
-  return residencyForIndices(count, Array.from({ length: count }, (_value, index) => index));
+  return residencyForIndices(
+    count,
+    Array.from({ length: count }, (_value, index) => index),
+  );
 }
 
 describe("quadtree/tileSlotCache", () => {
@@ -88,15 +94,7 @@ describe("quadtree/tileSlotCache", () => {
     expect(first.slotX[0]).toBe(1);
     expect(first.slotY[0]).toBe(1);
 
-    const second = updateTileSlotCache(
-      leaves,
-      visibility,
-      residency,
-      8,
-      "cubeSphere:8",
-      1,
-      first,
-    );
+    const second = updateTileSlotCache(leaves, visibility, residency, 8, "cubeSphere:8", 1, first);
     expect(second.telemetry.visibleSlotCount).toBe(3);
     expect(second.telemetry.activeSlotCount).toBe(3);
     expect(second.telemetry.allocatedCount).toBe(0);

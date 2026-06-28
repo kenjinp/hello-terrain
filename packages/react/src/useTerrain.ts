@@ -69,10 +69,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
     const runCompute = options.runCompute ?? true;
     const runReadback = options.runReadback ?? true;
     const runGpuSpatialIndex = options.runGpuSpatialIndex ?? true;
-    const targets: TerrainTask[] = [
-      ...userTasks,
-      terrainTasks.leafGpuBuffer,
-    ];
+    const targets: TerrainTask[] = [...userTasks, terrainTasks.leafGpuBuffer];
 
     if (runCompute) {
       targets.push(terrainTasks.executeCompute);

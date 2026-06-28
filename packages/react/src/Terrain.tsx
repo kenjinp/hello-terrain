@@ -37,9 +37,11 @@ function useTerrainMesh(
 }
 
 function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
-  const leaves = terrain.graph.peek(terrainTasks.visibleLeafSet)?.leaves;
-  if (leaves && mesh.count !== leaves.count) {
-    mesh.count = leaves.count;
+  const leafBuffer = terrain.graph.peek(terrainTasks.leafGpuBuffer);
+  const visibleCount =
+    leafBuffer?.count ?? terrain.graph.peek(terrainTasks.visibleLeafSet)?.leaves.count;
+  if (visibleCount !== undefined && mesh.count !== visibleCount) {
+    mesh.count = visibleCount;
     mesh.instanceMatrix.needsUpdate = true;
   }
 

@@ -1,19 +1,19 @@
 import {
   quadtreeUpdate,
   writeUpdateParamsFromCamera,
-  type TerrainResidencyAnchor,
   type TerrainGraph,
+  type TerrainResidencyAnchor,
 } from "@hello-terrain/three";
 import { useFrame, type RootState } from "@react-three/fiber";
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { Vector3 } from "three";
+import type { WebGPURenderer } from "three/webgpu";
 import {
   copyMatrix16,
   didCameraOriginMove,
   didViewProjectionMatrixChange,
   writeCameraViewProjectionMatrix,
 } from "./cameraSync";
-import type { WebGPURenderer } from "three/webgpu";
 import type { TerrainOptions, TerrainTask, TerrainVector3Like } from "./types";
 
 const WEBGPU_RENDERER_ERROR =
@@ -80,9 +80,7 @@ function didResidencyAnchorsChange(
 }
 
 function isWebGpuRenderer(renderer: unknown): renderer is WebGPURenderer {
-  return (
-    typeof renderer === "object" && renderer !== null && "backend" in renderer
-  );
+  return typeof renderer === "object" && renderer !== null && "backend" in renderer;
 }
 
 function createStaleTerrainRunAbortReason() {
@@ -114,15 +112,12 @@ export function useTerrainRunner({
   const runPromiseRef = useRef<Promise<void> | null>(null);
   const lastErrorKeyRef = useRef<string | null>(null);
 
-  const reportError = useCallback(
-    (error: Error | unknown, errorKey?: string) => {
-      const nextErrorKey = errorKey ?? getTerrainRunnerErrorKey(error);
-      if (lastErrorKeyRef.current === nextErrorKey) return;
-      lastErrorKeyRef.current = nextErrorKey;
-      console.error(error);
-    },
-    [],
-  );
+  const reportError = useCallback((error: Error | unknown, errorKey?: string) => {
+    const nextErrorKey = errorKey ?? getTerrainRunnerErrorKey(error);
+    if (lastErrorKeyRef.current === nextErrorKey) return;
+    lastErrorKeyRef.current = nextErrorKey;
+    console.error(error);
+  }, []);
 
   const clearError = useCallback(() => {
     lastErrorKeyRef.current = null;
@@ -139,22 +134,17 @@ export function useTerrainRunner({
     }
   }, []);
 
-  const readCameraFrame = useCallback(
-    (state: RootState) => {
-      const activeGetCameraOrigin = getCameraOriginRef.current;
-      const activeGetResidencyAnchors = getResidencyAnchorsRef.current;
-      const cameraOrigin = toVector3Like(state, activeGetCameraOrigin);
-      const nextOrigin = scratchCameraOriginRef.current;
-      nextOrigin.set(cameraOrigin.x, cameraOrigin.y, cameraOrigin.z);
-      const nextViewProjectionMatrix = scratchViewProjectionMatrixRef.current;
-      writeCameraViewProjectionMatrix(state.camera, nextViewProjectionMatrix);
-      const nextResidencyAnchors = cloneResidencyAnchors(
-        activeGetResidencyAnchors?.(state),
-      );
-      return { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors };
-    },
-    [],
-  );
+  const readCameraFrame = useCallback((state: RootState) => {
+    const activeGetCameraOrigin = getCameraOriginRef.current;
+    const activeGetResidencyAnchors = getResidencyAnchorsRef.current;
+    const cameraOrigin = toVector3Like(state, activeGetCameraOrigin);
+    const nextOrigin = scratchCameraOriginRef.current;
+    nextOrigin.set(cameraOrigin.x, cameraOrigin.y, cameraOrigin.z);
+    const nextViewProjectionMatrix = scratchViewProjectionMatrixRef.current;
+    writeCameraViewProjectionMatrix(state.camera, nextViewProjectionMatrix);
+    const nextResidencyAnchors = cloneResidencyAnchors(activeGetResidencyAnchors?.(state));
+    return { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors };
+  }, []);
 
   const didCameraFrameChange = useCallback(
     (
@@ -162,11 +152,7 @@ export function useTerrainRunner({
       nextViewProjectionMatrix: Float64Array,
       nextResidencyAnchors: TerrainResidencyAnchor[] | undefined,
     ) =>
-      didCameraOriginMove(
-        lastCameraOriginRef.current,
-        nextOrigin,
-        cameraHysteresis,
-      ) ||
+      didCameraOriginMove(lastCameraOriginRef.current, nextOrigin, cameraHysteresis) ||
       didViewProjectionMatrixChange(
         lastViewProjectionMatrixRef.current,
         nextViewProjectionMatrix,
@@ -184,15 +170,8 @@ export function useTerrainRunner({
       const activeController = runAbortControllerRef.current;
       if (!activeController || activeController.signal.aborted) return false;
 
-      const { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } =
-        readCameraFrame(state);
-      if (
-        !didCameraFrameChange(
-          nextOrigin,
-          nextViewProjectionMatrix,
-          nextResidencyAnchors,
-        )
-      ) {
+      const { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } = readCameraFrame(state);
+      if (!didCameraFrameChange(nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors)) {
         return false;
       }
 
@@ -204,15 +183,12 @@ export function useTerrainRunner({
 
   const updateCameraParams = useCallback(
     (state: RootState, activeGraph: TerrainGraph) => {
-      const { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } =
-        readCameraFrame(state);
+      const { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } = readCameraFrame(state);
 
       if (didCameraFrameChange(nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors)) {
         activeGraph.set(quadtreeUpdate, (prev) => {
           const next = writeUpdateParamsFromCamera(prev, state.camera, nextOrigin);
-          next.residency = nextResidencyAnchors
-            ? { anchors: nextResidencyAnchors }
-            : undefined;
+          next.residency = nextResidencyAnchors ? { anchors: nextResidencyAnchors } : undefined;
           return next;
         });
         lastCameraOriginRef.current = nextOrigin;
@@ -221,7 +197,7 @@ export function useTerrainRunner({
         }
         copyMatrix16(lastViewProjectionMatrixRef.current, nextViewProjectionMatrix);
         lastResidencyAnchorsRef.current = nextResidencyAnchors
-          ? cloneResidencyAnchors(nextResidencyAnchors) ?? null
+          ? (cloneResidencyAnchors(nextResidencyAnchors) ?? null)
           : [];
       }
     },
@@ -268,10 +244,7 @@ export function useTerrainRunner({
 
     const renderer = state.gl;
     if (!isWebGpuRenderer(renderer)) {
-      reportError(
-        new Error(WEBGPU_RENDERER_ERROR),
-        `renderer:${WEBGPU_RENDERER_ERROR}`,
-      );
+      reportError(new Error(WEBGPU_RENDERER_ERROR), `renderer:${WEBGPU_RENDERER_ERROR}`);
       return;
     }
 

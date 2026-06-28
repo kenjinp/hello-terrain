@@ -1,28 +1,28 @@
-import type { LeafSet } from "./types";
 import {
   TileResidencyStateKind,
   type TileResidencyState,
   type TileResidencyTelemetry,
 } from "./residency";
+import type { LeafSet } from "./types";
 import type { TileVisibilityState, TileVisibilityTelemetry } from "./visibility";
 
 export type TileSlotTelemetry = TileVisibilityTelemetry &
   TileResidencyTelemetry & {
-  visibleSlotCount: number;
-  residentSlotCount: number;
-  supportSlotCount: number;
-  activeSlotCount: number;
-  dirtyResidentCount: number;
-  dirtyVisibleCount: number;
-  reusedCount: number;
-  allocatedCount: number;
-  evictedCount: number;
-  retainedInactiveCount: number;
-  overflowCount: number;
-  dirtyResidentRatio: number;
-  dirtyVisibleRatio: number;
-  reuseRatio: number;
-};
+    visibleSlotCount: number;
+    residentSlotCount: number;
+    supportSlotCount: number;
+    activeSlotCount: number;
+    dirtyResidentCount: number;
+    dirtyVisibleCount: number;
+    reusedCount: number;
+    allocatedCount: number;
+    evictedCount: number;
+    retainedInactiveCount: number;
+    overflowCount: number;
+    dirtyResidentRatio: number;
+    dirtyVisibleRatio: number;
+    reuseRatio: number;
+  };
 
 export type TileSlotCacheState = {
   capacity: number;
@@ -83,12 +83,7 @@ const SlotState = {
   Resident: 1,
 } as const;
 
-export function tileKeyString(
-  space: number,
-  level: number,
-  x: number,
-  y: number,
-): string {
+export function tileKeyString(space: number, level: number, x: number, y: number): string {
   return `${space}:${level}:${x}:${y}`;
 }
 
@@ -133,10 +128,7 @@ function countResidentSlots(state: TileSlotCacheState) {
   return count;
 }
 
-function evictInactiveSlot(
-  state: TileSlotCacheState,
-  residentKeys: Set<string>,
-): number {
+function evictInactiveSlot(state: TileSlotCacheState, residentKeys: Set<string>): number {
   for (let slot = 0; slot < state.capacity; slot += 1) {
     const key = state.slotKey[slot];
     if (!key || residentKeys.has(key)) continue;
@@ -215,10 +207,7 @@ export function updateTileSlotCache(
     residency.telemetry.residentCount,
     residency.residentCandidateIndices.length,
   );
-  const visibleResidentCount = Math.min(
-    residency.telemetry.visibleResidentCount,
-    residentCount,
-  );
+  const visibleResidentCount = Math.min(residency.telemetry.visibleResidentCount, residentCount);
 
   state.generation += 1;
   state.activeSlotCount = 0;
@@ -244,8 +233,7 @@ export function updateTileSlotCache(
     const residencyKind = residency.residencyState[leafIndex];
     const visible =
       residencyKind === TileResidencyStateKind.Visible ||
-      (residencyKind !== TileResidencyStateKind.Anchor &&
-        residentIndex < visibleResidentCount);
+      (residencyKind !== TileResidencyStateKind.Anchor && residentIndex < visibleResidentCount);
     let slot = state.keyToSlot.get(key);
     let allocated = false;
 
@@ -270,8 +258,7 @@ export function updateTileSlotCache(
     state.slotLevel[slot] = level;
     state.slotX[slot] = x;
     state.slotY[slot] = y;
-    const wasResidentLastFrame =
-      state.slotLastResidentGeneration[slot] === state.generation - 1;
+    const wasResidentLastFrame = state.slotLastResidentGeneration[slot] === state.generation - 1;
     state.slotLastResidentGeneration[slot] = state.generation;
     state.residentSlots[telemetry.residentSlotCount] = slot;
     telemetry.residentSlotCount += 1;
@@ -284,11 +271,7 @@ export function updateTileSlotCache(
     }
     state.activeSlotCount = Math.max(state.activeSlotCount, slot + 1);
 
-    if (
-      allocated ||
-      !wasResidentLastFrame ||
-      state.slotContentEpoch[slot] !== contentEpoch
-    ) {
+    if (allocated || !wasResidentLastFrame || state.slotContentEpoch[slot] !== contentEpoch) {
       state.dirtyResidentSlots[telemetry.dirtyResidentCount] = slot;
       telemetry.dirtyResidentCount += 1;
       state.dirtyVisibleSlots[telemetry.dirtyVisibleCount] = slot;
@@ -299,20 +282,14 @@ export function updateTileSlotCache(
 
   const totalResidentCount = countResidentSlots(state);
   telemetry.activeSlotCount = state.activeSlotCount;
-  telemetry.retainedInactiveCount = Math.max(
-    0,
-    totalResidentCount - telemetry.residentSlotCount,
-  );
+  telemetry.retainedInactiveCount = Math.max(0, totalResidentCount - telemetry.residentSlotCount);
   telemetry.dirtyResidentRatio =
     telemetry.residentSlotCount > 0
       ? telemetry.dirtyResidentCount / telemetry.residentSlotCount
       : 0;
-  telemetry.dirtyVisibleRatio =
-    telemetry.dirtyResidentRatio;
+  telemetry.dirtyVisibleRatio = telemetry.dirtyResidentRatio;
   telemetry.reuseRatio =
-    telemetry.residentSlotCount > 0
-      ? telemetry.reusedCount / telemetry.residentSlotCount
-      : 0;
+    telemetry.residentSlotCount > 0 ? telemetry.reusedCount / telemetry.residentSlotCount : 0;
 
   return state;
 }

@@ -208,17 +208,10 @@ export function computeTileVisibility(
   const tile: TileId = { space: 0, level: 0, x: 0, y: 0 };
   const elevationRange: ElevationRangeOut = { min: 0, max: 0 };
   const frustumPlanes = new Float64Array(24);
-  const guardBandFactor = Math.max(
-    1,
-    options.guardBandFactor ?? DEFAULT_GUARD_BAND_FACTOR,
-  );
+  const guardBandFactor = Math.max(1, options.guardBandFactor ?? DEFAULT_GUARD_BAND_FACTOR);
   const projectionCpu = topology.projection.cpu;
-  const canUseHorizon =
-    typeof projectionCpu.isTileBehindHorizon === "function";
-  const canUseFrustum = extractFrustumPlanes(
-    options.viewProjectionMatrix,
-    frustumPlanes,
-  );
+  const canUseHorizon = typeof projectionCpu.isTileBehindHorizon === "function";
+  const canUseFrustum = extractFrustumPlanes(options.viewProjectionMatrix, frustumPlanes);
 
   telemetry.candidateCount = candidateCount;
   telemetry.visibleCount = 0;
@@ -233,24 +226,15 @@ export function computeTileVisibility(
     tile.level = leaves.level[i] ?? 0;
     tile.x = leaves.x[i] ?? 0;
     tile.y = leaves.y[i] ?? 0;
-    const hasElevationRange =
-      options.elevationRangeForTile?.(tile, elevationRange) ?? false;
+    const hasElevationRange = options.elevationRangeForTile?.(tile, elevationRange) ?? false;
 
-    topology.tileBounds(
-      tile,
-      cameraOrigin,
-      bounds,
-      hasElevationRange ? elevationRange : undefined,
-    );
+    topology.tileBounds(tile, cameraOrigin, bounds, hasElevationRange ? elevationRange : undefined);
     state.boundsCenterX![i] = bounds.cx;
     state.boundsCenterY![i] = bounds.cy;
     state.boundsCenterZ![i] = bounds.cz;
     state.boundsRadius![i] = bounds.r;
 
-    if (
-      canUseFrustum &&
-      !intersectsFrustum(frustumPlanes, cameraOrigin, bounds, guardBandFactor)
-    ) {
+    if (canUseFrustum && !intersectsFrustum(frustumPlanes, cameraOrigin, bounds, guardBandFactor)) {
       state.visibilityState[i] = TileVisibilityStateKind.FrustumCulled;
       telemetry.frustumCulledCount += 1;
       continue;
@@ -277,8 +261,7 @@ export function computeTileVisibility(
     if (!canUseHorizon) telemetry.unculledCount += 1;
   }
 
-  telemetry.visibleRatio =
-    candidateCount > 0 ? telemetry.visibleCount / candidateCount : 0;
+  telemetry.visibleRatio = candidateCount > 0 ? telemetry.visibleCount / candidateCount : 0;
 
   return state;
 }

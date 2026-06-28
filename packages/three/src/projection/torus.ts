@@ -1,27 +1,27 @@
 import { Vector3 } from "three";
 import { Fn, float, pow } from "three/tsl";
 import type { Node } from "three/webgpu";
-import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createDisplacedSurfaceNormalFromElevationField } from "../gpu/normalField";
+import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createCurvedRenderVertexPosition } from "../gpu/worldPosition";
-import { torusOutwardNormal as torusOutwardNormalNode, torusPosition } from "../tsl/torus";
 import {
-  type TorusSurfaceParams,
-  type Vec3Mutable,
   positionToTorusParams,
   torusOutwardNormal,
   torusUVToPoint,
+  type TorusSurfaceParams,
+  type Vec3Mutable,
 } from "../quadtree/topology/torusInverse";
-import { sampleGridBilinear } from "../query/elevation-field-sampling";
 import { torusRaycast, type TorusRaycastParams } from "../query/cpu-raycast";
-import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
+import { sampleGridBilinear } from "../query/elevation-field-sampling";
+import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
+import { torusOutwardNormal as torusOutwardNormalNode, torusPosition } from "../tsl/torus";
 import type {
   CpuSurfaceOps,
   FieldNormalContext,
   FieldNormalFn,
-  ProjectionRaycastContext,
   ProjectionHorizonContext,
+  ProjectionRaycastContext,
   RenderVertexPositionContext,
   SurfaceKey,
   SurfaceNormalContext,
@@ -127,10 +127,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     return viewDot + margin >= 0;
   };
 
-  const isTilePatchBackFacing = (
-    ctx: ProjectionHorizonContext,
-    boundsRadius: number,
-  ): boolean => {
+  const isTilePatchBackFacing = (ctx: ProjectionHorizonContext, boundsRadius: number): boolean => {
     if (
       ctx.tile.level < 2 ||
       boundsRadius > minorRadius * TORUS_OCCLUSION_MAX_BOUNDS_RADIUS_RATIO
@@ -201,10 +198,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       const tileToCameraX = ctx.cameraOrigin.x - tileX;
       const tileToCameraY = ctx.cameraOrigin.y - tileY;
       const tileToCameraZ = ctx.cameraOrigin.z - tileZ;
-      const viewDot =
-        normalX * tileToCameraX +
-        normalY * tileToCameraY +
-        normalZ * tileToCameraZ;
+      const viewDot = normalX * tileToCameraX + normalY * tileToCameraY + normalZ * tileToCameraZ;
       if (viewDot + boundsRadius < 0) return true;
     }
 
@@ -247,10 +241,14 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       const u = key.u;
       const v = key.v;
 
-      const hLeft = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx - 1, ctx.gy) * scale;
-      const hRight = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx + 1, ctx.gy) * scale;
-      const hUp = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy - 1) * scale;
-      const hDown = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
+      const hLeft =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx - 1, ctx.gy) * scale;
+      const hRight =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx + 1, ctx.gy) * scale;
+      const hUp =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy - 1) * scale;
+      const hDown =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
 
       // Translation-invariant; use a zero center to keep the math simple.
       torusUVToPoint(u - duvU, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft, invert);
@@ -291,7 +289,8 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
           ctx.leafStorage,
           ctx.uniforms,
           ctx.terrainFieldStorage,
-          (_tile, faceUV, displacement) => torusPosition(geometry, faceUV.x, faceUV.y, displacement),
+          (_tile, faceUV, displacement) =>
+            torusPosition(geometry, faceUV.x, faceUV.y, displacement),
           baseU,
           baseV,
           ctx.visibleSlotStorage,

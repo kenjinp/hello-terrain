@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { allocLeafSet } from "./types.js";
 import { createCubeSphereTopology } from "./topology/cubeSphere.js";
 import { createFlatTopology } from "./topology/flat.js";
 import { createTorusTopology } from "./topology/torus.js";
+import { allocLeafSet } from "./types.js";
 import { computeTileVisibility } from "./visibility.js";
 
 describe("quadtree/visibility", () => {
