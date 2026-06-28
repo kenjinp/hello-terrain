@@ -111,14 +111,20 @@ export const tileBoundsContextTask = task((get, work) => {
 }).displayName("tileBoundsContextTask");
 
 export const tileBoundsReductionTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
+  (get, work, ctx) => {
     get(executeComputeTask);
     const boundsContext = get(tileBoundsContextTask);
     const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
 
     return work((): TileBoundsContext => {
-      if (resources?.renderer && dirtyVisibleSlots.count > 0) {
-        resources.renderer.compute(boundsContext.kernel, [1, 1, dirtyVisibleSlots.count]);
+      if (ctx.signal.aborted) {
+        throw ctx.signal.reason ?? new Error("Terrain bounds reduction aborted");
+      }
+      if (
+        ctx.resources?.renderer &&
+        dirtyVisibleSlots.count > 0
+      ) {
+        ctx.resources.renderer.compute(boundsContext.kernel, [1, 1, dirtyVisibleSlots.count]);
       }
       return boundsContext;
     });

@@ -80,7 +80,7 @@ export const terrainQueryTask = task((get, work) => {
 }).displayName("terrainQueryTask");
 
 export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
+  (get, work, ctx) => {
     const boundsContext = get(tileBoundsReductionTask);
     const elevationFieldContext = get(createElevationFieldContextTask);
     const residentLeafSet = get(residentLeafSetTask);
@@ -89,10 +89,13 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
     const { cache } = get(terrainQueryTask);
 
     return work((): void => {
-      if (!resources?.renderer) return;
+      if (ctx.signal.aborted) {
+        throw ctx.signal.reason ?? new Error("Terrain readback aborted");
+      }
+      if (!ctx.resources?.renderer) return;
 
       cache.triggerReadback(
-        resources.renderer,
+        ctx.resources.renderer,
         elevationFieldContext.attribute,
         residentLeafSet.index,
         boundsContext.attribute,

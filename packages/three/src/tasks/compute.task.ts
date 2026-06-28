@@ -58,15 +58,18 @@ export function createComputePipelineTasks(
   }).displayName("compileComputeTask");
 
   const execute = task<{ renderer: WebGPURenderer }>(
-    (get, work, { resources }) => {
+    (get, work, ctx) => {
       const { execute: run } = get(compile);
       get(leafGpuBufferTask);
       const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
-      return work(() =>
-        resources?.renderer && dirtyVisibleSlots.count > 0
-          ? run(resources.renderer, dirtyVisibleSlots.count)
-          : () => {},
-      );
+      return work(() => {
+        if (ctx.signal.aborted) {
+          throw ctx.signal.reason ?? new Error("Terrain compute aborted");
+        }
+        return ctx.resources?.renderer && dirtyVisibleSlots.count > 0
+          ? run(ctx.resources.renderer, dirtyVisibleSlots.count)
+          : () => {};
+      });
     },
   )
     .displayName("executeComputeTask")
