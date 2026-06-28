@@ -29,8 +29,8 @@ The terrain library is organized in layers from pure logic to runtime integratio
    `cubeSphere`, `torus`.
 
    Behavioral differences must be expressed as injected hooks. `kind` is allowed
-   for diagnostics, telemetry, and cache identity only; it must not select
-   projection-specific code paths inside shared components.
+   for diagnostics and telemetry only; `cacheKey` carries cache identity. Neither
+   field should select projection-specific code paths inside shared components.
 
 6. `tasks/`  
    Reactive task-graph orchestration: params, stages, dependencies, and execution lanes.

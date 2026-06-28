@@ -37,6 +37,12 @@ export type ElevationRangeOut = {
 };
 
 export type Topology = {
+  /**
+   * Explicit topology identity for cache invalidation. Must change whenever tile
+   * coordinates map to different geometry, including root size/origin/radius or
+   * projection geometry changes.
+   */
+  readonly cacheKey: string;
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
   maxRootCount: number;
@@ -165,9 +171,26 @@ export type ViewProjectionMatrix = {
   [index: number]: number;
 };
 
+export type TerrainResidencyAnchor = {
+  /** World-space center of the area that must keep terrain data resident. */
+  position: { x: number; y: number; z: number };
+  /** World-space radius around `position` that should remain resident. */
+  radius: number;
+};
+
+export type TerrainResidencyParams = {
+  /**
+   * World-space support regions that need terrain data even when they are not
+   * render-visible. Character controllers and physics probes should publish
+   * anchors here instead of relying on frustum visibility.
+   */
+  anchors?: readonly TerrainResidencyAnchor[];
+};
+
 export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
   viewProjectionMatrix?: ViewProjectionMatrix;
+  residency?: TerrainResidencyParams;
 
   tileElevationRange?: TileElevationRangeFn;
 } & LodCriteria;

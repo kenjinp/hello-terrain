@@ -15,10 +15,11 @@ import {
 import {
   dirtyVisibleSlotBufferTask,
   leafGpuBufferTask,
+  residentLeafSetTask,
   topologyTask,
-  visibleLeafSetTask,
 } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./tile-bounds.task";
+import { createTerrainQueryShapeKey } from "./cache-key";
 
 export const terrainQueryTask = task((get, work) => {
   const maxNodesValue = get(maxNodes);
@@ -32,7 +33,12 @@ export const terrainQueryTask = task((get, work) => {
   const projection = topologyValue.projection;
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
-    const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
+    const shapeKey = createTerrainQueryShapeKey(
+      topologyValue,
+      maxNodesValue,
+      innerTileSegmentsValue,
+      maxLevelValue,
+    );
     const resolvedRadius = projection.radius ?? radiusValue;
     const configValues = {
       rootSize: rootSizeValue,
@@ -77,7 +83,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
     const boundsContext = get(tileBoundsReductionTask);
     const elevationFieldContext = get(createElevationFieldContextTask);
-    const visibleLeafSet = get(visibleLeafSetTask);
+    const residentLeafSet = get(residentLeafSetTask);
     const leafState = get(leafGpuBufferTask);
     const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
     const { cache } = get(terrainQueryTask);
@@ -88,7 +94,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
       cache.triggerReadback(
         resources.renderer,
         elevationFieldContext.attribute,
-        visibleLeafSet.index,
+        residentLeafSet.index,
         boundsContext.attribute,
         leafState.activeSlotCount,
         dirtyVisibleSlots.data,

@@ -13,6 +13,7 @@ Use it when you want to:
 - inspect the graph or tasks directly
 - access `runtime.query` or `runtime.raycast`
 - control quadtree tracking with a custom `getCameraOrigin`
+- keep gameplay terrain resident with `getResidencyAnchors`
 
 ## Return Value
 
@@ -84,6 +85,26 @@ const terrain = useTerrain({
   elevation,
   getCameraOrigin: () => playerPositionRef.current,
   cameraHysteresis: 0.25,
+});
+```
+
+## Keeping Gameplay Terrain Resident
+
+Render culling should not decide whether terrain exists for physics, character controllers, or queries. Use `getResidencyAnchors` to publish world-space support regions that should stay resident even when they are outside the render frustum. See [Residency Anchors](/docs/core/residency-anchors) for the full API model.
+
+```tsx
+const terrain = useTerrain({
+  rootSize: 4096,
+  maxLevel: 6,
+  elevation,
+  getCameraOrigin: () => playerPositionRef.current,
+  getResidencyAnchors: () => [
+    {
+      position: playerPositionRef.current,
+      radius: 96,
+    },
+  ],
+  residencyHysteresis: 0.25,
 });
 ```
 

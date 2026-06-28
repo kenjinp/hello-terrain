@@ -1,0 +1,37 @@
+---
+title: Residency Anchors
+description: Demonstrates keeping gameplay terrain resident while render culling hides tiles
+---
+
+import ResidencyAnchorsScene from "@/examples/ResidencyAnchorsScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<ResidencyAnchorsScene />
+</div>
+
+## Overview
+
+This example drives terrain visibility from the camera helper, then moves an orange residency anchor around the terrain.
+
+- Blue wireframe tiles are render-visible.
+- Orange wire boxes are resident support tiles that are outside the draw set.
+- The orange sphere is the anchor region.
+
+The important detail is that the anchor is written to `quadtreeUpdate.residency.anchors`:
+
+```ts
+graph.set(quadtreeUpdate, (prev) => {
+  const next = writeUpdateParamsFromCamera(prev, cullingCamera);
+  next.residency = {
+    anchors: [
+      {
+        position: playerOrProbePosition,
+        radius: 96,
+      },
+    ],
+  };
+  return next;
+});
+```
+
+Render visibility still controls the draw list, but query/readback terrain follows the resident set.

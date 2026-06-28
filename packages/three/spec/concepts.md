@@ -26,7 +26,8 @@ The injected strategy a topology carries (`SurfaceProjection`, in
 the CPU terrain cache, the query objects, the raycaster, visibility/occlusion,
 and the LOD camera offset never branch on a projection kind — they call into the
 projection's `gpu` and `cpu` hooks. `kind` (`flat` | `cubeSphere` | `torus` |
-…) is an identifier for debugging, telemetry, and cache identity only.
+…) is an identifier for debugging and telemetry only. `cacheKey` carries
+geometry identity for invalidating cached terrain data.
 
 - `flat` (`createFlatProjection`): tiles lie in the XZ plane; elevation
   displaces along `+Y`. No closed-surface query.

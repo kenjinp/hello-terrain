@@ -25,7 +25,7 @@ import type {
   VisibleSlotStorageState,
 } from "../types";
 
-/** Stable projection identifier for diagnostics/telemetry/cache identity only. */
+/** Stable projection identifier for diagnostics/telemetry only. */
 export type ProjectionKind = "flat" | "cubeSphere" | "torus" | (string & {});
 
 export interface Vec3Like {
@@ -162,8 +162,14 @@ export interface SurfaceProjectionCpu {
 // ── The injected strategy ──────────────────────────────────────────────────
 
 export interface SurfaceProjection {
-  /** Identifier for diagnostics/telemetry/cache identity; never switched on internally. */
+  /** Identifier for diagnostics/telemetry; never switched on internally. */
   readonly kind: ProjectionKind;
+  /**
+   * Explicit geometry identity for cache invalidation. Must change whenever the
+   * projection's geometry semantics change, such as radius, center, invert, or
+   * base resolution changes.
+   */
+  readonly cacheKey: string;
   /** Representative radius (bounds/uniform helper); undefined for flat. */
   readonly radius?: number;
   /** Surface center in world space; undefined for flat. */

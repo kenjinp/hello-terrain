@@ -74,6 +74,7 @@ function createFlatTileComputeParts(ctx: TileComputePartsContext): TileComputePa
 export function createFlatProjection(): SurfaceProjection {
   return {
     kind: "flat",
+    cacheKey: "flat",
     faceOutward: false,
 
     gpu: {

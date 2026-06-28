@@ -9,6 +9,7 @@ import type {
   LeafSet,
   SpatialIndex,
   TileId,
+  TileResidencyState,
   TileSlotCacheState,
   TileVisibilityState,
 } from "../quadtree";
@@ -17,15 +18,28 @@ import {
   buildLeafValueIndex,
   createSpatialIndex,
   computeTileVisibility,
+  computeTileResidency,
   createFlatTopology,
   createState,
   update,
   updateTileSlotCache,
 } from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
-import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
+import {
+  elevationFn,
+  elevationScale,
+  innerTileSegments,
+  maxLevel,
+  maxNodes,
+  origin,
+  quadtreeUpdate,
+  radius,
+  rootSize,
+  topology,
+} from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
 import type { VisibleSlotStorageState } from "../types";
+import { createTileSlotShapeKey } from "./cache-key";
 
 export type VisibleLeafSetState = {
   leaves: LeafSet;
@@ -34,6 +48,7 @@ export type VisibleLeafSetState = {
 
 export type TileIncrementalTelemetryState = {
   visibility: TileVisibilityState;
+  residency: TileResidencyState;
   slots: TileSlotCacheState;
   telemetry: TileSlotCacheState["telemetry"];
 };
@@ -137,23 +152,80 @@ export const tileVisibilityTask = task((get, work) => {
   );
 }).displayName("tileVisibilityTask");
 
+export const tileResidencyTask = task((get, work) => {
+  const leafSet = get(quadtreeUpdateTask);
+  const visibility = get(tileVisibilityTask);
+  const topologyValue = get(topologyTask);
+  const updateConfig = get(quadtreeUpdate);
+  const { cache } = get(terrainQueryTask);
+  const elevationScaleValue = get(elevationScale);
+  const elevationRangeScratch = { min: 0, max: 0 };
+
+  const elevationRangeForTile = (tile: TileId, out: ElevationRangeOut) => {
+    if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
+      return false;
+    }
+    out.min = elevationRangeScratch.min * elevationScaleValue;
+    out.max = elevationRangeScratch.max * elevationScaleValue;
+    return true;
+  };
+
+  return work((prev?: TileResidencyState) =>
+    computeTileResidency(
+      {
+        leaves: leafSet,
+        visibility,
+        topology: topologyValue,
+        cameraOrigin: updateConfig.cameraOrigin,
+        residency: updateConfig.residency,
+        elevationRangeForTile,
+      },
+      prev,
+    ),
+  );
+}).displayName("tileResidencyTask");
+
+/**
+ * Graph-owned epoch for field data contents.
+ *
+ * The slot cache only needs a cheap monotonic token. This task reads every
+ * dependency that can change generated field values, then lets the work graph
+ * invalidate and re-run it when any of those dependencies changes.
+ */
+export const terrainFieldContentEpochTask = task((get, work) => {
+  void get(topologyTask);
+  void get(rootSize);
+  void get(origin);
+  void get(radius);
+  void get(innerTileSegments);
+  void get(elevationScale);
+  void get(elevationFn);
+
+  return work((prev?: number) => (prev ?? 0) + 1);
+}).displayName("terrainFieldContentEpochTask");
+
 export const tileSlotUpdateTask = task((get, work) => {
   const leafSet = get(quadtreeUpdateTask);
   const topologyValue = get(topologyTask);
   const visibility = get(tileVisibilityTask);
+  const residency = get(tileResidencyTask);
   const maxNodesValue = get(maxNodes);
-  const shapeKey = `${topologyValue.projection.kind}:${topologyValue.spaceCount}:${maxNodesValue}`;
+  const contentEpoch = get(terrainFieldContentEpochTask);
+  const shapeKey = createTileSlotShapeKey(topologyValue, maxNodesValue);
 
   return work((prev?: TileIncrementalTelemetryState): TileIncrementalTelemetryState => {
     const slots = updateTileSlotCache(
       leafSet,
       visibility,
+      residency,
       maxNodesValue,
       shapeKey,
+      contentEpoch,
       prev?.slots,
     );
     return {
       visibility,
+      residency,
       slots,
       telemetry: slots.telemetry,
     };
@@ -185,6 +257,32 @@ export const visibleLeafSetTask = task((get, work) => {
     };
   });
 }).displayName("visibleLeafSetTask");
+
+export const residentLeafSetTask = task((get, work) => {
+  const slotUpdate = get(tileSlotUpdateTask);
+
+  return work((prev?: VisibleLeafSetState): VisibleLeafSetState => {
+    const slots = slotUpdate.slots;
+    const canReuse = prev?.leaves.capacity === slots.capacity;
+    const leaves = canReuse ? prev.leaves : allocLeafSet(slots.capacity);
+    leaves.count = Math.min(slots.telemetry.residentSlotCount, leaves.capacity);
+
+    for (let residentIndex = 0; residentIndex < leaves.count; residentIndex += 1) {
+      const slot = slots.residentSlots[residentIndex] ?? 0;
+      leaves.space[residentIndex] = slots.slotSpace[slot] ?? 0;
+      leaves.level[residentIndex] = slots.slotLevel[slot] ?? 0;
+      leaves.x[residentIndex] = slots.slotX[slot] ?? 0;
+      leaves.y[residentIndex] = slots.slotY[slot] ?? 0;
+    }
+
+    const index = canReuse ? prev.index : createSpatialIndex(slots.capacity);
+    const valueIndex = buildLeafValueIndex(leaves, slots.residentSlots, index);
+    return {
+      leaves,
+      index: valueIndex,
+    };
+  });
+}).displayName("residentLeafSetTask");
 
 /**
  * Creates the GPU storage buffer objects. Recreated when maxNodes changes.

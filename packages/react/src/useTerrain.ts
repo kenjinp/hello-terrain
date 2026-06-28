@@ -79,6 +79,8 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
     graph,
     targets: runnerTargets,
     getCameraOrigin: options.getCameraOrigin,
+    getResidencyAnchors: options.getResidencyAnchors,
+    residencyHysteresis: options.residencyHysteresis,
     cameraHysteresis: options.cameraHysteresis,
   });
 

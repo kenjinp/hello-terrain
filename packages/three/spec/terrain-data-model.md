@@ -40,7 +40,7 @@ The terrain system spans four data domains:
 
 Defined in `packages/three/src/tasks/params.ts`.
 
-- **World config:** `rootSize`, `origin`, `elevationScale`
+- **World config:** `rootSize`, `origin`, `elevationScale`, `radius`
 - **Shape config:** `innerTileSegments`, `maxNodes`, `maxLevel`
 - **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`
 - **Customization callbacks:** `topology`, `elevationFn`
@@ -104,8 +104,8 @@ CPU query facade and backing cache:
 
 - `cache: CpuTerrainCache`
 - `query: TerrainQuery`
-- `shapeKey: string` (buffer-shape identity; a change recreates the cache)
-- `projection: SurfaceProjection` (the projection the queries close over; an identity change — any surface-geometry change — swaps surface ops + rebuilds queries)
+- `shapeKey: string` (buffer-shape identity derived from capacity, sampling shape, `maxLevel`, and topology `cacheKey`; a change recreates the cache)
+- `projection: SurfaceProjection` (the projection the queries close over; an identity change with the same `cacheKey` swaps surface ops + rebuilds queries)
 
 This is the authoritative CPU query entrypoint for app/raycast usage.
 
@@ -225,7 +225,9 @@ CPU/TSL mirror pairs are never merged across the boundary; they are co-located o
 
 ## Consumer Guidance
 
-- Use `positionNodeTask` + `quadtreeUpdateTask.count` for rendering.
+- Use `positionNodeTask` + visible slot count for rendering.
 - Use `terrainQueryTask.query` for CPU terrain sampling APIs.
+- Use resident slot/index data for query, raycast, physics, and sampler support;
+  render visibility must not be the residency source of truth.
 - Use `terrainRaycastTask` for scene picking integration.
 - Treat query data as snapshot-based and generation-driven rather than immediate GPU truth.

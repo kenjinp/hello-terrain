@@ -44,6 +44,10 @@ const TWO_PI = Math.PI * 2;
 const RAYCAST_PADDING = 1;
 const ZERO_CENTER = { x: 0, y: 0, z: 0 };
 
+function vec3CacheKey(value: Vec3Like): string {
+  return `${value.x},${value.y},${value.z}`;
+}
+
 function createTorusTileComputeParts(
   ctx: TileComputePartsContext,
   geometry: {
@@ -85,6 +89,14 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
   const baseU = config.baseU ?? 1;
   const baseV = config.baseV ?? 1;
   const geometry = { majorRadius, minorRadius, center, invert, baseU, baseV };
+  const cacheKey = [
+    "torus",
+    `majorRadius=${majorRadius}`,
+    `minorRadius=${minorRadius}`,
+    `center=${vec3CacheKey(center)}`,
+    `invert=${invert ? 1 : 0}`,
+    `base=${baseU}x${baseV}`,
+  ].join("|");
 
   // Per-instance CPU scratch (no module-scope state).
   const params: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
@@ -159,6 +171,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
 
   return {
     kind: "torus",
+    cacheKey,
     radius: majorRadius + minorRadius,
     center,
     faceOutward: !invert,

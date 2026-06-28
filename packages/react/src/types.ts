@@ -3,6 +3,7 @@ import type {
   TerrainGraph,
   TerrainQuery,
   TerrainRaycast,
+  TerrainResidencyAnchor,
   TerrainSphereQuery,
   TerrainSurfaceQuery,
   TerrainTasks,
@@ -56,6 +57,8 @@ export interface TerrainOptions {
   topology?: Topology | null;
   terrainFieldFilter?: "nearest" | "linear";
   getCameraOrigin?: (state: RootState) => TerrainVector3Like;
+  getResidencyAnchors?: (state: RootState) => readonly TerrainResidencyAnchor[] | undefined;
+  residencyHysteresis?: number;
   cameraHysteresis?: number;
   tasks?: readonly TerrainTask[];
 }

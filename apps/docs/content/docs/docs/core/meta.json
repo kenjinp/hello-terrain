@@ -3,6 +3,7 @@
   "description": "Core utilities and building blocks",
   "pages": [
     "params",
+    "residency-anchors",
     "elevation-function",
     "topology",
     "projection",

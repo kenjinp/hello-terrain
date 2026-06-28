@@ -5,6 +5,7 @@ export * from "./leafIndex";
 export * from "./seams";
 export * from "./tileSlotCache";
 export * from "./visibility";
+export * from "./residency";
 export * from "./topology/flat";
 export * from "./topology/infiniteFlat";
 export * from "./topology/cubeSphere";

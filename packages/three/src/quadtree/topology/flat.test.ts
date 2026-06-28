@@ -18,6 +18,16 @@ describe("quadtree/topology/flat", () => {
     expect(out).toEqual({ space: 0, level: 1, x: 0, y: 1 });
   });
 
+  it("keys root geometry changes for cache invalidation", () => {
+    const base = createFlatTopology({ rootSize: 100, origin: { x: 0, y: 0, z: 0 } });
+    const larger = createFlatTopology({ rootSize: 200, origin: { x: 0, y: 0, z: 0 } });
+    const shifted = createFlatTopology({ rootSize: 100, origin: { x: 1, y: 2, z: 3 } });
+
+    expect(base.projection.cacheKey).toBe("flat");
+    expect(base.cacheKey).not.toBe(larger.cacheKey);
+    expect(base.cacheKey).not.toBe(shifted.cacheKey);
+  });
+
   it("computes conservative camera-relative bounds", () => {
     const topology = createFlatTopology({ rootSize: 100, origin: { x: 0, y: 10, z: 0 } });
 

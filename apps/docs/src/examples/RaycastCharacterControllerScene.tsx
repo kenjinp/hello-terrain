@@ -39,6 +39,7 @@ extend(THREE as any);
 
 const QUADTREE_ORIGIN_HYSTERESIS = 0.35;
 const QUADTREE_ORIGIN_SNAP = 0.25;
+const CHARACTER_RESIDENCY_RADIUS = 96;
 
 function snapToStep(value: number, step: number) {
   return Math.round(value / step) * step;
@@ -309,6 +310,20 @@ function RaycastCharacterControllerSceneImpl({
     return { x: nextOriginX, y: nextOriginY, z: nextOriginZ };
   }, []);
 
+  const getResidencyAnchors = useCallback(() => {
+    const playerPosition = characterSnapshotRef.current?.position;
+    return [
+      {
+        position: {
+          x: playerPosition?.x ?? 0,
+          y: playerPosition?.y ?? 12,
+          z: playerPosition?.z ?? 0,
+        },
+        radius: CHARACTER_RESIDENCY_RADIUS,
+      },
+    ];
+  }, []);
+
   const terrain = useTerrain({
     rootSize: controls.rootSize,
     maxLevel: controls.maxLevel,
@@ -318,6 +333,8 @@ function RaycastCharacterControllerSceneImpl({
     elevationScale: controls.elevationScale,
     elevation,
     getCameraOrigin,
+    getResidencyAnchors,
+    residencyHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
     cameraHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
   });
 

@@ -99,10 +99,25 @@ describe("quadtree/topology/torus", () => {
   it("exposes the torus projection with anisotropic base resolution", () => {
     const topology = createTorusTopology(cfg);
     expect(topology.projection.kind).toBe("torus");
+    expect(topology.cacheKey).toBe(topology.projection.cacheKey);
     expect(topology.projection.faceOutward).toBe(true);
     expect(topology.projection.baseResolution).toEqual({ u: baseU, v: baseV });
     expect(topology.projection.radius).toBe(cfg.majorRadius + cfg.minorRadius);
     expect(topology.spaceCount).toBe(1);
+  });
+
+  it("keys radii and center changes for cache invalidation", () => {
+    const base = createTorusTopology({ majorRadius: 1000, minorRadius: 300 });
+    const wider = createTorusTopology({ majorRadius: 1200, minorRadius: 300 });
+    const thicker = createTorusTopology({ majorRadius: 1000, minorRadius: 350 });
+    const shifted = createTorusTopology({
+      majorRadius: 1000,
+      minorRadius: 300,
+      center: { x: 1, y: 2, z: 3 },
+    });
+
+    expect(new Set([base.cacheKey, wider.cacheKey, thicker.cacheKey, shifted.cacheKey]).size).toBe(4);
+    expect(base.projection.cacheKey).toBe(base.cacheKey);
   });
 
   it("wraps neighbors around both periodic axes", () => {

@@ -7,6 +7,7 @@
     "quadtree-2d",
     "infinite-flat",
     "frustum-culling",
+    "residency-anchors",
     "cube-sphere",
     "torus",
     "raycast-character-controller",

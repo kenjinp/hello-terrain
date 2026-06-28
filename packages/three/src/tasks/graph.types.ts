@@ -55,7 +55,7 @@ export interface TerrainQueryContext {
   surfaceQuery: TerrainSurfaceQuery | null;
   /** Cube-sphere query; `null` unless the topology uses the cubeSphere projection. */
   sphereQuery: TerrainSphereQuery | null;
-  /** Buffer-shape identity (maxNodes/segments/projection kind); change recreates the cache. */
+  /** Buffer-shape identity (maxNodes/segments/maxLevel/topology cache key); change recreates the cache. */
   shapeKey: string;
   /**
    * The projection these queries close over. Recreated on any geometry change
@@ -71,7 +71,10 @@ export interface TerrainTasks {
   quadtreeConfig: TaskRef<QuadtreeConfigState>;
   quadtreeUpdate: TaskRef<LeafSet>;
   tileVisibility: TaskRef<TileIncrementalTelemetryState["visibility"]>;
+  tileResidency: TaskRef<TileIncrementalTelemetryState["residency"]>;
+  terrainFieldContentEpoch: TaskRef<number>;
   visibleLeafSet: TaskRef<VisibleLeafSetState>;
+  residentLeafSet: TaskRef<VisibleLeafSetState>;
   tileSlotUpdate: TaskRef<TileIncrementalTelemetryState>;
   topology: TaskRef<Topology>;
   leafStorage: TaskRef<LeafStorageState>;

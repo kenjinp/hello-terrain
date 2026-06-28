@@ -1,7 +1,7 @@
 import { task } from "@hello-terrain/work";
 import { createGpuSpatialIndex, uploadGpuSpatialIndex } from "../query/gpuSpatialIndex";
 import { maxNodes } from "./params";
-import { visibleLeafSetTask } from "./quadtree.task";
+import { residentLeafSetTask } from "./quadtree.task";
 
 export const gpuSpatialIndexStorageTask = task((get, work) => {
   const maxNodesValue = get(maxNodes);
@@ -9,11 +9,11 @@ export const gpuSpatialIndexStorageTask = task((get, work) => {
 }).displayName("gpuSpatialIndexStorageTask");
 
 export const gpuSpatialIndexUploadTask = task((get, work) => {
-  const visibleLeafSet = get(visibleLeafSetTask);
+  const residentLeafSet = get(residentLeafSetTask);
   const gpuSpatialIndex = get(gpuSpatialIndexStorageTask);
 
   return work(() => {
-    uploadGpuSpatialIndex(gpuSpatialIndex, visibleLeafSet.index);
+    uploadGpuSpatialIndex(gpuSpatialIndex, residentLeafSet.index);
     return gpuSpatialIndex;
   });
 }).displayName("gpuSpatialIndexUploadTask");

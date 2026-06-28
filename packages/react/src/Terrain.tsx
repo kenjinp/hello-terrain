@@ -122,6 +122,8 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     topology,
     terrainFieldFilter,
     getCameraOrigin,
+    getResidencyAnchors,
+    residencyHysteresis,
     cameraHysteresis,
     tasks,
     maxNodes,
@@ -140,6 +142,8 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     topology,
     terrainFieldFilter,
     getCameraOrigin,
+    getResidencyAnchors,
+    residencyHysteresis,
     cameraHysteresis,
     tasks,
     maxNodes,
@@ -171,6 +175,8 @@ export function Terrain({
   topology,
   terrainFieldFilter,
   getCameraOrigin,
+  getResidencyAnchors,
+  residencyHysteresis,
   cameraHysteresis,
   tasks,
   maxNodes,
@@ -202,6 +208,8 @@ export function Terrain({
       topology={topology}
       terrainFieldFilter={terrainFieldFilter}
       getCameraOrigin={getCameraOrigin}
+      getResidencyAnchors={getResidencyAnchors}
+      residencyHysteresis={residencyHysteresis}
       cameraHysteresis={cameraHysteresis}
       tasks={tasks}
       maxNodes={maxNodes}

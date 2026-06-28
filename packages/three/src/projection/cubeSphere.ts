@@ -49,6 +49,10 @@ export interface CubeSphereProjectionConfig {
 
 const RAYCAST_PADDING = 1;
 
+function vec3CacheKey(value: Vec3Like): string {
+  return `${value.x},${value.y},${value.z}`;
+}
+
 function createSphereTileComputeParts(ctx: TileComputePartsContext): TileComputeParts {
   const { uniforms, shared } = ctx;
 
@@ -80,6 +84,12 @@ export function createCubeSphereProjection(
   const radius = config.radius;
   const center: Vec3Like = config.center ?? { x: 0, y: 0, z: 0 };
   const invert = config.invert ?? false;
+  const cacheKey = [
+    "cubeSphere",
+    `radius=${radius}`,
+    `center=${vec3CacheKey(center)}`,
+    `invert=${invert ? 1 : 0}`,
+  ].join("|");
 
   // Per-instance CPU scratch (no module-scope state).
   const cubeScratch: Vec3Mutable = [0, 0, 0];
@@ -196,6 +206,7 @@ export function createCubeSphereProjection(
 
   return {
     kind: "cubeSphere",
+    cacheKey,
     radius,
     center,
     faceOutward: !invert,

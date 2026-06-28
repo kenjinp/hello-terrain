@@ -28,6 +28,15 @@
       ],
       "@assets/*": [
         "./public/assets/*"
+      ],
+      "@hello-terrain/react": [
+        "../../packages/react/src/index.tsx"
+      ],
+      "@hello-terrain/three": [
+        "../../packages/three/src/index.ts"
+      ],
+      "@hello-terrain/work": [
+        "../../packages/work/src/index.ts"
       ]
     },
     "plugins": [

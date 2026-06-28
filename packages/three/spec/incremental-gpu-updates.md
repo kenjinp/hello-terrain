@@ -33,9 +33,9 @@ selected by the quadtree.
   only.
 - Preserve the current projection model: no branching on projection kind in the
   pipeline; projection hooks continue to own shape-specific math.
-- Treat `projection.kind` as metadata for diagnostics, telemetry, and cache
-  identity only. New behavior must be added through injected topology or
-  projection hooks.
+- Treat `projection.kind` as metadata for diagnostics and telemetry only. Cache
+  invalidation must use explicit topology/projection `cacheKey` identity. New
+  behavior must be added through injected topology or projection hooks.
 - Keep task-local state instance-scoped. Do not use module-scope caches.
 - Keep first implementation conservative enough to verify against existing
   readback/query behavior.
@@ -85,18 +85,21 @@ Split broad LOD selection, visibility, and persistent field storage.
 flowchart LR
   leafSet["LeafSet (LOD candidates)"]
   visibility["TileVisibilitySet"]
+  residency["TileResidencySet"]
   slotCache["TileSlotCache"]
   visibleTiles["VisibleTileBuffer"]
-  dirtyVisibleSlots["DirtyVisibleSlotBuffer"]
+  dirtyResidentSlots["DirtyResidentSlotBuffer"]
   fieldStorage["Field storage by slot"]
   spatialIndex["Spatial index key -> fieldSlot"]
 
   leafSet --> visibility
-  visibility --> slotCache
+  leafSet --> residency
+  visibility --> residency
+  residency --> slotCache
   slotCache --> visibleTiles
-  slotCache --> dirtyVisibleSlots
-  visibleTiles --> spatialIndex
-  dirtyVisibleSlots --> fieldStorage
+  slotCache --> dirtyResidentSlots
+  residency --> spatialIndex
+  dirtyResidentSlots --> fieldStorage
   fieldStorage --> spatialIndex
 ```
 
@@ -104,11 +107,15 @@ In the target model:
 
 - `candidateIndex` means "dense LOD-selected leaf index before culling."
 - `visibleIndex` means "dense visible or guard-band tile index for this frame."
+- `residentIndex` means "dense tile index that must have terrain data available
+  for rendering, physics, raycasts, samplers, or other queries."
 - `fieldSlot` means "stable slot containing GPU terrain field data for one tile
   key."
 - Rendering iterates visible draw records.
-- Compute writes `fieldSlot` for dirty visible or guard-band slots.
+- Compute writes `fieldSlot` for dirty resident slots.
 - CPU/GPU spatial lookup returns `fieldSlot` for terrain field sampling.
+- Frustum, horizon, and occlusion culling may remove tiles from the draw list,
+  but they must not evict terrain data required by residency anchors.
 
 The first implementation can keep broad quadtree selection CPU-driven. Culling is
 not a replacement for LOD selection; it is a filter between LOD selection and
@@ -183,6 +190,29 @@ type TileVisibilityState = {
 - `3`: horizon/shape culled by an injected projection hook
 - `4`: unculled because no conservative bounds are available
 
+### TileResidencyState
+
+CPU-owned task-local state for the current frame's terrain-data residency set.
+
+Responsibilities:
+
+- Include every visible/guard tile.
+- Add non-visible tiles intersecting `UpdateParams.residency.anchors`.
+- Keep gameplay/query/readback data independent from render visibility.
+- Report visible-resident, anchor-resident, and total resident counts.
+
+Suggested shape:
+
+```ts
+type TileResidencyState = {
+  residentCandidateIndices: Uint32Array;
+  residencyState: Uint8Array;
+  residentCount: number;
+  visibleResidentCount: number;
+  anchorResidentCount: number;
+};
+```
+
 ### TileSlotCacheState
 
 CPU-owned task-local state that persists across graph runs for one buffer shape.
@@ -191,7 +221,8 @@ Responsibilities:
 
 - Map tile keys to stable field slots.
 - Track slot tile metadata.
-- Track which slots are visible or guard-band active this frame.
+- Track which slots are render-visible this frame.
+- Track which slots are resident for render/query/physics support.
 - Track which slots are dirty and why.
 - Reclaim slots no longer active after a configurable retention policy.
 
@@ -200,18 +231,23 @@ Suggested shape:
 ```ts
 type TileSlotCacheState = {
   capacity: number;
+  shapeKey: string;
+  contentEpoch: number;
   generation: number;
   keyToSlot: Map<string, number>;
   slotKey: string[];
+  slotContentEpoch: Uint32Array;
   slotSpace: Uint8Array;
   slotLevel: Uint8Array;
   slotX: Int32Array;
   slotY: Int32Array;
   slotState: Uint8Array;
   visibleSlots: Uint32Array;
-  dirtyVisibleSlots: Uint32Array;
+  residentSlots: Uint32Array;
+  dirtyResidentSlots: Uint32Array;
   visibleSlotCount: number;
-  dirtyVisibleCount: number;
+  residentSlotCount: number;
+  dirtyResidentCount: number;
   reusedCount: number;
   allocatedCount: number;
   evictedCount: number;
@@ -239,12 +275,13 @@ The first option is less disruptive for existing `decodeLeafTile` callers. The
 second option reduces one buffer read in render/query shaders. The first
 implementation should prefer less API churn unless profiling says otherwise.
 
-### DirtyVisibleSlotBufferState
+### DirtyResidentSlotBufferState
 
-GPU-uploaded list of visible or guard-band field slots that need compute this
-run.
+GPU-uploaded list of resident field slots that need compute this run. The
+current implementation may keep the legacy `dirtyVisible*` storage names while
+the public API migrates, but the semantics are dirty-resident.
 
-The compute pipeline dispatches over `dirtyVisibleCount`, not candidate leaf
+The compute pipeline dispatches over `dirtyResidentCount`, not candidate leaf
 count.
 
 Each dirty slot already has metadata in the slot tile storage, so the compute
@@ -252,14 +289,14 @@ kernel can recover tile coordinates from `fieldSlot`:
 
 ```ts
 const dirtyIndex = global dispatch instance;
-const fieldSlot = dirtyVisibleSlotStorage[dirtyIndex];
+const fieldSlot = dirtyResidentSlotStorage[dirtyIndex];
 const tile = slotTileStorage[fieldSlot];
 ```
 
 ### SlotTileStorage
 
 GPU storage containing tile metadata by `fieldSlot`. This is the compute input
-for dirty-visible-slot kernels.
+for dirty-resident-slot kernels.
 
 Record layout should mirror the existing leaf record:
 
@@ -358,21 +395,37 @@ deterministic frustum and horizon culling.
   - Reports candidate, visible, guard, frustum-culled, horizon/shape-culled,
     and unculled counts.
 
+- `tileResidencyTask`
+  - Depends on `tileVisibilityTask` and `quadtreeUpdate.residency`.
+  - Produces resident candidate indices by unioning visible/guard tiles with
+    anchor-intersecting support tiles.
+  - Keeps physics/query terrain data alive when render visibility culls tiles.
+
+- `terrainFieldContentEpochTask`
+  - Depends on the topology task and every parameter that can change generated
+    field values (`rootSize`, `origin`, `radius`, `innerTileSegments`,
+    `elevationScale`, `elevationFn`).
+  - Produces a monotonic numeric epoch by incrementing its previous value only
+    when the `work` graph invalidates those dependencies.
+  - Slot cache state stores this epoch per slot; the cache does not inspect or
+    stringify field inputs itself.
+
 - `tileSlotCacheTask`
   - Owns `TileSlotCacheState`.
   - Recreated when buffer shape or topology identity changes.
 
 - `tileSlotUpdateTask`
-  - Depends on `tileVisibilityTask`.
-  - Assigns visible and guard leaves to field slots.
-  - Produces visible, dirty-visible, reuse, allocation, and eviction telemetry.
+  - Depends on `tileVisibilityTask` and `tileResidencyTask`.
+  - Assigns resident leaves to field slots.
+  - Produces visible, resident, dirty-resident, reuse, allocation, and eviction
+    telemetry.
 
 - `visibleTileBufferTask`
   - Uploads visible draw records and field-slot mapping.
   - Replaces or wraps current `leafGpuBufferTask` for render consumers.
 
-- `dirtyVisibleSlotBufferTask`
-  - Uploads dirty visible or guard-band field slots.
+- `dirtyResidentSlotBufferTask`
+  - Uploads dirty resident field slots.
   - Compute execution depends on this.
 
 - `slotTileStorageTask`
@@ -453,18 +506,19 @@ Start conservative. Prefer extra dirty work over stale terrain.
 
 | Change | Action |
 | --- | --- |
-| Camera movement | Recompute visibility; allocate/reuse slots for visible and guard leaves; dirty only new or invalid slots |
+| Camera movement | Recompute visibility and residency; allocate/reuse slots for resident leaves; dirty only new or invalid slots |
 | Camera orientation change | Recompute frustum visibility; reused visible slots stay clean |
 | New tile enters visible or guard set | Allocate/reuse slot; mark slot dirty |
+| New tile enters residency through an anchor | Allocate/reuse slot; mark slot dirty; include it in query/readback spatial indexes even if it is not visible |
 | Tile remains visible with same key | Reuse slot; not dirty |
-| Tile leaves visible and guard sets | Mark inactive; retain or free by policy |
+| Tile leaves visible set but remains resident | Keep slot active for compute/query; remove it from visible draw slots |
+| Tile leaves residency set | Mark inactive; retain or free by policy |
 | Frustum guard-band setting changes | Recompute visibility; newly admitted guard tiles are dirty if missing |
 | Horizon culling setting or occluder envelope changes | Recompute visibility; field data stays valid unless topology/elevation inputs changed |
-| `elevationFn` identity changes | Mark all resident slots dirty |
-| `elevationScale` changes | Mark normal and bounds data dirty; easiest first step is mark all resident slots dirty |
+| Field content epoch changes (`elevationFn`, `elevationScale`, root geometry uniforms) | Keep slot identity, but mark every resident slot whose stored `slotContentEpoch` differs dirty; retained inactive slots dirty when they re-enter |
 | `innerTileSegments` changes | Recreate field storage and slot cache |
 | `maxNodes` changes | Recreate slot cache and GPU storage |
-| `maxLevel` changes | Keep cache if capacity and topology identity are stable, but new leaves may dirty |
+| `maxLevel` changes | Keep tile slots if capacity and topology identity are stable; recreate CPU query cache so range pyramids have the right capacity |
 | `topology` or projection identity changes | Recreate slot cache and spatial indexes |
 | `rootSize`, `origin`, `radius`, torus radii | Recreate or mark all resident slots dirty depending on topology identity behavior |
 | `terrainFieldFilter` changes | Recreate terrain field texture only |
@@ -502,7 +556,7 @@ First implementation:
 
 Follow-up optimization:
 
-- Read back only visible slots or dirty-visible slots.
+- Read back only resident slots or dirty-resident slots.
 - Maintain CPU-side cached elevation/bounds for resident slots that were not
   dirty this frame.
 
