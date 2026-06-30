@@ -3,19 +3,16 @@
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import {
-  createTorusColorNode,
-  createTorusElevation,
-} from "@/examples/terrain/torusNoise";
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
+import { createTorusColorNode, createTorusElevation } from "@/examples/terrain/torusNoise";
 import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import { createTorusTopology } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  resolveTerrainMaterialAppearance,
-  tileColorsLevaControl,
-} from "@/examples/terrain/tileInstanceColor";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
 
@@ -67,9 +64,7 @@ function QueryDemo({
       return;
     }
     marker.visible = true;
-    marker.position
-      .copy(sample.position)
-      .addScaledVector(sample.normal, markerHeight * 0.5);
+    marker.position.copy(sample.position).addScaledVector(sample.normal, markerHeight * 0.5);
     marker.quaternion.setFromUnitVectors(upAxis, sample.normal);
   });
 
@@ -192,12 +187,7 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
         elevationScale: controls.elevationScale,
         invert: controls.invert,
       }),
-    [
-      controls.majorRadius,
-      controls.minorRadius,
-      controls.elevationScale,
-      controls.invert,
-    ],
+    [controls.majorRadius, controls.minorRadius, controls.elevationScale, controls.invert],
   );
 
   const terrain = useTerrain({
@@ -227,12 +217,7 @@ function TorusTerrainSceneImpl({ store }: { store: LevaStore }) {
 
   return (
     <>
-      <Terrain
-        terrain={terrain}
-        maxNodes={controls.maxNodes}
-        frustumCulled={false}
-        onPointerDown={handlePointerDown}
-      >
+      <Terrain terrain={terrain} onPointerDown={handlePointerDown}>
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}
@@ -276,9 +261,7 @@ export default function TorusTerrainScene() {
         gl={async (props) => {
           props.alpha = true;
           props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
+          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
           renderer.logarithmicDepthBuffer = true;
           await renderer.init();
           return renderer;

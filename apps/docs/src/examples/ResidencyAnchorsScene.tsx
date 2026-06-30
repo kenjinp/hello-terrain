@@ -4,28 +4,13 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
+import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import {
-  elevationFn,
-  elevationScale,
-  innerTileSegments,
-  leafGpuBufferTask,
-  maxLevel,
-  maxNodes,
-  positionNodeTask,
   quadtreeUpdate,
-  rootSize,
-  skirtScale,
-  TerrainGeometry,
-  terrainFieldFilter,
-  terrainGraph,
-  TerrainMesh,
   tileSlotUpdateTask,
-  updateUniformsTask,
-  writeUpdateParamsFromCamera,
+  type TerrainGraph,
   type TileSlotTelemetry,
-  type UpdateParams,
 } from "@hello-terrain/three";
-import { task } from "@hello-terrain/work";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useCreateStore } from "leva";
@@ -35,7 +20,6 @@ import { float } from "three/tsl";
 import * as THREE from "three/webgpu";
 
 extend(THREE as any);
-extend({ TerrainGeometry, TerrainMesh });
 
 const ROOT_SIZE = 180;
 const MAX_NODES = 4096;
@@ -60,7 +44,7 @@ function tileCenter(level: number, x: number, y: number) {
   };
 }
 
-function ResidencyStatsPanel({ graph }: { graph: ReturnType<typeof terrainGraph> }) {
+function ResidencyStatsPanel({ graph }: { graph: TerrainGraph }) {
   const [stats, setStats] = useState<ResidencyStats>({
     visibleSlotCount: 0,
     residentSlotCount: 0,
@@ -95,7 +79,7 @@ function ResidencyStatsPanel({ graph }: { graph: ReturnType<typeof terrainGraph>
   );
 }
 
-function ResidentSupportOverlay({ graph }: { graph: ReturnType<typeof terrainGraph> }) {
+function ResidentSupportOverlay({ graph }: { graph: TerrainGraph }) {
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const matrix = useMemo(() => new THREE.Matrix4(), []);
   const position = useMemo(() => new THREE.Vector3(), []);
@@ -142,9 +126,11 @@ function ResidentSupportOverlay({ graph }: { graph: ReturnType<typeof terrainGra
   );
 }
 
-function ResidencyAnchorTerrain({ graph }: { graph: ReturnType<typeof terrainGraph> }) {
-  const meshRef = useRef<THREE.InstancedMesh | null>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+function ResidencyAnchorTerrain({
+  onTerrain,
+}: {
+  onTerrain: (terrain: TerrainHandle) => void;
+}) {
   const helperRef = useRef<THREE.CameraHelper | null>(null);
   const anchorRef = useRef<THREE.Mesh | null>(null);
   const anchor = useMemo(() => new THREE.Vector3(), []);
@@ -155,99 +141,61 @@ function ResidencyAnchorTerrain({ graph }: { graph: ReturnType<typeof terrainGra
     camera.updateProjectionMatrix();
     return camera;
   }, []);
+  const elevation = useMemo(() => () => float(0), []);
+
+  const terrain = useTerrain({
+    rootSize: ROOT_SIZE,
+    maxLevel: 10,
+    maxNodes: MAX_NODES,
+    innerTileSegments: INNER_TILE_SEGMENTS,
+    skirtScale: 8,
+    elevationScale: 1,
+    terrainFieldFilter: "nearest",
+    elevation,
+    camera: cullingCamera,
+    getResidencyAnchors: () => [
+      {
+        position: { x: anchor.x, y: anchor.y, z: anchor.z },
+        radius: ANCHOR_RADIUS,
+      },
+    ],
+  });
 
   useEffect(() => {
-    graph
-      .set(rootSize, ROOT_SIZE)
-      .set(maxLevel, 10)
-      .set(maxNodes, MAX_NODES)
-      .set(innerTileSegments, INNER_TILE_SEGMENTS)
-      .set(skirtScale, 8)
-      .set(elevationScale, 1)
-      .set(terrainFieldFilter, "nearest")
-      .set(elevationFn as never, (() => float(0)) as never);
+    onTerrain(terrain);
+  }, [onTerrain, terrain]);
 
-    graph.add(
-      task<{ renderer: THREE.WebGPURenderer }>((get, work) => {
-        const leafBuffer = get(leafGpuBufferTask);
-        const positionNode = get(positionNodeTask);
-        const uniforms = get(updateUniformsTask);
+  useEffect(() => {
+    terrain.graph.set(quadtreeUpdate, (prev) => ({
+      ...prev,
+      mode: "distance" as const,
+      distanceFactor: 1.4,
+    }));
+  }, [terrain.graph]);
 
-        return work(() => {
-          const mesh = meshRef.current;
-          if (mesh && mesh.count !== leafBuffer.count) {
-            mesh.count = leafBuffer.count;
-            mesh.instanceMatrix.needsUpdate = true;
-          }
-          if (
-            mesh &&
-            typeof uniforms.uInnerTileSegments.value === "number" &&
-            "innerTileSegments" in mesh
-          ) {
-            (mesh as TerrainMesh).innerTileSegments = uniforms.uInnerTileSegments.value;
-          }
-
-          const material = materialRef.current;
-          if (material && positionNode && material.positionNode !== positionNode) {
-            material.positionNode = positionNode;
-            material.needsUpdate = true;
-          }
-        });
-      }).displayName("residencyAnchorsSceneApplyTask"),
-    );
-  }, [graph]);
-
-  useFrame(async ({ clock, gl }) => {
+  useFrame(({ clock }) => {
     const t = clock.elapsedTime * 0.36;
     anchor.set(Math.cos(t) * 54, 0, Math.sin(t * 0.87) * 54);
     anchorRef.current?.position.copy(anchor);
     helperRef.current?.update();
-
-    graph.set(quadtreeUpdate, (prev: UpdateParams) => {
-      const next = writeUpdateParamsFromCamera(
-        {
-          ...prev,
-          cameraOrigin: prev.cameraOrigin,
-          mode: "distance",
-          distanceFactor: 1.4,
-        },
-        cullingCamera,
-      );
-      next.residency = {
-        anchors: [
-          {
-            position: { x: anchor.x, y: anchor.y, z: anchor.z },
-            radius: ANCHOR_RADIUS,
-          },
-        ],
-      };
-      return next;
-    });
-
-    await graph.run({
-      resources: { renderer: gl as unknown as THREE.WebGPURenderer },
-    });
   });
 
   return (
     <>
       <primitive object={cullingCamera} />
       <cameraHelper ref={helperRef} args={[cullingCamera]} />
-      <terrainMesh
-        ref={meshRef}
-        innerTileSegments={INNER_TILE_SEGMENTS}
-        maxNodes={MAX_NODES}
-        frustumCulled={false}
-      >
-        <meshStandardNodeMaterial
-          ref={materialRef}
-          wireframe
-          color="#7dd3fc"
-          roughness={0.9}
-          metalness={0.02}
-        />
-      </terrainMesh>
-      <ResidentSupportOverlay graph={graph} />
+      <Terrain terrain={terrain} frustumCulled={false}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial
+            positionNode={positionNode}
+            wireframe
+            color="#7dd3fc"
+            roughness={0.9}
+            metalness={0.02}
+          />
+        )}
+      </Terrain>
+      <ResidentSupportOverlay graph={terrain.graph} />
       <mesh ref={anchorRef} position={[54, 0, 0]}>
         <sphereGeometry args={[ANCHOR_RADIUS, 32, 12]} />
         <meshBasicMaterial color="#f97316" wireframe transparent opacity={0.75} />
@@ -259,15 +207,21 @@ function ResidencyAnchorTerrain({ graph }: { graph: ReturnType<typeof terrainGra
 
 export default function ResidencyAnchorsScene() {
   const store = useCreateStore();
-  const graph = useMemo(() => terrainGraph(), []);
+  const [graph, setGraph] = useState<TerrainGraph | null>(null);
+  const handleTerrain = useMemo(
+    () => (terrain: TerrainHandle) => {
+      setGraph(terrain.graph);
+    },
+    [],
+  );
 
   return (
     <ExamplesCanvas store={store}>
-      <ResidencyStatsPanel graph={graph} />
+      {graph ? <ResidencyStatsPanel graph={graph} /> : null}
       <div className="pointer-events-none absolute bottom-2 left-2 right-2 z-10 flex flex-col gap-1.5 md:bottom-4 md:left-auto md:right-4 md:max-w-xs">
-        <RunTimingBars graph={graph} />
+        {graph ? <RunTimingBars graph={graph} /> : null}
         <div className="flex flex-row gap-1.5">
-          <TerrainTileDebug graph={graph} />
+          {graph ? <TerrainTileDebug graph={graph} /> : null}
           <FpsDebug />
         </div>
       </div>
@@ -293,7 +247,7 @@ export default function ResidencyAnchorsScene() {
         <color attach="background" args={["#07111f"]} />
         <ambientLight intensity={0.45} />
         <directionalLight intensity={1.6} position={[70, 110, 50]} />
-        <ResidencyAnchorTerrain graph={graph} />
+        <ResidencyAnchorTerrain onTerrain={handleTerrain} />
         <OrbitControls makeDefault target={[0, 0, 0]} />
       </Canvas>
     </ExamplesCanvas>

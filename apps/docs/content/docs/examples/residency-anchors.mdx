@@ -11,13 +11,32 @@ import ResidencyAnchorsScene from "@/examples/ResidencyAnchorsScene"
 
 ## Overview
 
-This example drives terrain visibility from the camera helper, then moves an orange residency anchor around the terrain.
+This example drives terrain visibility from a helper camera, then moves an orange residency anchor around the terrain.
 
 - Blue wireframe tiles are render-visible.
 - Orange wire boxes are resident support tiles that are outside the draw set.
-- The orange sphere is the anchor region.
+- Orange sphere is the anchor region.
 
-The important detail is that the anchor is written to `quadtreeUpdate.residency.anchors`:
+With `@hello-terrain/react`, combine a custom culling `camera` with `getResidencyAnchors`:
+
+```tsx
+const terrain = useTerrain({
+  rootSize: 180,
+  maxLevel: 10,
+  elevation,
+  camera: cullingCamera,
+  getResidencyAnchors: () => [
+    {
+      position: anchorPosition,
+      radius: 96,
+    },
+  ],
+});
+```
+
+Render visibility still controls the draw list, but query/readback terrain follows the resident set.
+
+At the core API level, anchors are written through `quadtreeUpdate.residency`:
 
 ```ts
 graph.set(quadtreeUpdate, (prev) => {
@@ -33,5 +52,3 @@ graph.set(quadtreeUpdate, (prev) => {
   return next;
 });
 ```
-
-Render visibility still controls the draw list, but query/readback terrain follows the resident set.

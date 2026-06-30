@@ -107,6 +107,7 @@ const terrain = useTerrain({
   rootSize: 4096,
   maxLevel: 6,
   elevation,
+  camera: cullingCamera,
   getCameraOrigin,
   getResidencyAnchors,
   cameraHysteresis: 0.35,
@@ -114,6 +115,7 @@ const terrain = useTerrain({
 ```
 
 - `elevation` maps to the core `elevationFn` param.
+- `camera` drives `quadtreeUpdate` view-projection through `writeUpdateParamsFromCamera`. Defaults to the R3F canvas camera.
 - `getCameraOrigin` and `cameraHysteresis` influence how the runner updates the core `quadtreeUpdate` param over time.
 - `getResidencyAnchors` maps to `quadtreeUpdate.residency.anchors`, keeping terrain data resident around gameplay systems even when render culling hides those tiles.
 - `tasks` lets you add extra `@hello-terrain/work` tasks to the terrain graph.

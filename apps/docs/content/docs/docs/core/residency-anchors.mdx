@@ -16,13 +16,14 @@ Frustum, horizon, and occlusion culling should remove tiles from the draw list. 
 
 ## React API
 
-Use `getResidencyAnchors` with `useTerrain()` or `<Terrain />`:
+Use `getResidencyAnchors` with `useTerrain()` or `<Terrain />`. Pair it with a custom `camera` when render visibility should follow one view while gameplay regions stay resident independently — see the [Residency Anchors](/examples/residency-anchors) example.
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 4096,
   maxLevel: 8,
   elevation,
+  camera: cullingCamera,
   getCameraOrigin: () => playerPositionRef.current,
   getResidencyAnchors: () => [
     {

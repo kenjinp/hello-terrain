@@ -5,8 +5,8 @@ import {
   type TerrainResidencyAnchor,
 } from "@hello-terrain/three";
 import { useFrame, type RootState } from "@react-three/fiber";
-import { useCallback, useLayoutEffect, useRef } from "react";
-import { Vector3 } from "three";
+import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
+import { Vector3, type Camera } from "three";
 import type { WebGPURenderer } from "three/webgpu";
 import {
   copyMatrix16,
@@ -23,17 +23,23 @@ const GRAPH_RUN_ERROR = "@hello-terrain/react terrain graph run failed.";
 export interface UseTerrainRunnerParams {
   graph: TerrainGraph;
   targets?: readonly TerrainTask[];
+  cameraRef: RefObject<Camera | undefined>;
   getCameraOrigin?: TerrainOptions["getCameraOrigin"];
   getResidencyAnchors?: TerrainOptions["getResidencyAnchors"];
   residencyHysteresis?: number;
   cameraHysteresis?: number;
 }
 
+function resolveActiveCamera(state: RootState, cameraRef: RefObject<Camera | undefined>): Camera {
+  return cameraRef.current ?? state.camera;
+}
+
 function toVector3Like(
   state: RootState,
+  activeCamera: Camera,
   getCameraOrigin?: TerrainOptions["getCameraOrigin"],
 ): TerrainVector3Like {
-  return getCameraOrigin?.(state) ?? state.camera.position;
+  return getCameraOrigin?.(state) ?? activeCamera.position;
 }
 
 function getTerrainRunnerErrorKey(error: unknown) {
@@ -92,6 +98,7 @@ function createStaleTerrainRunAbortReason() {
 export function useTerrainRunner({
   graph,
   targets,
+  cameraRef,
   getCameraOrigin,
   getResidencyAnchors,
   residencyHysteresis = 0.05,
@@ -99,6 +106,7 @@ export function useTerrainRunner({
 }: UseTerrainRunnerParams) {
   const graphRef = useRef(graph);
   const targetsRef = useRef(targets);
+  const cameraRefRef = useRef(cameraRef);
   const getCameraOriginRef = useRef(getCameraOrigin);
   const getResidencyAnchorsRef = useRef(getResidencyAnchors);
   const lastCameraOriginRef = useRef<Vector3 | null>(null);
@@ -137,13 +145,14 @@ export function useTerrainRunner({
   const readCameraFrame = useCallback((state: RootState) => {
     const activeGetCameraOrigin = getCameraOriginRef.current;
     const activeGetResidencyAnchors = getResidencyAnchorsRef.current;
-    const cameraOrigin = toVector3Like(state, activeGetCameraOrigin);
+    const activeCamera = resolveActiveCamera(state, cameraRefRef.current);
+    const cameraOrigin = toVector3Like(state, activeCamera, activeGetCameraOrigin);
     const nextOrigin = scratchCameraOriginRef.current;
     nextOrigin.set(cameraOrigin.x, cameraOrigin.y, cameraOrigin.z);
     const nextViewProjectionMatrix = scratchViewProjectionMatrixRef.current;
-    writeCameraViewProjectionMatrix(state.camera, nextViewProjectionMatrix);
+    writeCameraViewProjectionMatrix(activeCamera, nextViewProjectionMatrix);
     const nextResidencyAnchors = cloneResidencyAnchors(activeGetResidencyAnchors?.(state));
-    return { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors };
+    return { activeCamera, nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors };
   }, []);
 
   const didCameraFrameChange = useCallback(
@@ -183,11 +192,12 @@ export function useTerrainRunner({
 
   const updateCameraParams = useCallback(
     (state: RootState, activeGraph: TerrainGraph) => {
-      const { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } = readCameraFrame(state);
+      const { activeCamera, nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } =
+        readCameraFrame(state);
 
       if (didCameraFrameChange(nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors)) {
         activeGraph.set(quadtreeUpdate, (prev) => {
-          const next = writeUpdateParamsFromCamera(prev, state.camera, nextOrigin);
+          const next = writeUpdateParamsFromCamera(prev, activeCamera, nextOrigin);
           next.residency = nextResidencyAnchors ? { anchors: nextResidencyAnchors } : undefined;
           return next;
         });
@@ -221,6 +231,7 @@ export function useTerrainRunner({
     void stopCurrentRun();
     graphRef.current = graph;
     targetsRef.current = targets;
+    cameraRefRef.current = cameraRef;
     getCameraOriginRef.current = getCameraOrigin;
     getResidencyAnchorsRef.current = getResidencyAnchors;
     lastCameraOriginRef.current = null;
@@ -234,7 +245,7 @@ export function useTerrainRunner({
       runningRef.current = false;
       void stopCurrentRun();
     };
-  }, [clearError, getCameraOrigin, getResidencyAnchors, graph, stopCurrentRun, targets]);
+  }, [cameraRef, clearError, getCameraOrigin, getResidencyAnchors, graph, stopCurrentRun, targets]);
 
   useFrame((state) => {
     if (runningRef.current) {

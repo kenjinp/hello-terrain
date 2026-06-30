@@ -206,12 +206,7 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
 
   return (
     <>
-      <Terrain
-        terrain={terrain}
-        maxNodes={controls.maxNodes}
-        frustumCulled={false}
-        onPointerDown={handlePointerDown}
-      >
+      <Terrain terrain={terrain} onPointerDown={handlePointerDown}>
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}
