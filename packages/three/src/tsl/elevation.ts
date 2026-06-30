@@ -1,5 +1,5 @@
+import { Fn } from "three/tsl";
 import { type ShaderNodeFn } from "three/src/nodes/TSL.js";
-import { Fn } from "three/src/nodes/TSL.js";
 import type Node from "three/src/nodes/core/Node.js";
 import type { ProxiedObject } from "three/tsl";
 

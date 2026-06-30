@@ -1,4 +1,4 @@
-import Node from "three/src/nodes/core/Node.js";
+import type Node from "three/src/nodes/core/Node.js";
 import { dot, float, Fn, remap, vec3 } from "three/tsl";
 
 /**
