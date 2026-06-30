@@ -28,6 +28,7 @@ export type CubeSphereTopologyConfig = {
 export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topology {
   const radius = cfg.radius;
   const center = cfg.center ?? { x: 0, y: 0, z: 0 };
+  const projection = createCubeSphereProjection({ radius, center, invert: cfg.invert });
 
   const cube: Vec3Mutable = [0, 0, 0];
   const uv: [number, number] = [0, 0];
@@ -64,9 +65,10 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
   }
 
   return {
+    cacheKey: projection.cacheKey,
     spaceCount: 6,
     maxRootCount: 6,
-    projection: createCubeSphereProjection({ radius, center, invert: cfg.invert }),
+    projection,
 
     neighborSameLevel(tile: TileId, dir: 0 | 1 | 2 | 3, out: TileId): boolean {
       const level = tile.level;

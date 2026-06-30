@@ -58,7 +58,7 @@ I think it's pretty cool, anyways.
 `terrainGraph()` returns a pre-wired `Graph` containing all the params and tasks needed
 for rendering the quadtree tiles. Parameters like `rootSize`, `maxLevel`, and `innerTileSegments`
 control tile resolution and quadtree depth. The `quadtreeUpdate` param carries the
-camera position so the LOD system knows where to refine.
+camera origin and optional view-projection matrix so the LOD and culling systems know what to refine.
 
 ```tsx
 import {
@@ -66,6 +66,7 @@ import {
   innerTileSegments, // some params the library exports (should I call these like... innerTileSegmentParams???)
   maxLevel,
   maxNodes,
+  writeUpdateParamsFromCamera,
   // .. yada yada
 } from "@hello-terrain/three";
 
@@ -89,16 +90,14 @@ useEffect(() => {
 
 ### The render loop
 
-Inside `useFrame`, the camera position is pushed into the `quadtreeUpdate` param and
-the graph is run. The quadtree refines and leaf tiles are uploaded to GPU storage buffers.
+Inside `useFrame`, the camera is pushed into the `quadtreeUpdate` param and the
+graph is run. The helper copies both the camera origin used for LOD and the
+view-projection matrix used for frustum culling.
 
 ```tsx
 useFrame(async ({ camera }) => {
   g.set(quadtreeUpdate, (prev) => {
-    prev.cameraOrigin.x = camera.position.x;
-    prev.cameraOrigin.y = camera.position.y;
-    prev.cameraOrigin.z = camera.position.z;
-    return prev;
+    return writeUpdateParamsFromCamera(prev, camera);
   });
   // is it okay to do async work in a render loop? Who knows! I'll find out!
   await g.run();

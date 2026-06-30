@@ -1,0 +1,86 @@
+---
+title: Residency Anchors
+description: Keep terrain data alive for gameplay and query systems independently from render visibility
+---
+
+## Overview
+
+Residency anchors are world-space support regions that keep terrain data resident even when render culling hides those tiles.
+
+This separates two different questions:
+
+- **Visibility:** which tiles should be drawn this frame.
+- **Residency:** which tiles need terrain data for queries, raycasts, physics, samplers, or character controllers.
+
+Frustum, horizon, and occlusion culling should remove tiles from the draw list. They should not remove terrain that gameplay systems still need.
+
+## React API
+
+Use `getResidencyAnchors` with `useTerrain()` or `<Terrain />`. Pair it with a custom `camera` when render visibility should follow one view while gameplay regions stay resident independently — see the [Residency Anchors](/examples/residency-anchors) example.
+
+```tsx
+const terrain = useTerrain({
+  rootSize: 4096,
+  maxLevel: 8,
+  elevation,
+  camera: cullingCamera,
+  getCameraOrigin: () => playerPositionRef.current,
+  getResidencyAnchors: () => [
+    {
+      position: playerPositionRef.current,
+      radius: 96,
+    },
+  ],
+  residencyHysteresis: 0.25,
+});
+```
+
+Each anchor is a world-space sphere:
+
+```ts
+type TerrainResidencyAnchor = {
+  position: { x: number; y: number; z: number };
+  radius: number;
+};
+```
+
+The React runner copies anchor values into the core `quadtreeUpdate` param. It uses `residencyHysteresis` to avoid updating the graph for tiny anchor movement.
+
+## Core API
+
+At the lower level, anchors live on `UpdateParams`:
+
+```ts
+graph.set(quadtreeUpdate, (prev) => ({
+  ...prev,
+  residency: {
+    anchors: [
+      {
+        position: { x: player.x, y: player.y, z: player.z },
+        radius: 96,
+      },
+    ],
+  },
+}));
+```
+
+Internally, the terrain graph computes:
+
+- `tileVisibilityTask`: visible draw candidates.
+- `tileResidencyTask`: visible candidates plus anchor-supported candidates.
+- `tileSlotUpdateTask`: resident slots for compute/readback/query, visible slots for rendering.
+
+## Choosing A Radius
+
+For character controllers, choose a radius large enough to cover:
+
+- the character capsule and feet,
+- one or more frames of movement prediction,
+- camera/controller latency,
+- nearby raycasts or placement probes.
+
+Start conservative. A slightly larger anchor costs extra resident slots; a too-small anchor can create query holes.
+
+## Example
+
+See [Residency Anchors](/docs/examples/residency-anchors) for a visual demo. The blue tiles are render-visible. The orange wire tiles are non-visible terrain kept resident by an anchor.

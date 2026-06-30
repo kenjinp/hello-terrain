@@ -33,8 +33,8 @@ export type LeafTileNodes = {
 };
 
 /**
- * Decode a leaf tile record from leaf storage. Records are packed as
- * `[level, x, y, space/face]` at `nodeIndex * 4` (see `leafGpuBufferTask`).
+ * Decode a slot tile record from tile storage. Records are packed as
+ * `[level, x, y, space/face]` at `fieldSlot * 4` (see `leafGpuBufferTask`).
  */
 export function decodeLeafTile(leafStorage: LeafStorageState, nodeIndex: Node): LeafTileNodes {
   const nodeOffset = int(nodeIndex).mul(int(4));

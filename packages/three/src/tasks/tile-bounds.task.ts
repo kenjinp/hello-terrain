@@ -1,11 +1,14 @@
 import { task } from "@hello-terrain/work";
-import { Fn, If, Loop, float, int, localId, max, min, storage, workgroupArray, workgroupBarrier, workgroupId } from "three/tsl";
+import { Fn, If, Loop, float, int, localId, max, min, storage, uint, workgroupArray, workgroupBarrier, workgroupId } from "three/tsl";
 import type { StorageBufferNode } from "three/webgpu";
 import { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import { executeComputeTask } from "./compute.task";
 import { createElevationFieldContextTask } from "./elevation-field.task";
 import { innerTileSegments, maxNodes } from "./params";
-import { leafGpuBufferTask } from "./quadtree.task";
+import {
+  dirtyVisibleSlotBufferTask,
+  dirtyVisibleSlotStorageTask,
+} from "./quadtree.task";
 
 export interface TileBoundsContext {
   data: Float32Array<ArrayBuffer>;
@@ -18,6 +21,7 @@ const WGSIZE = 64;
 function buildReductionKernel(
   elevationFieldNode: StorageBufferNode,
   boundsNode: StorageBufferNode,
+  dirtyVisibleSlotNode: StorageBufferNode,
   verticesPerNode: number,
   edgeVertexCount: number,
 ) {
@@ -28,8 +32,9 @@ function buildReductionKernel(
     const sharedMax = workgroupArray("float", WGSIZE);
 
     const tid = int(localId.x);
-    const tileIdx = int(workgroupId.z);
-    const baseOffset = tileIdx.mul(int(verticesPerNode));
+    const dispatchIndex = uint(workgroupId.z);
+    const fieldSlot = dirtyVisibleSlotNode.element(dispatchIndex).toUint();
+    const baseOffset = fieldSlot.mul(uint(verticesPerNode));
 
     const start = tid.mul(int(elemsPerThread));
     const end = min(start.add(int(elemsPerThread)), int(verticesPerNode));
@@ -51,7 +56,7 @@ function buildReductionKernel(
         .or(iy.equal(int(0)))
         .or(iy.equal(lastEdge));
       If(isSkirt.not(), () => {
-        const h = elevationFieldNode.element(baseOffset.add(i));
+        const h = elevationFieldNode.element(int(baseOffset.add(uint(i))));
         localMin.assign(min(localMin, h));
         localMax.assign(max(localMax, h));
       });
@@ -71,15 +76,18 @@ function buildReductionKernel(
         finalMax.assign(max(finalMax, sharedMax.element(i)));
       });
 
-      const outIdx = tileIdx.mul(int(2));
-      boundsNode.element(outIdx).assign(finalMin);
-      boundsNode.element(outIdx.add(int(1))).assign(finalMax);
+      const outIdx = fieldSlot.mul(uint(2));
+      boundsNode.element(int(outIdx)).assign(finalMin);
+      boundsNode.element(int(outIdx.add(uint(1)))).assign(finalMax);
     });
-  })().computeKernel([WGSIZE, 1, 1]);
+  })()
+    .computeKernel([WGSIZE, 1, 1])
+    .setName("tileBoundsReduction");
 }
 
 export const tileBoundsContextTask = task((get, work) => {
   const elevationFieldContext = get(createElevationFieldContextTask);
+  const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
   const maxNodesValue = get(maxNodes);
   const edgeVertexCount = get(innerTileSegments) + 3;
 
@@ -94,6 +102,7 @@ export const tileBoundsContextTask = task((get, work) => {
     const kernel = buildReductionKernel(
       elevationFieldContext.node,
       node,
+      dirtyVisibleSlotStorage.node,
       verticesPerNode,
       edgeVertexCount,
     );
@@ -102,14 +111,20 @@ export const tileBoundsContextTask = task((get, work) => {
 }).displayName("tileBoundsContextTask");
 
 export const tileBoundsReductionTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
+  (get, work, ctx) => {
     get(executeComputeTask);
     const boundsContext = get(tileBoundsContextTask);
-    const leafState = get(leafGpuBufferTask);
+    const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
 
     return work((): TileBoundsContext => {
-      if (resources?.renderer && leafState.count > 0) {
-        resources.renderer.compute(boundsContext.kernel, [1, 1, leafState.count]);
+      if (ctx.signal.aborted) {
+        throw ctx.signal.reason ?? new Error("Terrain bounds reduction aborted");
+      }
+      if (
+        ctx.resources?.renderer &&
+        dirtyVisibleSlots.count > 0
+      ) {
+        ctx.resources.renderer.compute(boundsContext.kernel, [1, 1, dirtyVisibleSlots.count]);
       }
       return boundsContext;
     });

@@ -65,6 +65,8 @@ export interface CpuTerrainCache {
     spatialIndex: SpatialIndex,
     boundsAttribute?: StorageBufferAttribute,
     activeLeafCount?: number,
+    dirtySlots?: ArrayLike<number>,
+    dirtySlotCount?: number,
   ): void;
   /** Release GPU readback staging buffers owned by this cache. */
   dispose(): void;
@@ -324,13 +326,23 @@ export function createCpuTerrainCache(
       shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
       totalElements = maxNodes * shape.verticesPerNode;
     },
-    triggerReadback(renderer, attribute, spatialIndex, boundsAttribute, activeLeafCount) {
+    triggerReadback(
+      renderer,
+      attribute,
+      spatialIndex,
+      boundsAttribute,
+      activeLeafCount,
+      dirtySlots,
+      dirtySlotCount,
+    ) {
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
         verticesPerNode: shape.verticesPerNode,
         elevationScale: config.elevationScale,
         originY: config.originY,
+        dirtySlots,
+        dirtySlotCount,
       });
     },
     dispose() {

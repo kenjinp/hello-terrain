@@ -1,25 +1,26 @@
 import { Vector3 } from "three";
 import { Fn, float, pow } from "three/tsl";
 import type { Node } from "three/webgpu";
-import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createDisplacedSurfaceNormalFromElevationField } from "../gpu/normalField";
+import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createCurvedRenderVertexPosition } from "../gpu/worldPosition";
-import { torusOutwardNormal as torusOutwardNormalNode, torusPosition } from "../tsl/torus";
 import {
-  type TorusSurfaceParams,
-  type Vec3Mutable,
   positionToTorusParams,
   torusOutwardNormal,
   torusUVToPoint,
+  type TorusSurfaceParams,
+  type Vec3Mutable,
 } from "../quadtree/topology/torusInverse";
-import { sampleGridBilinear } from "../query/elevation-field-sampling";
 import { torusRaycast, type TorusRaycastParams } from "../query/cpu-raycast";
-import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
+import { sampleGridBilinear } from "../query/elevation-field-sampling";
+import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
+import { torusOutwardNormal as torusOutwardNormalNode, torusPosition } from "../tsl/torus";
 import type {
   CpuSurfaceOps,
   FieldNormalContext,
   FieldNormalFn,
+  ProjectionHorizonContext,
   ProjectionRaycastContext,
   RenderVertexPositionContext,
   SurfaceKey,
@@ -43,6 +44,12 @@ export interface TorusProjectionConfig {
 const TWO_PI = Math.PI * 2;
 const RAYCAST_PADDING = 1;
 const ZERO_CENTER = { x: 0, y: 0, z: 0 };
+const TORUS_OCCLUSION_MAX_BOUNDS_RADIUS_RATIO = 0.25;
+const TORUS_BACKFACE_MARGIN_RATIO = 0.25;
+
+function vec3CacheKey(value: Vec3Like): string {
+  return `${value.x},${value.y},${value.z}`;
+}
 
 function createTorusTileComputeParts(
   ctx: TileComputePartsContext,
@@ -85,6 +92,14 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
   const baseU = config.baseU ?? 1;
   const baseV = config.baseV ?? 1;
   const geometry = { majorRadius, minorRadius, center, invert, baseU, baseV };
+  const cacheKey = [
+    "torus",
+    `majorRadius=${majorRadius}`,
+    `minorRadius=${minorRadius}`,
+    `center=${vec3CacheKey(center)}`,
+    `invert=${invert ? 1 : 0}`,
+    `base=${baseU}x${baseV}`,
+  ].join("|");
 
   // Per-instance CPU scratch (no module-scope state).
   const params: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
@@ -93,6 +108,105 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
   const posRight: Vec3Mutable = [0, 0, 0];
   const posUp: Vec3Mutable = [0, 0, 0];
   const posDown: Vec3Mutable = [0, 0, 0];
+  const occlusionParams: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
+  const occlusionPoint: Vec3Mutable = [0, 0, 0];
+  const occlusionNormal: Vec3Mutable = [0, 0, 0];
+
+  const sampleFacesCamera = (
+    ctx: ProjectionHorizonContext,
+    u: number,
+    v: number,
+    margin: number,
+  ): boolean => {
+    torusUVToPoint(u, v, majorRadius, minorRadius, 0, center, occlusionPoint, invert);
+    torusOutwardNormal(u, v, occlusionNormal, invert);
+    const viewDot =
+      occlusionNormal[0] * (ctx.cameraOrigin.x - occlusionPoint[0]) +
+      occlusionNormal[1] * (ctx.cameraOrigin.y - occlusionPoint[1]) +
+      occlusionNormal[2] * (ctx.cameraOrigin.z - occlusionPoint[2]);
+    return viewDot + margin >= 0;
+  };
+
+  const isTilePatchBackFacing = (ctx: ProjectionHorizonContext, boundsRadius: number): boolean => {
+    if (
+      ctx.tile.level < 2 ||
+      boundsRadius > minorRadius * TORUS_OCCLUSION_MAX_BOUNDS_RADIUS_RATIO
+    ) {
+      return false;
+    }
+
+    const levelScale = 2 ** ctx.tile.level;
+    const nU = baseU * levelScale;
+    const nV = baseV * levelScale;
+    const u0 = ctx.tile.x / nU;
+    const u1 = (ctx.tile.x + 1) / nU;
+    const v0 = ctx.tile.y / nV;
+    const v1 = (ctx.tile.y + 1) / nV;
+    const uc = (u0 + u1) * 0.5;
+    const vc = (v0 + v1) * 0.5;
+    const margin = boundsRadius * TORUS_BACKFACE_MARGIN_RATIO;
+
+    return !(
+      sampleFacesCamera(ctx, u0, v0, margin) ||
+      sampleFacesCamera(ctx, u1, v0, margin) ||
+      sampleFacesCamera(ctx, u0, v1, margin) ||
+      sampleFacesCamera(ctx, u1, v1, margin) ||
+      sampleFacesCamera(ctx, uc, vc, margin)
+    );
+  };
+
+  const isTileBehindHorizon = (ctx: ProjectionHorizonContext): boolean => {
+    if (invert) return false;
+
+    const tileX = ctx.cameraOrigin.x + ctx.bounds.cx;
+    const tileY = ctx.cameraOrigin.y + ctx.bounds.cy;
+    const tileZ = ctx.cameraOrigin.z + ctx.bounds.cz;
+    positionToTorusParams(tileX, tileY, tileZ, majorRadius, center, occlusionParams);
+
+    const theta = TWO_PI * occlusionParams.u;
+    const tubeCenterX = center.x + majorRadius * Math.sin(theta);
+    const tubeCenterY = center.y;
+    const tubeCenterZ = center.z + majorRadius * Math.cos(theta);
+
+    const cameraX = ctx.cameraOrigin.x - tubeCenterX;
+    const cameraY = ctx.cameraOrigin.y - tubeCenterY;
+    const cameraZ = ctx.cameraOrigin.z - tubeCenterZ;
+    const cameraDistance = Math.hypot(cameraX, cameraY, cameraZ);
+    const boundsRadius = ctx.bounds.r * ctx.guardBandFactor;
+    if (cameraDistance <= minorRadius + boundsRadius) return false;
+
+    if (isTilePatchBackFacing(ctx, boundsRadius)) return true;
+
+    const invCameraDistance = 1 / cameraDistance;
+    const dirX = cameraX * invCameraDistance;
+    const dirY = cameraY * invCameraDistance;
+    const dirZ = cameraZ * invCameraDistance;
+
+    const tileLocalX = tileX - tubeCenterX;
+    const tileLocalY = tileY - tubeCenterY;
+    const tileLocalZ = tileZ - tubeCenterZ;
+    const tileLocalDistance = Math.hypot(tileLocalX, tileLocalY, tileLocalZ);
+
+    if (
+      tileLocalDistance > 1e-6 &&
+      boundsRadius <= minorRadius * TORUS_OCCLUSION_MAX_BOUNDS_RADIUS_RATIO
+    ) {
+      const invTileLocalDistance = 1 / tileLocalDistance;
+      const normalX = tileLocalX * invTileLocalDistance;
+      const normalY = tileLocalY * invTileLocalDistance;
+      const normalZ = tileLocalZ * invTileLocalDistance;
+      const tileToCameraX = ctx.cameraOrigin.x - tileX;
+      const tileToCameraY = ctx.cameraOrigin.y - tileY;
+      const tileToCameraZ = ctx.cameraOrigin.z - tileZ;
+      const viewDot = normalX * tileToCameraX + normalY * tileToCameraY + normalZ * tileToCameraZ;
+      if (viewDot + boundsRadius < 0) return true;
+    }
+
+    const projection = tileLocalX * dirX + tileLocalY * dirY + tileLocalZ * dirZ;
+    const maxTileProjection = projection + boundsRadius;
+
+    return cameraDistance * maxTileProjection < minorRadius * minorRadius;
+  };
 
   const surfaceOps: CpuSurfaceOps = {
     positionToKey(px, py, pz, out: SurfaceKey): boolean {
@@ -127,10 +241,14 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       const u = key.u;
       const v = key.v;
 
-      const hLeft = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx - 1, ctx.gy) * scale;
-      const hRight = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx + 1, ctx.gy) * scale;
-      const hUp = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy - 1) * scale;
-      const hDown = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
+      const hLeft =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx - 1, ctx.gy) * scale;
+      const hRight =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx + 1, ctx.gy) * scale;
+      const hUp =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy - 1) * scale;
+      const hDown =
+        sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
 
       // Translation-invariant; use a zero center to keep the math simple.
       torusUVToPoint(u - duvU, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft, invert);
@@ -159,6 +277,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
 
   return {
     kind: "torus",
+    cacheKey,
     radius: majorRadius + minorRadius,
     center,
     faceOutward: !invert,
@@ -170,9 +289,11 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
           ctx.leafStorage,
           ctx.uniforms,
           ctx.terrainFieldStorage,
-          (_tile, faceUV, displacement) => torusPosition(geometry, faceUV.x, faceUV.y, displacement),
+          (_tile, faceUV, displacement) =>
+            torusPosition(geometry, faceUV.x, faceUV.y, displacement),
           baseU,
           baseV,
+          ctx.visibleSlotStorage,
         );
       },
       createTileComputeParts: (ctx) => createTorusTileComputeParts(ctx, geometry),
@@ -221,6 +342,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         };
         return torusRaycast(ctx.surfaceQuery, ctx.ray, raycastParams, ctx.options);
       },
+      isTileBehindHorizon,
     },
   };
 }

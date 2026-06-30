@@ -22,6 +22,7 @@ import {
   terrainGraph,
   terrainTasks,
   TerrainMesh,
+  writeUpdateParamsFromCamera,
   type ElevationCallback,
   type LeafSet,
   type TerrainGraph,
@@ -220,10 +221,7 @@ function TerrainRaycastHoverSceneImpl({
       CAMERA_HYSTERESIS * CAMERA_HYSTERESIS
     ) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
+        return writeUpdateParamsFromCamera(prev, camera);
       });
       lastCameraRef.current.copy(camera.position);
     }
@@ -234,7 +232,7 @@ function TerrainRaycastHoverSceneImpl({
 
     const mesh = meshRef.current;
     if (!mesh) return;
-    const leaves = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
+    const leaves = g.peek(terrainTasks.visibleLeafSet)?.leaves as LeafSet | undefined;
     if (leaves && mesh.count !== leaves.count) {
       mesh.count = leaves.count;
       mesh.instanceMatrix.needsUpdate = true;

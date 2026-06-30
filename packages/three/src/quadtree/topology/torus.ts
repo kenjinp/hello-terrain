@@ -30,6 +30,14 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   const invert = cfg.invert ?? false;
   const baseU = Math.max(1, Math.round(majorRadius / minorRadius));
   const baseV = 1;
+  const projection = createTorusProjection({
+    majorRadius,
+    minorRadius,
+    center,
+    invert,
+    baseU,
+    baseV,
+  });
 
   const corner: Vec3Mutable = [0, 0, 0];
   const px = new Float64Array(18);
@@ -44,16 +52,10 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   };
 
   return {
+    cacheKey: projection.cacheKey,
     spaceCount: 1,
     maxRootCount: baseU * baseV,
-    projection: createTorusProjection({
-      majorRadius,
-      minorRadius,
-      center,
-      invert,
-      baseU,
-      baseV,
-    }),
+    projection,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       const { nU, nV } = levelResolution(tile.level);

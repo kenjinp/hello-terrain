@@ -1,6 +1,6 @@
 import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
-import { cloneElement, isValidElement, useEffect, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useState } from "react";
 import { TerrainProvider } from "./TerrainContext";
 import type { TerrainHandle, TerrainPrimitiveProps, TerrainProps } from "./types";
 import { useTerrain } from "./useTerrain";
@@ -37,9 +37,11 @@ function useTerrainMesh(
 }
 
 function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
-  const leaves = terrain.graph.peek(terrainTasks.quadtreeUpdate);
-  if (leaves && mesh.count !== leaves.count) {
-    mesh.count = leaves.count;
+  const leafBuffer = terrain.graph.peek(terrainTasks.leafGpuBuffer);
+  const visibleCount =
+    leafBuffer?.count ?? terrain.graph.peek(terrainTasks.visibleLeafSet)?.leaves.count;
+  if (visibleCount !== undefined && mesh.count !== visibleCount) {
+    mesh.count = visibleCount;
     mesh.instanceMatrix.needsUpdate = true;
   }
 
@@ -75,18 +77,28 @@ function attachTerrainMaterial(
 function TerrainWithHandle({
   terrain,
   children,
+  camera,
   innerTileSegments,
   maxNodes,
   ...primitiveProps
 }: {
   terrain: TerrainHandle;
   children: TerrainProps["children"];
+  camera?: TerrainProps["camera"];
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
   const flipWinding = terrain.topology?.projection?.faceOutward ?? false;
   const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
   const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
+
+  useLayoutEffect(() => {
+    if (camera === undefined) return;
+    terrain.bindCamera?.(camera);
+    return () => {
+      terrain.bindCamera?.(undefined);
+    };
+  }, [camera, terrain]);
 
   useFrame(() => {
     syncTerrainMesh(mesh, terrain);
@@ -122,7 +134,13 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     topology,
     terrainFieldFilter,
     getCameraOrigin,
+    getResidencyAnchors,
+    residencyHysteresis,
     cameraHysteresis,
+    camera,
+    runCompute,
+    runReadback,
+    runGpuSpatialIndex,
     tasks,
     maxNodes,
     ...primitiveProps
@@ -140,7 +158,13 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     topology,
     terrainFieldFilter,
     getCameraOrigin,
+    getResidencyAnchors,
+    residencyHysteresis,
     cameraHysteresis,
+    camera,
+    runCompute,
+    runReadback,
+    runGpuSpatialIndex,
     tasks,
     maxNodes,
   });
@@ -148,6 +172,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
   return (
     <TerrainWithHandle
       terrain={terrain}
+      camera={camera}
       innerTileSegments={innerTileSegments}
       maxNodes={maxNodes}
       {...primitiveProps}
@@ -171,7 +196,13 @@ export function Terrain({
   topology,
   terrainFieldFilter,
   getCameraOrigin,
+  getResidencyAnchors,
+  residencyHysteresis,
   cameraHysteresis,
+  camera,
+  runCompute,
+  runReadback,
+  runGpuSpatialIndex,
   tasks,
   maxNodes,
   ...primitiveProps
@@ -180,6 +211,7 @@ export function Terrain({
     return (
       <TerrainWithHandle
         terrain={providedTerrain}
+        camera={camera}
         innerTileSegments={innerTileSegments}
         maxNodes={maxNodes}
         {...primitiveProps}
@@ -202,7 +234,13 @@ export function Terrain({
       topology={topology}
       terrainFieldFilter={terrainFieldFilter}
       getCameraOrigin={getCameraOrigin}
+      getResidencyAnchors={getResidencyAnchors}
+      residencyHysteresis={residencyHysteresis}
       cameraHysteresis={cameraHysteresis}
+      camera={camera}
+      runCompute={runCompute}
+      runReadback={runReadback}
+      runGpuSpatialIndex={runGpuSpatialIndex}
       tasks={tasks}
       maxNodes={maxNodes}
       {...primitiveProps}

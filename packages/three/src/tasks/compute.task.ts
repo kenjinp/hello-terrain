@@ -4,7 +4,11 @@ import { WebGPURenderer } from "three/webgpu";
 import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
 import { terrainFieldStageTask } from "./terrain-field.task";
 import { innerTileSegments } from "./params";
-import { leafGpuBufferTask } from "./quadtree.task";
+import {
+  dirtyVisibleSlotBufferTask,
+  dirtyVisibleSlotStorageTask,
+  leafGpuBufferTask,
+} from "./quadtree.task";
 
 /**
  * Default compile + execute tasks — uses terrainFieldStageTask as the leaf.
@@ -37,26 +41,35 @@ export const { compile: compileComputeTask, execute: executeComputeTask } =
  */
 export function createComputePipelineTasks(
   leafStageTask: TaskRef<ComputePipeline>,
+  label = "terrainField",
 ) {
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
     const edgeVertexCount = get(innerTileSegments) + 3;
+    const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
     return work(() =>
       compileComputePipeline(pipeline, edgeVertexCount, {
         preferSingleKernelWhenPossible: false,
+        instanceSource: "dirty-visible-slot",
+        dirtyVisibleSlotStorage,
+        label,
       }),
     );
   }).displayName("compileComputeTask");
 
   const execute = task<{ renderer: WebGPURenderer }>(
-    (get, work, { resources }) => {
+    (get, work, ctx) => {
       const { execute: run } = get(compile);
-      const leafState = get(leafGpuBufferTask);
-      return work(() =>
-        resources?.renderer
-          ? run(resources.renderer, leafState.count)
-          : () => {},
-      );
+      get(leafGpuBufferTask);
+      const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
+      return work(() => {
+        if (ctx.signal.aborted) {
+          throw ctx.signal.reason ?? new Error("Terrain compute aborted");
+        }
+        return ctx.resources?.renderer && dirtyVisibleSlots.count > 0
+          ? run(ctx.resources.renderer, dirtyVisibleSlots.count)
+          : () => {};
+      });
     },
   )
     .displayName("executeComputeTask")

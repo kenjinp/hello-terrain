@@ -74,11 +74,17 @@ function createFlatTileComputeParts(ctx: TileComputePartsContext): TileComputePa
 export function createFlatProjection(): SurfaceProjection {
   return {
     kind: "flat",
+    cacheKey: "flat",
     faceOutward: false,
 
     gpu: {
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
-        return createFlatRenderVertexPosition(ctx.leafStorage, ctx.uniforms, ctx.terrainFieldStorage);
+        return createFlatRenderVertexPosition(
+          ctx.leafStorage,
+          ctx.uniforms,
+          ctx.terrainFieldStorage,
+          ctx.visibleSlotStorage,
+        );
       },
       createTileComputeParts: createFlatTileComputeParts,
       createFieldNormal(ctx: FieldNormalContext): FieldNormalFn {

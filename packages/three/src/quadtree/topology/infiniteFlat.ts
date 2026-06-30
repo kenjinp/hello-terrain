@@ -13,12 +13,19 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
   const halfRoot = 0.5 * cfg.rootSize;
   const rootGridRadius = Math.max(0, Math.floor(cfg.rootGridRadius ?? 1));
   const rootWidth = rootGridRadius * 2 + 1;
+  const cacheKey = [
+    "infiniteFlat",
+    `rootSize=${cfg.rootSize}`,
+    `origin=${cfg.origin.x},${cfg.origin.y},${cfg.origin.z}`,
+    `rootGridRadius=${rootGridRadius}`,
+  ].join("|");
   // Scratch for the 4 tile corners × {min, max} elevation samples.
   const px = new Float64Array(8);
   const py = new Float64Array(8);
   const pz = new Float64Array(8);
 
   return {
+    cacheKey,
     spaceCount: 1,
     maxRootCount: rootWidth * rootWidth,
     projection: createFlatProjection(),

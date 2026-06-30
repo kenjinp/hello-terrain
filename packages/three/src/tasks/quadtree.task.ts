@@ -1,10 +1,61 @@
 import { task } from "@hello-terrain/work";
-import { createLeafStorage } from "../gpu/leafStorage";
-import type { LeafSet } from "../quadtree";
-import { createFlatTopology, createState, update } from "../quadtree";
+import {
+  createDirtyVisibleSlotStorage,
+  createLeafStorage,
+  createVisibleSlotStorage,
+} from "../gpu/leafStorage";
+import type {
+  ElevationRangeOut,
+  LeafSet,
+  SpatialIndex,
+  TileId,
+  TileResidencyState,
+  TileSlotCacheState,
+  TileVisibilityState,
+} from "../quadtree";
+import {
+  allocLeafSet,
+  buildLeafValueIndex,
+  createSpatialIndex,
+  computeTileVisibility,
+  computeTileResidency,
+  createFlatTopology,
+  createState,
+  update,
+  updateTileSlotCache,
+} from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
-import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
+import {
+  elevationFn,
+  elevationScale,
+  innerTileSegments,
+  maxLevel,
+  maxNodes,
+  origin,
+  quadtreeUpdate,
+  radius,
+  rootSize,
+  topology,
+} from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
+import type { VisibleSlotStorageState } from "../types";
+import { createTileSlotShapeKey } from "./cache-key";
+
+export type VisibleLeafSetState = {
+  leaves: LeafSet;
+  index: SpatialIndex;
+};
+
+export type TileIncrementalTelemetryState = {
+  visibility: TileVisibilityState;
+  residency: TileResidencyState;
+  slots: TileSlotCacheState;
+  telemetry: TileSlotCacheState["telemetry"];
+};
+
+export type SlotIndexBufferState = VisibleSlotStorageState & {
+  count: number;
+};
 
 /**
  * Derives the terrain topology from `rootSize` and `origin`.
@@ -70,6 +121,169 @@ export const quadtreeUpdateTask = task((get, work) => {
   });
 }).displayName("quadtreeUpdateTask");
 
+export const tileVisibilityTask = task((get, work) => {
+  const leafSet = get(quadtreeUpdateTask);
+  const topologyValue = get(topologyTask);
+  const updateConfig = get(quadtreeUpdate);
+  const { cache } = get(terrainQueryTask);
+  const elevationScaleValue = get(elevationScale);
+  const elevationRangeScratch = { min: 0, max: 0 };
+
+  const elevationRangeForTile = (tile: TileId, out: ElevationRangeOut) => {
+    if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
+      return false;
+    }
+    out.min = elevationRangeScratch.min * elevationScaleValue;
+    out.max = elevationRangeScratch.max * elevationScaleValue;
+    return true;
+  };
+
+  return work((prev?: TileVisibilityState) =>
+    computeTileVisibility(
+      {
+        leaves: leafSet,
+        topology: topologyValue,
+        cameraOrigin: updateConfig.cameraOrigin,
+        viewProjectionMatrix: updateConfig.viewProjectionMatrix,
+        elevationRangeForTile,
+      },
+      prev,
+    ),
+  );
+}).displayName("tileVisibilityTask");
+
+export const tileResidencyTask = task((get, work) => {
+  const leafSet = get(quadtreeUpdateTask);
+  const visibility = get(tileVisibilityTask);
+  const topologyValue = get(topologyTask);
+  const updateConfig = get(quadtreeUpdate);
+  const { cache } = get(terrainQueryTask);
+  const elevationScaleValue = get(elevationScale);
+  const elevationRangeScratch = { min: 0, max: 0 };
+
+  const elevationRangeForTile = (tile: TileId, out: ElevationRangeOut) => {
+    if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
+      return false;
+    }
+    out.min = elevationRangeScratch.min * elevationScaleValue;
+    out.max = elevationRangeScratch.max * elevationScaleValue;
+    return true;
+  };
+
+  return work((prev?: TileResidencyState) =>
+    computeTileResidency(
+      {
+        leaves: leafSet,
+        visibility,
+        topology: topologyValue,
+        cameraOrigin: updateConfig.cameraOrigin,
+        residency: updateConfig.residency,
+        elevationRangeForTile,
+      },
+      prev,
+    ),
+  );
+}).displayName("tileResidencyTask");
+
+/**
+ * Graph-owned epoch for field data contents.
+ *
+ * The slot cache only needs a cheap monotonic token. This task reads every
+ * dependency that can change generated field values, then lets the work graph
+ * invalidate and re-run it when any of those dependencies changes.
+ */
+export const terrainFieldContentEpochTask = task((get, work) => {
+  void get(topologyTask);
+  void get(rootSize);
+  void get(origin);
+  void get(radius);
+  void get(innerTileSegments);
+  void get(elevationScale);
+  void get(elevationFn);
+
+  return work((prev?: number) => (prev ?? 0) + 1);
+}).displayName("terrainFieldContentEpochTask");
+
+export const tileSlotUpdateTask = task((get, work) => {
+  const leafSet = get(quadtreeUpdateTask);
+  const topologyValue = get(topologyTask);
+  const visibility = get(tileVisibilityTask);
+  const residency = get(tileResidencyTask);
+  const maxNodesValue = get(maxNodes);
+  const contentEpoch = get(terrainFieldContentEpochTask);
+  const shapeKey = createTileSlotShapeKey(topologyValue, maxNodesValue);
+
+  return work((prev?: TileIncrementalTelemetryState): TileIncrementalTelemetryState => {
+    const slots = updateTileSlotCache(
+      leafSet,
+      visibility,
+      residency,
+      maxNodesValue,
+      shapeKey,
+      contentEpoch,
+      prev?.slots,
+    );
+    return {
+      visibility,
+      residency,
+      slots,
+      telemetry: slots.telemetry,
+    };
+  });
+}).displayName("tileSlotUpdateTask");
+
+export const visibleLeafSetTask = task((get, work) => {
+  const slotUpdate = get(tileSlotUpdateTask);
+
+  return work((prev?: VisibleLeafSetState): VisibleLeafSetState => {
+    const slots = slotUpdate.slots;
+    const canReuse = prev?.leaves.capacity === slots.capacity;
+    const leaves = canReuse ? prev.leaves : allocLeafSet(slots.capacity);
+    leaves.count = Math.min(slots.telemetry.visibleSlotCount, leaves.capacity);
+
+    for (let visibleIndex = 0; visibleIndex < leaves.count; visibleIndex += 1) {
+      const slot = slots.visibleSlots[visibleIndex] ?? 0;
+      leaves.space[visibleIndex] = slots.slotSpace[slot] ?? 0;
+      leaves.level[visibleIndex] = slots.slotLevel[slot] ?? 0;
+      leaves.x[visibleIndex] = slots.slotX[slot] ?? 0;
+      leaves.y[visibleIndex] = slots.slotY[slot] ?? 0;
+    }
+
+    const index = canReuse ? prev.index : createSpatialIndex(slots.capacity);
+    const valueIndex = buildLeafValueIndex(leaves, slots.visibleSlots, index);
+    return {
+      leaves,
+      index: valueIndex,
+    };
+  });
+}).displayName("visibleLeafSetTask");
+
+export const residentLeafSetTask = task((get, work) => {
+  const slotUpdate = get(tileSlotUpdateTask);
+
+  return work((prev?: VisibleLeafSetState): VisibleLeafSetState => {
+    const slots = slotUpdate.slots;
+    const canReuse = prev?.leaves.capacity === slots.capacity;
+    const leaves = canReuse ? prev.leaves : allocLeafSet(slots.capacity);
+    leaves.count = Math.min(slots.telemetry.residentSlotCount, leaves.capacity);
+
+    for (let residentIndex = 0; residentIndex < leaves.count; residentIndex += 1) {
+      const slot = slots.residentSlots[residentIndex] ?? 0;
+      leaves.space[residentIndex] = slots.slotSpace[slot] ?? 0;
+      leaves.level[residentIndex] = slots.slotLevel[slot] ?? 0;
+      leaves.x[residentIndex] = slots.slotX[slot] ?? 0;
+      leaves.y[residentIndex] = slots.slotY[slot] ?? 0;
+    }
+
+    const index = canReuse ? prev.index : createSpatialIndex(slots.capacity);
+    const valueIndex = buildLeafValueIndex(leaves, slots.residentSlots, index);
+    return {
+      leaves,
+      index: valueIndex,
+    };
+  });
+}).displayName("residentLeafSetTask");
+
 /**
  * Creates the GPU storage buffer objects. Recreated when maxNodes changes.
  *
@@ -82,28 +296,79 @@ export const leafStorageTask = task((get, work) => {
   return work(() => createLeafStorage(maxNodesVal));
 }).displayName("leafStorageTask");
 
+export const visibleSlotStorageTask = task((get, work) => {
+  const maxNodesVal = get(maxNodes);
+  return work(() => createVisibleSlotStorage(maxNodesVal));
+}).displayName("visibleSlotStorageTask");
+
+export const dirtyVisibleSlotStorageTask = task((get, work) => {
+  const maxNodesVal = get(maxNodes);
+  return work(() => createDirtyVisibleSlotStorage(maxNodesVal));
+}).displayName("dirtyVisibleSlotStorageTask");
+
 export const leafGpuBufferTask = task((get, work) => {
-  const leafSet = get(quadtreeUpdateTask);
+  const slotUpdate = get(tileSlotUpdateTask);
   const leafStorage = get(leafStorageTask);
+  const visibleSlotStorage = get(visibleSlotStorageTask);
   return work(() => {
+    const slots = slotUpdate.slots;
     const bufferCapacity = leafStorage.data.length / 4;
-    const leafCount = Math.min(leafSet.count, bufferCapacity);
-    for (let i = 0; i < leafCount; i += 1) {
-      const offset = i * 4;
-      leafStorage.data[offset] = leafSet.level[i] ?? 0;
-      leafStorage.data[offset + 1] = leafSet.x[i] ?? 0;
-      leafStorage.data[offset + 2] = leafSet.y[i] ?? 0;
+    const slotCount = Math.min(slots.activeSlotCount, bufferCapacity);
+    const visibleCount = Math.min(
+      slots.telemetry.visibleSlotCount,
+      visibleSlotStorage.data.length,
+    );
+
+    for (let slot = 0; slot < slotCount; slot += 1) {
+      const offset = slot * 4;
+      leafStorage.data[offset] = slots.slotLevel[slot] ?? 0;
+      leafStorage.data[offset + 1] = slots.slotX[slot] ?? 0;
+      leafStorage.data[offset + 2] = slots.slotY[slot] ?? 0;
       // Slot 3 carries the surface space/face index (0 for flat surfaces,
       // 0..5 for cube-sphere faces). Consumed by the sphere position assembly.
-      leafStorage.data[offset + 3] = leafSet.space[i] ?? 0;
+      leafStorage.data[offset + 3] = slots.slotSpace[slot] ?? 0;
     }
+
+    for (let visibleIndex = 0; visibleIndex < visibleCount; visibleIndex += 1) {
+      visibleSlotStorage.data[visibleIndex] = slots.visibleSlots[visibleIndex] ?? 0;
+    }
+
     leafStorage.attribute.needsUpdate = true;
     leafStorage.node.needsUpdate = true;
+    visibleSlotStorage.attribute.needsUpdate = true;
+    visibleSlotStorage.node.needsUpdate = true;
     return {
-      count: leafCount,
+      count: visibleCount,
+      activeSlotCount: slotCount,
       data: leafStorage.data,
       attribute: leafStorage.attribute,
       node: leafStorage.node,
+      visibleSlotStorage,
     };
   });
 }).displayName("leafGpuBufferTask");
+
+export const dirtyVisibleSlotBufferTask = task((get, work) => {
+  const slotUpdate = get(tileSlotUpdateTask);
+  const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
+
+  return work((): SlotIndexBufferState => {
+    const slots = slotUpdate.slots;
+    const dirtyCount = Math.min(
+      slots.telemetry.dirtyVisibleCount,
+      dirtyVisibleSlotStorage.data.length,
+    );
+
+    for (let i = 0; i < dirtyCount; i += 1) {
+      dirtyVisibleSlotStorage.data[i] = slots.dirtyVisibleSlots[i] ?? 0;
+    }
+
+    dirtyVisibleSlotStorage.attribute.needsUpdate = true;
+    dirtyVisibleSlotStorage.node.needsUpdate = true;
+
+    return {
+      ...dirtyVisibleSlotStorage,
+      count: dirtyCount,
+    };
+  });
+}).displayName("dirtyVisibleSlotBufferTask");

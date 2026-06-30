@@ -1,5 +1,13 @@
 import { BufferAttribute, BufferGeometry } from "three";
 
+export type TerrainGeometryOptions = {
+  /**
+   * Generate a CPU-side `normal` vertex attribute. This can be disabled for
+   * custom shader paths that do not need Three's standard normal pipeline.
+   */
+  includeNormals?: boolean;
+};
+
 /**
  * Custom geometry for terrain tiles with properly handled skirts.
  * This geometry ensures that corner triangles are subdivided correctly.
@@ -12,7 +20,12 @@ export class TerrainGeometry extends BufferGeometry {
    *   planet's outer shell back-facing, so it passes `flipWinding` to render
    *   the outer surface with `FrontSide`.
    */
-  constructor(innerSegments: number = 14, extendUV = false, flipWinding = false) {
+  constructor(
+    innerSegments: number = 14,
+    extendUV = false,
+    flipWinding = false,
+    options: TerrainGeometryOptions = {},
+  ) {
     super();
 
     // Validate innerSegments parameter
@@ -33,12 +46,14 @@ export class TerrainGeometry extends BufferGeometry {
       positionAttribute.name = "terrainPosition";
       this.setAttribute("position", positionAttribute);
 
-      const normalAttribute = new BufferAttribute(
-        new Float32Array(this.generateNormals(innerSegments)),
-        3,
-      );
-      normalAttribute.name = "terrainNormal";
-      this.setAttribute("normal", normalAttribute);
+      if (options.includeNormals ?? true) {
+        const normalAttribute = new BufferAttribute(
+          new Float32Array(this.generateNormals(innerSegments)),
+          3,
+        );
+        normalAttribute.name = "terrainNormal";
+        this.setAttribute("normal", normalAttribute);
+      }
 
       const uvAttribute = new BufferAttribute(
         new Float32Array(

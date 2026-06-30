@@ -17,6 +17,8 @@ export type TerrainTileDebugProps = {
   graph: Graph;
   rendererTask?: TaskRef<WebGPURenderer | null>;
   className?: string;
+  /** Maximum HUD refresh rate. @default 250 ms */
+  refreshIntervalMs?: number;
 };
 
 type TileStats = {
@@ -36,11 +38,15 @@ export function TerrainTileDebug({
   graph,
   rendererTask,
   className,
+  refreshIntervalMs = 250,
 }: TerrainTileDebugProps) {
   const { showUI, showControls } = useExamplesCanvas();
   const [, forceRender] = useState(0);
   const [textureDebugOpen, setTextureDebugOpen] = useState(false);
   const [texturePanelPos, setTexturePanelPos] = useState({ x: 18, y: 18 });
+  const lastStatsAtRef = useRef(0);
+  const lastRenderAtRef = useRef(0);
+  const renderTimerRef = useRef<number | null>(null);
 
   const statsRef = useRef<TileStats>({
     tilesRendered: 0,
@@ -51,7 +57,25 @@ export function TerrainTileDebug({
   });
 
   useEffect(() => {
+    const scheduleRender = () => {
+      if (renderTimerRef.current !== null) return;
+      const now = performance.now();
+      const delay = Math.max(
+        0,
+        refreshIntervalMs - (now - lastRenderAtRef.current),
+      );
+      renderTimerRef.current = window.setTimeout(() => {
+        renderTimerRef.current = null;
+        lastRenderAtRef.current = performance.now();
+        forceRender((x) => (x + 1) | 0);
+      }, delay);
+    };
+
     const unsub = graph.on("run:finish", () => {
+      const now = performance.now();
+      if (now - lastStatsAtRef.current < refreshIntervalMs) return;
+      lastStatsAtRef.current = now;
+
       const stats = statsRef.current;
 
       // Tiles rendered (GPU-side count, clamped to buffer capacity)
@@ -87,11 +111,17 @@ export function TerrainTileDebug({
         stats.bufferCapacity = storage.data.length / 4;
       }
 
-      forceRender((x) => (x + 1) | 0);
+      scheduleRender();
     });
 
-    return () => unsub();
-  }, [graph]);
+    return () => {
+      unsub();
+      if (renderTimerRef.current !== null) {
+        window.clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
+    };
+  }, [graph, refreshIntervalMs]);
 
   const visible = showUI && !showControls;
 

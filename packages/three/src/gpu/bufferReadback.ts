@@ -37,6 +37,31 @@ export function canDeviceReadback(renderer: WebGPURenderer): boolean {
   return Boolean(backend?.device) && typeof backend?.get === "function";
 }
 
+export interface Float32ReadbackRange {
+  sourceOffset: number;
+  targetOffset: number;
+  elementCount: number;
+}
+
+function ensureReadbackBuffer(
+  device: GPUDevice,
+  slot: ReadbackSlot,
+  byteSize: number,
+  label: string,
+): GPUBuffer {
+  const requiredSize = Math.max(4, byteSize);
+  if (!slot.buffer || slot.size < requiredSize) {
+    slot.buffer?.destroy();
+    slot.buffer = device.createBuffer({
+      label,
+      size: requiredSize,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    slot.size = requiredSize;
+  }
+  return slot.buffer;
+}
+
 /**
  * Copy the first `elementCount` float elements of a storage buffer attribute
  * into `target`, reusing the staging buffer held by `slot`.
@@ -70,17 +95,7 @@ export async function readStorageBufferInto(
   const copyBytes = Math.min(requestedBytes, source.size);
   if (copyBytes <= 0) return true;
 
-  if (!slot.buffer || slot.size !== source.size) {
-    slot.buffer?.destroy();
-    slot.buffer = device.createBuffer({
-      label,
-      size: source.size,
-      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
-    });
-    slot.size = source.size;
-  }
-
-  const staging = slot.buffer;
+  const staging = ensureReadbackBuffer(device, slot, copyBytes, label);
   const encoder = device.createCommandEncoder({ label });
   encoder.copyBufferToBuffer(source, 0, staging, 0, copyBytes);
   device.queue.submit([encoder.finish()]);
@@ -88,6 +103,88 @@ export async function readStorageBufferInto(
   await staging.mapAsync(GPUMapMode.READ, 0, copyBytes);
   const mapped = new Float32Array(staging.getMappedRange(0, copyBytes));
   target.set(mapped);
+  staging.unmap();
+
+  return true;
+}
+
+export async function readStorageBufferRangesInto(
+  renderer: WebGPURenderer,
+  attribute: StorageBufferAttribute,
+  slot: ReadbackSlot,
+  target: Float32Array,
+  ranges: readonly Float32ReadbackRange[],
+  label: string,
+): Promise<boolean> {
+  const backend = getBackend(renderer);
+  const device = backend?.device;
+  const source = backend?.get?.(attribute)?.buffer;
+  if (!device || !source) return false;
+
+  const copies: Array<{
+    sourceOffset: number;
+    stagingOffset: number;
+    targetOffset: number;
+    elementCount: number;
+  }> = [];
+  let stagingElementOffset = 0;
+
+  for (const range of ranges) {
+    const sourceOffset = Math.max(0, Math.floor(range.sourceOffset));
+    const targetOffset = Math.max(0, Math.floor(range.targetOffset));
+    const requestedCount = Math.max(0, Math.floor(range.elementCount));
+    if (requestedCount <= 0 || targetOffset >= target.length) continue;
+
+    const sourceByteOffset = sourceOffset * Float32Array.BYTES_PER_ELEMENT;
+    if (sourceByteOffset >= source.size) continue;
+
+    const sourceAvailable = Math.floor(
+      (source.size - sourceByteOffset) / Float32Array.BYTES_PER_ELEMENT,
+    );
+    const targetAvailable = target.length - targetOffset;
+    const elementCount = Math.min(
+      requestedCount,
+      sourceAvailable,
+      targetAvailable,
+    );
+    if (elementCount <= 0) continue;
+
+    copies.push({
+      sourceOffset,
+      stagingOffset: stagingElementOffset,
+      targetOffset,
+      elementCount,
+    });
+    stagingElementOffset += elementCount;
+  }
+
+  const copyBytes = stagingElementOffset * Float32Array.BYTES_PER_ELEMENT;
+  if (copyBytes <= 0) return true;
+
+  const staging = ensureReadbackBuffer(device, slot, copyBytes, label);
+  const encoder = device.createCommandEncoder({ label });
+  for (const copy of copies) {
+    encoder.copyBufferToBuffer(
+      source,
+      copy.sourceOffset * Float32Array.BYTES_PER_ELEMENT,
+      staging,
+      copy.stagingOffset * Float32Array.BYTES_PER_ELEMENT,
+      copy.elementCount * Float32Array.BYTES_PER_ELEMENT,
+    );
+  }
+  device.queue.submit([encoder.finish()]);
+
+  await staging.mapAsync(GPUMapMode.READ, 0, copyBytes);
+  const mapped = new Float32Array(staging.getMappedRange(0, copyBytes));
+  for (const copy of copies) {
+    target.set(
+      mapped.subarray(
+        copy.stagingOffset,
+        copy.stagingOffset + copy.elementCount,
+      ),
+      copy.targetOffset,
+    );
+  }
   staging.unmap();
 
   return true;

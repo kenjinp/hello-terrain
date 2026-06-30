@@ -61,8 +61,9 @@ import {
   elevationScale,
   elevationFn,
   quadtreeUpdate,
-  quadtreeUpdateTask,
   positionNodeTask,
+  visibleLeafSetTask,
+  writeUpdateParamsFromCamera,
 } from "@hello-terrain/three";
 import { task } from "@hello-terrain/work";
 import type { ElevationCallback, UpdateParams } from "@hello-terrain/three";
@@ -111,7 +112,7 @@ function Terrain({ graph }) {
     graph.add(
       task((get, work) => {
         const positionNode = get(positionNodeTask);
-        const leafSet = get(quadtreeUpdateTask);
+        const leafSet = get(visibleLeafSetTask).leaves;
         return work(() => {
           const mesh = meshRef.current;
           const material = materialRef.current;
@@ -144,10 +145,7 @@ function Terrain({ graph }) {
 
   useFrame(async ({ camera, gl }) => {
     graph.set(quadtreeUpdate, (prev: UpdateParams) => {
-      prev.cameraOrigin.x = camera.position.x;
-      prev.cameraOrigin.y = camera.position.y;
-      prev.cameraOrigin.z = camera.position.z;
-      return prev;
+      return writeUpdateParamsFromCamera(prev, camera);
     });
     await graph.run({ resources: { renderer: gl } });
   });

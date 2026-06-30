@@ -1,6 +1,6 @@
 import { task } from "@hello-terrain/work";
 import { createTerrainFieldTextureTask } from "./terrain-field.task";
-import { leafStorageTask, topologyTask } from "./quadtree.task";
+import { leafStorageTask, topologyTask, visibleSlotStorageTask } from "./quadtree.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 /**
@@ -19,12 +19,14 @@ import { updateUniformsTask } from "./uniforms/uniforms.task";
  */
 export const positionNodeTask = task((get, work) => {
   const leafStorage = get(leafStorageTask);
+  const visibleSlotStorage = get(visibleSlotStorageTask);
   const terrainUniforms = get(updateUniformsTask);
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
   const topology = get(topologyTask);
   return work(() =>
     topology.projection.gpu.renderVertexPosition({
       leafStorage,
+      visibleSlotStorage,
       uniforms: terrainUniforms,
       terrainFieldStorage,
     }),

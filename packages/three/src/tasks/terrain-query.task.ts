@@ -12,8 +12,14 @@ import {
   radius,
   rootSize,
 } from "./params";
-import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
+import {
+  dirtyVisibleSlotBufferTask,
+  leafGpuBufferTask,
+  residentLeafSetTask,
+  topologyTask,
+} from "./quadtree.task";
 import { tileBoundsReductionTask } from "./tile-bounds.task";
+import { createTerrainQueryShapeKey } from "./cache-key";
 
 export const terrainQueryTask = task((get, work) => {
   const maxNodesValue = get(maxNodes);
@@ -27,7 +33,12 @@ export const terrainQueryTask = task((get, work) => {
   const projection = topologyValue.projection;
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
-    const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
+    const shapeKey = createTerrainQueryShapeKey(
+      topologyValue,
+      maxNodesValue,
+      innerTileSegmentsValue,
+      maxLevelValue,
+    );
     const resolvedRadius = projection.radius ?? radiusValue;
     const configValues = {
       rootSize: rootSizeValue,
@@ -69,22 +80,28 @@ export const terrainQueryTask = task((get, work) => {
 }).displayName("terrainQueryTask");
 
 export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
-  (get, work, { resources }) => {
+  (get, work, ctx) => {
     const boundsContext = get(tileBoundsReductionTask);
     const elevationFieldContext = get(createElevationFieldContextTask);
-    const quadtreeConfig = get(quadtreeConfigTask);
+    const residentLeafSet = get(residentLeafSetTask);
     const leafState = get(leafGpuBufferTask);
+    const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
     const { cache } = get(terrainQueryTask);
 
     return work((): void => {
-      if (!resources?.renderer) return;
+      if (ctx.signal.aborted) {
+        throw ctx.signal.reason ?? new Error("Terrain readback aborted");
+      }
+      if (!ctx.resources?.renderer) return;
 
       cache.triggerReadback(
-        resources.renderer,
+        ctx.resources.renderer,
         elevationFieldContext.attribute,
-        quadtreeConfig.state.leafIndex,
+        residentLeafSet.index,
         boundsContext.attribute,
-        leafState.count,
+        leafState.activeSlotCount,
+        dirtyVisibleSlots.data,
+        dirtyVisibleSlots.count,
       );
     });
   },

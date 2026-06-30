@@ -17,10 +17,19 @@ import {
   resolveTerrainMaterialAppearance,
   tileColorsLevaControl,
 } from "@/examples/terrain/tileInstanceColor";
-import { Terrain, TerrainProvider, useTerrain } from "@hello-terrain/react";
-import type { TerrainGraph } from "@hello-terrain/three";
+import {
+  Terrain,
+  TerrainProvider,
+  useTerrain,
+  type TerrainHandle,
+} from "@hello-terrain/react";
+import {
+  createGpuProfiler,
+  type GpuFrameTimings,
+  type TerrainGraph,
+} from "@hello-terrain/three";
 import { Environment } from "@react-three/drei";
-import { Canvas, extend } from "@react-three/fiber";
+import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import {
   Suspense,
@@ -39,9 +48,41 @@ extend(THREE as any);
 
 const QUADTREE_ORIGIN_HYSTERESIS = 0.35;
 const QUADTREE_ORIGIN_SNAP = 0.25;
+const CHARACTER_RESIDENCY_RADIUS = 96;
+
+type GpuDiagnosticsSnapshot = {
+  supported: boolean;
+  renderMs: number | null;
+  computeMs: number | null;
+  totalMs: number | null;
+  renderQueryCount: number;
+  computeQueryCount: number;
+  computePasses: GpuFrameTimings["computePasses"];
+  visibleSlotCount: number;
+  residentSlotCount: number;
+  supportSlotCount: number;
+  dirtyResidentCount: number;
+  allocatedCount: number;
+  reusedCount: number;
+  evictedCount: number;
+  drawTerrain: boolean;
+  runCompute: boolean;
+  runReadback: boolean;
+};
 
 function snapToStep(value: number, step: number) {
   return Math.round(value / step) * step;
+}
+
+function formatMs(value: number | null) {
+  return value === null ? "-" : `${value.toFixed(2)}ms`;
+}
+
+function formatDispatchSize(
+  dispatchSize: GpuFrameTimings["computePasses"][number]["dispatchSize"],
+) {
+  if (Array.isArray(dispatchSize)) return dispatchSize.join("x");
+  return dispatchSize ?? "-";
 }
 
 function CharacterHud({
@@ -82,14 +123,159 @@ function CharacterHud({
   );
 }
 
+function TerrainGpuDiagnosticsProbe({
+  terrain,
+  enabled,
+  drawTerrain,
+  runCompute,
+  runReadback,
+  onUpdate,
+}: {
+  terrain: TerrainHandle;
+  enabled: boolean;
+  drawTerrain: boolean;
+  runCompute: boolean;
+  runReadback: boolean;
+  onUpdate: (snapshot: GpuDiagnosticsSnapshot) => void;
+}) {
+  const { gl } = useThree();
+  const profilerRef = useRef<ReturnType<typeof createGpuProfiler> | null>(null);
+  const rendererRef = useRef<THREE.WebGPURenderer | null>(null);
+  const supportedRef = useRef(false);
+  const resolvingRef = useRef(false);
+  const lastEmitAtRef = useRef(0);
+
+  useEffect(() => {
+    return () => {
+      profilerRef.current?.dispose();
+      profilerRef.current = null;
+      rendererRef.current = null;
+      supportedRef.current = false;
+    };
+  }, []);
+
+  useFrame(() => {
+    if (!enabled) return;
+    const renderer = gl as unknown as THREE.WebGPURenderer;
+    if (rendererRef.current !== renderer) {
+      profilerRef.current?.dispose();
+      profilerRef.current = createGpuProfiler(renderer);
+      rendererRef.current = renderer;
+      supportedRef.current = profilerRef.current.enable();
+    }
+
+    const now = performance.now();
+    if (resolvingRef.current || now - lastEmitAtRef.current < 250) return;
+    lastEmitAtRef.current = now;
+    resolvingRef.current = true;
+
+    const slotTelemetry = terrain.graph.peek(terrain.tasks.tileSlotUpdate)?.telemetry;
+    void profilerRef.current
+      ?.sample()
+      .then((timing) => {
+        onUpdate({
+          supported: supportedRef.current,
+          renderMs: timing?.renderMs ?? null,
+          computeMs: timing?.computeMs ?? null,
+          totalMs: timing?.totalMs ?? null,
+          renderQueryCount: timing?.renderQueryCount ?? 0,
+          computeQueryCount: timing?.computeQueryCount ?? 0,
+          computePasses: timing?.computePasses ?? [],
+          visibleSlotCount: slotTelemetry?.visibleSlotCount ?? 0,
+          residentSlotCount: slotTelemetry?.residentSlotCount ?? 0,
+          supportSlotCount: slotTelemetry?.supportSlotCount ?? 0,
+          dirtyResidentCount: slotTelemetry?.dirtyResidentCount ?? 0,
+          allocatedCount: slotTelemetry?.allocatedCount ?? 0,
+          reusedCount: slotTelemetry?.reusedCount ?? 0,
+          evictedCount: slotTelemetry?.evictedCount ?? 0,
+          drawTerrain,
+          runCompute,
+          runReadback,
+        });
+      })
+      .finally(() => {
+        resolvingRef.current = false;
+      });
+  });
+
+  return null;
+}
+
+function TerrainGpuDiagnosticsPanel({
+  snapshot,
+}: {
+  snapshot: GpuDiagnosticsSnapshot | null;
+}) {
+  const passes = snapshot?.computePasses.slice(0, 4) ?? [];
+  return (
+    <div className="pointer-events-auto rounded-md border border-white/10 bg-black/55 px-2 py-1.5 text-[10px] leading-4 text-white/80 backdrop-blur-sm">
+      <div className="flex justify-between gap-3 font-medium text-white">
+        <span>GPU</span>
+        <span>{snapshot?.supported ? "timestamps" : "no timestamps"}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3">
+        <span>total</span>
+        <span className="text-right tabular-nums">{formatMs(snapshot?.totalMs ?? null)}</span>
+        <span>compute</span>
+        <span className="text-right tabular-nums">{formatMs(snapshot?.computeMs ?? null)}</span>
+        <span>render</span>
+        <span className="text-right tabular-nums">{formatMs(snapshot?.renderMs ?? null)}</span>
+        <span>queries</span>
+        <span className="text-right tabular-nums">
+          {snapshot ? `${snapshot.computeQueryCount}c/${snapshot.renderQueryCount}r` : "-"}
+        </span>
+        <span>slots</span>
+        <span className="text-right tabular-nums">
+          {snapshot
+            ? `${snapshot.visibleSlotCount}v/${snapshot.residentSlotCount}r`
+            : "-"}
+        </span>
+        <span>dirty</span>
+        <span className="text-right tabular-nums">
+          {snapshot
+            ? `${snapshot.dirtyResidentCount}d/${snapshot.supportSlotCount}s`
+            : "-"}
+        </span>
+        <span>alloc</span>
+        <span className="text-right tabular-nums">
+          {snapshot
+            ? `${snapshot.allocatedCount}a/${snapshot.reusedCount}u`
+            : "-"}
+        </span>
+      </div>
+      <div className="mt-1 border-t border-white/10 pt-1">
+        <div className="flex justify-between gap-2 text-white/60">
+          <span>{snapshot?.drawTerrain ? "draw on" : "draw off"}</span>
+          <span>{snapshot?.runCompute ? "compute on" : "compute off"}</span>
+          <span>{snapshot?.runReadback ? "readback on" : "readback off"}</span>
+        </div>
+        {passes.length > 0 ? (
+          <div className="mt-1 space-y-0.5">
+            {passes.map((pass, index) => (
+              <div key={`${pass.name}-${index}`} className="flex justify-between gap-2">
+                <span className="max-w-[9rem] truncate">{pass.name}</span>
+                <span className="shrink-0 tabular-nums text-white/65">
+                  {formatDispatchSize(pass.dispatchSize)} {formatMs(pass.durationMs)}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function RaycastCharacterControllerSceneImpl({
   store,
   onCharacterUpdate,
   onGraphReady,
+  onGpuDiagnosticsUpdate,
 }: {
   store: LevaStore;
   onCharacterUpdate: (snapshot: CharacterControllerSnapshot) => void;
   onGraphReady: (graph: TerrainGraph) => void;
+  onGpuDiagnosticsUpdate: (snapshot: GpuDiagnosticsSnapshot) => void;
 }) {
   const characterSnapshotRef = useRef<CharacterControllerSnapshot | null>(null);
 
@@ -175,6 +361,26 @@ function RaycastCharacterControllerSceneImpl({
       },
       wireframe: {
         value: false,
+      },
+      drawTerrain: {
+        value: true,
+        label: "draw terrain",
+      },
+      runCompute: {
+        value: true,
+        label: "run compute",
+      },
+      runReadback: {
+        value: true,
+        label: "run readback",
+      },
+      runGpuSpatialIndex: {
+        value: true,
+        label: "gpu spatial index",
+      },
+      profileGpu: {
+        value: true,
+        label: "profile gpu",
       },
       tileColors: tileColorsLevaControl,
     },
@@ -309,6 +515,20 @@ function RaycastCharacterControllerSceneImpl({
     return { x: nextOriginX, y: nextOriginY, z: nextOriginZ };
   }, []);
 
+  const getResidencyAnchors = useCallback(() => {
+    const playerPosition = characterSnapshotRef.current?.position;
+    return [
+      {
+        position: {
+          x: playerPosition?.x ?? 0,
+          y: playerPosition?.y ?? 12,
+          z: playerPosition?.z ?? 0,
+        },
+        radius: CHARACTER_RESIDENCY_RADIUS,
+      },
+    ];
+  }, []);
+
   const terrain = useTerrain({
     rootSize: controls.rootSize,
     maxLevel: controls.maxLevel,
@@ -318,7 +538,12 @@ function RaycastCharacterControllerSceneImpl({
     elevationScale: controls.elevationScale,
     elevation,
     getCameraOrigin,
+    getResidencyAnchors,
+    residencyHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
     cameraHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
+    runCompute: controls.runCompute,
+    runReadback: controls.runReadback,
+    runGpuSpatialIndex: controls.runGpuSpatialIndex,
   });
 
   useEffect(() => {
@@ -349,6 +574,7 @@ function RaycastCharacterControllerSceneImpl({
 
       <Terrain
         terrain={terrain}
+        visible={controls.drawTerrain}
         castShadow
         receiveShadow
         innerTileSegments={controls.innerTileSegments}
@@ -365,6 +591,14 @@ function RaycastCharacterControllerSceneImpl({
           />
         )}
       </Terrain>
+      <TerrainGpuDiagnosticsProbe
+        terrain={terrain}
+        enabled={controls.profileGpu}
+        drawTerrain={controls.drawTerrain}
+        runCompute={controls.runCompute}
+        runReadback={controls.runReadback}
+        onUpdate={onGpuDiagnosticsUpdate}
+      />
     </TerrainProvider>
   );
 }
@@ -375,6 +609,39 @@ export default function RaycastCharacterControllerScene() {
   const [snapshot, setSnapshot] = useState<CharacterControllerSnapshot | null>(
     null,
   );
+  const [gpuDiagnostics, setGpuDiagnostics] =
+    useState<GpuDiagnosticsSnapshot | null>(null);
+  const pendingSnapshotRef = useRef<CharacterControllerSnapshot | null>(null);
+  const lastSnapshotRenderAtRef = useRef(0);
+  const snapshotRenderTimerRef = useRef<number | null>(null);
+
+  const scheduleSnapshotRender = useCallback(() => {
+    if (snapshotRenderTimerRef.current !== null) return;
+    const now = performance.now();
+    const delay = Math.max(0, 250 - (now - lastSnapshotRenderAtRef.current));
+    snapshotRenderTimerRef.current = window.setTimeout(() => {
+      snapshotRenderTimerRef.current = null;
+      lastSnapshotRenderAtRef.current = performance.now();
+      setSnapshot(pendingSnapshotRef.current);
+    }, delay);
+  }, []);
+
+  const handleCharacterUpdate = useCallback(
+    (nextSnapshot: CharacterControllerSnapshot) => {
+      pendingSnapshotRef.current = nextSnapshot;
+      scheduleSnapshotRender();
+    },
+    [scheduleSnapshotRender],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (snapshotRenderTimerRef.current !== null) {
+        window.clearTimeout(snapshotRenderTimerRef.current);
+        snapshotRenderTimerRef.current = null;
+      }
+    };
+  }, []);
 
   return (
     <ExamplesCanvas store={store}>
@@ -386,6 +653,9 @@ export default function RaycastCharacterControllerScene() {
             <TerrainTileDebug graph={debugGraph} />
             <FpsDebug />
           </div>
+          <TerrainGpuDiagnosticsPanel
+            snapshot={gpuDiagnostics}
+          />
         </div>
       ) : null}
       <Canvas
@@ -421,8 +691,9 @@ export default function RaycastCharacterControllerScene() {
         <Suspense fallback={null}>
           <RaycastCharacterControllerSceneImpl
             store={store}
-            onCharacterUpdate={setSnapshot}
+            onCharacterUpdate={handleCharacterUpdate}
             onGraphReady={setDebugGraph}
+            onGpuDiagnosticsUpdate={setGpuDiagnostics}
           />
         </Suspense>
       </Canvas>

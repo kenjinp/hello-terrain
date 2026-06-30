@@ -1,4 +1,5 @@
 export { TerrainGeometry } from "./geometry/TerrainGeometry";
+export type { TerrainGeometryOptions } from "./geometry/TerrainGeometry";
 export { TerrainMesh } from "./mesh/TerrainMesh";
 export { terrainGraph, terrainTasks } from "./tasks/graph";
 export type { TerrainTasks, TerrainGraph } from "./tasks/graph.types";
@@ -21,6 +22,12 @@ export {
 export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
 export { getDeviceComputeLimits } from "./gpu/deviceLimits";
+export { createGpuProfiler } from "./gpu/gpuProfiler";
+export type {
+  GpuComputePassTiming,
+  GpuFrameTimings,
+  GpuProfiler,
+} from "./gpu/gpuProfiler";
 export * from "./gpu/terrainFieldStorage";
 export * from "./query/terrain-sampler";
 export * from "./query/terrain-query";

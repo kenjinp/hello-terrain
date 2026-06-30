@@ -12,48 +12,58 @@ import {
 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { isSkirtVertex } from "../tsl/skirt";
-import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type {
+  LeafStorageState,
+  TerrainUniformsContext,
+  VisibleSlotStorageState,
+} from "../types";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
-import { loadTerrainFieldNormal, sampleTerrainFieldElevation } from "./terrainFieldStorage";
-import { type LeafTileNodes, decodeLeafTile, faceUVFromTileLocal, tileLocalToFieldUV } from "./tile";
+import { loadTerrainField } from "./terrainFieldStorage";
+import { type LeafTileNodes, decodeLeafTile, faceUVFromTileLocal } from "./tile";
 
-function createTileElevation(
-  terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage?: TerrainFieldStorage,
-) {
-  if (!terrainFieldStorage) return float(0);
-  const innerSegs = terrainUniforms.uInnerTileSegments;
-  const u = tileLocalToFieldUV(positionLocal.x.add(float(0.5)), innerSegs);
-  const v = tileLocalToFieldUV(positionLocal.z.add(float(0.5)), innerSegs);
-  return sampleTerrainFieldElevation(terrainFieldStorage, u, v, int(instanceIndex)).mul(
-    terrainUniforms.uElevationScale,
-  );
-}
+type RenderFieldSample = {
+  elevation: Node;
+  normal: Node;
+};
 
-/**
- * Loads the unit world-space normal for the current vertex straight from the
- * terrain field. The compute stage already stores normals in world space
- * (continuous across seams), so no per-tile tangent-frame rotation is needed at
- * render time — this is shared by every projection.
- */
-function loadWorldNormal(
-  terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage: TerrainFieldStorage,
-) {
-  const nodeIndex = int(instanceIndex);
+function renderFieldSampleCoordinates(terrainUniforms: TerrainUniformsContext) {
   const edgeVertexCount = int(terrainUniforms.uInnerTileSegments.add(3));
   const localVertexIndex = int(vertexIndex);
   const ix = localVertexIndex.mod(edgeVertexCount);
   const iy = localVertexIndex.div(edgeVertexCount);
-  return loadTerrainFieldNormal(terrainFieldStorage, ix, iy, nodeIndex);
+  const lastInnerTexel = edgeVertexCount.sub(int(2));
+
+  return {
+    ix: ix.max(int(1)).min(lastInnerTexel),
+    iy: iy.max(int(1)).min(lastInnerTexel),
+  };
 }
 
-function assignWorldNormal(
+function loadRenderFieldSample(
   terrainUniforms: TerrainUniformsContext,
+  fieldSlot: Node,
   terrainFieldStorage?: TerrainFieldStorage,
-) {
-  if (!terrainFieldStorage) return;
-  normalLocal.assign(Fn(() => loadWorldNormal(terrainUniforms, terrainFieldStorage))());
+): RenderFieldSample | null {
+  if (!terrainFieldStorage) return null;
+
+  const { ix, iy } = renderFieldSampleCoordinates(terrainUniforms);
+  const raw = loadTerrainField(terrainFieldStorage, ix, iy, fieldSlot).toVar();
+  return {
+    elevation: raw.r.mul(terrainUniforms.uElevationScale),
+    normal: vec3(raw.g, raw.b, raw.a),
+  };
+}
+
+function renderFieldSlot(visibleSlotStorage?: VisibleSlotStorageState): Node {
+  const drawIndex = int(instanceIndex);
+  return visibleSlotStorage
+    ? visibleSlotStorage.node.element(drawIndex).toInt()
+    : drawIndex;
+}
+
+function assignWorldNormal(sample: RenderFieldSample | null) {
+  if (!sample) return;
+  normalLocal.assign(sample.normal);
 }
 
 /** Flat heightfield: tiles lie in the XZ plane; elevation displaces along +Y. */
@@ -61,9 +71,12 @@ export function createFlatRenderVertexPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
+  visibleSlotStorage?: VisibleSlotStorageState,
 ): Node {
   return Fn(() => {
-    const tile = decodeLeafTile(leafStorage, int(instanceIndex));
+    const fieldSlot = renderFieldSlot(visibleSlotStorage);
+    const tile = decodeLeafTile(leafStorage, fieldSlot);
+    const fieldSample = loadRenderFieldSample(terrainUniforms, fieldSlot, terrainFieldStorage);
 
     const rootSize = terrainUniforms.uRootSize.toVar();
     const rootOrigin = terrainUniforms.uRootOrigin.toVar();
@@ -79,13 +92,13 @@ export function createFlatRenderVertexPosition(
     const worldX = centerX.add(clampedX.mul(size));
     const worldZ = centerZ.add(clampedZ.mul(size));
 
-    const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
+    const yElevation = fieldSample?.elevation ?? float(0);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
     const baseY = rootOrigin.y.add(yElevation);
     const skirtY = baseY.sub(terrainUniforms.uSkirtScale.toVar());
     const worldY = select(skirtVertex, skirtY, baseY);
 
-    assignWorldNormal(terrainUniforms, terrainFieldStorage);
+    assignWorldNormal(fieldSample);
     return vec3(worldX, worldY, worldZ);
   })();
 }
@@ -104,18 +117,21 @@ export function createCurvedRenderVertexPosition(
   surfacePoint: (tile: LeafTileNodes, faceUV: Node, displacement: Node) => Node,
   baseU = 1,
   baseV = 1,
+  visibleSlotStorage?: VisibleSlotStorageState,
 ): Node {
   const fBaseU = float(baseU);
   const fBaseV = float(baseV);
 
   return Fn(() => {
-    const tile = decodeLeafTile(leafStorage, int(instanceIndex));
+    const fieldSlot = renderFieldSlot(visibleSlotStorage);
+    const tile = decodeLeafTile(leafStorage, fieldSlot);
+    const fieldSample = loadRenderFieldSample(terrainUniforms, fieldSlot, terrainFieldStorage);
     const half = float(0.5);
     const localU = positionLocal.x.max(half.negate()).min(half).add(half);
     const localV = positionLocal.z.max(half.negate()).min(half).add(half);
     const faceUV = faceUVFromTileLocal(tile, localU, localV, fBaseU, fBaseV);
 
-    const yElevation = createTileElevation(terrainUniforms, terrainFieldStorage);
+    const yElevation = fieldSample?.elevation ?? float(0);
     const skirtVertex = isSkirtVertex(terrainUniforms.uInnerTileSegments);
     const displacement = select(
       skirtVertex,
@@ -123,7 +139,7 @@ export function createCurvedRenderVertexPosition(
       yElevation,
     );
 
-    assignWorldNormal(terrainUniforms, terrainFieldStorage);
+    assignWorldNormal(fieldSample);
     return surfacePoint(tile, faceUV, displacement);
   })();
 }

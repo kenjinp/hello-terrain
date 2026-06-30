@@ -138,9 +138,23 @@ describe("quadtree/topology/cubeSphere", () => {
   it("exposes the cube-sphere projection and radius", () => {
     const topology = createCubeSphereTopology({ radius: 1234 });
     expect(topology.projection.kind).toBe("cubeSphere");
+    expect(topology.cacheKey).toBe(topology.projection.cacheKey);
     expect(topology.projection.radius).toBe(1234);
     expect(topology.spaceCount).toBe(6);
     expect(topology.maxRootCount).toBe(6);
+  });
+
+  it("keys radius and center changes for cache invalidation", () => {
+    const base = createCubeSphereTopology({ radius: 1000 });
+    const grown = createCubeSphereTopology({ radius: 2000 });
+    const shifted = createCubeSphereTopology({
+      radius: 1000,
+      center: { x: 1, y: 2, z: 3 },
+    });
+    const inverted = createCubeSphereTopology({ radius: 1000, invert: true });
+
+    expect(new Set([base.cacheKey, grown.cacheKey, shifted.cacheKey, inverted.cacheKey]).size).toBe(4);
+    expect(base.projection.cacheKey).toBe(base.cacheKey);
   });
 
   it("runs a full LOD update without throwing and respects the node budget", () => {

@@ -13,6 +13,8 @@ Use it when you want to:
 - inspect the graph or tasks directly
 - access `runtime.query` or `runtime.raycast`
 - control quadtree tracking with a custom `getCameraOrigin`
+- drive LOD and frustum culling from a separate `camera`
+- keep gameplay terrain resident with `getResidencyAnchors`
 
 ## Return Value
 
@@ -84,6 +86,73 @@ const terrain = useTerrain({
   elevation,
   getCameraOrigin: () => playerPositionRef.current,
   cameraHysteresis: 0.25,
+});
+```
+
+## Custom Culling Camera
+
+By default the runner uses the active R3F canvas camera for both rendering and quadtree updates. Pass `camera` when you want a separate camera to drive LOD refinement and frustum culling while the canvas camera stays free for viewing.
+
+This is the pattern used by the [Frustum Culling](/examples/frustum-culling) example: the viewer orbits with OrbitControls while an animated helper camera decides which tiles are visible.
+
+```tsx
+const cullingCamera = useMemo(() => {
+  const camera = new THREE.PerspectiveCamera(30, 1.45, 12, 140);
+  camera.position.set(62, 34, 62);
+  camera.lookAt(0, 0, 0);
+  camera.updateProjectionMatrix();
+  return camera;
+}, []);
+
+const terrain = useTerrain({
+  rootSize: 180,
+  maxLevel: 10,
+  elevation,
+  camera: cullingCamera,
+});
+
+// Animate the culling camera each frame before the terrain runner reads it.
+useFrame(({ clock }) => {
+  const angle = clock.elapsedTime * 0.18;
+  cullingCamera.position.set(Math.cos(angle) * 68, 34, Math.sin(angle) * 68);
+  cullingCamera.lookAt(0, 0, 0);
+  cullingCamera.updateProjectionMatrix();
+});
+
+return (
+  <>
+    <primitive object={cullingCamera} />
+    <cameraHelper args={[cullingCamera]} />
+    <Terrain terrain={terrain}>
+      {({ positionNode }) => (
+        <meshStandardNodeMaterial positionNode={positionNode} />
+      )}
+    </Terrain>
+  </>
+);
+```
+
+You can pass `camera` to `useTerrain()` or directly to `<Terrain camera={...} />`. When both are provided, the `<Terrain />` prop wins.
+
+When `getCameraOrigin` is omitted, the tracked origin defaults to the active camera's position (custom or canvas). Provide `getCameraOrigin` when the quadtree should follow a player or probe instead of the camera.
+
+## Keeping Gameplay Terrain Resident
+
+Render culling should not decide whether terrain exists for physics, character controllers, or queries. Use `getResidencyAnchors` to publish world-space support regions that should stay resident even when they are outside the render frustum. See [Residency Anchors](/docs/core/residency-anchors) for the full API model.
+
+```tsx
+const terrain = useTerrain({
+  rootSize: 4096,
+  maxLevel: 6,
+  elevation,
+  getCameraOrigin: () => playerPositionRef.current,
+  getResidencyAnchors: () => [
+    {
+      position: playerPositionRef.current,
+      radius: 96,
+    },
+  ],
+  residencyHysteresis: 0.25,
 });
 ```
 

@@ -3,6 +3,7 @@ import type {
   TerrainGraph,
   TerrainQuery,
   TerrainRaycast,
+  TerrainResidencyAnchor,
   TerrainSphereQuery,
   TerrainSurfaceQuery,
   TerrainTasks,
@@ -12,7 +13,7 @@ import type { Task } from "@hello-terrain/work";
 import type { RootState, ThreeElements } from "@react-three/fiber";
 import type { ReactNode } from "react";
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
-import type { WebGPURenderer } from "three/webgpu";
+import type { Camera, WebGPURenderer } from "three/webgpu";
 
 export type TerrainVector3Like = {
   x: number;
@@ -41,6 +42,11 @@ export interface TerrainHandle extends TerrainNodes {
   runtime: TerrainRuntime;
   ready: boolean;
   topology?: Topology | null;
+  /**
+   * Override the camera used for quadtree updates. Prefer the `camera` option on
+   * `useTerrain()` or `<Terrain />` instead of calling this directly.
+   */
+  bindCamera?: (camera: Camera | undefined) => void;
 }
 
 export interface TerrainOptions {
@@ -56,7 +62,27 @@ export interface TerrainOptions {
   topology?: Topology | null;
   terrainFieldFilter?: "nearest" | "linear";
   getCameraOrigin?: (state: RootState) => TerrainVector3Like;
+  getResidencyAnchors?: (state: RootState) => readonly TerrainResidencyAnchor[] | undefined;
+  residencyHysteresis?: number;
   cameraHysteresis?: number;
+  /**
+   * Optional camera for quadtree LOD and frustum culling. When omitted, the
+   * active R3F canvas camera is used. Pass a separate camera to decouple the
+   * render view from culling, for example in the frustum-culling example.
+   */
+  camera?: Camera;
+  /**
+   * Execute terrain field compute for dirty slots. Disable to freeze computed
+   * field contents while still updating draw buffers and CPU visibility.
+   */
+  runCompute?: boolean;
+  /**
+   * Trigger elevation/bounds readback after compute. Ignored when
+   * `runCompute` is false.
+   */
+  runReadback?: boolean;
+  /** Upload the resident tile spatial index used by GPU samplers. */
+  runGpuSpatialIndex?: boolean;
   tasks?: readonly TerrainTask[];
 }
 

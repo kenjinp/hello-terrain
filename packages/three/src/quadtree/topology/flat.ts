@@ -13,12 +13,14 @@ export type FlatTopologyConfig = {
 
 export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
   const halfRoot = 0.5 * cfg.rootSize;
+  const cacheKey = `flat|rootSize=${cfg.rootSize}|origin=${cfg.origin.x},${cfg.origin.y},${cfg.origin.z}`;
   // Scratch for the 4 tile corners × {min, max} elevation samples.
   const px = new Float64Array(8);
   const py = new Float64Array(8);
   const pz = new Float64Array(8);
 
   const topology: Topology = {
+    cacheKey,
     spaceCount: 1,
     maxRootCount: 1,
     projection: createFlatProjection(),
