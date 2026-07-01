@@ -15,7 +15,9 @@ import {
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
@@ -23,11 +25,9 @@ import {
   terrainTasks,
   TerrainMesh,
   visibleLeafSetTask,
-  writeUpdateParamsFromCamera,
-  type ElevationCallback,
+    type ElevationCallback,
   type TerrainSampler,
   type TerrainGraph,
-  type UpdateParams,
 } from "@hello-terrain/three";
 import { param, task } from "@hello-terrain/work";
 import { OrbitControls } from "@react-three/drei";
@@ -216,7 +216,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
     { store },
   );
 
-  const lastCameraRef = useRef(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
   const terrainMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const terrainMaterialRef = useRef<THREE.MeshStandardNodeMaterial | null>(
     null,
@@ -370,18 +370,12 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
   }, [g, controls.scatterScale, scatterScaleParam]);
 
   useFrame(async ({ camera, gl }) => {
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >
-      0.05 * 0.05
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        return writeUpdateParamsFromCamera(prev, camera);
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
-      resources: { renderer: gl as unknown as THREE.WebGPURenderer },
+      resources: {
+        renderer: gl as unknown as THREE.WebGPURenderer,
+      },
     });
   });
 

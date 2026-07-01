@@ -11,14 +11,14 @@ import FrustumCullingTorusScene from "@/examples/FrustumCullingTorusScene"
 
 These examples render terrain from the main viewer camera while a second animated camera drives quadtree visibility. The yellow camera helper marks the culling frustum; the visible wireframe terrain is the set of tiles inside that frustum.
 
-With `@hello-terrain/react`, pass the culling camera through `useTerrain({ camera })` or `<Terrain camera={...} />`. The runner calls `writeUpdateParamsFromCamera` each frame using that camera's view-projection matrix.
+With `@hello-terrain/react`, pass the culling camera through `useTerrain({ culling: { camera } })` or `<Terrain culling={{ camera }} />`. The runner calls `readCameraView` each frame using that camera's view-projection matrix.
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 180,
   maxLevel: 10,
   elevation,
-  camera: cullingCamera,
+  culling: { camera: cullingCamera },
 });
 
 <Terrain terrain={terrain}>
@@ -30,7 +30,12 @@ const terrain = useTerrain({
 
 Animate and update the culling camera before the terrain runner reads it each frame (`lookAt`, `updateProjectionMatrix`, and so on).
 
-For low-level graph setups, you can still call `writeUpdateParamsFromCamera` directly inside a custom `graph.set(quadtreeUpdate, ...)` callback.
+For low-level graph setups, set `cameraView` each frame with `readCameraView` — the param's built-in hysteresis skips graph work when the view barely moved:
+
+```ts
+graph.set(cameraView, readCameraView(cullingCamera, cameraScratch));
+await graph.run({ targets: terrainTargets(), resources: { renderer } });
+```
 
 ## Flat
 
@@ -54,7 +59,7 @@ const terrain = useTerrain({
   radius: 1000,
   maxLevel: 10,
   elevation,
-  camera: cullingCamera,
+  culling: { camera: cullingCamera },
 });
 ```
 
@@ -76,7 +81,7 @@ const terrain = useTerrain({
   topology,
   maxLevel: 10,
   elevation,
-  camera: cullingCamera,
+  culling: { camera: cullingCamera },
 });
 ```
 

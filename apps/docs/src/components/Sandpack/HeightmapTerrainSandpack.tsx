@@ -60,13 +60,14 @@ import {
   innerTileSegments,
   elevationScale,
   elevationFn,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   positionNodeTask,
   visibleLeafSetTask,
-  writeUpdateParamsFromCamera,
 } from "@hello-terrain/three";
 import { task } from "@hello-terrain/work";
-import type { ElevationCallback, UpdateParams } from "@hello-terrain/three";
+import type { ElevationCallback } from "@hello-terrain/three";
 
 extend({
   TerrainGeometry,
@@ -143,10 +144,10 @@ function Terrain({ graph }) {
     );
   }, [graph]);
 
+  const cameraViewScratchRef = useRef(createInitialCameraView());
+
   useFrame(async ({ camera, gl }) => {
-    graph.set(quadtreeUpdate, (prev: UpdateParams) => {
-      return writeUpdateParamsFromCamera(prev, camera);
-    });
+    graph.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
     await graph.run({ resources: { renderer: gl } });
   });
 

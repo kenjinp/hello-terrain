@@ -1,4 +1,4 @@
-import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+import { terrainGraph, terrainTargets, terrainTasks } from "@hello-terrain/three";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createSyncTerrainNodesTask, createSyncTerrainRuntimeTask } from "./runtimeTasks";
 import type {
@@ -64,48 +64,31 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
 
     return nextGraph;
   }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
-  const runnerTargets = useMemo(() => {
-    const userTasks = options.tasks ?? [];
-    const runCompute = options.runCompute ?? true;
-    const runReadback = options.runReadback ?? true;
-    const runGpuSpatialIndex = options.runGpuSpatialIndex ?? true;
-    const targets: TerrainTask[] = [...userTasks, terrainTasks.leafGpuBuffer];
 
-    if (runCompute) {
-      targets.push(terrainTasks.executeCompute);
-      if (runReadback) targets.push(terrainTasks.terrainReadback);
-    }
-    if (runGpuSpatialIndex) targets.push(terrainTasks.gpuSpatialIndexUpload);
-
-    targets.push(syncTerrainRuntimeTask, syncTerrainNodesTask);
+  const runnerTargets = useMemo((): TerrainTask[] => {
+    const userTasks = (options.tasks ?? []) as TerrainTask[];
+    const targets = terrainTargets(options.pipeline ?? {}, userTasks) as TerrainTask[];
+    targets.push(syncTerrainRuntimeTask as TerrainTask, syncTerrainNodesTask as TerrainTask);
     return targets;
-  }, [
-    options.runCompute,
-    options.runGpuSpatialIndex,
-    options.runReadback,
-    options.tasks,
-    syncTerrainNodesTask,
-    syncTerrainRuntimeTask,
-  ]);
-  const cameraRef = useRef(options.camera);
-  const optionsCameraRef = useRef(options.camera);
-  const bindCamera = useCallback((camera: typeof options.camera) => {
+  }, [options.pipeline, options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
+
+  const cameraRef = useRef(options.culling?.camera);
+  const optionsCameraRef = useRef(options.culling?.camera);
+  const bindCamera = useCallback((camera: import("three/webgpu").Camera | undefined) => {
     cameraRef.current = camera ?? optionsCameraRef.current;
   }, []);
 
   useLayoutEffect(() => {
-    optionsCameraRef.current = options.camera;
-    cameraRef.current = options.camera;
-  }, [options.camera]);
+    optionsCameraRef.current = options.culling?.camera;
+    cameraRef.current = options.culling?.camera;
+  }, [options.culling?.camera]);
 
-  const stopTerrainRunner = useTerrainRunner({
+  useTerrainRunner({
     graph,
     targets: runnerTargets,
     cameraRef,
-    getCameraOrigin: options.getCameraOrigin,
-    getResidencyAnchors: options.getResidencyAnchors,
-    residencyHysteresis: options.residencyHysteresis,
-    cameraHysteresis: options.cameraHysteresis,
+    culling: options.culling,
+    residency: options.residency,
   });
 
   useEffect(() => {
@@ -116,13 +99,10 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
       isMountedRef.current = false;
       queueMicrotask(() => {
         if (graphLifecycleRef.current !== lifecycle) return;
-        void stopTerrainRunner().finally(() => {
-          if (graphLifecycleRef.current !== lifecycle) return;
-          graph.dispose();
-        });
+        graph.dispose();
       });
     };
-  }, [graph, stopTerrainRunner]);
+  }, [graph]);
 
   useLayoutEffect(() => {
     runtime.query = null;

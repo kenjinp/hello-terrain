@@ -4,13 +4,18 @@ import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Matrix4, PerspectiveCamera, Vector3 } from "three";
 
-const { writeUpdateParamsFromCamera } = vi.hoisted(() => ({
-  writeUpdateParamsFromCamera: vi.fn(
-    (params: unknown, camera: { uuid: string }, origin: { x: number; y: number; z: number }) => ({
-      ...(params as object),
-      camera,
-      origin,
-    }),
+const { readCameraView } = vi.hoisted(() => ({
+  readCameraView: vi.fn(
+    (
+      camera: { uuid: string },
+      out: { cameraOrigin: { x: number; y: number; z: number } },
+      origin: { x: number; y: number; z: number },
+    ) => {
+      out.cameraOrigin.x = origin.x;
+      out.cameraOrigin.y = origin.y;
+      out.cameraOrigin.z = origin.z;
+      return out;
+    },
   ),
 }));
 
@@ -19,29 +24,23 @@ vi.mock("@react-three/fiber", () => ({
 }));
 
 vi.mock("@hello-terrain/three", () => ({
-  quadtreeUpdate: "quadtreeUpdate",
-  writeUpdateParamsFromCamera,
-  writeViewProjectionMatrix: vi.fn((out: Float64Array) => {
-    for (let i = 0; i < 16; i += 1) out[i] = i * 0.01;
-    return out;
-  }),
+  cameraView: "cameraView",
+  residencyAnchors: "residencyAnchors",
+  readCameraView,
+  cloneResidencyAnchors: vi.fn((anchors: unknown) => anchors ?? []),
+  createCameraViewEquals: vi.fn(() => () => false),
+  createResidencyAnchorsEquals: vi.fn(() => () => false),
+  DEFAULT_CAMERA_ORIGIN_HYSTERESIS: 0.05,
+  DEFAULT_RESIDENCY_HYSTERESIS: 0.05,
 }));
 
 import { useFrame } from "@react-three/fiber";
+import { cameraView, residencyAnchors } from "@hello-terrain/three";
 import { useTerrainRunner } from "../src/useTerrainRunner.js";
 
 function createGraph() {
   const graph = {
-    set: vi.fn((_param: unknown, value: unknown) => {
-      if (typeof value === "function") {
-        value({
-          cameraOrigin: { x: 0, y: 0, z: 0 },
-          mode: "distance",
-          distanceFactor: 1.5,
-        });
-      }
-      return graph;
-    }),
+    set: vi.fn().mockReturnThis(),
     run: vi.fn().mockResolvedValue({ status: "ok" }),
   };
   return graph;
@@ -64,7 +63,7 @@ function createCamera(position: [number, number, number]) {
 describe("useTerrainRunner camera selection", () => {
   beforeEach(() => {
     vi.mocked(useFrame).mockClear();
-    writeUpdateParamsFromCamera.mockClear();
+    readCameraView.mockClear();
   });
 
   it("uses the canvas camera when cameraRef is unset", async () => {
@@ -81,11 +80,13 @@ describe("useTerrainRunner camera selection", () => {
 
     const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
     expect(frame).toBeTypeOf("function");
-    await frame?.(createRootState(canvasCamera) as never);
+    await frame?.(createRootState(canvasCamera) as never, 0);
 
-    expect(writeUpdateParamsFromCamera).toHaveBeenCalled();
-    const activeCamera = writeUpdateParamsFromCamera.mock.calls[0]?.[1];
+    expect(readCameraView).toHaveBeenCalled();
+    const activeCamera = readCameraView.mock.calls[0]?.[0];
     expect(activeCamera?.uuid).toBe(canvasCamera.uuid);
+    expect(graph.set).toHaveBeenCalledWith(cameraView, expect.any(Object));
+    expect(graph.run).toHaveBeenCalled();
   });
 
   it("uses the custom camera from cameraRef instead of the canvas camera", async () => {
@@ -102,10 +103,9 @@ describe("useTerrainRunner camera selection", () => {
     );
 
     const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
-    await frame?.(createRootState(canvasCamera) as never);
+    await frame?.(createRootState(canvasCamera) as never, 0);
 
-    expect(writeUpdateParamsFromCamera).toHaveBeenCalled();
-    const activeCamera = writeUpdateParamsFromCamera.mock.calls[0]?.[1];
+    const activeCamera = readCameraView.mock.calls[0]?.[0];
     expect(activeCamera?.uuid).toBe(customCamera.uuid);
     expect(activeCamera?.uuid).not.toBe(canvasCamera.uuid);
   });
@@ -124,9 +124,9 @@ describe("useTerrainRunner camera selection", () => {
     );
 
     const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
-    await frame?.(createRootState(canvasCamera) as never);
+    await frame?.(createRootState(canvasCamera) as never, 0);
 
-    const origin = writeUpdateParamsFromCamera.mock.calls[0]?.[2];
+    const origin = readCameraView.mock.calls[0]?.[2];
     expect(origin).toEqual({ x: 12, y: 3, z: -7 });
   });
 
@@ -141,18 +141,20 @@ describe("useTerrainRunner camera selection", () => {
       useTerrainRunner({
         graph: graph as never,
         cameraRef,
-        getCameraOrigin: () => trackedOrigin,
+        culling: {
+          getCameraOrigin: () => trackedOrigin,
+        },
       }),
     );
 
     const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
-    await frame?.(createRootState(canvasCamera) as never);
+    await frame?.(createRootState(canvasCamera) as never, 0);
 
-    const origin = writeUpdateParamsFromCamera.mock.calls[0]?.[2];
+    const origin = readCameraView.mock.calls[0]?.[2];
     expect(origin).toEqual({ x: 99, y: 1, z: -4 });
   });
 
-  it("detects view-projection changes from the custom camera", async () => {
+  it("updates cameraView when the custom camera moves", async () => {
     const graph = createGraph();
     const canvasCamera = createCamera([0, 0, 10]);
     const customCamera = createCamera([5, 0, 10]);
@@ -162,21 +164,44 @@ describe("useTerrainRunner camera selection", () => {
       useTerrainRunner({
         graph: graph as never,
         cameraRef,
-        cameraHysteresis: 0,
+        culling: {
+          originHysteresis: 0,
+        },
       }),
     );
 
     const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
-    await frame?.(createRootState(canvasCamera) as never);
-    writeUpdateParamsFromCamera.mockClear();
+    await frame?.(createRootState(canvasCamera) as never, 0);
+    readCameraView.mockClear();
     graph.set.mockClear();
 
     customCamera.position.set(80, 0, 10);
     customCamera.updateMatrixWorld();
     customCamera.projectionMatrix.copy(new Matrix4().makePerspective(-0.2, 0.2, 0.2, -0.2, 1, 100));
-    await frame?.(createRootState(canvasCamera) as never);
+    await frame?.(createRootState(canvasCamera) as never, 0);
 
-    expect(graph.set).toHaveBeenCalled();
-    expect(writeUpdateParamsFromCamera).toHaveBeenCalled();
+    expect(graph.set).toHaveBeenCalledWith(cameraView, expect.any(Object));
+    expect(readCameraView).toHaveBeenCalled();
+  });
+
+  it("sets residency anchors when provided", async () => {
+    const graph = createGraph();
+    const canvasCamera = createCamera([0, 0, 10]);
+    const cameraRef = { current: undefined as PerspectiveCamera | undefined };
+
+    renderHook(() =>
+      useTerrainRunner({
+        graph: graph as never,
+        cameraRef,
+        residency: {
+          getAnchors: () => [{ position: { x: 1, y: 2, z: 3 }, radius: 4 }],
+        },
+      }),
+    );
+
+    const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
+    await frame?.(createRootState(canvasCamera) as never, 0);
+
+    expect(graph.set).toHaveBeenCalledWith(residencyAnchors, expect.any(Array));
   });
 });

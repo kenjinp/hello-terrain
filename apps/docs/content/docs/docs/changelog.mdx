@@ -5,6 +5,42 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased
+
+Per-frame terrain inputs are split into focused params with equality gating and run-owned concurrency. React options are regrouped into `culling`, `residency`, `lod`, and `pipeline`.
+
+### Split runtime params
+
+The monolithic `quadtreeUpdate` param is replaced by:
+
+- `cameraView` — camera origin + view-projection matrix (hysteresis via param `equals`)
+- `residencyAnchors` — world-space support regions for off-screen residency
+- `lodCriteria` — static LOD configuration
+
+Vanilla and React consumers follow the same loop:
+
+```ts
+graph.set(cameraView, readCameraView(camera, scratch));
+graph.set(residencyAnchors, anchors);
+await graph.run({ targets: terrainTargets({ ...pipeline }), resources: { renderer } });
+```
+
+### `@hello-terrain/work`
+
+- **`param(initial, { equals })`** — optional equality comparator gates version bumps and dirty propagation in `graph.set()`.
+- **`graph.run()` preemption** — overlapping runs coalesce when inputs are unchanged; in-flight runs abort when inputs change.
+
+### `@hello-terrain/react`
+
+- **`TerrainOptions` regrouped** — `culling`, `residency`, `lod`, and `pipeline` replace flat `camera`, `getCameraOrigin`, `cameraHysteresis`, `getResidencyAnchors`, `residencyHysteresis`, `runCompute`, `runReadback`, and `runGpuSpatialIndex`.
+- **Thinner runner** — hysteresis, abort, and preemption live in `work`/`three`; React only sets params and calls `run()`.
+
+### Breaking ⚠️
+
+- **`quadtreeUpdate` param removed.** Use `cameraView`, `residencyAnchors`, and `lodCriteria` instead.
+- **React flat options removed.** Migrate to grouped options (see [Params](/docs/core/params)).
+- **`writeUpdateParamsFromCamera` is internal wiring.** Prefer `readCameraView(camera, scratch)` for the `cameraView` param.
+
 ## 0.0.0-alpha.13 — Freezing Venus
 
 LOD now subdivides against the **real terrain relief** instead of a flat datum. This fixes a regression from the last release.

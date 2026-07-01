@@ -8,7 +8,6 @@ import { Terrain, useTerrain, type TerrainHandle, type TerrainOptions } from "@h
 import {
   createCubeSphereTopology,
   createTorusTopology,
-  quadtreeUpdate,
   type TerrainGraph,
 } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
@@ -78,7 +77,8 @@ export const FLAT_FRUSTUM_CULLING_CONFIG: FrustumCullingConfig = {
     elevationScale: 1,
     terrainFieldFilter: "nearest",
     elevation,
-    camera: cullingCamera,
+    culling: { camera: cullingCamera },
+    lod: { mode: "distance", distanceFactor: 1.4 },
   }),
 };
 
@@ -115,7 +115,8 @@ export const CUBE_SPHERE_FRUSTUM_CULLING_CONFIG: FrustumCullingConfig = {
     skirtScale: 4,
     elevationScale: 1,
     elevation,
-    camera: cullingCamera,
+    culling: { camera: cullingCamera },
+    lod: { mode: "distance", distanceFactor: 1.4 },
   }),
 };
 
@@ -151,7 +152,8 @@ export const TORUS_FRUSTUM_CULLING_CONFIG: FrustumCullingConfig = {
     skirtScale: 4,
     elevationScale: 1,
     elevation,
-    camera: cullingCamera,
+    culling: { camera: cullingCamera },
+    lod: { mode: "distance", distanceFactor: 1.4 },
   }),
 };
 
@@ -175,14 +177,6 @@ function FrustumCullingTerrain({
   useEffect(() => {
     onTerrain(terrain);
   }, [onTerrain, terrain]);
-
-  useEffect(() => {
-    terrain.graph.set(quadtreeUpdate, (prev) => ({
-      ...prev,
-      mode: "distance" as const,
-      distanceFactor: 1.4,
-    }));
-  }, [terrain.graph]);
 
   useFrame(({ clock }) => {
     config.animateCullingCamera(cullingCamera, clock.elapsedTime);

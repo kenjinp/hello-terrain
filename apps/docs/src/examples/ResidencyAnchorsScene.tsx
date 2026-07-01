@@ -6,7 +6,6 @@ import { RunTimingBars } from "@/components/RunTimingBars";
 import { TerrainTileDebug } from "@/components/TerrainTileDebug";
 import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import {
-  quadtreeUpdate,
   tileSlotUpdateTask,
   type TerrainGraph,
   type TileSlotTelemetry,
@@ -152,26 +151,21 @@ function ResidencyAnchorTerrain({
     elevationScale: 1,
     terrainFieldFilter: "nearest",
     elevation,
-    camera: cullingCamera,
-    getResidencyAnchors: () => [
-      {
-        position: { x: anchor.x, y: anchor.y, z: anchor.z },
-        radius: ANCHOR_RADIUS,
-      },
-    ],
+    culling: { camera: cullingCamera },
+    residency: {
+      getAnchors: () => [
+        {
+          position: { x: anchor.x, y: anchor.y, z: anchor.z },
+          radius: ANCHOR_RADIUS,
+        },
+      ],
+    },
+    lod: { mode: "distance", distanceFactor: 1.4 },
   });
 
   useEffect(() => {
     onTerrain(terrain);
   }, [onTerrain, terrain]);
-
-  useEffect(() => {
-    terrain.graph.set(quadtreeUpdate, (prev) => ({
-      ...prev,
-      mode: "distance" as const,
-      distanceFactor: 1.4,
-    }));
-  }, [terrain.graph]);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime * 0.36;

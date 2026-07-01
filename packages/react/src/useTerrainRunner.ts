@@ -1,19 +1,19 @@
 import {
-  quadtreeUpdate,
-  writeUpdateParamsFromCamera,
+  cameraView,
+  cloneResidencyAnchors,
+  createCameraViewEquals,
+  createResidencyAnchorsEquals,
+  DEFAULT_CAMERA_ORIGIN_HYSTERESIS,
+  DEFAULT_RESIDENCY_HYSTERESIS,
+  readCameraView,
+  residencyAnchors,
+  type CameraView,
   type TerrainGraph,
-  type TerrainResidencyAnchor,
 } from "@hello-terrain/three";
 import { useFrame, type RootState } from "@react-three/fiber";
-import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, type RefObject } from "react";
 import { Vector3, type Camera } from "three";
 import type { WebGPURenderer } from "three/webgpu";
-import {
-  copyMatrix16,
-  didCameraOriginMove,
-  didViewProjectionMatrixChange,
-  writeCameraViewProjectionMatrix,
-} from "./cameraSync";
 import type { TerrainOptions, TerrainTask, TerrainVector3Like } from "./types";
 
 const WEBGPU_RENDERER_ERROR =
@@ -24,10 +24,8 @@ export interface UseTerrainRunnerParams {
   graph: TerrainGraph;
   targets?: readonly TerrainTask[];
   cameraRef: RefObject<Camera | undefined>;
-  getCameraOrigin?: TerrainOptions["getCameraOrigin"];
-  getResidencyAnchors?: TerrainOptions["getResidencyAnchors"];
-  residencyHysteresis?: number;
-  cameraHysteresis?: number;
+  culling?: TerrainOptions["culling"];
+  residency?: TerrainOptions["residency"];
 }
 
 function resolveActiveCamera(state: RootState, cameraRef: RefObject<Camera | undefined>): Camera {
@@ -37,9 +35,17 @@ function resolveActiveCamera(state: RootState, cameraRef: RefObject<Camera | und
 function toVector3Like(
   state: RootState,
   activeCamera: Camera,
-  getCameraOrigin?: TerrainOptions["getCameraOrigin"],
+  getCameraOrigin?: TerrainOptions["culling"] extends infer C
+    ? C extends { getCameraOrigin?: infer G }
+      ? G
+      : never
+    : never,
 ): TerrainVector3Like {
   return getCameraOrigin?.(state) ?? activeCamera.position;
+}
+
+function isWebGpuRenderer(renderer: unknown): renderer is WebGPURenderer {
+  return typeof renderer === "object" && renderer !== null && "backend" in renderer;
 }
 
 function getTerrainRunnerErrorKey(error: unknown) {
@@ -49,249 +55,152 @@ function getTerrainRunnerErrorKey(error: unknown) {
   return String(error);
 }
 
-function cloneResidencyAnchors(
-  anchors: readonly TerrainResidencyAnchor[] | undefined,
-): TerrainResidencyAnchor[] | undefined {
-  if (!anchors || anchors.length === 0) return undefined;
-  return anchors.map((anchor) => ({
-    position: {
-      x: anchor.position.x,
-      y: anchor.position.y,
-      z: anchor.position.z,
-    },
-    radius: anchor.radius,
-  }));
+function shouldPreGateCamera(originHysteresis: number | undefined) {
+  return (
+    originHysteresis !== undefined && originHysteresis !== DEFAULT_CAMERA_ORIGIN_HYSTERESIS
+  );
 }
 
-function didResidencyAnchorsChange(
-  last: readonly TerrainResidencyAnchor[] | null,
-  next: readonly TerrainResidencyAnchor[] | undefined,
-  hysteresis: number,
-) {
-  const nextCount = next?.length ?? 0;
-  if (!last) return nextCount > 0;
-  if (last.length !== nextCount) return true;
-  const thresholdSq = hysteresis * hysteresis;
-  for (let i = 0; i < nextCount; i += 1) {
-    const a = last[i];
-    const b = next?.[i];
-    if (!a || !b) return true;
-    if (Math.abs(a.radius - b.radius) > hysteresis) return true;
-    const dx = a.position.x - b.position.x;
-    const dy = a.position.y - b.position.y;
-    const dz = a.position.z - b.position.z;
-    if (dx * dx + dy * dy + dz * dz > thresholdSq) return true;
-  }
-  return false;
-}
-
-function isWebGpuRenderer(renderer: unknown): renderer is WebGPURenderer {
-  return typeof renderer === "object" && renderer !== null && "backend" in renderer;
-}
-
-function createStaleTerrainRunAbortReason() {
-  const error = new Error("Terrain runner preempted by newer camera state");
-  error.name = "AbortError";
-  return error;
+function shouldPreGateResidency(hysteresis: number | undefined) {
+  return hysteresis !== undefined && hysteresis !== DEFAULT_RESIDENCY_HYSTERESIS;
 }
 
 export function useTerrainRunner({
   graph,
   targets,
   cameraRef,
-  getCameraOrigin,
-  getResidencyAnchors,
-  residencyHysteresis = 0.05,
-  cameraHysteresis = 0.05,
+  culling,
+  residency,
 }: UseTerrainRunnerParams) {
   const graphRef = useRef(graph);
   const targetsRef = useRef(targets);
   const cameraRefRef = useRef(cameraRef);
-  const getCameraOriginRef = useRef(getCameraOrigin);
-  const getResidencyAnchorsRef = useRef(getResidencyAnchors);
-  const lastCameraOriginRef = useRef<Vector3 | null>(null);
-  const lastViewProjectionMatrixRef = useRef<Float64Array | null>(null);
-  const lastResidencyAnchorsRef = useRef<TerrainResidencyAnchor[] | null>(null);
-  const scratchCameraOriginRef = useRef<Vector3>(new Vector3());
-  const scratchViewProjectionMatrixRef = useRef<Float64Array>(new Float64Array(16));
-  const runningRef = useRef(false);
-  const generationRef = useRef(0);
-  const runAbortControllerRef = useRef<AbortController | null>(null);
-  const runPromiseRef = useRef<Promise<void> | null>(null);
+  const cullingRef = useRef(culling);
+  const residencyRef = useRef(residency);
+  const scratchCameraOriginRef = useRef(new Vector3());
+  const scratchCameraViewRef = useRef<CameraView>({
+    cameraOrigin: { x: 0, y: 0, z: 0 },
+    viewProjectionMatrix: new Float64Array(16),
+  });
+  const lastCameraViewRef = useRef<CameraView | null>(null);
+  const lastResidencyAnchorsRef = useRef<ReturnType<typeof cloneResidencyAnchors> | null>(null);
   const lastErrorKeyRef = useRef<string | null>(null);
 
-  const reportError = useCallback((error: Error | unknown, errorKey?: string) => {
-    const nextErrorKey = errorKey ?? getTerrainRunnerErrorKey(error);
-    if (lastErrorKeyRef.current === nextErrorKey) return;
-    lastErrorKeyRef.current = nextErrorKey;
-    console.error(error);
-  }, []);
-
-  const clearError = useCallback(() => {
-    lastErrorKeyRef.current = null;
-  }, []);
-
-  const stopCurrentRun = useCallback(async () => {
-    const activeController = runAbortControllerRef.current;
-    if (activeController && !activeController.signal.aborted) {
-      activeController.abort(new Error("Terrain runner stopped"));
-    }
-    const activeRun = runPromiseRef.current;
-    if (activeRun) {
-      await activeRun.catch(() => {});
-    }
-  }, []);
-
-  const readCameraFrame = useCallback((state: RootState) => {
-    const activeGetCameraOrigin = getCameraOriginRef.current;
-    const activeGetResidencyAnchors = getResidencyAnchorsRef.current;
-    const activeCamera = resolveActiveCamera(state, cameraRefRef.current);
-    const cameraOrigin = toVector3Like(state, activeCamera, activeGetCameraOrigin);
-    const nextOrigin = scratchCameraOriginRef.current;
-    nextOrigin.set(cameraOrigin.x, cameraOrigin.y, cameraOrigin.z);
-    const nextViewProjectionMatrix = scratchViewProjectionMatrixRef.current;
-    writeCameraViewProjectionMatrix(activeCamera, nextViewProjectionMatrix);
-    const nextResidencyAnchors = cloneResidencyAnchors(activeGetResidencyAnchors?.(state));
-    return { activeCamera, nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors };
-  }, []);
-
-  const didCameraFrameChange = useCallback(
-    (
-      nextOrigin: Vector3,
-      nextViewProjectionMatrix: Float64Array,
-      nextResidencyAnchors: TerrainResidencyAnchor[] | undefined,
-    ) =>
-      didCameraOriginMove(lastCameraOriginRef.current, nextOrigin, cameraHysteresis) ||
-      didViewProjectionMatrixChange(
-        lastViewProjectionMatrixRef.current,
-        nextViewProjectionMatrix,
-      ) ||
-      didResidencyAnchorsChange(
-        lastResidencyAnchorsRef.current,
-        nextResidencyAnchors,
-        residencyHysteresis,
-      ),
-    [cameraHysteresis, residencyHysteresis],
+  const cameraViewEqualsFn = useMemo(
+    () => createCameraViewEquals({ originHysteresis: culling?.originHysteresis }),
+    [culling?.originHysteresis],
   );
-
-  const abortStaleRun = useCallback(
-    (state: RootState) => {
-      const activeController = runAbortControllerRef.current;
-      if (!activeController || activeController.signal.aborted) return false;
-
-      const { nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } = readCameraFrame(state);
-      if (!didCameraFrameChange(nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors)) {
-        return false;
-      }
-
-      activeController.abort(createStaleTerrainRunAbortReason());
-      return true;
-    },
-    [didCameraFrameChange, readCameraFrame],
-  );
-
-  const updateCameraParams = useCallback(
-    (state: RootState, activeGraph: TerrainGraph) => {
-      const { activeCamera, nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors } =
-        readCameraFrame(state);
-
-      if (didCameraFrameChange(nextOrigin, nextViewProjectionMatrix, nextResidencyAnchors)) {
-        activeGraph.set(quadtreeUpdate, (prev) => {
-          const next = writeUpdateParamsFromCamera(prev, activeCamera, nextOrigin);
-          next.residency = nextResidencyAnchors ? { anchors: nextResidencyAnchors } : undefined;
-          return next;
-        });
-        lastCameraOriginRef.current = nextOrigin;
-        if (!lastViewProjectionMatrixRef.current) {
-          lastViewProjectionMatrixRef.current = new Float64Array(16);
-        }
-        copyMatrix16(lastViewProjectionMatrixRef.current, nextViewProjectionMatrix);
-        lastResidencyAnchorsRef.current = nextResidencyAnchors
-          ? (cloneResidencyAnchors(nextResidencyAnchors) ?? null)
-          : [];
-      }
-    },
-    [didCameraFrameChange, readCameraFrame],
-  );
-
-  const finishRun = useCallback(
-    (activeRunController: AbortController, activeGeneration: number) => {
-      if (runAbortControllerRef.current === activeRunController) {
-        runAbortControllerRef.current = null;
-        runPromiseRef.current = null;
-      }
-      if (generationRef.current === activeGeneration) {
-        runningRef.current = false;
-      }
-    },
-    [],
+  const residencyAnchorsEqualsFn = useMemo(
+    () => createResidencyAnchorsEquals({ hysteresis: residency?.hysteresis }),
+    [residency?.hysteresis],
   );
 
   useLayoutEffect(() => {
-    void stopCurrentRun();
     graphRef.current = graph;
     targetsRef.current = targets;
     cameraRefRef.current = cameraRef;
-    getCameraOriginRef.current = getCameraOrigin;
-    getResidencyAnchorsRef.current = getResidencyAnchors;
-    lastCameraOriginRef.current = null;
-    lastViewProjectionMatrixRef.current = null;
+    cullingRef.current = culling;
+    residencyRef.current = residency;
+    lastCameraViewRef.current = null;
     lastResidencyAnchorsRef.current = null;
-    runningRef.current = false;
-    generationRef.current += 1;
-    clearError();
-    return () => {
-      generationRef.current += 1;
-      runningRef.current = false;
-      void stopCurrentRun();
-    };
-  }, [cameraRef, clearError, getCameraOrigin, getResidencyAnchors, graph, stopCurrentRun, targets]);
+    lastErrorKeyRef.current = null;
+  }, [cameraRef, culling, graph, residency, targets]);
 
   useFrame((state) => {
-    if (runningRef.current) {
-      abortStaleRun(state);
-      return;
-    }
-
     const renderer = state.gl;
     if (!isWebGpuRenderer(renderer)) {
-      reportError(new Error(WEBGPU_RENDERER_ERROR), `renderer:${WEBGPU_RENDERER_ERROR}`);
+      const errorKey = `renderer:${WEBGPU_RENDERER_ERROR}`;
+      if (lastErrorKeyRef.current !== errorKey) {
+        lastErrorKeyRef.current = errorKey;
+        console.error(new Error(WEBGPU_RENDERER_ERROR));
+      }
       return;
     }
 
-    const activeGeneration = generationRef.current;
-    const activeRunController = new AbortController();
-    runningRef.current = true;
-    runAbortControllerRef.current = activeRunController;
+    const activeGraph = graphRef.current;
+    const activeCulling = cullingRef.current;
+    const activeResidency = residencyRef.current;
+    const activeCamera = resolveActiveCamera(state, cameraRefRef.current);
+    const cameraOrigin = toVector3Like(state, activeCamera, activeCulling?.getCameraOrigin);
+    const nextOrigin = scratchCameraOriginRef.current;
+    nextOrigin.set(cameraOrigin.x, cameraOrigin.y, cameraOrigin.z);
 
-    const runPromise = (async () => {
-      try {
-        const activeGraph = graphRef.current;
-        const activeTargets = targetsRef.current;
-        updateCameraParams(state, activeGraph);
+    const nextCameraView = readCameraView(
+      activeCamera,
+      scratchCameraViewRef.current,
+      nextOrigin,
+    );
+    const lastCameraView = lastCameraViewRef.current;
+    const preGateCamera = shouldPreGateCamera(activeCulling?.originHysteresis);
+    const cameraUnchanged =
+      preGateCamera &&
+      lastCameraView !== null &&
+      cameraViewEqualsFn(lastCameraView, nextCameraView);
 
-        const report = await activeGraph.run({
-          targets: activeTargets,
-          signal: activeRunController.signal,
-          resources: {
-            renderer,
-          },
-        });
+    if (!cameraUnchanged) {
+      activeGraph.set(cameraView, {
+        cameraOrigin: {
+          x: nextCameraView.cameraOrigin.x,
+          y: nextCameraView.cameraOrigin.y,
+          z: nextCameraView.cameraOrigin.z,
+        },
+        viewProjectionMatrix: nextCameraView.viewProjectionMatrix,
+      });
+      if (preGateCamera) {
+        if (!lastCameraViewRef.current) {
+          lastCameraViewRef.current = {
+            cameraOrigin: { x: 0, y: 0, z: 0 },
+            viewProjectionMatrix: new Float64Array(16),
+          };
+        }
+        const last = lastCameraViewRef.current;
+        last.cameraOrigin.x = nextCameraView.cameraOrigin.x;
+        last.cameraOrigin.y = nextCameraView.cameraOrigin.y;
+        last.cameraOrigin.z = nextCameraView.cameraOrigin.z;
+        for (let i = 0; i < 16; i += 1) {
+          last.viewProjectionMatrix[i] = nextCameraView.viewProjectionMatrix[i] ?? 0;
+        }
+      }
+    }
+
+    const nextResidencyAnchors = cloneResidencyAnchors(
+      activeResidency?.getAnchors?.(state),
+    );
+    const lastResidencyAnchors = lastResidencyAnchorsRef.current;
+    const preGateResidency = shouldPreGateResidency(activeResidency?.hysteresis);
+    const residencyUnchanged =
+      preGateResidency &&
+      lastResidencyAnchors !== null &&
+      residencyAnchorsEqualsFn(lastResidencyAnchors, nextResidencyAnchors);
+
+    if (!residencyUnchanged) {
+      activeGraph.set(residencyAnchors, nextResidencyAnchors);
+      if (preGateResidency) {
+        lastResidencyAnchorsRef.current = cloneResidencyAnchors(nextResidencyAnchors);
+      }
+    }
+
+    void activeGraph
+      .run({
+        targets: targetsRef.current,
+        resources: { renderer },
+      })
+      .then((report) => {
         if (report.status === "error") {
-          reportError(new Error(GRAPH_RUN_ERROR), `graph:${GRAPH_RUN_ERROR}`);
+          const errorKey = `graph:${GRAPH_RUN_ERROR}`;
+          if (lastErrorKeyRef.current !== errorKey) {
+            lastErrorKeyRef.current = errorKey;
+            console.error(new Error(GRAPH_RUN_ERROR));
+          }
           return;
         }
-        clearError();
-      } catch (error) {
-        if (activeRunController.signal.aborted) return;
-        reportError(error);
-      } finally {
-        finishRun(activeRunController, activeGeneration);
-      }
-    })();
-
-    runPromiseRef.current = runPromise;
+        lastErrorKeyRef.current = null;
+      })
+      .catch((error) => {
+        const errorKey = getTerrainRunnerErrorKey(error);
+        if (lastErrorKeyRef.current === errorKey) return;
+        lastErrorKeyRef.current = errorKey;
+        console.error(error);
+      });
   });
-
-  return stopCurrentRun;
 }

@@ -29,32 +29,20 @@ The elevation field is a buffer of floats that determines how vertices will be o
 
 The elevation function is part of hello-terrain's compute graph, which dispatches compute tasks only when their inputs change. 
 The elevation function will be ran when it's upstream dependencies change, which are (broadly):
- 1. the `quadtreeUpdateTask` output changes, which fires when you set `quadtreeUpdate` on the graph.  
+ 1. the `quadtreeUpdateTask` output changes, which fires when `cameraView`, `residencyAnchors`, or `lodCriteria` change on the graph.
  2. configuration params such as `maxNodes` or `rootSize`, for example.
  3. your `elevationFn` itself changes.
 
-You should update the `quadtreeUpdate` function whenever your camera changes position or view projection.
-However, there is no equality checking inside `.set()`, so doing this always triggers the quadtree tasks to run. 
-Also, because position floats are noisy, it's likely that position would not be exactly the same anyways. 
+Update `cameraView` each frame when the camera moves. The param uses built-in hysteresis so small movements do not dirty the graph:
 
-I recommend adding some hysteresis factor or checking in your animation frame, and only `set()`-ing the `quadtreeUpdate` param when there are large changes. 
 ```ts
 useFrame(async ({ camera, gl }) => {
-    const cameraHysteresis = 0.05;
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      cameraHysteresis * cameraHysteresis
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        return writeUpdateParamsFromCamera(prev, camera);
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
-
-    await g.run()
-])
+  graph.set(cameraView, readCameraView(camera, cameraScratch));
+  await graph.run({ targets, resources: { renderer: gl } });
+});
 ```
-This way, if you stay still, the elevationFn will not be re-ran, and the values would be cached. 
+
+When the camera stays still, `graph.run()` hits the fast path and compute tasks are not re-dispatched.
 
 ### Simple Procedural Terrain
 

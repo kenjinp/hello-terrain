@@ -15,7 +15,9 @@ import {
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
@@ -26,9 +28,7 @@ import {
   type LeafSet,
   type TerrainGraph,
   type TerrainTileBounds,
-  type UpdateParams,
-  writeUpdateParamsFromCamera,
-} from "@hello-terrain/three";
+  } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
@@ -208,7 +208,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
   const meshRef = useRef<TerrainMesh | null>(null);
   const materialRef = useRef<THREE.MeshBasicNodeMaterial | null>(null);
   const lastPositionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
-  const lastCameraRef = useRef(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
 
   const controls = useControls(
     "Terrain",
@@ -278,12 +278,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
   const colorNode = controls.tileColors ? tileInstanceColorNode : terrainColorNode;
 
   useFrame(async ({ camera, gl }) => {
-    if (lastCameraRef.current.distanceToSquared(camera.position) >= 0.05 * 0.05) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        return writeUpdateParamsFromCamera(prev, camera);
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
       resources: { renderer: gl as unknown as THREE.WebGPURenderer },

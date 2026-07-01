@@ -1,7 +1,14 @@
 import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
-import type { Topology, UpdateParams } from "../quadtree";
+import type { LodCriteria, TerrainResidencyAnchor, Topology } from "../quadtree";
 import type { ElevationCallback } from "../tsl/elevation";
+import {
+  cameraViewEquals,
+  cloneCameraView,
+  createInitialCameraView,
+  type CameraView,
+} from "./cameraView";
+import { cloneResidencyAnchors, residencyAnchorsEquals } from "./residencyAnchorsParam";
 
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
@@ -34,12 +41,26 @@ export const maxNodes = param(1024).displayName("maxNodes");
 /** Maximum quadtree subdivision level. */
 export const maxLevel = param(16).displayName("maxLevel");
 
-/** Quadtree update configuration (camera, mode, etc.). */
-export const quadtreeUpdate = param<UpdateParams>({
-  cameraOrigin: { x: 0, y: 0, z: 0 },
+/** Camera-relative origin and view-projection matrix for LOD and frustum culling. */
+export const cameraView = param<CameraView>(createInitialCameraView(), {
+  equals: cameraViewEquals,
+  copy: cloneCameraView,
+}).displayName("cameraView");
+
+/**
+ * World-space residency anchors that keep terrain data resident even when
+ * render culling hides those tiles.
+ */
+export const residencyAnchors = param<readonly TerrainResidencyAnchor[]>([], {
+  equals: residencyAnchorsEquals,
+  copy: cloneResidencyAnchors,
+}).displayName("residencyAnchors");
+
+/** How subdivision decisions are made (distance vs screen-space LOD). */
+export const lodCriteria = param<LodCriteria>({
   mode: "distance",
   distanceFactor: 1.5,
-}).displayName("quadtreeUpdate");
+}).displayName("lodCriteria");
 
 /** Optional custom terrain topology; defaults to bounded flat topology when null. */
 export const topology = param<Topology | null>(null).displayName("topology");

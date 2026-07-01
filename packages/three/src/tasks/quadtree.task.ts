@@ -7,11 +7,14 @@ import {
 import type {
   ElevationRangeOut,
   LeafSet,
+  LodCriteria,
   SpatialIndex,
+  TerrainResidencyAnchor,
   TileId,
   TileResidencyState,
   TileSlotCacheState,
   TileVisibilityState,
+  UpdateParams,
 } from "../quadtree";
 import {
   allocLeafSet,
@@ -25,14 +28,17 @@ import {
   updateTileSlotCache,
 } from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
+import type { CameraView } from "./cameraView";
 import {
+  cameraView,
   elevationFn,
   elevationScale,
   innerTileSegments,
+  lodCriteria,
   maxLevel,
   maxNodes,
   origin,
-  quadtreeUpdate,
+  residencyAnchors,
   radius,
   rootSize,
   topology,
@@ -56,6 +62,19 @@ export type TileIncrementalTelemetryState = {
 export type SlotIndexBufferState = VisibleSlotStorageState & {
   count: number;
 };
+
+function assembleUpdateParams(
+  view: CameraView,
+  anchors: readonly TerrainResidencyAnchor[],
+  lod: LodCriteria,
+): UpdateParams {
+  return {
+    cameraOrigin: view.cameraOrigin,
+    viewProjectionMatrix: view.viewProjectionMatrix,
+    residency: anchors.length > 0 ? { anchors } : undefined,
+    ...lod,
+  };
+}
 
 /**
  * Derives the terrain topology from `rootSize` and `origin`.
@@ -89,7 +108,10 @@ export const quadtreeConfigTask = task((get, work) => {
 
 export const quadtreeUpdateTask = task((get, work) => {
   const quadtreeConfig = get(quadtreeConfigTask);
-  const quadtreeUpdateConfig = get(quadtreeUpdate);
+  const view = get(cameraView);
+  const anchors = get(residencyAnchors);
+  const lod = get(lodCriteria);
+  const updateConfig = assembleUpdateParams(view, anchors, lod);
   const { cache } = get(terrainQueryTask);
   const elevationScaleValue = get(elevationScale);
 
@@ -101,7 +123,7 @@ export const quadtreeUpdateTask = task((get, work) => {
   // Surface-relative LOD comes from per-tile elevation bounds — `tileBounds`
   // places each tile's bounding sphere at its own readback elevation range,
   // so no global camera offset is needed.
-  quadtreeUpdateConfig.tileElevationRange = (tile, out) => {
+  updateConfig.tileElevationRange = (tile, out) => {
     if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
       return false;
     }
@@ -114,7 +136,7 @@ export const quadtreeUpdateTask = task((get, work) => {
     outLeaves = update(
       quadtreeConfig.state,
       quadtreeConfig.topology,
-      quadtreeUpdateConfig,
+      updateConfig,
       outLeaves,
     );
     return outLeaves;
@@ -124,7 +146,7 @@ export const quadtreeUpdateTask = task((get, work) => {
 export const tileVisibilityTask = task((get, work) => {
   const leafSet = get(quadtreeUpdateTask);
   const topologyValue = get(topologyTask);
-  const updateConfig = get(quadtreeUpdate);
+  const view = get(cameraView);
   const { cache } = get(terrainQueryTask);
   const elevationScaleValue = get(elevationScale);
   const elevationRangeScratch = { min: 0, max: 0 };
@@ -143,8 +165,8 @@ export const tileVisibilityTask = task((get, work) => {
       {
         leaves: leafSet,
         topology: topologyValue,
-        cameraOrigin: updateConfig.cameraOrigin,
-        viewProjectionMatrix: updateConfig.viewProjectionMatrix,
+        cameraOrigin: view.cameraOrigin,
+        viewProjectionMatrix: view.viewProjectionMatrix,
         elevationRangeForTile,
       },
       prev,
@@ -156,7 +178,8 @@ export const tileResidencyTask = task((get, work) => {
   const leafSet = get(quadtreeUpdateTask);
   const visibility = get(tileVisibilityTask);
   const topologyValue = get(topologyTask);
-  const updateConfig = get(quadtreeUpdate);
+  const view = get(cameraView);
+  const anchors = get(residencyAnchors);
   const { cache } = get(terrainQueryTask);
   const elevationScaleValue = get(elevationScale);
   const elevationRangeScratch = { min: 0, max: 0 };
@@ -176,8 +199,8 @@ export const tileResidencyTask = task((get, work) => {
         leaves: leafSet,
         visibility,
         topology: topologyValue,
-        cameraOrigin: updateConfig.cameraOrigin,
-        residency: updateConfig.residency,
+        cameraOrigin: view.cameraOrigin,
+        residency: anchors.length > 0 ? { anchors } : undefined,
         elevationRangeForTile,
       },
       prev,

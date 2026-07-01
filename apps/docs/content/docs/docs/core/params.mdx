@@ -20,9 +20,11 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `elevationScale` | `number` | `1` | A multiplier applied to the sampled elevation values, controlling the vertical exaggeration of the terrain. |
 | `radius` | `number` | `1000` | The sphere radius used by the cube-sphere projection. Ignored by flat topologies. See [Cube-Sphere Planet](/docs/examples/cube-sphere). |
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
-| `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin, optional view-projection matrix for frustum culling, residency anchors for physics/query support, and update mode. |
-| `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
-| `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
+| `cameraView` | `{ cameraOrigin; viewProjectionMatrix }` | origin at `{0,0,0}`, identity matrix | Per-frame camera origin and view-projection matrix for LOD and frustum culling. Uses equality gating so unchanged frames stay cheap. |
+| `residencyAnchors` | `TerrainResidencyAnchor[]` | `[]` | World-space support regions that keep terrain data resident even when render culling hides those tiles. |
+| `lodCriteria` | `LodCriteria` | `{ mode: "distance", distanceFactor: 1.5 }` | How subdivision decisions are made (distance vs screen-space LOD). |
+| `topology` | `Topology` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
+| `terrainFieldFilter` | `"nearest"` \| `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
 
 ## Where These Params Apply
 
@@ -98,27 +100,68 @@ This is useful for custom scatter systems, debug overlays, analysis tasks, or an
 
 Hello Terrain uses graph-owned params so multiple terrain instances can coexist without leaking values into each other.
 
+## Equality-Gated Params
+
+Some params define an `equals` comparator when created with `param(initial, { equals })`. When you `graph.set()` a value that `equals` considers unchanged, the graph stores the value but **does not** bump the param version or invalidate downstream tasks. This keeps per-frame `set()` + `run()` loops cheap.
+
+`cameraView` and `residencyAnchors` ship with hysteresis-aware `equals` functions. Push fresh values every frame; the graph skips work when movement is below the threshold.
+
+## Per-Frame Loop (Vanilla)
+
+You own the render loop. Each frame, set dynamic params and call `run()`:
+
+```ts
+import {
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
+  residencyAnchors,
+  terrainGraph,
+  terrainTargets,
+} from "@hello-terrain/three";
+
+const graph = terrainGraph();
+const cameraScratch = createInitialCameraView();
+const targets = terrainTargets();
+
+useFrame(async ({ camera, gl }) => {
+  graph.set(cameraView, readCameraView(camera, cameraScratch));
+  graph.set(residencyAnchors, getAnchors());
+  await graph.run({ targets, resources: { renderer: gl } });
+});
+```
+
+`graph.run()` coalesces overlapping calls when inputs are unchanged and preempts in-flight runs when inputs change.
+
 ## React Mapping
 
-In `@hello-terrain/react`, these core params are surfaced through `Terrain` props and `useTerrain()` options. A few names are slightly adapted for the React API:
+In `@hello-terrain/react`, static shape options map directly to graph params. Dynamic inputs are grouped:
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 4096,
   maxLevel: 6,
   elevation,
-  camera: cullingCamera,
-  getCameraOrigin,
-  getResidencyAnchors,
-  cameraHysteresis: 0.35,
+  culling: {
+    camera: cullingCamera,
+    getCameraOrigin,
+    originHysteresis: 0.35,
+  },
+  residency: {
+    getAnchors: getResidencyAnchors,
+    hysteresis: 0.25,
+  },
+  lod: { mode: "distance", distanceFactor: 1.4 },
+  pipeline: { compute: true, readback: true, gpuSpatialIndex: true },
 });
 ```
 
-- `elevation` maps to the core `elevationFn` param.
-- `camera` drives `quadtreeUpdate` view-projection through `writeUpdateParamsFromCamera`. Defaults to the R3F canvas camera.
-- `getCameraOrigin` and `cameraHysteresis` influence how the runner updates the core `quadtreeUpdate` param over time.
-- `getResidencyAnchors` maps to `quadtreeUpdate.residency.anchors`, keeping terrain data resident around gameplay systems even when render culling hides those tiles.
-- `tasks` lets you add extra `@hello-terrain/work` tasks to the terrain graph.
+- `elevation` maps to `elevationFn`.
+- `culling.camera` / `culling.getCameraOrigin` drive `cameraView` each frame.
+- `residency.getAnchors` drives `residencyAnchors` each frame.
+- `lod` maps to `lodCriteria`.
+- `pipeline` selects which tasks `run()` targets via `terrainTargets()`.
+- `tasks` adds extra `@hello-terrain/work` tasks to the graph.
 
 ## Related Pages
 

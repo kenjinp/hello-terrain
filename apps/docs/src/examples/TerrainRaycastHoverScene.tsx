@@ -15,20 +15,20 @@ import {
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
   terrainGraph,
   terrainTasks,
   TerrainMesh,
-  writeUpdateParamsFromCamera,
-  type ElevationCallback,
+    type ElevationCallback,
   type LeafSet,
   type TerrainGraph,
   type TerrainQuery,
   type TerrainTile,
-  type UpdateParams,
 } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, type ThreeEvent, useFrame } from "@react-three/fiber";
@@ -70,8 +70,6 @@ type HoverOverlayInfo = HoverInfo & {
   screenX: number;
   screenY: number;
 };
-
-const CAMERA_HYSTERESIS = 0.05;
 
 const randomGradient = Fn(([p]: [any]) => {
   const angle = fract(sin(dot(p, vec2(127.1, 311.7))).mul(43758.5453)).mul(
@@ -129,7 +127,7 @@ function TerrainRaycastHoverSceneImpl({
   const lastPositionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(
     null,
   );
-  const lastCameraRef = useRef(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
   const hoverRef = useRef<HoverInfo | null>(null);
   const terrainQueryRef = useRef<TerrainQuery | null>(null);
 
@@ -216,15 +214,7 @@ function TerrainRaycastHoverSceneImpl({
   const colorNode = controls.tileColors ? tileInstanceColorNode : hoverColorNode;
 
   useFrame(async ({ camera, gl }) => {
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      CAMERA_HYSTERESIS * CAMERA_HYSTERESIS
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        return writeUpdateParamsFromCamera(prev, camera);
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
       resources: { renderer: gl as unknown as THREE.WebGPURenderer },

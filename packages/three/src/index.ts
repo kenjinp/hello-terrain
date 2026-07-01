@@ -13,11 +13,34 @@ export {
   radius,
   maxNodes,
   maxLevel,
-  quadtreeUpdate,
+  cameraView,
+  residencyAnchors,
+  lodCriteria,
   topology,
   terrainFieldFilter,
   elevationFn,
 } from "./tasks/params";
+
+export {
+  readCameraView,
+  createInitialCameraView,
+  cloneCameraView,
+  createCameraViewEquals,
+  cameraViewEquals,
+  DEFAULT_CAMERA_ORIGIN_HYSTERESIS,
+  type CameraView,
+  type CameraViewEqualsConfig,
+} from "./tasks/cameraView";
+
+export {
+  cloneResidencyAnchors,
+  createResidencyAnchorsEquals,
+  residencyAnchorsEquals,
+  DEFAULT_RESIDENCY_HYSTERESIS,
+  type ResidencyAnchorsEqualsConfig,
+} from "./tasks/residencyAnchorsParam";
+
+export { terrainTargets, type TerrainPipelineOptions, type TerrainRunResources } from "./tasks/terrainTargets";
 
 export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";

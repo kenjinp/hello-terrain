@@ -108,4 +108,34 @@ describe("param()", () => {
     p.displayName("My Param");
     expect(p.name).toBe("My Param");
   });
+
+  it("equals skips set() when the comparator reports no meaningful change", () => {
+    const p = param(0, { equals: (a, b) => a === b });
+    const sub = vi.fn<(next: number, prev: number) => void>();
+    p.subscribe(sub);
+
+    p.set(0);
+    p.set(5);
+    p.set(5);
+
+    expect(p.get()).toBe(5);
+    expect(sub).toHaveBeenCalledTimes(1);
+    expect(sub).toHaveBeenCalledWith(5, 0);
+  });
+
+  it("equals skips reset() when already at the initial value", () => {
+    const p = param(3, { equals: (a, b) => a === b });
+    const sub = vi.fn<(next: number, prev: number) => void>();
+    p.subscribe(sub);
+
+    p.reset();
+
+    expect(sub).not.toHaveBeenCalled();
+  });
+
+  it("exposes equals on the param ref when provided", () => {
+    const equals = (a: number, b: number) => a === b;
+    const p = param(1, { equals });
+    expect(p.equals).toBe(equals);
+  });
 });

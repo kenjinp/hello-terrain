@@ -396,7 +396,7 @@ deterministic frustum and horizon culling.
     and unculled counts.
 
 - `tileResidencyTask`
-  - Depends on `tileVisibilityTask` and `quadtreeUpdate.residency`.
+  - Depends on `tileVisibilityTask` and `residencyAnchors`.
   - Produces resident candidate indices by unioning visible/guard tiles with
     anchor-intersecting support tiles.
   - Keeps physics/query terrain data alive when render visibility culls tiles.

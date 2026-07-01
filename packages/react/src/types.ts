@@ -1,5 +1,6 @@
 import type {
   ElevationCallback,
+  LodCriteria,
   TerrainGraph,
   TerrainQuery,
   TerrainRaycast,
@@ -43,13 +44,14 @@ export interface TerrainHandle extends TerrainNodes {
   ready: boolean;
   topology?: Topology | null;
   /**
-   * Override the camera used for quadtree updates. Prefer the `camera` option on
+   * Override the camera used for quadtree updates. Prefer `culling.camera` on
    * `useTerrain()` or `<Terrain />` instead of calling this directly.
    */
   bindCamera?: (camera: Camera | undefined) => void;
 }
 
-export interface TerrainOptions {
+/** Static terrain shape and material configuration. */
+export interface TerrainShapeOptions {
   rootSize?: number;
   origin?: TerrainVector3Like;
   maxLevel?: number;
@@ -61,28 +63,42 @@ export interface TerrainOptions {
   elevation?: ElevationCallback;
   topology?: Topology | null;
   terrainFieldFilter?: "nearest" | "linear";
-  getCameraOrigin?: (state: RootState) => TerrainVector3Like;
-  getResidencyAnchors?: (state: RootState) => readonly TerrainResidencyAnchor[] | undefined;
-  residencyHysteresis?: number;
-  cameraHysteresis?: number;
+}
+
+/** Camera-driven LOD and frustum culling inputs. */
+export interface TerrainCullingOptions {
   /**
-   * Optional camera for quadtree LOD and frustum culling. When omitted, the
-   * active R3F canvas camera is used. Pass a separate camera to decouple the
-   * render view from culling, for example in the frustum-culling example.
+   * Camera for quadtree LOD and frustum culling. When omitted, the active R3F
+   * canvas camera is used.
    */
   camera?: Camera;
-  /**
-   * Execute terrain field compute for dirty slots. Disable to freeze computed
-   * field contents while still updating draw buffers and CPU visibility.
-   */
-  runCompute?: boolean;
-  /**
-   * Trigger elevation/bounds readback after compute. Ignored when
-   * `runCompute` is false.
-   */
-  runReadback?: boolean;
-  /** Upload the resident tile spatial index used by GPU samplers. */
-  runGpuSpatialIndex?: boolean;
+  getCameraOrigin?: (state: RootState) => TerrainVector3Like;
+  /** Minimum camera-origin movement before `cameraView` is updated. */
+  originHysteresis?: number;
+}
+
+/** Residency anchors that keep tiles loaded off-screen. */
+export interface TerrainResidencyOptions {
+  getAnchors?: (state: RootState) => readonly TerrainResidencyAnchor[] | undefined;
+  /** Minimum anchor movement before `residencyAnchors` is updated. */
+  hysteresis?: number;
+}
+
+/** Which graph stages `run()` executes each frame. */
+export interface TerrainPipelineOptions {
+  /** Execute terrain field compute for dirty slots. Default `true`. */
+  compute?: boolean;
+  /** Trigger elevation/bounds readback after compute. Default `true`. */
+  readback?: boolean;
+  /** Upload the resident tile spatial index used by GPU samplers. Default `true`. */
+  gpuSpatialIndex?: boolean;
+}
+
+export interface TerrainOptions extends TerrainShapeOptions {
+  culling?: TerrainCullingOptions;
+  residency?: TerrainResidencyOptions;
+  lod?: LodCriteria;
+  pipeline?: TerrainPipelineOptions;
   tasks?: readonly TerrainTask[];
 }
 

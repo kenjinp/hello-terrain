@@ -537,13 +537,19 @@ function RaycastCharacterControllerSceneImpl({
     skirtScale: controls.skirtScale,
     elevationScale: controls.elevationScale,
     elevation,
-    getCameraOrigin,
-    getResidencyAnchors,
-    residencyHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
-    cameraHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
-    runCompute: controls.runCompute,
-    runReadback: controls.runReadback,
-    runGpuSpatialIndex: controls.runGpuSpatialIndex,
+    culling: {
+      getCameraOrigin,
+      originHysteresis: QUADTREE_ORIGIN_HYSTERESIS,
+    },
+    residency: {
+      getAnchors: getResidencyAnchors,
+      hysteresis: QUADTREE_ORIGIN_HYSTERESIS,
+    },
+    pipeline: {
+      compute: controls.runCompute,
+      readback: controls.runReadback,
+      gpuSpatialIndex: controls.runGpuSpatialIndex,
+    },
   });
 
   useEffect(() => {

@@ -42,7 +42,7 @@ Defined in `packages/three/src/tasks/params.ts`.
 
 - **World config:** `rootSize`, `origin`, `elevationScale`, `radius`
 - **Shape config:** `innerTileSegments`, `maxNodes`, `maxLevel`
-- **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`
+- **Runtime controls:** `cameraView`, `residencyAnchors`, `lodCriteria`, `terrainFieldFilter`
 - **Customization callbacks:** `topology`, `elevationFn`
 
 These values are not copied into one monolithic config object; they are consumed directly by task dependencies.

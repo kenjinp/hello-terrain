@@ -1,4 +1,7 @@
 export * from "./camera";
+export * from "./cameraView";
+export * from "./residencyAnchorsParam";
+export * from "./terrainTargets";
 export * from "./compute.task";
 export * from "./graph";
 export * from "./graph.types";

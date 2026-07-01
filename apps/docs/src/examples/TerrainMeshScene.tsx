@@ -13,16 +13,16 @@ import {
   maxNodes,
   positionNodeTask,
   quadtreeConfigTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
   quadtreeUpdateTask,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
   TerrainGraph,
   TerrainMesh,
   updateUniformsTask,
-  writeUpdateParamsFromCamera,
-  type UpdateParams,
 } from "@hello-terrain/three";
 import { graph } from "@hello-terrain/work";
 import { Bounds, OrbitControls } from "@react-three/drei";
@@ -86,7 +86,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
     tileColors: { ...tileColorsLevaControl, value: true },
   }, { store });
 
-  const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
@@ -134,16 +134,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   }, [g]);
 
   useFrame(async ({ camera, gl }) => {
-    const cameraHysteresis = 0.05;
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      cameraHysteresis * cameraHysteresis
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        return writeUpdateParamsFromCamera(prev, camera);
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
       resources: {

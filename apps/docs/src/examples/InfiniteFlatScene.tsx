@@ -12,7 +12,9 @@ import {
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
@@ -21,9 +23,7 @@ import {
   topology,
   visibleLeafSetTask,
   voronoiCells,
-  writeUpdateParamsFromCamera,
-  type ElevationParams,
-  type UpdateParams,
+    type ElevationParams,
 } from "@hello-terrain/three";
 import { Graph, task } from "@hello-terrain/work";
 import { Environment, OrbitControls } from "@react-three/drei";
@@ -112,7 +112,7 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
     tileColors: tileColorsLevaControl,
   }, { store });
 
-  const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
 
@@ -187,20 +187,11 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   }, []);
 
   useFrame(async ({ camera, gl }) => {
-    const cameraHysteresis = 0.05;
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      cameraHysteresis * cameraHysteresis
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        return writeUpdateParamsFromCamera(prev, camera);
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
       resources: {
-        renderer: gl,
+        renderer: gl as unknown as THREE.WebGPURenderer,
       },
     });
   });

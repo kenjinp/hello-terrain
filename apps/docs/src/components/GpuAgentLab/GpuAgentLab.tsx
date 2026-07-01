@@ -1,14 +1,17 @@
 "use client";
 
 import {
+  cameraView,
+  createCubeSphereTopology,
+  createTorusTopology,
   elevationFn,
   elevationScale,
   getDeviceComputeLimits,
   innerTileSegments,
+  lodCriteria,
   maxLevel,
   maxNodes,
   origin,
-  quadtreeUpdate,
   radius,
   rootSize,
   skirtScale,
@@ -16,8 +19,6 @@ import {
   terrainGraph,
   terrainTasks,
   topology,
-  createCubeSphereTopology,
-  createTorusTopology,
   type ElevationCallback,
   type TerrainGraph,
   type TerrainQueryContext,
@@ -735,12 +736,15 @@ function setScenarioParams(
     .set(elevationScale, scenario.elevationScale)
     .set(terrainFieldFilter, "nearest")
     .set(elevationFn as never, (() => scenario.elevation) as never)
-    .set(quadtreeUpdate, {
+    .set(cameraView, {
       cameraOrigin: {
         x: cameraFrame.cameraOrigin.x,
         y: cameraFrame.cameraOrigin.y,
         z: cameraFrame.cameraOrigin.z,
       },
+      viewProjectionMatrix: Array.from({ length: 16 }, () => 0),
+    })
+    .set(lodCriteria, {
       mode: "distance",
       distanceFactor: scenario.distanceFactor,
     });

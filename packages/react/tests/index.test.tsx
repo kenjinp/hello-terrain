@@ -47,7 +47,9 @@ vi.mock("@hello-terrain/three", () => {
 
   const terrainTasks = {
     leafGpuBuffer: "leafGpuBuffer",
-    quadtreeUpdate: "quadtreeUpdate",
+    cameraView: "cameraViewParam",
+    residencyAnchors: "residencyAnchorsParam",
+    lodCriteria: "lodCriteriaParam",
     positionNode: "positionNode",
     terrainQuery: "terrainQuery",
     terrainRaycast: "terrainRaycast",
@@ -59,7 +61,10 @@ vi.mock("@hello-terrain/three", () => {
     TerrainMesh,
     terrainGraph: vi.fn(() => graph),
     terrainTasks,
-    quadtreeUpdate: "quadtreeUpdateParam",
+    terrainTargets: vi.fn(() => []),
+    cameraView: "cameraViewParam",
+    residencyAnchors: "residencyAnchorsParam",
+    lodCriteria: "lodCriteriaParam",
     elevationFn: "elevationFn",
     elevationScale: "elevationScale",
     innerTileSegments: "innerTileSegments",
@@ -70,6 +75,12 @@ vi.mock("@hello-terrain/three", () => {
     skirtScale: "skirtScale",
     topology: "topology",
     terrainFieldFilter: "terrainFieldFilter",
+    readCameraView: vi.fn(),
+    cloneResidencyAnchors: vi.fn(() => []),
+    createCameraViewEquals: vi.fn(() => () => false),
+    createResidencyAnchorsEquals: vi.fn(() => () => false),
+    DEFAULT_CAMERA_ORIGIN_HYSTERESIS: 0.05,
+    DEFAULT_RESIDENCY_HYSTERESIS: 0.05,
   };
 });
 
@@ -180,7 +191,7 @@ describe("@hello-terrain/react", () => {
 
     const frame = vi.mocked(useFrame).mock.calls.at(-1)?.[0];
     expect(frame).toBeTypeOf("function");
-    frame?.({} as never);
+    frame?.({} as never, 0);
 
     const mesh = terrainMeshInstances.at(-1);
     expect(mesh?.count).toBe(3);

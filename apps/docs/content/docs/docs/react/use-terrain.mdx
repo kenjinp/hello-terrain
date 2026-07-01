@@ -12,9 +12,9 @@ Use it when you want to:
 - reuse the same terrain handle across multiple components
 - inspect the graph or tasks directly
 - access `runtime.query` or `runtime.raycast`
-- control quadtree tracking with a custom `getCameraOrigin`
-- drive LOD and frustum culling from a separate `camera`
-- keep gameplay terrain resident with `getResidencyAnchors`
+- control quadtree tracking with `culling.getCameraOrigin`
+- drive LOD and frustum culling from a separate `culling.camera`
+- keep gameplay terrain resident with `residency.getAnchors`
 
 ## Return Value
 
@@ -77,21 +77,23 @@ function Scene() {
 
 ## Following A Custom Origin
 
-By default the runner uses the active R3F camera position. If you want the quadtree to follow a player or another tracked point, provide `getCameraOrigin`.
+By default the runner uses the active R3F camera position. If you want the quadtree to follow a player or another tracked point, provide `culling.getCameraOrigin`.
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 4096,
   maxLevel: 6,
   elevation,
-  getCameraOrigin: () => playerPositionRef.current,
-  cameraHysteresis: 0.25,
+  culling: {
+    getCameraOrigin: () => playerPositionRef.current,
+    originHysteresis: 0.25,
+  },
 });
 ```
 
 ## Custom Culling Camera
 
-By default the runner uses the active R3F canvas camera for both rendering and quadtree updates. Pass `camera` when you want a separate camera to drive LOD refinement and frustum culling while the canvas camera stays free for viewing.
+By default the runner uses the active R3F canvas camera for both rendering and quadtree updates. Pass `culling.camera` when you want a separate camera to drive LOD refinement and frustum culling while the canvas camera stays free for viewing.
 
 This is the pattern used by the [Frustum Culling](/examples/frustum-culling) example: the viewer orbits with OrbitControls while an animated helper camera decides which tiles are visible.
 
@@ -108,7 +110,7 @@ const terrain = useTerrain({
   rootSize: 180,
   maxLevel: 10,
   elevation,
-  camera: cullingCamera,
+  culling: { camera: cullingCamera },
 });
 
 // Animate the culling camera each frame before the terrain runner reads it.
@@ -132,27 +134,31 @@ return (
 );
 ```
 
-You can pass `camera` to `useTerrain()` or directly to `<Terrain camera={...} />`. When both are provided, the `<Terrain />` prop wins.
+You can pass `culling.camera` to `useTerrain()` or directly to `<Terrain culling={{ camera }} />`. When both are provided, the `<Terrain />` prop wins.
 
-When `getCameraOrigin` is omitted, the tracked origin defaults to the active camera's position (custom or canvas). Provide `getCameraOrigin` when the quadtree should follow a player or probe instead of the camera.
+When `culling.getCameraOrigin` is omitted, the tracked origin defaults to the active camera's position (custom or canvas). Provide `getCameraOrigin` when the quadtree should follow a player or probe instead of the camera.
 
 ## Keeping Gameplay Terrain Resident
 
-Render culling should not decide whether terrain exists for physics, character controllers, or queries. Use `getResidencyAnchors` to publish world-space support regions that should stay resident even when they are outside the render frustum. See [Residency Anchors](/docs/core/residency-anchors) for the full API model.
+Render culling should not decide whether terrain exists for physics, character controllers, or queries. Use `residency.getAnchors` to publish world-space support regions that should stay resident even when they are outside the render frustum. See [Residency Anchors](/docs/core/residency-anchors) for the full API model.
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 4096,
   maxLevel: 6,
   elevation,
-  getCameraOrigin: () => playerPositionRef.current,
-  getResidencyAnchors: () => [
-    {
-      position: playerPositionRef.current,
-      radius: 96,
-    },
-  ],
-  residencyHysteresis: 0.25,
+  culling: {
+    getCameraOrigin: () => playerPositionRef.current,
+  },
+  residency: {
+    getAnchors: () => [
+      {
+        position: playerPositionRef.current,
+        radius: 96,
+      },
+    ],
+    hysteresis: 0.25,
+  },
 });
 ```
 

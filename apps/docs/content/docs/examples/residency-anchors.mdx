@@ -17,38 +17,36 @@ This example drives terrain visibility from a helper camera, then moves an orang
 - Orange wire boxes are resident support tiles that are outside the draw set.
 - Orange sphere is the anchor region.
 
-With `@hello-terrain/react`, combine a custom culling `camera` with `getResidencyAnchors`:
+With `@hello-terrain/react`, combine a custom culling camera with residency anchors:
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 180,
   maxLevel: 10,
   elevation,
-  camera: cullingCamera,
-  getResidencyAnchors: () => [
-    {
-      position: anchorPosition,
-      radius: 96,
-    },
-  ],
+  culling: { camera: cullingCamera },
+  residency: {
+    getAnchors: () => [
+      {
+        position: anchorPosition,
+        radius: 96,
+      },
+    ],
+  },
 });
 ```
 
 Render visibility still controls the draw list, but query/readback terrain follows the resident set.
 
-At the core API level, anchors are written through `quadtreeUpdate.residency`:
+At the core API level, anchors are written through the `residencyAnchors` param:
 
 ```ts
-graph.set(quadtreeUpdate, (prev) => {
-  const next = writeUpdateParamsFromCamera(prev, cullingCamera);
-  next.residency = {
-    anchors: [
-      {
-        position: playerOrProbePosition,
-        radius: 96,
-      },
-    ],
-  };
-  return next;
-});
+graph.set(cameraView, readCameraView(cullingCamera, cameraScratch));
+graph.set(residencyAnchors, [
+  {
+    position: playerOrProbePosition,
+    radius: 96,
+  },
+]);
+await graph.run({ targets: terrainTargets(), resources: { renderer } });
 ```

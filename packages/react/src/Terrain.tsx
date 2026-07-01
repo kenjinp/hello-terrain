@@ -45,9 +45,6 @@ function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
     mesh.instanceMatrix.needsUpdate = true;
   }
 
-  // Keep the tile geometry resolution in sync with the effective
-  // `innerTileSegments` param (prop-driven or set directly via `graph.set`).
-  // The setter rebuilds the geometry only when the value actually changes.
   const uniforms = terrain.graph.peek(terrainTasks.updateUniforms);
   if (uniforms) {
     const segments = uniforms.uInnerTileSegments.value;
@@ -77,14 +74,14 @@ function attachTerrainMaterial(
 function TerrainWithHandle({
   terrain,
   children,
-  camera,
+  culling,
   innerTileSegments,
   maxNodes,
   ...primitiveProps
 }: {
   terrain: TerrainHandle;
   children: TerrainProps["children"];
-  camera?: TerrainProps["camera"];
+  culling?: TerrainProps["culling"];
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
@@ -93,12 +90,13 @@ function TerrainWithHandle({
   const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
 
   useLayoutEffect(() => {
+    const camera = culling?.camera;
     if (camera === undefined) return;
     terrain.bindCamera?.(camera);
     return () => {
       terrain.bindCamera?.(undefined);
     };
-  }, [camera, terrain]);
+  }, [culling?.camera, terrain]);
 
   useFrame(() => {
     syncTerrainMesh(mesh, terrain);
@@ -133,14 +131,10 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     elevation,
     topology,
     terrainFieldFilter,
-    getCameraOrigin,
-    getResidencyAnchors,
-    residencyHysteresis,
-    cameraHysteresis,
-    camera,
-    runCompute,
-    runReadback,
-    runGpuSpatialIndex,
+    culling,
+    residency,
+    lod,
+    pipeline,
     tasks,
     maxNodes,
     ...primitiveProps
@@ -157,14 +151,10 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
     elevation,
     topology,
     terrainFieldFilter,
-    getCameraOrigin,
-    getResidencyAnchors,
-    residencyHysteresis,
-    cameraHysteresis,
-    camera,
-    runCompute,
-    runReadback,
-    runGpuSpatialIndex,
+    culling,
+    residency,
+    lod,
+    pipeline,
     tasks,
     maxNodes,
   });
@@ -172,7 +162,7 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
   return (
     <TerrainWithHandle
       terrain={terrain}
-      camera={camera}
+      culling={culling}
       innerTileSegments={innerTileSegments}
       maxNodes={maxNodes}
       {...primitiveProps}
@@ -195,14 +185,10 @@ export function Terrain({
   elevation,
   topology,
   terrainFieldFilter,
-  getCameraOrigin,
-  getResidencyAnchors,
-  residencyHysteresis,
-  cameraHysteresis,
-  camera,
-  runCompute,
-  runReadback,
-  runGpuSpatialIndex,
+  culling,
+  residency,
+  lod,
+  pipeline,
   tasks,
   maxNodes,
   ...primitiveProps
@@ -211,7 +197,7 @@ export function Terrain({
     return (
       <TerrainWithHandle
         terrain={providedTerrain}
-        camera={camera}
+        culling={culling}
         innerTileSegments={innerTileSegments}
         maxNodes={maxNodes}
         {...primitiveProps}
@@ -233,14 +219,10 @@ export function Terrain({
       elevation={elevation}
       topology={topology}
       terrainFieldFilter={terrainFieldFilter}
-      getCameraOrigin={getCameraOrigin}
-      getResidencyAnchors={getResidencyAnchors}
-      residencyHysteresis={residencyHysteresis}
-      cameraHysteresis={cameraHysteresis}
-      camera={camera}
-      runCompute={runCompute}
-      runReadback={runReadback}
-      runGpuSpatialIndex={runGpuSpatialIndex}
+      culling={culling}
+      residency={residency}
+      lod={lod}
+      pipeline={pipeline}
       tasks={tasks}
       maxNodes={maxNodes}
       {...primitiveProps}

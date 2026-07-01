@@ -16,22 +16,26 @@ Frustum, horizon, and occlusion culling should remove tiles from the draw list. 
 
 ## React API
 
-Use `getResidencyAnchors` with `useTerrain()` or `<Terrain />`. Pair it with a custom `camera` when render visibility should follow one view while gameplay regions stay resident independently — see the [Residency Anchors](/examples/residency-anchors) example.
+Use `residency.getAnchors` with `useTerrain()` or `<Terrain />`. Pair it with `culling.camera` when render visibility should follow one view while gameplay regions stay resident independently — see the [Residency Anchors](/examples/residency-anchors) example.
 
 ```tsx
 const terrain = useTerrain({
   rootSize: 4096,
   maxLevel: 8,
   elevation,
-  camera: cullingCamera,
-  getCameraOrigin: () => playerPositionRef.current,
-  getResidencyAnchors: () => [
-    {
-      position: playerPositionRef.current,
-      radius: 96,
-    },
-  ],
-  residencyHysteresis: 0.25,
+  culling: {
+    camera: cullingCamera,
+    getCameraOrigin: () => playerPositionRef.current,
+  },
+  residency: {
+    getAnchors: () => [
+      {
+        position: playerPositionRef.current,
+        radius: 96,
+      },
+    ],
+    hysteresis: 0.25,
+  },
 });
 ```
 
@@ -44,24 +48,19 @@ type TerrainResidencyAnchor = {
 };
 ```
 
-The React runner copies anchor values into the core `quadtreeUpdate` param. It uses `residencyHysteresis` to avoid updating the graph for tiny anchor movement.
+The React runner copies anchor values into the `residencyAnchors` param. The param's built-in `equals` comparator uses `residency.hysteresis` to avoid updating the graph for tiny anchor movement.
 
 ## Core API
 
-At the lower level, anchors live on `UpdateParams`:
+At the lower level, anchors are a dedicated param:
 
 ```ts
-graph.set(quadtreeUpdate, (prev) => ({
-  ...prev,
-  residency: {
-    anchors: [
-      {
-        position: { x: player.x, y: player.y, z: player.z },
-        radius: 96,
-      },
-    ],
+graph.set(residencyAnchors, [
+  {
+    position: { x: player.x, y: player.y, z: player.z },
+    radius: 96,
   },
-}));
+]);
 ```
 
 Internally, the terrain graph computes:
