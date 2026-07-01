@@ -138,14 +138,10 @@ export function useTerrainRunner({
       cameraViewEqualsFn(lastCameraView, nextCameraView);
 
     if (!cameraUnchanged) {
-      activeGraph.set(cameraView, {
-        cameraOrigin: {
-          x: nextCameraView.cameraOrigin.x,
-          y: nextCameraView.cameraOrigin.y,
-          z: nextCameraView.cameraOrigin.z,
-        },
-        viewProjectionMatrix: nextCameraView.viewProjectionMatrix,
-      });
+      // `nextCameraView` is a stable per-runner scratch reused every frame;
+      // `cameraView`'s comparator detects mutations against its own snapshot, so
+      // we can hand it over directly instead of allocating a copy each frame.
+      activeGraph.set(cameraView, nextCameraView);
       if (preGateCamera) {
         if (!lastCameraViewRef.current) {
           lastCameraViewRef.current = {

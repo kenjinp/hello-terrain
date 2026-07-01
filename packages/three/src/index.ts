@@ -24,7 +24,6 @@ export {
 export {
   readCameraView,
   createInitialCameraView,
-  cloneCameraView,
   createCameraViewEquals,
   cameraViewEquals,
   DEFAULT_CAMERA_ORIGIN_HYSTERESIS,

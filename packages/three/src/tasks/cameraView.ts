@@ -62,32 +62,117 @@ export function didViewProjectionMatrixChange(
   return false;
 }
 
+type CameraViewSnapshot = {
+  originX: number;
+  originY: number;
+  originZ: number;
+  matrix: Float64Array;
+};
+
+/**
+ * Builds a change-detection comparator for the `cameraView` param.
+ *
+ * The per-frame ergonomic contract is "fill a reused scratch and push it every
+ * frame" (allocation-free). But `graph.set()` keeps whatever object it is handed
+ * as the baseline for the next comparison, so a plain field-by-field `equals`
+ * would compare a mutated scratch against itself and report "unchanged" forever,
+ * freezing the quadtree after the first frame.
+ *
+ * To stay allocation-free *and* correct, the comparator keeps its own snapshot
+ * of the last accepted value. When the same object instance is pushed again
+ * (`prev === next`, the reused-scratch case) it compares the live contents
+ * against that snapshot instead of against itself. Snapshots are stored in a
+ * `WeakMap` keyed by the pushed object's identity so distinct terrain instances
+ * (each with their own scratch) never share change-detection state and nothing
+ * leaks once a scratch is collected. When two independent objects are compared
+ * (`prev !== next`, e.g. callers that hand over a fresh value) `prev` is already
+ * a stable baseline, so a direct field comparison is used and no snapshot is
+ * retained. Either way a single scratch allocates one snapshot for its lifetime,
+ * never one per frame.
+ */
 export function createCameraViewEquals(config: CameraViewEqualsConfig = {}) {
   const originHysteresis =
     config.originHysteresis ?? DEFAULT_CAMERA_ORIGIN_HYSTERESIS;
   const viewProjectionEpsilon =
     config.viewProjectionEpsilon ?? VIEW_PROJECTION_EPSILON;
   const thresholdSq = originHysteresis * originHysteresis;
+  const snapshots = new WeakMap<CameraView, CameraViewSnapshot>();
 
-  return (prev: CameraView, next: CameraView): boolean => {
-    const dx = prev.cameraOrigin.x - next.cameraOrigin.x;
-    const dy = prev.cameraOrigin.y - next.cameraOrigin.y;
-    const dz = prev.cameraOrigin.z - next.cameraOrigin.z;
-    if (dx * dx + dy * dy + dz * dz >= thresholdSq) return false;
+  const originClose = (
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+  ): boolean => {
+    const dx = ax - bx;
+    const dy = ay - by;
+    const dz = az - bz;
+    return dx * dx + dy * dy + dz * dz < thresholdSq;
+  };
 
-    const lastMatrix = prev.viewProjectionMatrix;
-    const nextMatrix = next.viewProjectionMatrix;
-    if (!lastMatrix || lastMatrix.length < 16 || nextMatrix.length < 16)
-      return false;
+  const matrixClose = (a: ViewProjectionMatrix, b: ViewProjectionMatrix): boolean => {
+    if (!a || !b || a.length < 16 || b.length < 16) return false;
     for (let i = 0; i < 16; i += 1) {
-      if (
-        Math.abs((lastMatrix[i] ?? 0) - (nextMatrix[i] ?? 0)) >
-        viewProjectionEpsilon
-      ) {
+      if (Math.abs((a[i] ?? 0) - (b[i] ?? 0)) > viewProjectionEpsilon) {
         return false;
       }
     }
     return true;
+  };
+
+  const writeSnapshot = (snapshot: CameraViewSnapshot, view: CameraView): void => {
+    snapshot.originX = view.cameraOrigin.x;
+    snapshot.originY = view.cameraOrigin.y;
+    snapshot.originZ = view.cameraOrigin.z;
+    const matrix = view.viewProjectionMatrix;
+    for (let i = 0; i < 16; i += 1) snapshot.matrix[i] = matrix[i] ?? 0;
+  };
+
+  return (prev: CameraView, next: CameraView): boolean => {
+    if (prev !== next) {
+      // Independent objects: `prev` is a stable baseline, compare directly.
+      return (
+        originClose(
+          prev.cameraOrigin.x,
+          prev.cameraOrigin.y,
+          prev.cameraOrigin.z,
+          next.cameraOrigin.x,
+          next.cameraOrigin.y,
+          next.cameraOrigin.z,
+        ) && matrixClose(prev.viewProjectionMatrix, next.viewProjectionMatrix)
+      );
+    }
+
+    // Reused scratch: compare live contents against our retained snapshot.
+    const snapshot = snapshots.get(next);
+    if (!snapshot) {
+      const created: CameraViewSnapshot = {
+        originX: 0,
+        originY: 0,
+        originZ: 0,
+        matrix: new Float64Array(16),
+      };
+      writeSnapshot(created, next);
+      snapshots.set(next, created);
+      return false;
+    }
+
+    const unchanged =
+      originClose(
+        snapshot.originX,
+        snapshot.originY,
+        snapshot.originZ,
+        next.cameraOrigin.x,
+        next.cameraOrigin.y,
+        next.cameraOrigin.z,
+      ) && matrixClose(snapshot.matrix, next.viewProjectionMatrix);
+
+    if (unchanged) return true;
+
+    writeSnapshot(snapshot, next);
+    return false;
   };
 }
 

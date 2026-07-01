@@ -4,11 +4,10 @@ import type { LodCriteria, TerrainResidencyAnchor, Topology } from "../quadtree"
 import type { ElevationCallback } from "../tsl/elevation";
 import {
   cameraViewEquals,
-  cloneCameraView,
   createInitialCameraView,
   type CameraView,
 } from "./cameraView";
-import { cloneResidencyAnchors, residencyAnchorsEquals } from "./residencyAnchorsParam";
+import { residencyAnchorsEquals } from "./residencyAnchorsParam";
 
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
@@ -44,7 +43,6 @@ export const maxLevel = param(16).displayName("maxLevel");
 /** Camera-relative origin and view-projection matrix for LOD and frustum culling. */
 export const cameraView = param<CameraView>(createInitialCameraView(), {
   equals: cameraViewEquals,
-  copy: cloneCameraView,
 }).displayName("cameraView");
 
 /**
@@ -53,7 +51,6 @@ export const cameraView = param<CameraView>(createInitialCameraView(), {
  */
 export const residencyAnchors = param<readonly TerrainResidencyAnchor[]>([], {
   equals: residencyAnchorsEquals,
-  copy: cloneResidencyAnchors,
 }).displayName("residencyAnchors");
 
 /** How subdivision decisions are made (distance vs screen-space LOD). */
