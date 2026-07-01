@@ -27,22 +27,41 @@ The elevation field is a buffer of floats that determines how vertices will be o
 
 ### When does the Elevation Fn run?
 
+<Callout title="API updated" type="warn">
+  The **`quadtreeUpdate`** param described below has been replaced by **`cameraView`**, **`residencyAnchors`**, and **`lodCriteria`**. **`quadtreeUpdateTask`** still runs when those params change, but you should set **`cameraView`** with **`readCameraView(camera, scratch)`** each frame instead of mutating `quadtreeUpdate`. Hysteresis is built into the param's equality check, so the manual **`cameraHysteresis`** pattern in this post is no longer needed. See [When does the Elevation Fn run?](/docs/core/elevation-function#when-does-the-elevation-fn-run) and the [changelog](/docs/changelog).
+</Callout>
+
 The elevation function is part of hello-terrain's compute graph, which dispatches compute tasks only when their inputs change. 
 The elevation function will be ran when it's upstream dependencies change, which are (broadly):
- 1. the `quadtreeUpdateTask` output changes, which fires when `cameraView`, `residencyAnchors`, or `lodCriteria` change on the graph.
+ 1. the `quadtreeUpdateTask` output changes, which fires when you set `quadtreeUpdate` on the graph.  
  2. configuration params such as `maxNodes` or `rootSize`, for example.
  3. your `elevationFn` itself changes.
 
-Update `cameraView` each frame when the camera moves. The param uses built-in hysteresis so small movements do not dirty the graph:
+You should update the `quadtreeUpdate` function whenever your camera changes position. 
+However, there is no equality checking inside `.set()`, so doing this always triggers the quadtree tasks to run. 
+Also, because position floats are noisy, it's likely that position would not be exactly the same anyways. 
 
+I recommend adding some hysteresis factor or checking in your animation frame, and only `set()`-ing the `quadtreeUpdate` param when there are large changes. 
 ```ts
 useFrame(async ({ camera, gl }) => {
-  graph.set(cameraView, readCameraView(camera, cameraScratch));
-  await graph.run({ targets, resources: { renderer: gl } });
-});
-```
+    const cameraHysteresis = 0.05;
+    if (
+      lastCameraRef.current.distanceToSquared(camera.position) >=
+      cameraHysteresis * cameraHysteresis
+    ) {
+      g.set(quadtreeUpdate, (prev: UpdateParams) => {
+        prev.cameraOrigin.x = camera.position.x;
+        prev.cameraOrigin.y = camera.position.y;
+        prev.cameraOrigin.z = camera.position.z;
+        return prev;
+      });
+      lastCameraRef.current.copy(camera.position);
+    }
 
-When the camera stays still, `graph.run()` hits the fast path and compute tasks are not re-dispatched.
+    await g.run()
+])
+```
+This way, if you stay still, the elevationFn will not be re-ran, and the values would be cached. 
 
 ### Simple Procedural Terrain
 

@@ -18,3 +18,7 @@ When you do import three.js, import runtime values only from its public entry po
 Don't use module-scope variables, as there maybe be mulitple instances of the terrain. 
 
 Review the apps/docs and make sure that any API changes are reflected in the docs
+
+Do not modify blog posts in `apps/docs/content/docs/blog/`. They are published snapshots and should stay unchanged unless the user explicitly asks.
+
+Sandpack examples in `apps/docs/src/components/Sandpack/` must pin all package versions in the `dependencies` prop (e.g. `"@hello-terrain/three": "0.0.0-alpha.6"`). Do not use `"latest"` or unpinned semver ranges.
