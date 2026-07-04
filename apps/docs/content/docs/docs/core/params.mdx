@@ -22,7 +22,7 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
 | `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
 | `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
-| `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
+| `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. Terrain fields use `rgba16float` with per-tile normalized elevation in `.r` (denormalized at sample time using per-tile pack bounds). |
 
 ## Where These Params Apply
 

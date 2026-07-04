@@ -1,6 +1,11 @@
 import { Vector3 } from "three";
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
-import type { SpatialIndex } from "../quadtree";
+import type { SpatialIndex } from "../quadtree/spatialIndex";
+import {
+  TILE_BOUNDS_FLOATS_PER_TILE,
+  TILE_BOUNDS_LOD_MAX_OFFSET,
+  TILE_BOUNDS_LOD_MIN_OFFSET,
+} from "../gpu/terrainFieldStorage";
 import type { CpuSurfaceOps, SurfaceKey } from "../projection/types";
 import { tileLocalToFieldUVNumber } from "../gpu/tile";
 import {
@@ -225,8 +230,14 @@ export function createCpuTerrainCache(
     elevationBase: number,
   ): TerrainTileBounds | null => {
     if (!lookup.found || lookup.leafIndex >= state.frontLeafCount) return null;
-    const rawMin = state.frontTileBounds[lookup.leafIndex * 2]!;
-    const rawMax = state.frontTileBounds[lookup.leafIndex * 2 + 1]!;
+    const rawMin =
+      state.frontTileBounds[
+        lookup.leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MIN_OFFSET
+      ]!;
+    const rawMax =
+      state.frontTileBounds[
+        lookup.leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MAX_OFFSET
+      ]!;
     const a = elevationBase + rawMin * config.elevationScale;
     const b = elevationBase + rawMax * config.elevationScale;
     return {

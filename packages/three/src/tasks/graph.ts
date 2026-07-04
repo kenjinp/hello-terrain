@@ -1,6 +1,6 @@
 import { graph } from "@hello-terrain/work";
 import { WebGPURenderer } from "three/webgpu";
-import { compileComputeTask, executeComputeTask } from "./compute.task";
+import { compileComputeTask, executeComputeTask, tileBoundsReductionTask } from "./compute.task";
 import {
   createElevationFieldContextTask,
   tileNodesTask,
@@ -33,7 +33,6 @@ import { terrainQueryTask, terrainReadbackTask } from "./terrain-query.task";
 import { terrainRaycastTask } from "./terrain-raycast.task";
 import {
   tileBoundsContextTask,
-  tileBoundsReductionTask,
 } from "./tile-bounds.task";
 
 export { instanceIdTask } from "./instanceId.task";

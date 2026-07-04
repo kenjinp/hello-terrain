@@ -163,7 +163,7 @@ The kernel dispatches one workgroup per active tile. Within each workgroup, thre
 
 The outermost **skirt ring** is excluded from the reduction. Skirt vertices sample elevation just outside the tile footprint, so the resulting `(min, max)` describes only the real surface relief inside the tile — keeping LOD bounding spheres and the raycast AABB tight to the actual terrain.
 
-This runs entirely on the GPU in under 0.1ms for typical tile counts. The small output buffer (2 floats per tile) is read back to the CPU alongside the elevation data, adding negligible overhead to the async readback.
+This runs entirely on the GPU in under 0.1ms for typical tile counts. The small output buffer (four floats per tile: LOD min/max plus pack min/max) is read back to the CPU alongside the elevation data, adding negligible overhead to the async readback.
 
 The yellow wireframe boxes below visualize the per-tile bounding boxes derived from the GPU reduction pass. Each box spans the tile's XZ footprint and its true min/max elevation.
 
@@ -177,7 +177,9 @@ The systems are integrated into the reactive task graph:
 
 - `tileBoundsContextTask` creates the per-tile bounds storage buffer and compiles the reduction kernel.
 
-- `tileBoundsReductionTask` depends on `executeComputeTask` (ensuring elevation is written) and dispatches the reduction kernel. It runs on the GPU lane.
+- `executeComputeTask` runs elevation stages, dispatches the bounds reduction kernel, then packs the terrain field (normalized `.r` using pack bounds).
+
+- `tileBoundsReductionTask` depends on `executeComputeTask` and exposes the bounds context after the mid-pipeline reduction. It runs on the GPU lane.
 
 - `terrainQueryTask` depends on `quadtreeConfigTask` and terrain params. It creates and manages the `CpuTerrainCache` and `TerrainQuery` facade. This is a stable "create" task — it only re-runs when configuration changes, not every frame. It does **not** depend on GPU compute tasks, keeping it off the GPU critical path.
 

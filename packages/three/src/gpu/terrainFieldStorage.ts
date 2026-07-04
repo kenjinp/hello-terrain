@@ -11,6 +11,7 @@ import {
   int,
   ivec2,
   ivec3,
+  max,
   texture,
   textureLoad,
   textureStore,
@@ -27,6 +28,16 @@ export type TerrainFieldStorageBackendType =
   | "atlas"
   | "texture-3d";
 export type TerrainFieldStorageFormat = "rgba16float" | "rgba32float";
+
+/** Floats stored per tile in the tile bounds GPU buffer. */
+export const TILE_BOUNDS_FLOATS_PER_TILE = 4;
+export const TILE_BOUNDS_LOD_MIN_OFFSET = 0;
+export const TILE_BOUNDS_LOD_MAX_OFFSET = 1;
+export const TILE_BOUNDS_PACK_MIN_OFFSET = 2;
+export const TILE_BOUNDS_PACK_MAX_OFFSET = 3;
+
+/** Minimum elevation span (meters) when normalizing flat tiles. */
+export const TERRAIN_FIELD_PACK_EPSILON = 1e-4;
 
 export type TerrainFieldStorageOptions = {
   backend?: TerrainFieldStorageBackendType;
@@ -348,4 +359,34 @@ export function sampleTerrainFieldElevation(
  */
 export function packTerrainFieldSample(height: Node, normal: Node): Node {
   return vec4(height, normal.x, normal.y, normal.z);
+}
+
+export function loadTilePackBounds(boundsNode: Node, tileIndex: Node) {
+  const base = int(tileIndex).mul(int(TILE_BOUNDS_FLOATS_PER_TILE));
+  return {
+    packMin: boundsNode.element(base.add(int(TILE_BOUNDS_PACK_MIN_OFFSET))),
+    packMax: boundsNode.element(base.add(int(TILE_BOUNDS_PACK_MAX_OFFSET))),
+  };
+}
+
+/** Normalize elevation into [0, 1] for rgba16float terrain-field storage. */
+export function packNormalizedTerrainFieldSample(
+  height: Node,
+  normal: Node,
+  packMin: Node,
+  packMax: Node,
+): Node {
+  const span = max(packMax.sub(packMin), float(TERRAIN_FIELD_PACK_EPSILON));
+  const normalized = height.sub(packMin).div(span);
+  return vec4(normalized, normal.x, normal.y, normal.z);
+}
+
+/** Restore absolute elevation (meters) from a normalized terrain-field sample. */
+export function denormalizeTerrainFieldElevation(
+  normalized: Node,
+  packMin: Node,
+  packMax: Node,
+): Node {
+  const span = max(packMax.sub(packMin), float(TERRAIN_FIELD_PACK_EPSILON));
+  return packMin.add(normalized.mul(span));
 }

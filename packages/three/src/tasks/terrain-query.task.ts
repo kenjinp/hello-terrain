@@ -13,7 +13,7 @@ import {
   rootSize,
 } from "./params";
 import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
-import { tileBoundsReductionTask } from "./tile-bounds.task";
+import { tileBoundsReductionTask } from "./compute.task";
 
 export const terrainQueryTask = task((get, work) => {
   const maxNodesValue = get(maxNodes);
