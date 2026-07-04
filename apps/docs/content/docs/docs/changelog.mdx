@@ -56,6 +56,7 @@ const elevation: ElevationCallback = ({ rootUV }) =>
 - New TSL helpers: `packNormalizedTerrainFieldSample`, `denormalizeTerrainFieldElevation`, `loadTilePackBounds`
 - `midPipelineExecute` hook on compute pipelines for bounds reduction between upstream stages and terrain-field pack
 - CPU readback consumers updated for the 4-float tile-bounds stride (LOD fields remain at offsets 0/1)
+- **`@hello-terrain/react`:** `TerrainProps` is now a discriminated union — when you pass a `terrain` handle from `useTerrain()`, TypeScript no longer incorrectly requires `rootSize`, `origin`, `maxLevel`, and the other construction options on `<Terrain>`.
 
 ## 0.0.0-alpha.13 — Freezing Venus
 
