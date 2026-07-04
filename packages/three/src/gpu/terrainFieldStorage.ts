@@ -20,7 +20,7 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import type { Node, WebGPURenderer } from "three/webgpu";
+import type { Node, StorageBufferNode, WebGPURenderer } from "three/webgpu";
 import { StorageArrayTexture, StorageTexture } from "three/webgpu";
 
 export type TerrainFieldStorageBackendType =
@@ -361,7 +361,7 @@ export function packTerrainFieldSample(height: Node, normal: Node): Node {
   return vec4(height, normal.x, normal.y, normal.z);
 }
 
-export function loadTilePackBounds(boundsNode: Node, tileIndex: Node) {
+export function loadTilePackBounds(boundsNode: StorageBufferNode, tileIndex: Node) {
   const base = int(tileIndex).mul(int(TILE_BOUNDS_FLOATS_PER_TILE));
   return {
     packMin: boundsNode.element(base.add(int(TILE_BOUNDS_PACK_MIN_OFFSET))),

@@ -7,6 +7,7 @@ export * from "./instanceId.task";
 export * from "./terrain-field.task";
 export * from "./terrain-sampler.task";
 export * from "./terrain-query.task";
+export * from "./terrain-raycast.task";
 export * from "./tile-bounds.task";
 export * from "./params";
 export * from "./positions.task";

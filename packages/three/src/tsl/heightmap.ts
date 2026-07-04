@@ -1,5 +1,8 @@
+import type { Texture } from "three";
 import { float, Fn, texture } from "three/tsl";
 import type { Node, TextureNode } from "three/webgpu";
+
+type HeightmapTexture = TextureNode | Texture;
 
 /**
  * Decode an RG-packed 16-bit heightmap sample (R/G in [0, 1]) to a normalized
@@ -12,7 +15,7 @@ export const decodeUint16RG = Fn(([sample]: [Node]) =>
 /**
  * Bilinearly sample an RG-packed 16-bit heightmap and return elevation in meters.
  *
- * @param heightmapTexture - Texture node (RG encoding).
+ * @param heightmapTexture - Texture or texture node (RG encoding).
  * @param uv - Sample coordinates in [0, 1].
  * @param minM - Minimum elevation in meters.
  * @param maxM - Maximum elevation in meters (unused; kept for API symmetry with range-based callers).
@@ -20,7 +23,7 @@ export const decodeUint16RG = Fn(([sample]: [Node]) =>
  */
 export const sampleHeightmapMeters = Fn(
   ([heightmapTexture, uv, minM, _maxM, rangeM]: [
-    TextureNode,
+    HeightmapTexture,
     Node,
     Node,
     Node,
