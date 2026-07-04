@@ -24,7 +24,7 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `residencyAnchors` | `TerrainResidencyAnchor[]` | `[]` | World-space support regions that keep terrain data resident even when render culling hides those tiles. |
 | `lodCriteria` | `LodCriteria` | `{ mode: "distance", distanceFactor: 1.5 }` | How subdivision decisions are made (distance vs screen-space LOD). |
 | `topology` | `Topology` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
-| `terrainFieldFilter` | `"nearest"` \| `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. |
+| `terrainFieldFilter` | `"nearest"` \| `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. Terrain fields use `rgba16float` with per-tile normalized elevation in `.r` (denormalized at sample time using per-tile pack bounds). |
 
 ## Where These Params Apply
 

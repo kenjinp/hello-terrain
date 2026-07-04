@@ -41,6 +41,8 @@ export type CompileComputePipelineOptions = {
    * passes. Staged kernels are suffixed `<label>.stage<i>`.
    */
   label?: string;
+  /** Runs after all but the last stage when using staged kernels. */
+  midPipelineExecute?: (renderer: WebGPURenderer, instanceCount: number) => void;
 };
 
 type CompiledKernel = any;
@@ -60,6 +62,7 @@ export function compileComputePipeline(
   const label = options?.label;
   const instanceSource = options?.instanceSource ?? "active-index";
   const dirtyVisibleSlotStorage = options?.dirtyVisibleSlotStorage;
+  const midPipelineExecute = options?.midPipelineExecute;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   const uTotalVertexCount = uniform(0, "uint").setName("uTotalVertexCount");
   let singleKernel: CompiledKernel | undefined;
@@ -288,8 +291,15 @@ export function compileComputePipeline(
 
     const dispatchX = Math.ceil(width / workgroupX);
     const dispatchY = Math.ceil(width / workgroupY);
-    for (const kernel of stagedKernels) {
-      renderer.compute(kernel, [dispatchX, dispatchY, instanceCount]);
+    for (let stageIndex = 0; stageIndex < stagedKernels.length; stageIndex += 1) {
+      renderer.compute(stagedKernels[stageIndex], [dispatchX, dispatchY, instanceCount]);
+      if (
+        midPipelineExecute &&
+        stagedKernels.length > 1 &&
+        stageIndex === stagedKernels.length - 2
+      ) {
+        midPipelineExecute(renderer, instanceCount);
+      }
     }
   }
 

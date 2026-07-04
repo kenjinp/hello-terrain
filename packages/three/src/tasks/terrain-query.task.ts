@@ -18,7 +18,7 @@ import {
   residentLeafSetTask,
   topologyTask,
 } from "./quadtree.task";
-import { tileBoundsReductionTask } from "./tile-bounds.task";
+import { tileBoundsReductionTask } from "./compute.task";
 import { createTerrainQueryShapeKey } from "./cache-key";
 
 export const terrainQueryTask = task((get, work) => {

@@ -225,6 +225,7 @@ export function createCubeSphereProjection(
               : ctx.uniforms.uRadius.toVar().add(displacement);
             return ctx.uniforms.uRootOrigin.toVar().add(dir.mul(r));
           },
+          ctx.tileBoundsNode,
           1,
           1,
           ctx.visibleSlotStorage,

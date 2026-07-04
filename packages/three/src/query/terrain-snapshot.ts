@@ -1,4 +1,9 @@
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
+import {
+  TILE_BOUNDS_FLOATS_PER_TILE,
+  TILE_BOUNDS_LOD_MAX_OFFSET,
+  TILE_BOUNDS_LOD_MIN_OFFSET,
+} from "../gpu/terrainFieldStorage";
 import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex } from "../quadtree";
 import {
@@ -74,8 +79,8 @@ export function createTerrainSnapshotState(
     backElevation: new Float32Array(totalElements),
     frontIndex: createSpatialIndex(maxNodes),
     backIndex: createSpatialIndex(maxNodes),
-    frontTileBounds: new Float32Array(maxNodes * 2),
-    backTileBounds: new Float32Array(maxNodes * 2),
+    frontTileBounds: new Float32Array(maxNodes * TILE_BOUNDS_FLOATS_PER_TILE),
+    backTileBounds: new Float32Array(maxNodes * TILE_BOUNDS_FLOATS_PER_TILE),
     frontLeafCount: 0,
     globalRange: null,
     hasSnapshot: false,
@@ -169,8 +174,12 @@ function recomputeSnapshotRanges(
     const leafIndex = state.frontIndex.values[slot] ?? 0;
     if (leafIndex >= activeLeafCount) continue;
 
-    const rawMin = state.frontTileBounds[leafIndex * 2] ?? 0;
-    const rawMax = state.frontTileBounds[leafIndex * 2 + 1] ?? 0;
+    const rawMin =
+      state.frontTileBounds[leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MIN_OFFSET] ??
+      0;
+    const rawMax =
+      state.frontTileBounds[leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MAX_OFFSET] ??
+      0;
     const a = originY + rawMin * elevationScale;
     const b = originY + rawMax * elevationScale;
     gMin = Math.min(gMin, a, b);
@@ -258,6 +267,7 @@ export function triggerSnapshotReadback(
 
   state.readbackPending = true;
 
+  /** Promote the (already-populated) back buffers to front and recompute range. */
   const promoteBackSnapshot = (boundsFilled: boolean) => {
     const oldFrontElevation = state.frontElevation;
     const oldFrontIndex = state.frontIndex;
@@ -327,7 +337,7 @@ export function triggerSnapshotReadback(
           boundsAttribute,
           state.boundsReadback,
           state.backTileBounds,
-          slotRanges(effectiveDirtySlots, 2),
+          slotRanges(effectiveDirtySlots, TILE_BOUNDS_FLOATS_PER_TILE),
           "terrainBoundsReadback",
         );
       }
@@ -361,7 +371,9 @@ export function triggerSnapshotReadback(
     if (boundsResult) {
       const rawBounds = new Float32Array(boundsResult);
       state.backTileBounds.fill(0);
-      state.backTileBounds.set(rawBounds.subarray(0, activeLeafCount * 2));
+      state.backTileBounds.set(
+        rawBounds.subarray(0, activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE),
+      );
       boundsFilled = true;
     }
 

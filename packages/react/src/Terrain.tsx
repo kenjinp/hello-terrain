@@ -2,7 +2,14 @@ import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useState } from "react";
 import { TerrainProvider } from "./TerrainContext";
-import type { TerrainHandle, TerrainPrimitiveProps, TerrainProps } from "./types";
+import type {
+  TerrainCullingOptions,
+  TerrainHandle,
+  TerrainPrimitiveProps,
+  TerrainProps,
+  TerrainPropsWithoutHandle,
+  TerrainRenderProps,
+} from "./types";
 import { useTerrain } from "./useTerrain";
 
 function useTerrainMesh(
@@ -60,7 +67,7 @@ function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
 }
 
 function attachTerrainMaterial(
-  node: ReturnType<TerrainProps["children"]>,
+  node: ReturnType<TerrainRenderProps["children"]>,
   terrainNodes: Pick<TerrainHandle, "positionNode">,
 ) {
   if (!isValidElement<{ attach?: unknown }>(node)) return node;
@@ -80,8 +87,8 @@ function TerrainWithHandle({
   ...primitiveProps
 }: {
   terrain: TerrainHandle;
-  children: TerrainProps["children"];
-  culling?: TerrainProps["culling"];
+  children: TerrainRenderProps["children"];
+  culling?: TerrainCullingOptions;
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
@@ -118,7 +125,7 @@ function TerrainWithHandle({
   );
 }
 
-function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
+function InternalTerrain(props: TerrainPropsWithoutHandle) {
   const {
     children,
     rootSize,
@@ -172,32 +179,18 @@ function InternalTerrain(props: Omit<TerrainProps, "terrain">) {
   );
 }
 
-export function Terrain({
-  terrain: providedTerrain,
-  children,
-  rootSize,
-  origin,
-  maxLevel,
-  innerTileSegments,
-  skirtScale,
-  elevationScale,
-  radius,
-  elevation,
-  topology,
-  terrainFieldFilter,
-  culling,
-  residency,
-  lod,
-  pipeline,
-  tasks,
-  maxNodes,
-  ...primitiveProps
-}: TerrainProps) {
-  if (providedTerrain) {
+export function Terrain(props: TerrainProps) {
+  if (props.terrain) {
+    const {
+      terrain: providedTerrain,
+      children,
+      innerTileSegments,
+      maxNodes,
+      ...primitiveProps
+    } = props;
     return (
       <TerrainWithHandle
         terrain={providedTerrain}
-        culling={culling}
         innerTileSegments={innerTileSegments}
         maxNodes={maxNodes}
         {...primitiveProps}
@@ -206,6 +199,27 @@ export function Terrain({
       </TerrainWithHandle>
     );
   }
+
+  const {
+    children,
+    rootSize,
+    origin,
+    maxLevel,
+    innerTileSegments,
+    skirtScale,
+    elevationScale,
+    radius,
+    elevation,
+    topology,
+    terrainFieldFilter,
+    culling,
+    residency,
+    lod,
+    pipeline,
+    tasks,
+    maxNodes,
+    ...primitiveProps
+  } = props;
 
   return (
     <InternalTerrain

@@ -291,6 +291,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
           ctx.terrainFieldStorage,
           (_tile, faceUV, displacement) =>
             torusPosition(geometry, faceUV.x, faceUV.y, displacement),
+          ctx.tileBoundsNode,
           baseU,
           baseV,
           ctx.visibleSlotStorage,

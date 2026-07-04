@@ -11,7 +11,7 @@ describe("tile-elevation-pyramid", () => {
     const index = createSpatialIndex(8);
     insertSpatialIndexRaw(index, 0, 2, 3, 1, 0);
 
-    const tileBounds = new Float32Array(8 * 2);
+    const tileBounds = new Float32Array(8 * 4);
     tileBounds[0] = 2;
     tileBounds[1] = 40;
 
@@ -35,11 +35,11 @@ describe("tile-elevation-pyramid", () => {
     insertSpatialIndexRaw(index, 0, 1, 0, 0, 0);
     insertSpatialIndexRaw(index, 0, 1, 1, 0, 1);
 
-    const tileBounds = new Float32Array(8 * 2);
+    const tileBounds = new Float32Array(8 * 4);
     tileBounds[0] = -5;
     tileBounds[1] = 10;
-    tileBounds[2] = 3;
-    tileBounds[3] = 25;
+    tileBounds[4] = 3;
+    tileBounds[5] = 25;
 
     const pyramid = createTileElevationPyramid(8, 4);
     buildTileElevationPyramid(pyramid, index, tileBounds, 2);
@@ -52,7 +52,7 @@ describe("tile-elevation-pyramid", () => {
 
   it("returns false for tiles with no pyramid data", () => {
     const index = createSpatialIndex(4);
-    const tileBounds = new Float32Array(4 * 2);
+    const tileBounds = new Float32Array(4 * 4);
     const pyramid = createTileElevationPyramid(4, 2);
     buildTileElevationPyramid(pyramid, index, tileBounds, 0);
 

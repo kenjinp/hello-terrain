@@ -83,6 +83,7 @@ export function createFlatProjection(): SurfaceProjection {
           ctx.leafStorage,
           ctx.uniforms,
           ctx.terrainFieldStorage,
+          ctx.tileBoundsNode,
           ctx.visibleSlotStorage,
         );
       },

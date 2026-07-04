@@ -4,7 +4,8 @@ import type { WebGPURenderer } from "three/webgpu";
 import type { ComputePipeline } from "../gpu/compute";
 import {
   createTerrainFieldStorage,
-  packTerrainFieldSample,
+  loadTilePackBounds,
+  packNormalizedTerrainFieldSample,
   storeTerrainField,
 } from "../gpu/terrainFieldStorage";
 import {
@@ -14,6 +15,7 @@ import {
 } from "./elevation-field.task";
 import { topologyTask } from "./quadtree.task";
 import { innerTileSegments, maxNodes, terrainFieldFilter } from "./params";
+import { tileBoundsContextTask } from "./tile-bounds.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
 // ── Storage buffer context ──────────────────────────────────────────────
@@ -52,6 +54,7 @@ export const terrainFieldStageTask = task((get, work) => {
   const tile = get(tileNodesTask);
   const uniforms = get(updateUniformsTask);
   const topology = get(topologyTask);
+  const boundsContext = get(tileBoundsContextTask);
 
   return work((): ComputePipeline => {
     // The projection owns the surface-normal reconstruction; no branching here.
@@ -71,13 +74,14 @@ export const terrainFieldStageTask = task((get, work) => {
         // Compute the world-space normal from the elevation field and pack the
         // full normal (Nx, Ny, Nz) alongside the height into RGBA.
         const normal = computeNormal(nodeIndex, ix, iy);
+        const { packMin, packMax } = loadTilePackBounds(boundsContext.node, nodeIndex);
 
         storeTerrainField(
           terrainFieldStorage,
           ix,
           iy,
           nodeIndex,
-          packTerrainFieldSample(height, normal),
+          packNormalizedTerrainFieldSample(height, normal, packMin, packMax),
         );
       },
     ];

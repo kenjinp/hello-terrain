@@ -88,7 +88,7 @@ Written by compute stage (`elevationFieldStageTask`).
 
 ### 6) TerrainFieldStorage
 
-Texture-backed terrain payload (RGBA = `[height, Nx, Ny, Nz]`, the unit world-space surface normal) consumed by render and GPU sampler paths.
+Texture-backed terrain payload (RGBA = `[normalizedHeight, Nx, Ny, Nz]`) consumed by render and GPU sampler paths. The `.r` channel stores per-tile normalized elevation in `[0, 1]` (see `TileBoundsContext` pack bounds); absolute meters are restored at sample time before `elevationScale` is applied. Normals are unit world-space vectors.
 
 ### 7) GpuSpatialIndexContext
 
@@ -96,7 +96,10 @@ GPU spatial index representation used for shader-side world->tile lookup.
 
 ### 8) TileBoundsContext
 
-GPU min/max elevation per active tile, produced by reduction after compute execution.
+GPU elevation bounds per active tile, produced by reduction after the elevation compute stage and before terrain-field pack. Each tile occupies four floats:
+
+- `[0]` `lodMin`, `[1]` `lodMax` — inner vertices only (skirts excluded; used for LOD and CPU readback)
+- `[2]` `packMin`, `[3]` `packMax` — all vertices (used to normalize/denormalize terrain-field `.r`)
 
 ### 9) TerrainQueryContext
 

@@ -1,6 +1,6 @@
 import { Fn, float, int, vec2, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
-import { sampleTerrainField } from "../gpu/terrainFieldStorage";
+import { sampleTerrainField, denormalizeTerrainFieldElevation, loadTilePackBounds } from "../gpu/terrainFieldStorage";
 import { createElevationFunction } from "../tsl/elevation";
 import {
   createTileIndexFromDirection,
@@ -36,11 +36,13 @@ function packedSampleFromTileResult(
     fieldV,
     safeTileIndex,
   ).toVar();
+  const { packMin, packMax } = loadTilePackBounds(params.tileBoundsNode, safeTileIndex);
+  const elevation = denormalizeTerrainFieldElevation(sampled.r, packMin, packMax);
   // The terrain field stores the unit world-space normal in (g, b, a).
   const normal = vec3(sampled.g, sampled.b, sampled.a);
 
   const valid = found.select(float(1), float(0)).toVar();
-  return vec4(sampled.r, normal.x, normal.y, normal.z).mul(valid);
+  return vec4(elevation, normal.x, normal.y, normal.z).mul(valid);
 }
 
 function createTerrainSampleNode(params: CreateTerrainSamplerParams) {

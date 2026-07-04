@@ -1,5 +1,5 @@
 import type { Ray, Vector3 } from "three";
-import type { Node } from "three/webgpu";
+import type { Node, StorageBufferNode } from "three/webgpu";
 import type {
   LeafTileNodes,
   TileCompute,
@@ -41,6 +41,7 @@ export interface RenderVertexPositionContext {
   visibleSlotStorage?: VisibleSlotStorageState;
   uniforms: TerrainUniformsContext;
   terrainFieldStorage?: TerrainFieldStorage;
+  tileBoundsNode?: StorageBufferNode;
 }
 
 export interface FieldNormalContext {

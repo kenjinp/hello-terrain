@@ -1,4 +1,9 @@
 import type { SpatialIndex } from "../quadtree/spatialIndex";
+import {
+  TILE_BOUNDS_FLOATS_PER_TILE,
+  TILE_BOUNDS_LOD_MAX_OFFSET,
+  TILE_BOUNDS_LOD_MIN_OFFSET,
+} from "../gpu/terrainFieldStorage";
 
 function nextPow2(n: number): number {
   let x = 1;
@@ -130,8 +135,10 @@ export function buildTileElevationPyramid(
     const level = index.keysLevel[slot]!;
     const x = index.keysX[slot]!;
     const y = index.keysY[slot]!;
-    const rawMin = tileBounds[leafIndex * 2]!;
-    const rawMax = tileBounds[leafIndex * 2 + 1]!;
+    const rawMin =
+      tileBounds[leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MIN_OFFSET]!;
+    const rawMax =
+      tileBounds[leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MAX_OFFSET]!;
 
     for (let ancestorLevel = level; ancestorLevel >= 0; ancestorLevel--) {
       const shift = level - ancestorLevel;

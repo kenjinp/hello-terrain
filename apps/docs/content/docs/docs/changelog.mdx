@@ -40,6 +40,58 @@ await graph.run({ targets: terrainTargets({ ...pipeline }), resources: { rendere
 - **`quadtreeUpdate` param removed.** Use `cameraView`, `residencyAnchors`, and `lodCriteria` instead.
 - **React flat options removed.** Migrate to grouped options (see [Params](/docs/core/params)).
 - **`writeUpdateParamsFromCamera` is internal wiring.** Prefer `readCameraView(camera, scratch)` for the `cameraView` param.
+## 0.0.0-alpha.14 — Jupiter Stable Orbit
+
+Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 
+The terrain field uses half-float storage (`rgba16float`), but elevation is now stored **per-tile normalized** so float16 precision tracks local relief instead of absolute meters at mountain scale.
+This means each tile consumes the entire range/bit depth of f16, so each tile will be variably precise per relief. Near / Higher LOD tiles will have more precision, normally, as the area size is smaller and therefore elevation delta is minimized. 
+
+### Before / After
+
+Click any image to zoom.
+
+<div className="not-prose my-6 space-y-6">
+  <div className="grid grid-cols-2 gap-3 text-center text-sm font-medium text-fd-muted-foreground">
+    <span>Before (alpha.13)</span>
+    <span>After (alpha.14)</span>
+  </div>
+  <div className="grid grid-cols-2 gap-3">
+    <MdxImage src="/assets/steps-1.png" alt="Terracing visible in slope shadows — view 1" className="rounded w-full" />
+    <MdxImage src="/assets/no-steps-1.png" alt="Smooth slopes without terracing — view 1" className="rounded w-full" />
+  </div>
+  <div className="grid grid-cols-2 gap-3">
+    <MdxImage src="/assets/steps-2.png" alt="Terracing visible in slope shadows — view 2" className="rounded w-full" />
+    <MdxImage src="/assets/no-steps-2.png" alt="Smooth slopes without terracing — view 2" className="rounded w-full" />
+  </div>
+</div>
+
+### Per-tile normalized terrain field
+
+Each tile's `.r` channel stores elevation in `[0, 1]` relative to that tile's pack bounds (`packMin` / `packMax`), then denormalizes at sample time before `elevationScale` is applied. At ~3000 m of local relief this cuts float16 quantization error from ~2 m down to ~0.2 m; on typical 50–200 m tiles the error drops to sub-centimeter scale.
+
+The compute pipeline now runs **elevation → bounds reduction → terrain-field pack**, so pack bounds are available before the field is written. Tile bounds storage grows from two to four floats per tile:
+
+- `[0]` / `[1]` — LOD min/max (inner vertices only; unchanged semantics for readback and subdivision)
+- `[2]` / `[3]` — pack min/max (all vertices, including skirts)
+
+Render and GPU sampler paths bilinearly filter the terrain field for both elevation and normals.
+
+### Heightmap TSL helpers
+
+New exports for RG-packed 16-bit PNG heightmaps:
+
+```ts
+import { decodeUint16RG, sampleHeightmapMeters } from "@hello-terrain/three";
+
+const elevation: ElevationCallback = ({ rootUV }) =>
+  sampleHeightmapMeters(heightmap, rootUV, float(minM), float(maxM), float(rangeM));
+```
+### Under the hood
+
+- New TSL helpers: `packNormalizedTerrainFieldSample`, `denormalizeTerrainFieldElevation`, `loadTilePackBounds`
+- `midPipelineExecute` hook on compute pipelines for bounds reduction between upstream stages and terrain-field pack
+- CPU readback consumers updated for the 4-float tile-bounds stride (LOD fields remain at offsets 0/1)
+- **`@hello-terrain/react`:** `TerrainProps` is now a discriminated union — when you pass a `terrain` handle from `useTerrain()`, TypeScript no longer incorrectly requires `rootSize`, `origin`, `maxLevel`, and the other construction options on `<Terrain>`.
 
 ## 0.0.0-alpha.13 — Freezing Venus
 
