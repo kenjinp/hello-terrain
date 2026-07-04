@@ -62,7 +62,23 @@ export interface TerrainOptions {
 
 export type TerrainPrimitiveProps = Omit<ThreeElements["primitive"], "object" | "children">;
 
-export interface TerrainProps extends TerrainPrimitiveProps, TerrainOptions {
-  terrain?: TerrainHandle;
+export type TerrainRenderProps = {
   children: (nodes: TerrainNodes) => ReactNode;
-}
+};
+
+/** Props when a pre-built terrain handle is supplied via `useTerrain`. */
+export type TerrainPropsWithHandle = TerrainPrimitiveProps &
+  TerrainRenderProps & {
+    terrain: TerrainHandle;
+    innerTileSegments?: number;
+    maxNodes?: number;
+  };
+
+/** Props when `<Terrain>` should construct the handle internally. */
+export type TerrainPropsWithoutHandle = TerrainPrimitiveProps &
+  TerrainOptions &
+  TerrainRenderProps & {
+    terrain?: undefined;
+  };
+
+export type TerrainProps = TerrainPropsWithHandle | TerrainPropsWithoutHandle;

@@ -29,6 +29,8 @@ export type CompileComputePipelineOptions = {
   bindings?: Node[];
   workgroupSize?: [number, number];
   preferSingleKernelWhenPossible?: boolean;
+  /** Runs after all but the last stage when using staged kernels. */
+  midPipelineExecute?: (renderer: WebGPURenderer, instanceCount: number) => void;
 };
 
 type CompiledKernel = any;
@@ -45,6 +47,7 @@ export function compileComputePipeline(
   ];
   const preferSingleKernelWhenPossible =
     options?.preferSingleKernelWhenPossible ?? true;
+  const midPipelineExecute = options?.midPipelineExecute;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   let singleKernel: CompiledKernel | undefined;
   const stagedKernelCache = new Map<string, CompiledKernel[]>();
@@ -190,8 +193,15 @@ export function compileComputePipeline(
 
     const dispatchX = Math.ceil(width / workgroupX);
     const dispatchY = Math.ceil(width / workgroupY);
-    for (const kernel of stagedKernels) {
-      renderer.compute(kernel, [dispatchX, dispatchY, instanceCount]);
+    for (let stageIndex = 0; stageIndex < stagedKernels.length; stageIndex += 1) {
+      renderer.compute(stagedKernels[stageIndex], [dispatchX, dispatchY, instanceCount]);
+      if (
+        midPipelineExecute &&
+        stagedKernels.length > 1 &&
+        stageIndex === stagedKernels.length - 2
+      ) {
+        midPipelineExecute(renderer, instanceCount);
+      }
     }
   }
 

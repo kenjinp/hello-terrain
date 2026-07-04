@@ -39,6 +39,7 @@ export interface TerrainSampler {
 
 export interface CreateTerrainSamplerParams {
   terrainFieldStorage: TerrainFieldStorage;
+  tileBoundsNode: StorageBufferNode;
   spatialIndex: GpuSpatialIndexContext;
   uniforms: TerrainUniformsContext;
   elevationCallback: ElevationCallback;

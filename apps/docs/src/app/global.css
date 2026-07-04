@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/neutral.css";
 @import "fumadocs-ui/css/preset.css";
+@import "react-medium-image-zoom/dist/styles.css";
+@import "../components/MdxImage.css";
 
 /* Example pages: remove top padding and adjust layout */
 .example-layout-container {

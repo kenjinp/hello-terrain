@@ -29,6 +29,7 @@ export * from "./query/types";
 export { createComputePipelineTasks } from "./tasks/compute.task";
 
 export * from "./tsl/cubeSphere";
+export * from "./tsl/heightmap";
 export * from "./tsl/materials";
 export * from "./tsl/skirt";
 export * from "./tsl/varyings";

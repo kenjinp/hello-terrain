@@ -33,6 +33,7 @@
     "next": "15.5.0",
     "react": "catalog:",
     "react-dom": "catalog:",
+    "react-medium-image-zoom": "^5.4.0",
     "three": "catalog:",
     "three-stdlib": "^2.36.0",
     "uuid": "^11.1.0",
