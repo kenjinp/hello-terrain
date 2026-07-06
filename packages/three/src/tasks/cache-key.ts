@@ -1,14 +1,14 @@
-import type { Topology } from "../quadtree";
+import type { Topology } from '../quadtree';
 
 export function createTerrainQueryShapeKey(
-  topology: Topology,
-  maxNodes: number,
-  innerTileSegments: number,
-  maxLevel: number,
+    topology: Topology,
+    maxNodes: number,
+    innerTileSegments: number,
+    maxLevel: number
 ): string {
-  return `${maxNodes}:${innerTileSegments}:${maxLevel}:${topology.cacheKey}`;
+    return `${maxNodes}:${innerTileSegments}:${maxLevel}:${topology.cacheKey}`;
 }
 
 export function createTileSlotShapeKey(topology: Topology, maxNodes: number): string {
-  return `${topology.cacheKey}:${topology.spaceCount}:${maxNodes}`;
+    return `${topology.cacheKey}:${topology.spaceCount}:${maxNodes}`;
 }

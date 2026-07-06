@@ -401,6 +401,18 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
         // ignore
       }
     }
+    // Release externally owned resources (GPU buffers, workers, ...) held by
+    // cached task values before dropping them.
+    for (const node of tasksMap.values()) {
+      if (node.state !== "ready") continue;
+      const disposer = node.ref[TASK_DEF].options.disposer;
+      if (!disposer) continue;
+      try {
+        disposer(node.value);
+      } catch {
+        // ignore — disposal must never prevent graph teardown
+      }
+    }
     paramsMap.clear();
     tasksMap.clear();
     dirtyTasks.clear();

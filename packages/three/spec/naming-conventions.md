@@ -7,25 +7,25 @@ Prefer names that reflect **what data is** and **how it is stored**.
 ## Map vs Field vs Buffer
 
 - `*Map`
-  - Authored/sampled texture-like data source.
-  - Example: normal map texture.
+    - Authored/sampled texture-like data source.
+    - Example: normal map texture.
 - `*Field`
-  - Computed spatial dataset (scalar/vector) in terrain domain.
-  - Example: `elevationField`.
+    - Computed spatial dataset (scalar/vector) in terrain domain.
+    - Example: `elevationField`.
 - `*Buffer` / `*Storage`
-  - Concrete GPU container that stores a field.
-  - Example: `elevationFieldBuffer`, `elevationFieldStorage`.
+    - Concrete GPU container that stores a field.
+    - Example: `elevationFieldBuffer`, `elevationFieldStorage`.
 
 ## Elevation Terminology
 
 - Use `elevation*` for user-facing terrain height control.
 - Avoid mixing `heightmap*` and `elevation*` in API surface.
 - Preferred examples:
-  - `elevationScale`
-  - `uElevationScale`
-  - `ElevationFieldContext`
-  - `createElevationFieldContextTask`
-  - `elevationFieldStageTask`
+    - `elevationScale`
+    - `uElevationScale`
+    - `ElevationFieldContext`
+    - `createElevationFieldContextTask`
+    - `elevationFieldStageTask`
 
 ## Topology Terminology
 
@@ -40,13 +40,13 @@ Prefer names that reflect **what data is** and **how it is stored**.
   `ProjectionKind` is the identifier type and is for debugging and telemetry
   only. Use topology/projection `cacheKey` fields for cache invalidation.
 - Preferred examples:
-  - `Topology` (the adapter type), `SurfaceProjection`, `ProjectionKind`
-  - `createFlatTopology`, `createInfiniteFlatTopology`, `createCubeSphereTopology`,
-    `createTorusTopology`
-  - `createFlatProjection`, `createCubeSphereProjection`, `createTorusProjection`
-  - `FlatTopologyConfig`, `InfiniteFlatTopologyConfig`, `CubeSphereTopologyConfig`,
-    `TorusTopologyConfig`
-  - the `topology` param and `topologyTask`
+    - `Topology` (the adapter type), `SurfaceProjection`, `ProjectionKind`
+    - `createFlatTopology`, `createInfiniteFlatTopology`, `createCubeSphereTopology`,
+      `createTorusTopology`
+    - `createFlatProjection`, `createCubeSphereProjection`, `createTorusProjection`
+    - `FlatTopologyConfig`, `InfiniteFlatTopologyConfig`, `CubeSphereTopologyConfig`,
+      `TorusTopologyConfig`
+    - the `topology` param and `topologyTask`
 - Use `TerrainSurfaceQuery` for the generic closed-surface query (position-keyed)
   and `TerrainSphereQuery` (which extends it) for the cube-sphere direction/lat-long
   keys.
@@ -58,17 +58,17 @@ Prefer names that reflect **what data is** and **how it is stored**.
 - Task symbols should end with `Task`.
 - `displayName()` should match symbol name exactly.
 - Recommended pattern:
-  - `{domain}{action}Task`
-  - Examples: `quadtreeUpdateTask`, `elevationFieldStageTask`, `positionNodeTask`.
+    - `{domain}{action}Task`
+    - Examples: `quadtreeUpdateTask`, `elevationFieldStageTask`, `positionNodeTask`.
 
 ## Type Naming
 
 - Use `Context` for grouped runtime references.
 - Use `Params` for user-configurable input objects.
 - Use precise suffixes:
-  - `Ref` for references
-  - `State` for mutable runtime state
-  - `Config` for mostly static setup
+    - `Ref` for references
+    - `State` for mutable runtime state
+    - `Config` for mostly static setup
 
 ## File Naming
 

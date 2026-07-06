@@ -19,20 +19,20 @@ This document defines the canonical runtime data model for `@hello-terrain/three
 The terrain system spans four data domains:
 
 1. **Param domain (graph inputs)**
-   - App-provided values and callbacks (`rootSize`, `origin`, `maxNodes`, `elevationFn`, etc.).
-   - Primary invalidation drivers.
+    - App-provided values and callbacks (`rootSize`, `origin`, `maxNodes`, `elevationFn`, etc.).
+    - Primary invalidation drivers.
 
 2. **CPU topology domain (quadtree)**
-   - Active tile topology and lookup structures.
-   - Authoritative source of tile identity each frame.
+    - Active tile topology and lookup structures.
+    - Authoritative source of tile identity each frame.
 
 3. **GPU production domain (compute + textures/buffers)**
-   - Elevation, derived terrain field, and reduction outputs.
-   - Authoritative source of render-time geometric payloads.
+    - Elevation, derived terrain field, and reduction outputs.
+    - Authoritative source of render-time geometric payloads.
 
 4. **CPU snapshot/query domain**
-   - Async readback snapshots for synchronous gameplay queries and raycasts.
-   - Eventually consistent with GPU production.
+    - Async readback snapshots for synchronous gameplay queries and raycasts.
+    - Eventually consistent with GPU production.
 
 ## Core Entities
 
@@ -124,12 +124,12 @@ Raycast adapter over `TerrainQuery`, produced by `terrainRaycastTask`.
 To avoid accidental rebuild churn:
 
 - **Stable identity objects** should be allocated once per shape key (or once lifetime):
-  - uniform node objects,
-  - long-lived storage contexts keyed by capacity/shape.
+    - uniform node objects,
+    - long-lived storage contexts keyed by capacity/shape.
 - **Payload fields** should be updated per frame:
-  - uniform values,
-  - leaf counts,
-  - compute/readback outputs.
+    - uniform values,
+    - leaf counts,
+    - compute/readback outputs.
 
 In practice:
 

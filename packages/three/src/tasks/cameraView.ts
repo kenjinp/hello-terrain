@@ -1,72 +1,70 @@
-import type { Camera } from "three";
-import type { ViewProjectionMatrix } from "../quadtree";
-import { writeViewProjectionMatrix } from "./camera";
+import type { Camera } from 'three';
+import type { ViewProjectionMatrix } from '../quadtree';
+import { writeViewProjectionMatrix } from './camera';
 
 export const VIEW_PROJECTION_EPSILON = 1e-8;
 export const DEFAULT_CAMERA_ORIGIN_HYSTERESIS = 0.05;
 
 export type CameraView = {
-  cameraOrigin: { x: number; y: number; z: number };
-  viewProjectionMatrix: ViewProjectionMatrix;
+    cameraOrigin: { x: number; y: number; z: number };
+    viewProjectionMatrix: ViewProjectionMatrix;
 };
 
 export type CameraViewEqualsConfig = {
-  originHysteresis?: number;
-  viewProjectionEpsilon?: number;
+    originHysteresis?: number;
+    viewProjectionEpsilon?: number;
 };
 
 export type Vector3Like = {
-  x: number;
-  y: number;
-  z: number;
+    x: number;
+    y: number;
+    z: number;
 };
 
 function ensureViewProjectionMatrix(view: CameraView): ViewProjectionMatrix {
-  if (view.viewProjectionMatrix?.length === 16)
+    if (view.viewProjectionMatrix?.length === 16) return view.viewProjectionMatrix;
+    view.viewProjectionMatrix = Array.from({ length: 16 }, () => 0);
     return view.viewProjectionMatrix;
-  view.viewProjectionMatrix = Array.from({ length: 16 }, () => 0);
-  return view.viewProjectionMatrix;
 }
 
 export function createInitialCameraView(): CameraView {
-  return {
-    cameraOrigin: { x: 0, y: 0, z: 0 },
-    viewProjectionMatrix: Array.from({ length: 16 }, () => 0),
-  };
+    return {
+        cameraOrigin: { x: 0, y: 0, z: 0 },
+        viewProjectionMatrix: Array.from({ length: 16 }, () => 0),
+    };
 }
 
 export function didCameraOriginMove(
-  lastOrigin: Vector3Like | null,
-  nextOrigin: Vector3Like,
-  hysteresis: number,
+    lastOrigin: Vector3Like | null,
+    nextOrigin: Vector3Like,
+    hysteresis: number
 ): boolean {
-  if (!lastOrigin) return true;
-  const dx = lastOrigin.x - nextOrigin.x;
-  const dy = lastOrigin.y - nextOrigin.y;
-  const dz = lastOrigin.z - nextOrigin.z;
-  return dx * dx + dy * dy + dz * dz >= hysteresis * hysteresis;
+    if (!lastOrigin) return true;
+    const dx = lastOrigin.x - nextOrigin.x;
+    const dy = lastOrigin.y - nextOrigin.y;
+    const dz = lastOrigin.z - nextOrigin.z;
+    return dx * dx + dy * dy + dz * dz >= hysteresis * hysteresis;
 }
 
 export function didViewProjectionMatrixChange(
-  lastMatrix: ArrayLike<number> | null,
-  nextMatrix: ArrayLike<number>,
-  epsilon = VIEW_PROJECTION_EPSILON,
+    lastMatrix: ArrayLike<number> | null,
+    nextMatrix: ArrayLike<number>,
+    epsilon = VIEW_PROJECTION_EPSILON
 ): boolean {
-  if (!lastMatrix || lastMatrix.length < 16 || nextMatrix.length < 16)
-    return true;
-  for (let i = 0; i < 16; i += 1) {
-    if (Math.abs((lastMatrix[i] ?? 0) - (nextMatrix[i] ?? 0)) > epsilon) {
-      return true;
+    if (!lastMatrix || lastMatrix.length < 16 || nextMatrix.length < 16) return true;
+    for (let i = 0; i < 16; i += 1) {
+        if (Math.abs((lastMatrix[i] ?? 0) - (nextMatrix[i] ?? 0)) > epsilon) {
+            return true;
+        }
     }
-  }
-  return false;
+    return false;
 }
 
 type CameraViewSnapshot = {
-  originX: number;
-  originY: number;
-  originZ: number;
-  matrix: Float64Array;
+    originX: number;
+    originY: number;
+    originZ: number;
+    matrix: Float64Array;
 };
 
 /**
@@ -91,110 +89,108 @@ type CameraViewSnapshot = {
  * never one per frame.
  */
 export function createCameraViewEquals(config: CameraViewEqualsConfig = {}) {
-  const originHysteresis =
-    config.originHysteresis ?? DEFAULT_CAMERA_ORIGIN_HYSTERESIS;
-  const viewProjectionEpsilon =
-    config.viewProjectionEpsilon ?? VIEW_PROJECTION_EPSILON;
-  const thresholdSq = originHysteresis * originHysteresis;
-  const snapshots = new WeakMap<CameraView, CameraViewSnapshot>();
+    const originHysteresis = config.originHysteresis ?? DEFAULT_CAMERA_ORIGIN_HYSTERESIS;
+    const viewProjectionEpsilon = config.viewProjectionEpsilon ?? VIEW_PROJECTION_EPSILON;
+    const thresholdSq = originHysteresis * originHysteresis;
+    const snapshots = new WeakMap<CameraView, CameraViewSnapshot>();
 
-  const originClose = (
-    ax: number,
-    ay: number,
-    az: number,
-    bx: number,
-    by: number,
-    bz: number,
-  ): boolean => {
-    const dx = ax - bx;
-    const dy = ay - by;
-    const dz = az - bz;
-    return dx * dx + dy * dy + dz * dz < thresholdSq;
-  };
+    const originClose = (
+        ax: number,
+        ay: number,
+        az: number,
+        bx: number,
+        by: number,
+        bz: number
+    ): boolean => {
+        const dx = ax - bx;
+        const dy = ay - by;
+        const dz = az - bz;
+        return dx * dx + dy * dy + dz * dz < thresholdSq;
+    };
 
-  const matrixClose = (a: ViewProjectionMatrix, b: ViewProjectionMatrix): boolean => {
-    if (!a || !b || a.length < 16 || b.length < 16) return false;
-    for (let i = 0; i < 16; i += 1) {
-      if (Math.abs((a[i] ?? 0) - (b[i] ?? 0)) > viewProjectionEpsilon) {
+    const matrixClose = (a: ViewProjectionMatrix, b: ViewProjectionMatrix): boolean => {
+        if (!a || !b || a.length < 16 || b.length < 16) return false;
+        for (let i = 0; i < 16; i += 1) {
+            if (Math.abs((a[i] ?? 0) - (b[i] ?? 0)) > viewProjectionEpsilon) {
+                return false;
+            }
+        }
+        return true;
+    };
+
+    const writeSnapshot = (snapshot: CameraViewSnapshot, view: CameraView): void => {
+        snapshot.originX = view.cameraOrigin.x;
+        snapshot.originY = view.cameraOrigin.y;
+        snapshot.originZ = view.cameraOrigin.z;
+        const matrix = view.viewProjectionMatrix;
+        for (let i = 0; i < 16; i += 1) snapshot.matrix[i] = matrix[i] ?? 0;
+    };
+
+    return (prev: CameraView, next: CameraView): boolean => {
+        if (prev !== next) {
+            // Independent objects: `prev` is a stable baseline, compare directly.
+            return (
+                originClose(
+                    prev.cameraOrigin.x,
+                    prev.cameraOrigin.y,
+                    prev.cameraOrigin.z,
+                    next.cameraOrigin.x,
+                    next.cameraOrigin.y,
+                    next.cameraOrigin.z
+                ) && matrixClose(prev.viewProjectionMatrix, next.viewProjectionMatrix)
+            );
+        }
+
+        // Reused scratch: compare live contents against our retained snapshot.
+        const snapshot = snapshots.get(next);
+        if (!snapshot) {
+            const created: CameraViewSnapshot = {
+                originX: 0,
+                originY: 0,
+                originZ: 0,
+                matrix: new Float64Array(16),
+            };
+            writeSnapshot(created, next);
+            snapshots.set(next, created);
+            return false;
+        }
+
+        const unchanged =
+            originClose(
+                snapshot.originX,
+                snapshot.originY,
+                snapshot.originZ,
+                next.cameraOrigin.x,
+                next.cameraOrigin.y,
+                next.cameraOrigin.z
+            ) && matrixClose(snapshot.matrix, next.viewProjectionMatrix);
+
+        if (unchanged) return true;
+
+        writeSnapshot(snapshot, next);
         return false;
-      }
-    }
-    return true;
-  };
-
-  const writeSnapshot = (snapshot: CameraViewSnapshot, view: CameraView): void => {
-    snapshot.originX = view.cameraOrigin.x;
-    snapshot.originY = view.cameraOrigin.y;
-    snapshot.originZ = view.cameraOrigin.z;
-    const matrix = view.viewProjectionMatrix;
-    for (let i = 0; i < 16; i += 1) snapshot.matrix[i] = matrix[i] ?? 0;
-  };
-
-  return (prev: CameraView, next: CameraView): boolean => {
-    if (prev !== next) {
-      // Independent objects: `prev` is a stable baseline, compare directly.
-      return (
-        originClose(
-          prev.cameraOrigin.x,
-          prev.cameraOrigin.y,
-          prev.cameraOrigin.z,
-          next.cameraOrigin.x,
-          next.cameraOrigin.y,
-          next.cameraOrigin.z,
-        ) && matrixClose(prev.viewProjectionMatrix, next.viewProjectionMatrix)
-      );
-    }
-
-    // Reused scratch: compare live contents against our retained snapshot.
-    const snapshot = snapshots.get(next);
-    if (!snapshot) {
-      const created: CameraViewSnapshot = {
-        originX: 0,
-        originY: 0,
-        originZ: 0,
-        matrix: new Float64Array(16),
-      };
-      writeSnapshot(created, next);
-      snapshots.set(next, created);
-      return false;
-    }
-
-    const unchanged =
-      originClose(
-        snapshot.originX,
-        snapshot.originY,
-        snapshot.originZ,
-        next.cameraOrigin.x,
-        next.cameraOrigin.y,
-        next.cameraOrigin.z,
-      ) && matrixClose(snapshot.matrix, next.viewProjectionMatrix);
-
-    if (unchanged) return true;
-
-    writeSnapshot(snapshot, next);
-    return false;
-  };
+    };
 }
 
 export const cameraViewEquals = createCameraViewEquals();
 
 export function readCameraView(
-  camera: Camera,
-  out: CameraView,
-  cameraOrigin: Vector3Like = camera.position,
+    camera: Camera,
+    out: CameraView,
+    cameraOrigin: Vector3Like = camera.position
 ): CameraView {
-  camera.updateMatrixWorld();
-  camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
+    camera.updateMatrixWorld();
+    camera.matrixWorldInverse.copy(camera.matrixWorld).invert();
 
-  out.cameraOrigin.x = cameraOrigin.x;
-  out.cameraOrigin.y = cameraOrigin.y;
-  out.cameraOrigin.z = cameraOrigin.z;
+    out.cameraOrigin.x = cameraOrigin.x;
+    out.cameraOrigin.y = cameraOrigin.y;
+    out.cameraOrigin.z = cameraOrigin.z;
 
-  writeViewProjectionMatrix(
-    ensureViewProjectionMatrix(out),
-    camera.projectionMatrix.elements,
-    camera.matrixWorldInverse.elements,
-  );
+    writeViewProjectionMatrix(
+        ensureViewProjectionMatrix(out),
+        camera.projectionMatrix.elements,
+        camera.matrixWorldInverse.elements
+    );
 
-  return out;
+    return out;
 }

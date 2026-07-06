@@ -29,9 +29,9 @@ This mirrors the existing uniforms pattern (`createUniformsTask` + `updateUnifor
 - Preserves allocation-free hot paths.
 - Prevents accidental state resets when dependencies update.
 - Keeps task responsibilities explicit:
-  - create tasks own lifecycle/allocation
-  - update tasks own frame mutation
-  - sink tasks own upload/application
+    - create tasks own lifecycle/allocation
+    - update tasks own frame mutation
+    - sink tasks own upload/application
 
 ## Import three.js Only Through Public Entry Points
 
@@ -40,7 +40,7 @@ This mirrors the existing uniforms pattern (`createUniformsTask` + `updateUnifor
 three.js exposes the same code through more than one module specifier: the
 public builds (`three`, `three/tsl`, `three/webgpu`) and the raw source tree
 (`three/src/*`). Importing a runtime **value** from a deep source path pulls
-three's node/TSL system in as a *separate module instance* from the public
+three's node/TSL system in as a _separate module instance_ from the public
 build.
 
 Example anti-pattern (the cause of a real "terrain doesn't render" bug):
@@ -58,16 +58,16 @@ public build) looks fine.
 
 This is amplified across a `link:` / workspace boundary. When a consumer pins a
 different three version, its bundler resolves the library's `three/src` import to
-the library's *own* three, producing a second TSL instance that survives even
+the library's _own_ three, producing a second TSL instance that survives even
 `resolve.dedupe` and a `three` alias (the alias targets the public specifiers,
 not `three/src/*`).
 
 ### Required Pattern
 
 - **Runtime/value imports of three must use public entry points only:**
-  - `three` — math/util/scene classes (`Vector3`, `BufferGeometry`, …)
-  - `three/tsl` — TSL builders and node functions (`Fn`, `float`, `vec3`, …)
-  - `three/webgpu` — renderer/material/storage classes (`MeshStandardNodeMaterial`, `StorageTexture`, …)
+    - `three` — math/util/scene classes (`Vector3`, `BufferGeometry`, …)
+    - `three/tsl` — TSL builders and node functions (`Fn`, `float`, `vec3`, …)
+    - `three/webgpu` — renderer/material/storage classes (`MeshStandardNodeMaterial`, `StorageTexture`, …)
 - **Never import runtime values from `three/src/*` or `three/build/*`.**
 - **Type-only imports from `three/src/*` are acceptable** (they are erased at
   build) — but write them explicitly as `import type` / inline `type` so a strict

@@ -26,7 +26,11 @@ export function param<T>(initial: T, options?: ParamOptions<T>): ParamRef<T> {
   const initialValue = initial;
   let value = initial;
   let name: string | undefined = undefined;
-  const equals: ParamEquals<T> | undefined = options?.equals;
+  // Default to identity equality: re-setting an identical value must be a
+  // no-op. Without this, every set() bumps subscribers/versions, which
+  // cascades into full recreation of downstream resources (e.g. GPU buffers
+  // and compiled pipelines) even when nothing actually changed.
+  const equals: ParamEquals<T> = options?.equals ?? Object.is;
   const subscriptions = new Set<ParamSubscribeCallback<T>>();
   const id = createNodeId();
 

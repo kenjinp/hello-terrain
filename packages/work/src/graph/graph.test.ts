@@ -1328,4 +1328,62 @@ describe("graph()", () => {
       expect(finished).toBe(1);
     });
   });
+
+  describe("task disposer()", () => {
+    it("invokes the disposer with the cached value on graph.dispose()", async () => {
+      const g = graph();
+      const disposed: Array<{ id: number }> = [];
+      const resource = task((_get, work) => work(() => ({ id: 42 })))
+        .displayName("resource")
+        .disposer((value) => disposed.push(value));
+      g.add(resource);
+
+      await g.run({ targets: [resource] });
+      expect(disposed).toEqual([]);
+
+      g.dispose();
+      expect(disposed).toEqual([{ id: 42 }]);
+    });
+
+    it("does not invoke the disposer on re-execution (prev-value cleanup is the task's job)", async () => {
+      const g = graph();
+      const p = param(1);
+      const disposed: number[] = [];
+      const prevSeen: Array<number | undefined> = [];
+      const resource = task((get, work) => {
+        const pv = get(p);
+        return work((prev?: number) => {
+          prevSeen.push(prev);
+          return pv;
+        });
+      })
+        .displayName("resource")
+        .disposer((value) => disposed.push(value));
+      g.add(resource);
+
+      await g.run({ targets: [resource] });
+      g.set(p, 2);
+      await g.run({ targets: [resource] });
+
+      // Re-run replaced the value but did not call the disposer; the task saw
+      // the previous value and could have released it itself.
+      expect(disposed).toEqual([]);
+      expect(prevSeen).toEqual([undefined, 1]);
+
+      g.dispose();
+      expect(disposed).toEqual([2]);
+    });
+
+    it("does not invoke the disposer for tasks that never produced a value", async () => {
+      const g = graph();
+      const disposed: unknown[] = [];
+      const resource = task((_get, work) => work(() => "value"))
+        .displayName("never-ran")
+        .disposer((value) => disposed.push(value));
+      g.add(resource);
+
+      g.dispose();
+      expect(disposed).toEqual([]);
+    });
+  });
 });

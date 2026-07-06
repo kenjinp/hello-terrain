@@ -1,26 +1,28 @@
-import type { TaskRef } from "@hello-terrain/work";
-import { task } from "@hello-terrain/work";
-import { WebGPURenderer } from "three/webgpu";
-import { compileComputePipeline, type ComputePipeline } from "../gpu/compute";
-import { innerTileSegments } from "./params";
-import { terrainFieldStageTask } from "./terrain-field.task";
+import type { TaskRef } from '@hello-terrain/work';
+import { task } from '@hello-terrain/work';
+import { WebGPURenderer } from 'three/webgpu';
+import { compileComputePipeline, type ComputePipeline } from '../gpu/compute';
+import { innerTileSegments } from './params';
+import { terrainFieldStageTask } from './terrain-field.task';
+import { markSlotsComputed } from '../quadtree/tileSlotCache';
 import {
-  dirtyVisibleSlotBufferTask,
-  dirtyVisibleSlotStorageTask,
-  leafGpuBufferTask,
-} from "./quadtree.task";
+    dirtyVisibleSlotBufferTask,
+    dirtyVisibleSlotStorageTask,
+    leafGpuBufferTask,
+    tileSlotUpdateTask,
+} from './quadtree.task';
 import {
-  runTileBoundsReduction,
-  tileBoundsContextTask,
-  type TileBoundsContext,
-} from "./tile-bounds.task";
+    runTileBoundsReduction,
+    tileBoundsContextTask,
+    type TileBoundsContext,
+} from './tile-bounds.task';
 
 /**
  * Default compile + execute tasks — uses terrainFieldStageTask as the leaf.
  * Derived from the same factory as user pipelines to avoid duplicated logic.
  */
 export const { compile: compileComputeTask, execute: executeComputeTask } =
-  createComputePipelineTasks(terrainFieldStageTask);
+    createComputePipelineTasks(terrainFieldStageTask);
 
 /**
  * Factory for user-extensible pipelines.
@@ -49,53 +51,61 @@ export const { compile: compileComputeTask, execute: executeComputeTask } =
  * ```
  */
 export function createComputePipelineTasks(
-  leafStageTask: TaskRef<ComputePipeline>,
-  label = "terrainField",
+    leafStageTask: TaskRef<ComputePipeline>,
+    label = 'terrainField'
 ) {
-  const compile = task((get, work) => {
-    const pipeline = get(leafStageTask);
-    const edgeVertexCount = get(innerTileSegments) + 3;
-    const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
-    const boundsContext = get(tileBoundsContextTask);
-    return work(() =>
-      compileComputePipeline(pipeline, edgeVertexCount, {
-        preferSingleKernelWhenPossible: false,
-        instanceSource: "dirty-visible-slot",
-        dirtyVisibleSlotStorage,
-        label,
-        midPipelineExecute: (renderer, instanceCount) => {
-          runTileBoundsReduction(renderer, boundsContext, instanceCount);
-        },
-      }),
-    );
-  }).displayName("compileComputeTask");
+    const compile = task((get, work) => {
+        const pipeline = get(leafStageTask);
+        const edgeVertexCount = get(innerTileSegments) + 3;
+        const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
+        const boundsContext = get(tileBoundsContextTask);
+        return work((prev?: ReturnType<typeof compileComputePipeline>) => {
+            prev?.dispose();
+            return compileComputePipeline(pipeline, edgeVertexCount, {
+                preferSingleKernelWhenPossible: false,
+                instanceSource: 'dirty-visible-slot',
+                dirtyVisibleSlotStorage,
+                label,
+                midPipelineExecute: (renderer, instanceCount) => {
+                    runTileBoundsReduction(renderer, boundsContext, instanceCount);
+                },
+            });
+        });
+    })
+        .displayName('compileComputeTask')
+        .disposer((compiled) => compiled.dispose());
 
-  const execute = task<{ renderer: WebGPURenderer }>(
-    (get, work, ctx) => {
-      const { execute: run } = get(compile);
-      get(leafGpuBufferTask);
-      const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
-      return work(() => {
-        if (ctx.signal.aborted) {
-          throw ctx.signal.reason ?? new Error("Terrain compute aborted");
-        }
-        return ctx.resources?.renderer && dirtyVisibleSlots.count > 0
-          ? run(ctx.resources.renderer, dirtyVisibleSlots.count)
-          : () => {};
-      });
-    },
-  )
-    .displayName("executeComputeTask")
-    .lane("gpu");
+    const execute = task<{ renderer: WebGPURenderer }>((get, work, ctx) => {
+        const { execute: run } = get(compile);
+        get(leafGpuBufferTask);
+        const dirtyVisibleSlots = get(dirtyVisibleSlotBufferTask);
+        const slotUpdate = get(tileSlotUpdateTask);
+        return work(() => {
+            if (ctx.signal.aborted) {
+                throw ctx.signal.reason ?? new Error('Terrain compute aborted');
+            }
+            if (ctx.resources?.renderer && dirtyVisibleSlots.count > 0) {
+                const result = run(ctx.resources.renderer, dirtyVisibleSlots.count);
+                // The dispatched batch now has valid field content on the GPU
+                // timeline; from the next slot-cache update on, these slots draw
+                // directly instead of via LOD-pop substitution.
+                markSlotsComputed(slotUpdate.slots, dirtyVisibleSlots.data, dirtyVisibleSlots.count);
+                return result;
+            }
+            return () => {};
+        });
+    })
+        .displayName('executeComputeTask')
+        .lane('gpu');
 
-  return { compile, execute };
+    return { compile, execute };
 }
 
 /** Bounds are reduced mid-pipeline inside {@link executeComputeTask}. */
 export const tileBoundsReductionTask = task<{ renderer: WebGPURenderer }>((get, work) => {
-  get(executeComputeTask);
-  const boundsContext = get(tileBoundsContextTask);
-  return work((): TileBoundsContext => boundsContext);
+    get(executeComputeTask);
+    const boundsContext = get(tileBoundsContextTask);
+    return work((): TileBoundsContext => boundsContext);
 })
-  .displayName("tileBoundsReductionTask")
-  .lane("gpu");
+    .displayName('tileBoundsReductionTask')
+    .lane('gpu');

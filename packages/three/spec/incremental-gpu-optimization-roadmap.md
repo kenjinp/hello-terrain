@@ -226,22 +226,22 @@ Reduce per-dirty-tile compute cost after dirty counts are bounded.
 ### Candidate Changes
 
 1. **Fuse bounds into terrain generation**
-   - During elevation generation, write per-workgroup partial min/max.
-   - Reduce those partials instead of scanning the full tile in a separate pass.
+    - During elevation generation, write per-workgroup partial min/max.
+    - Reduce those partials instead of scanning the full tile in a separate pass.
 
 2. **Normal mode options**
-   - Keep the current high-quality normal path as default.
-   - Add an internal cheaper normal mode for stress tests or distant tiles.
-   - Do not expose this publicly until visual differences are understood.
+    - Keep the current high-quality normal path as default.
+    - Add an internal cheaper normal mode for stress tests or distant tiles.
+    - Do not expose this publicly until visual differences are understood.
 
 3. **Stage fusion**
-   - Revisit whether `terrainField.linearStage0` and
-     `terrainField.linearStage1` can share work or avoid intermediate reads.
-   - Keep generated WGSL inspectable with stable pass labels.
+    - Revisit whether `terrainField.linearStage0` and
+      `terrainField.linearStage1` can share work or avoid intermediate reads.
+    - Keep generated WGSL inspectable with stable pass labels.
 
 4. **Adaptive tile resolution**
-   - Permit distant fallback tiles to compute at a lower resolution.
-   - Requires explicit field layout/versioning, so this is a later option.
+    - Permit distant fallback tiles to compute at a lower resolution.
+    - Requires explicit field layout/versioning, so this is a later option.
 
 ### Acceptance Criteria
 
@@ -321,15 +321,15 @@ review easier. Dirty budgeting should not ship without a ready/fallback policy.
 
 ## Validation Matrix
 
-| Scenario | Purpose | Expected behavior |
-| --- | --- | --- |
-| `earth-sphere-surface-load` cold | Full dirty allocation | Correct, may exceed steady-state budget |
-| `earth-sphere-surface-load` warm | Clean reuse | No compute, no readback, ready coverage stable |
-| `earth-sphere-orbit-surface-center` 1024 | Small partial dirty | Scheduled dirty follows dirty budget |
-| `earth-sphere-orbit-surface-center` 4098 | Dirty-heavy stress | Compute bounded by scheduled dirty count |
-| `earth-sphere-orbit-surface-edge` | Cube-face seam stress | No fallback holes along face transitions |
-| `earth-sphere-orbit-surface-corner` | Cube-corner stress | Query samples must target visible/ready regions |
-| `earth-torus-surface-load` | Projection injection parity | No projection-kind branches in shared code |
+| Scenario                                 | Purpose                     | Expected behavior                               |
+| ---------------------------------------- | --------------------------- | ----------------------------------------------- |
+| `earth-sphere-surface-load` cold         | Full dirty allocation       | Correct, may exceed steady-state budget         |
+| `earth-sphere-surface-load` warm         | Clean reuse                 | No compute, no readback, ready coverage stable  |
+| `earth-sphere-orbit-surface-center` 1024 | Small partial dirty         | Scheduled dirty follows dirty budget            |
+| `earth-sphere-orbit-surface-center` 4098 | Dirty-heavy stress          | Compute bounded by scheduled dirty count        |
+| `earth-sphere-orbit-surface-edge`        | Cube-face seam stress       | No fallback holes along face transitions        |
+| `earth-sphere-orbit-surface-corner`      | Cube-corner stress          | Query samples must target visible/ready regions |
+| `earth-torus-surface-load`               | Projection injection parity | No projection-kind branches in shared code      |
 
 ## Open Questions
 

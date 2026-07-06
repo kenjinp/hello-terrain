@@ -169,7 +169,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
 const TerrainMeshScene = () => {
   const store = useCreateStore();
   const g = useMemo(() => {
-    return graph()
+    return graph<{ renderer: THREE.WebGPURenderer }>()
       .add(instanceIdTask)
       .add(quadtreeConfigTask)
       .add(quadtreeUpdateTask)

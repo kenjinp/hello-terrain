@@ -112,12 +112,12 @@ Because the index is reset and rebuilt every frame, it always reflects the curre
 
 ## Design Rationale
 
-| Decision | Rationale |
-|---|---|
-| Struct-of-arrays | Better cache utilization for typed-array probing; avoids object overhead per slot |
-| Power-of-2 sizing | Enables bitwise `& mask` instead of modulo for slot computation |
-| 50% max load factor | Keeps linear probing chains short (avg ~1.5 probes) |
-| Generation stamps | O(1) reset without touching every slot; eliminates tombstone complexity |
+| Decision              | Rationale                                                                                                                  |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Struct-of-arrays      | Better cache utilization for typed-array probing; avoids object overhead per slot                                          |
+| Power-of-2 sizing     | Enables bitwise `& mask` instead of modulo for slot computation                                                            |
+| 50% max load factor   | Keeps linear probing chains short (avg ~1.5 probes)                                                                        |
+| Generation stamps     | O(1) reset without touching every slot; eliminates tombstone complexity                                                    |
 | All `>>> 0` coercions | Forces JavaScript values into unsigned 32-bit integers, avoiding SMI deoptimizations and ensuring correct bitwise behavior |
-| `Math.imul` in hash | Performs true 32-bit multiplication without floating-point precision loss |
-| No deletion support | The table is rebuilt each frame, so deletions are unnecessary |
+| `Math.imul` in hash   | Performs true 32-bit multiplication without floating-point precision loss                                                  |
+| No deletion support   | The table is rebuilt each frame, so deletions are unnecessary                                                              |

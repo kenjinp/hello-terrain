@@ -1,8 +1,8 @@
-import { task } from "@hello-terrain/work";
-import { createTerrainFieldTextureTask } from "./terrain-field.task";
-import { tileBoundsContextTask } from "./tile-bounds.task";
-import { leafStorageTask, topologyTask, visibleSlotStorageTask } from "./quadtree.task";
-import { updateUniformsTask } from "./uniforms/uniforms.task";
+import { task } from '@hello-terrain/work';
+import { createTerrainFieldTextureTask } from './terrain-field.task';
+import { tileBoundsContextTask } from './tile-bounds.task';
+import { leafStorageTask, topologyTask, visibleSlotStorageTask } from './quadtree.task';
+import { updateUniformsTask } from './uniforms/uniforms.task';
 
 /**
  * Builds the TSL position node for the terrain shader.
@@ -20,19 +20,19 @@ import { updateUniformsTask } from "./uniforms/uniforms.task";
  * updates — no unnecessary shader rebuilds.
  */
 export const positionNodeTask = task((get, work) => {
-  const leafStorage = get(leafStorageTask);
-  const visibleSlotStorage = get(visibleSlotStorageTask);
-  const terrainUniforms = get(updateUniformsTask);
-  const terrainFieldStorage = get(createTerrainFieldTextureTask);
-  const tileBoundsContext = get(tileBoundsContextTask);
-  const topology = get(topologyTask);
-  return work(() =>
-    topology.projection.gpu.renderVertexPosition({
-      leafStorage,
-      visibleSlotStorage,
-      uniforms: terrainUniforms,
-      terrainFieldStorage,
-      tileBoundsNode: tileBoundsContext.node,
-    }),
-  );
-}).displayName("positionNodeTask");
+    const leafStorage = get(leafStorageTask);
+    const visibleSlotStorage = get(visibleSlotStorageTask);
+    const terrainUniforms = get(updateUniformsTask);
+    const terrainFieldStorage = get(createTerrainFieldTextureTask);
+    const tileBoundsContext = get(tileBoundsContextTask);
+    const topology = get(topologyTask);
+    return work(() =>
+        topology.projection.gpu.renderVertexPosition({
+            leafStorage,
+            visibleSlotStorage,
+            uniforms: terrainUniforms,
+            terrainFieldStorage,
+            tileBoundsNode: tileBoundsContext.node,
+        })
+    );
+}).displayName('positionNodeTask');
