@@ -5,6 +5,7 @@ This folder is the canonical architecture/spec reference for `@hello-terrain/thr
 ## Documents
 
 - [`architecture.md`](./architecture.md): system layers, responsibilities, and data flow.
+- [`architecture-simplification.md`](./architecture-simplification.md): plan to give each tile one authoritative home (TileTable), staged LOD commits, opt-in readback via paired CPU elevation, and an `update()`-shaped public API.
 - [`terrain-data-model.md`](./terrain-data-model.md): canonical runtime entities, ownership boundaries, and snapshot contracts.
 - [`incremental-gpu-updates.md`](./incremental-gpu-updates.md): plan for culling-aware persistent tile slots, render visibility vs data residency, dirty-resident compute, and incremental GPU field updates.
 - [`incremental-gpu-optimization-roadmap.md`](./incremental-gpu-optimization-roadmap.md): follow-on plan for dirty work budgeting, ready slot states, LOD churn control, compute optimization, and GPU lab metrics.

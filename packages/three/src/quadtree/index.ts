@@ -3,7 +3,7 @@ export * from './state';
 export * from './update';
 export * from './leafIndex';
 export * from './seams';
-export * from './tileSlotCache';
+export * from './tileTable';
 export * from './visibility';
 export * from './residency';
 export * from './topology/flat';

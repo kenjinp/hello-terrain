@@ -57,6 +57,24 @@ const field = createHeightmapField({ data, width, height, minMeters, maxMeters }
 const elevation: ElevationCallback = ({ rootUV }) => field.sampleMetersBicubic(rootUV);
 ```
 
+### TileTable — one home per tile
+
+Tile lifecycle bookkeeping (`tileSlotCache`) is restructured into a single
+SoA `TileTable` (`quadtree/tileTable.ts`): identity, lifecycle flags, recency,
+and content epoch live on one row per GPU field slot, and the draw list, dirty
+list, and ready-gated query list are derived views rebuilt in the same pass
+that mutates the rows. Tile identity is integer-keyed through the existing
+`SpatialIndex` — string keys and per-update `Map` churn are gone. Telemetry
+field names are unchanged. See `packages/three/spec/architecture-simplification.md`
+(Phase 1) for the plan this lands.
+
+- **`updateTileTable` / `markRowsComputed` / `createTileTable` / `TileTable` /
+  `TileTableTelemetry` / `TileRowFlags`** replace `updateTileSlotCache` /
+  `markSlotsComputed` / `createTileSlotCacheState` / `TileSlotCacheState` /
+  `TileSlotTelemetry`; `tileKeyString` is removed.
+- The ready-gated query set now comes straight from the table (`queryRows`);
+  `residentLeafSetTask` is a thin view over it.
+
 ### Incremental pipeline correctness
 
 Fixes for tile flashing, permanent holes, and phantom ground in the persistent-slot pipeline:
@@ -90,6 +108,7 @@ Fixes for tile flashing, permanent holes, and phantom ground in the persistent-s
 ### Breaking ⚠️
 
 - **`decodeUint16RG` and `sampleHeightmapMeters` removed.** Their decode-after-filter sampling is precision-unsafe. Use `createHeightmapField` instead.
+- **Tile slot cache API renamed.** `updateTileSlotCache`/`markSlotsComputed`/`createTileSlotCacheState`/`TileSlotCacheState`/`TileSlotTelemetry`/`tileKeyString` are replaced by the `TileTable` API (`updateTileTable`, `markRowsComputed`, `createTileTable`, `TileTable`, `TileTableTelemetry`). Telemetry field names are unchanged.
 - **`quadtreeUpdate` param removed.** Use `cameraView`, `residencyAnchors`, and `lodCriteria` instead.
 - **React flat options removed.** Migrate to grouped options (see [Params](/docs/core/params)).
 - **`writeUpdateParamsFromCamera` is internal wiring.** Prefer `readCameraView(camera, scratch)` for the `cameraView` param.

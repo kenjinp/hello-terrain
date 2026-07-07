@@ -14,7 +14,7 @@ import type {
     TerrainResidencyAnchor,
     TileId,
     TileResidencyState,
-    TileSlotCacheState,
+    TileTable,
     TileVisibilityState,
     UpdateParams,
 } from '../quadtree';
@@ -27,7 +27,7 @@ import {
     createFlatTopology,
     createState,
     update,
-    updateTileSlotCache,
+    updateTileTable,
 } from '../quadtree';
 import type { QuadtreeConfigState } from './graph.types';
 import type { CameraView } from './cameraView';
@@ -51,15 +51,13 @@ import { createTileSlotShapeKey } from './cache-key';
 export type VisibleLeafSetState = {
     leaves: LeafSet;
     index: SpatialIndex;
-    /** Slot values paired with `leaves` entries (scratch for filtered sets). */
-    slotValues?: Uint32Array;
 };
 
 export type TileIncrementalTelemetryState = {
     visibility: TileVisibilityState;
     residency: TileResidencyState;
-    slots: TileSlotCacheState;
-    telemetry: TileSlotCacheState['telemetry'];
+    slots: TileTable;
+    telemetry: TileTable['telemetry'];
 };
 
 export type SlotIndexBufferState = VisibleSlotStorageState & {
@@ -259,7 +257,7 @@ export const tileSlotUpdateTask = task((get, work) => {
     const shapeKey = createTileSlotShapeKey(topologyValue, maxNodesValue);
 
     return work((prev?: TileIncrementalTelemetryState): TileIncrementalTelemetryState => {
-        const slots = updateTileSlotCache(
+        const slots = updateTileTable(
             leafSet,
             visibility,
             residency,
@@ -281,21 +279,21 @@ export const visibleLeafSetTask = task((get, work) => {
     const slotUpdate = get(tileSlotUpdateTask);
 
     return work((prev?: VisibleLeafSetState): VisibleLeafSetState => {
-        const slots = slotUpdate.slots;
-        const canReuse = prev?.leaves.capacity === slots.capacity;
-        const leaves = canReuse ? prev.leaves : allocLeafSet(slots.capacity);
-        leaves.count = Math.min(slots.telemetry.visibleSlotCount, leaves.capacity);
+        const table = slotUpdate.slots;
+        const canReuse = prev?.leaves.capacity === table.capacity;
+        const leaves = canReuse ? prev.leaves : allocLeafSet(table.capacity);
+        leaves.count = Math.min(table.telemetry.visibleSlotCount, leaves.capacity);
 
         for (let visibleIndex = 0; visibleIndex < leaves.count; visibleIndex += 1) {
-            const slot = slots.visibleSlots[visibleIndex] ?? 0;
-            leaves.space[visibleIndex] = slots.slotSpace[slot] ?? 0;
-            leaves.level[visibleIndex] = slots.slotLevel[slot] ?? 0;
-            leaves.x[visibleIndex] = slots.slotX[slot] ?? 0;
-            leaves.y[visibleIndex] = slots.slotY[slot] ?? 0;
+            const row = table.drawRows[visibleIndex] ?? 0;
+            leaves.space[visibleIndex] = table.space[row] ?? 0;
+            leaves.level[visibleIndex] = table.level[row] ?? 0;
+            leaves.x[visibleIndex] = table.x[row] ?? 0;
+            leaves.y[visibleIndex] = table.y[row] ?? 0;
         }
 
-        const index = canReuse ? prev.index : createSpatialIndex(slots.capacity);
-        const valueIndex = buildLeafValueIndex(leaves, slots.visibleSlots, index);
+        const index = canReuse ? prev.index : createSpatialIndex(table.capacity);
+        const valueIndex = buildLeafValueIndex(leaves, table.drawRows, index);
         return {
             leaves,
             index: valueIndex,
@@ -307,38 +305,30 @@ export const residentLeafSetTask = task((get, work) => {
     const slotUpdate = get(tileSlotUpdateTask);
 
     return work((prev?: VisibleLeafSetState): VisibleLeafSetState => {
-        const slots = slotUpdate.slots;
-        const canReuse = prev?.leaves.capacity === slots.capacity;
-        const leaves = canReuse ? prev.leaves : allocLeafSet(slots.capacity);
-        const slotValues =
-            canReuse && prev.slotValues ? prev.slotValues : new Uint32Array(slots.capacity);
-        const residentCount = Math.min(slots.telemetry.residentSlotCount, leaves.capacity);
+        const table = slotUpdate.slots;
+        const canReuse = prev?.leaves.capacity === table.capacity;
+        const leaves = canReuse ? prev.leaves : allocLeafSet(table.capacity);
 
-        // Ready-gate the query set: only slots whose compute has actually run
-        // may resolve from the spatial index. A freshly (re)allocated slot holds
-        // uninitialized or a previous tile's field data — resolving it would
-        // report phantom ground to queries/raycasts (e.g. falling through
-        // terrain right after a teleport). Excluded tiles simply report
+        // queryRows is the ready-gated view: only rows whose compute has
+        // actually run may resolve from queries/raycasts/the GPU spatial index
+        // (a fresh row holds uninitialized or a previous tile's field data —
+        // resolving it would report phantom ground, e.g. falling through
+        // terrain right after a teleport). Excluded tiles report
         // `valid: false` until their dispatch lands.
-        let count = 0;
-        for (let residentIndex = 0; residentIndex < residentCount; residentIndex += 1) {
-            const slot = slots.residentSlots[residentIndex] ?? 0;
-            if (slots.slotComputed[slot] !== 1) continue;
-            leaves.space[count] = slots.slotSpace[slot] ?? 0;
-            leaves.level[count] = slots.slotLevel[slot] ?? 0;
-            leaves.x[count] = slots.slotX[slot] ?? 0;
-            leaves.y[count] = slots.slotY[slot] ?? 0;
-            slotValues[count] = slot;
-            count += 1;
+        leaves.count = Math.min(table.queryRowCount, leaves.capacity);
+        for (let queryIndex = 0; queryIndex < leaves.count; queryIndex += 1) {
+            const row = table.queryRows[queryIndex] ?? 0;
+            leaves.space[queryIndex] = table.space[row] ?? 0;
+            leaves.level[queryIndex] = table.level[row] ?? 0;
+            leaves.x[queryIndex] = table.x[row] ?? 0;
+            leaves.y[queryIndex] = table.y[row] ?? 0;
         }
-        leaves.count = count;
 
-        const index = canReuse ? prev.index : createSpatialIndex(slots.capacity);
-        const valueIndex = buildLeafValueIndex(leaves, slotValues, index);
+        const index = canReuse ? prev.index : createSpatialIndex(table.capacity);
+        const valueIndex = buildLeafValueIndex(leaves, table.queryRows, index);
         return {
             leaves,
             index: valueIndex,
-            slotValues,
         };
     });
 }).displayName('residentLeafSetTask');
@@ -385,26 +375,26 @@ export const leafGpuBufferTask = task((get, work) => {
     const leafStorage = get(leafStorageTask);
     const visibleSlotStorage = get(visibleSlotStorageTask);
     return work(() => {
-        const slots = slotUpdate.slots;
+        const table = slotUpdate.slots;
         const bufferCapacity = leafStorage.data.length / 4;
-        const slotCount = Math.min(slots.activeSlotCount, bufferCapacity);
+        const slotCount = Math.min(table.activeRowCount, bufferCapacity);
         const visibleCount = Math.min(
-            slots.telemetry.visibleSlotCount,
+            table.telemetry.visibleSlotCount,
             visibleSlotStorage.data.length
         );
 
-        for (let slot = 0; slot < slotCount; slot += 1) {
-            const offset = slot * 4;
-            leafStorage.data[offset] = slots.slotLevel[slot] ?? 0;
-            leafStorage.data[offset + 1] = slots.slotX[slot] ?? 0;
-            leafStorage.data[offset + 2] = slots.slotY[slot] ?? 0;
+        for (let row = 0; row < slotCount; row += 1) {
+            const offset = row * 4;
+            leafStorage.data[offset] = table.level[row] ?? 0;
+            leafStorage.data[offset + 1] = table.x[row] ?? 0;
+            leafStorage.data[offset + 2] = table.y[row] ?? 0;
             // Slot 3 carries the surface space/face index (0 for flat surfaces,
             // 0..5 for cube-sphere faces). Consumed by the sphere position assembly.
-            leafStorage.data[offset + 3] = slots.slotSpace[slot] ?? 0;
+            leafStorage.data[offset + 3] = table.space[row] ?? 0;
         }
 
         for (let visibleIndex = 0; visibleIndex < visibleCount; visibleIndex += 1) {
-            visibleSlotStorage.data[visibleIndex] = slots.visibleSlots[visibleIndex] ?? 0;
+            visibleSlotStorage.data[visibleIndex] = table.drawRows[visibleIndex] ?? 0;
         }
 
         leafStorage.attribute.needsUpdate = true;
@@ -427,14 +417,14 @@ export const dirtyVisibleSlotBufferTask = task((get, work) => {
     const dirtyVisibleSlotStorage = get(dirtyVisibleSlotStorageTask);
 
     return work((): SlotIndexBufferState => {
-        const slots = slotUpdate.slots;
+        const table = slotUpdate.slots;
         const dirtyCount = Math.min(
-            slots.telemetry.dirtyVisibleCount,
+            table.telemetry.dirtyResidentCount,
             dirtyVisibleSlotStorage.data.length
         );
 
         for (let i = 0; i < dirtyCount; i += 1) {
-            dirtyVisibleSlotStorage.data[i] = slots.dirtyVisibleSlots[i] ?? 0;
+            dirtyVisibleSlotStorage.data[i] = table.dirtyRows[i] ?? 0;
         }
 
         dirtyVisibleSlotStorage.attribute.needsUpdate = true;

@@ -4,7 +4,7 @@ import { WebGPURenderer } from 'three/webgpu';
 import { compileComputePipeline, type ComputePipeline } from '../gpu/compute';
 import { innerTileSegments } from './params';
 import { terrainFieldStageTask } from './terrain-field.task';
-import { markSlotsComputed } from '../quadtree/tileSlotCache';
+import { markRowsComputed } from '../quadtree/tileTable';
 import {
     dirtyVisibleSlotBufferTask,
     dirtyVisibleSlotStorageTask,
@@ -89,7 +89,7 @@ export function createComputePipelineTasks(
                 // The dispatched batch now has valid field content on the GPU
                 // timeline; from the next slot-cache update on, these slots draw
                 // directly instead of via LOD-pop substitution.
-                markSlotsComputed(slotUpdate.slots, dirtyVisibleSlots.data, dirtyVisibleSlots.count);
+                markRowsComputed(slotUpdate.slots, dirtyVisibleSlots.data, dirtyVisibleSlots.count);
                 return result;
             }
             return () => {};

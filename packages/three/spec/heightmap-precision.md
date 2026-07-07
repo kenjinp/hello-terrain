@@ -10,7 +10,7 @@ filtered result to roughly the storage precision.
 
 That quantization is harmless for color textures. But if you pack a 16-bit
 height into two 8-bit channels (`hi`/`lo`) and reconstruct `hi * 256 + lo`
-*after* the filtered tap, the high channel's quantization error is multiplied
+_after_ the filtered tap, the high channel's quantization error is multiplied
 by 256: a 1/255 step in filtered `hi` becomes a ~1/256 step in decoded height.
 Over a 1700 m elevation range that is **~6.6 m terraces** — smooth terrain on
 Windows, staircases on a Mac, same Chrome version, because the browser is not
@@ -18,7 +18,7 @@ involved: WebGPU maps to D3D12 on one and Metal on the other, and different
 silicon does the filtering.
 
 The algebra of the packed reconstruction is affine in the channels, so the
-trick is *mathematically* exact — in infinite precision. Hardware filtering is
+trick is _mathematically_ exact — in infinite precision. Hardware filtering is
 not infinite precision, and no web spec requires it to be good enough for this
 use. Treat "decode after filter" as wrong even where it happens to work. This
 is why the RG-packed helpers (`decodeUint16RG`, `sampleHeightmapMeters`) were
@@ -66,7 +66,7 @@ How it stays exact:
 The elevation compute in a terrain pipeline typically runs once per tile
 rebuild, so the extra fetches versus a hardware tap are paid at tile creation,
 not per frame. For per-pixel per-frame consumers whose error budget is meters
-(e.g. biome color thresholds), a hardware-filtered tap of a *filterable*
+(e.g. biome color thresholds), a hardware-filtered tap of a _filterable_
 format remains acceptable — but keep encoded data out of it.
 
 ## Why the tempting alternatives fall short

@@ -8,7 +8,7 @@ import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import {
   tileSlotUpdateTask,
   type TerrainGraph,
-  type TileSlotTelemetry,
+  type TileTableTelemetry,
 } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
@@ -26,7 +26,7 @@ const INNER_TILE_SEGMENTS = 17;
 const ANCHOR_RADIUS = 24;
 
 type ResidencyStats = Pick<
-  TileSlotTelemetry,
+  TileTableTelemetry,
   | "visibleSlotCount"
   | "residentSlotCount"
   | "supportSlotCount"
@@ -91,20 +91,20 @@ function ResidentSupportOverlay({ graph }: { graph: TerrainGraph }) {
       const slotUpdate = graph.peek(tileSlotUpdateTask);
       if (!mesh || !slotUpdate) return;
 
-      const slots = slotUpdate.slots;
-      const telemetry = slots.telemetry;
+      const table = slotUpdate.slots;
+      const telemetry = table.telemetry;
       const visible = new Set<number>();
       for (let i = 0; i < telemetry.visibleSlotCount; i += 1) {
-        visible.add(slots.visibleSlots[i] ?? -1);
+        visible.add(table.drawRows[i] ?? -1);
       }
 
       let count = 0;
       for (let i = 0; i < telemetry.residentSlotCount; i += 1) {
-        const slot = slots.residentSlots[i] ?? -1;
-        if (slot < 0 || visible.has(slot)) continue;
+        const row = table.residentRows[i] ?? -1;
+        if (row < 0 || visible.has(row)) continue;
 
-        const level = slots.slotLevel[slot] ?? 0;
-        const tile = tileCenter(level, slots.slotX[slot] ?? 0, slots.slotY[slot] ?? 0);
+        const level = table.level[row] ?? 0;
+        const tile = tileCenter(level, table.x[row] ?? 0, table.y[row] ?? 0);
         position.set(tile.x, 0.18, tile.z);
         scale.set(tile.size, 0.45, tile.size);
         matrix.compose(position, quaternion, scale);

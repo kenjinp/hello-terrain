@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { TileResidencyState } from './residency.js';
-import { markSlotsComputed, updateTileSlotCache } from './tileSlotCache.js';
-import { allocLeafSet } from './types.js';
+import { lookupSpatialIndexRaw } from './spatialIndex.js';
+import { markRowsComputed, updateTileTable } from './tileTable.js';
+import { U32_EMPTY, allocLeafSet } from './types.js';
 import type { TileVisibilityState } from './visibility.js';
 
 function makeLeaves(keys: Array<[number, number, number, number]>) {
@@ -71,7 +72,15 @@ function allVisibleResident(count: number): TileResidencyState {
     );
 }
 
-describe('quadtree/tileSlotCache', () => {
+const hasKey = (
+    table: ReturnType<typeof updateTileTable>,
+    space: number,
+    level: number,
+    x: number,
+    y: number
+) => lookupSpatialIndexRaw(table.keyIndex, space, level, x, y) !== U32_EMPTY;
+
+describe('quadtree/tileTable', () => {
     it('reports newly visible tiles as dirty once and then reused', () => {
         const leaves = makeLeaves([
             [0, 2, 1, 1],
@@ -81,7 +90,7 @@ describe('quadtree/tileSlotCache', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileSlotCache(leaves, visibility, residency, 8, 'cubeSphere:8', 1);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere:8', 1);
         // Frame 1: everything is pending (no compute yet) — omitted, not drawn.
         expect(first.telemetry.visibleSlotCount).toBe(0);
         expect(first.telemetry.notReadyVisibleCount).toBe(3);
@@ -91,23 +100,15 @@ describe('quadtree/tileSlotCache', () => {
         expect(first.telemetry.dirtyVisibleCount).toBe(3);
         expect(first.telemetry.dirtyResidentCount).toBe(3);
         expect(first.telemetry.reusedCount).toBe(0);
-        expect(first.slotSpace[0]).toBe(0);
-        expect(first.slotLevel[0]).toBe(2);
-        expect(first.slotX[0]).toBe(1);
-        expect(first.slotY[0]).toBe(1);
+        expect(first.space[0]).toBe(0);
+        expect(first.level[0]).toBe(2);
+        expect(first.x[0]).toBe(1);
+        expect(first.y[0]).toBe(1);
 
         // Model the dispatch completing (as the compute task does each run).
-        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
 
-        const second = updateTileSlotCache(
-            leaves,
-            visibility,
-            residency,
-            8,
-            'cubeSphere:8',
-            1,
-            first
-        );
+        const second = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere:8', 1, first);
         expect(second.telemetry.visibleSlotCount).toBe(3);
         expect(second.telemetry.activeSlotCount).toBe(3);
         expect(second.telemetry.allocatedCount).toBe(0);
@@ -117,7 +118,7 @@ describe('quadtree/tileSlotCache', () => {
         expect(second.telemetry.reuseRatio).toBe(1);
     });
 
-    it('requeues dirty slots when a dispatch never completed (preempted run)', () => {
+    it('requeues dirty rows when a dispatch never completed (preempted run)', () => {
         const leaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
@@ -125,22 +126,22 @@ describe('quadtree/tileSlotCache', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1);
-        expect(first.telemetry.dirtyVisibleCount).toBe(2);
-        // No markSlotsComputed: the run was aborted before the compute dispatch.
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        expect(first.telemetry.dirtyResidentCount).toBe(2);
+        // No markRowsComputed: the run was aborted before the compute dispatch.
 
-        const second = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1, first);
-        // The obligation survives — the slots are re-queued, not silently dropped.
-        expect(second.telemetry.dirtyVisibleCount).toBe(2);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, first);
+        // The obligation survives — the rows are re-queued, not silently dropped.
+        expect(second.telemetry.dirtyResidentCount).toBe(2);
         expect(second.telemetry.requeuedDirtyCount).toBe(2);
 
-        markSlotsComputed(second, second.dirtyVisibleSlots, second.telemetry.dirtyVisibleCount);
-        const third = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1, second);
-        expect(third.telemetry.dirtyVisibleCount).toBe(0);
+        markRowsComputed(second, second.dirtyRows, second.telemetry.dirtyResidentCount);
+        const third = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, second);
+        expect(third.telemetry.dirtyResidentCount).toBe(0);
         expect(third.telemetry.requeuedDirtyCount).toBe(0);
     });
 
-    it('recreates slots when the topology shape key changes', () => {
+    it('recreates rows when the topology shape key changes', () => {
         const leaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
@@ -148,15 +149,8 @@ describe('quadtree/tileSlotCache', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileSlotCache(
-            leaves,
-            visibility,
-            residency,
-            8,
-            'cubeSphere|radius=1000',
-            1
-        );
-        const second = updateTileSlotCache(
+        const first = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere|radius=1000', 1);
+        const second = updateTileTable(
             leaves,
             visibility,
             residency,
@@ -172,7 +166,7 @@ describe('quadtree/tileSlotCache', () => {
         expect(second.telemetry.reusedCount).toBe(0);
     });
 
-    it('dirties reused visible slots when field content changes', () => {
+    it('dirties reused visible rows when field content changes', () => {
         const leaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
@@ -180,24 +174,24 @@ describe('quadtree/tileSlotCache', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1);
-        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
-        const second = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 2, first);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 2, first);
 
         expect(second).toBe(first);
         expect(second.telemetry.allocatedCount).toBe(0);
         expect(second.telemetry.reusedCount).toBe(2);
         expect(second.telemetry.dirtyVisibleCount).toBe(2);
-        expect(second.slotContentEpoch[0]).toBe(2);
-        expect(second.slotContentEpoch[1]).toBe(2);
+        expect(second.rowContentEpoch[0]).toBe(2);
+        expect(second.rowContentEpoch[1]).toBe(2);
     });
 
-    it('dirties retained inactive slots when they re-enter after field content changes', () => {
+    it('dirties retained inactive rows when they re-enter after field content changes', () => {
         const firstLeaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
         ]);
-        const first = updateTileSlotCache(
+        const first = updateTileTable(
             firstLeaves,
             allVisible(firstLeaves.count),
             allVisibleResident(firstLeaves.count),
@@ -205,10 +199,10 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
-        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
 
         const visibleAOnly = makeLeaves([[0, 2, 1, 1]]);
-        const second = updateTileSlotCache(
+        const second = updateTileTable(
             visibleAOnly,
             allVisible(visibleAOnly.count),
             allVisibleResident(visibleAOnly.count),
@@ -218,9 +212,9 @@ describe('quadtree/tileSlotCache', () => {
             first
         );
         expect(second.telemetry.dirtyVisibleCount).toBe(1);
-        markSlotsComputed(second, second.dirtyVisibleSlots, second.telemetry.dirtyVisibleCount);
+        markRowsComputed(second, second.dirtyRows, second.telemetry.dirtyResidentCount);
 
-        const bothAgain = updateTileSlotCache(
+        const bothAgain = updateTileTable(
             firstLeaves,
             allVisible(firstLeaves.count),
             allVisibleResident(firstLeaves.count),
@@ -234,12 +228,12 @@ describe('quadtree/tileSlotCache', () => {
         expect(bothAgain.telemetry.dirtyVisibleCount).toBe(1);
     });
 
-    it('retains inactive slots and dirties only newly visible replacements', () => {
+    it('retains inactive rows and dirties only newly visible replacements', () => {
         const firstLeaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
         ]);
-        const first = updateTileSlotCache(
+        const first = updateTileTable(
             firstLeaves,
             allVisible(firstLeaves.count),
             allVisibleResident(firstLeaves.count),
@@ -247,13 +241,13 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
-        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
         const secondLeaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 3, 1],
         ]);
 
-        const second = updateTileSlotCache(
+        const second = updateTileTable(
             secondLeaves,
             allVisible(secondLeaves.count),
             allVisibleResident(secondLeaves.count),
@@ -273,7 +267,7 @@ describe('quadtree/tileSlotCache', () => {
     it('substitutes the computed parent for freshly split children until their compute lands', () => {
         // Frame 1: the parent tile is the only leaf; its compute lands.
         const parentLeaves = makeLeaves([[0, 1, 1, 1]]);
-        const first = updateTileSlotCache(
+        const first = updateTileTable(
             parentLeaves,
             allVisible(1),
             allVisibleResident(1),
@@ -281,8 +275,17 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
-        const parentSlot = first.visibleSlots[0]!;
-        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
+        const second = updateTileTable(
+            parentLeaves,
+            allVisible(1),
+            allVisibleResident(1),
+            8,
+            'shape',
+            1,
+            first
+        );
+        const parentRow = second.drawRows[0]!;
 
         // Frame 2: the parent splits; its four children are pending, so the
         // still-cached parent is drawn in their place.
@@ -292,23 +295,7 @@ describe('quadtree/tileSlotCache', () => {
             [0, 2, 2, 3],
             [0, 2, 3, 3],
         ]);
-        const second = updateTileSlotCache(
-            childLeaves,
-            allVisible(4),
-            allVisibleResident(4),
-            8,
-            'shape',
-            1,
-            first
-        );
-        expect(second.telemetry.visibleSlotCount).toBe(1);
-        expect(second.visibleSlots[0]).toBe(parentSlot);
-        // The pending children are still scheduled for compute.
-        expect(second.telemetry.dirtyVisibleCount).toBe(4);
-        markSlotsComputed(second, second.dirtyVisibleSlots, second.telemetry.dirtyVisibleCount);
-
-        // Frame 3: the children's compute has landed — they draw directly.
-        const third = updateTileSlotCache(
+        const third = updateTileTable(
             childLeaves,
             allVisible(4),
             allVisibleResident(4),
@@ -317,8 +304,25 @@ describe('quadtree/tileSlotCache', () => {
             1,
             second
         );
-        expect(third.telemetry.visibleSlotCount).toBe(4);
-        expect(Array.from(third.visibleSlots.subarray(0, 4))).not.toContain(parentSlot);
+        expect(third.telemetry.visibleSlotCount).toBe(1);
+        expect(third.drawRows[0]).toBe(parentRow);
+        expect(third.telemetry.fallbackVisibleCount).toBe(1);
+        // The pending children are still scheduled for compute.
+        expect(third.telemetry.dirtyResidentCount).toBe(4);
+        markRowsComputed(third, third.dirtyRows, third.telemetry.dirtyResidentCount);
+
+        // Frame 3: the children's compute has landed — they draw directly.
+        const fourth = updateTileTable(
+            childLeaves,
+            allVisible(4),
+            allVisibleResident(4),
+            8,
+            'shape',
+            1,
+            third
+        );
+        expect(fourth.telemetry.visibleSlotCount).toBe(4);
+        expect(Array.from(fourth.drawRows.subarray(0, 4))).not.toContain(parentRow);
     });
 
     it('substitutes computed children for a freshly merged parent until its compute lands', () => {
@@ -329,7 +333,7 @@ describe('quadtree/tileSlotCache', () => {
             [0, 2, 2, 3],
             [0, 2, 3, 3],
         ]);
-        const first = updateTileSlotCache(
+        const first = updateTileTable(
             childLeaves,
             allVisible(4),
             allVisibleResident(4),
@@ -337,27 +341,22 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
-        const childSlots = Array.from(first.visibleSlots.subarray(0, 4));
-        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
-
-        // Frame 2: the children merge into a pending parent — the still-cached
-        // children are drawn in its place.
-        const parentLeaves = makeLeaves([[0, 1, 1, 1]]);
-        const second = updateTileSlotCache(
-            parentLeaves,
-            allVisible(1),
-            allVisibleResident(1),
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
+        const second = updateTileTable(
+            childLeaves,
+            allVisible(4),
+            allVisibleResident(4),
             8,
             'shape',
             1,
             first
         );
-        expect(second.telemetry.visibleSlotCount).toBe(4);
-        expect(Array.from(second.visibleSlots.subarray(0, 4)).sort()).toEqual([...childSlots].sort());
-        markSlotsComputed(second, second.dirtyVisibleSlots, second.telemetry.dirtyVisibleCount);
+        const childRows = Array.from(second.drawRows.subarray(0, 4));
 
-        // Frame 3: the parent's compute has landed — it draws directly.
-        const third = updateTileSlotCache(
+        // Frame 2: the children merge into a pending parent — the still-cached
+        // children are drawn in its place.
+        const parentLeaves = makeLeaves([[0, 1, 1, 1]]);
+        const third = updateTileTable(
             parentLeaves,
             allVisible(1),
             allVisibleResident(1),
@@ -366,16 +365,30 @@ describe('quadtree/tileSlotCache', () => {
             1,
             second
         );
-        expect(third.telemetry.visibleSlotCount).toBe(1);
-        expect(childSlots).not.toContain(third.visibleSlots[0]);
+        expect(third.telemetry.visibleSlotCount).toBe(4);
+        expect(Array.from(third.drawRows.subarray(0, 4)).sort()).toEqual([...childRows].sort());
+        markRowsComputed(third, third.dirtyRows, third.telemetry.dirtyResidentCount);
+
+        // Frame 3: the parent's compute has landed — it draws directly.
+        const fourth = updateTileTable(
+            parentLeaves,
+            allVisible(1),
+            allVisibleResident(1),
+            8,
+            'shape',
+            1,
+            third
+        );
+        expect(fourth.telemetry.visibleSlotCount).toBe(1);
+        expect(childRows).not.toContain(fourth.drawRows[0]);
     });
 
-    it('omits pending tiles from the draw list when no cached substitute exists', () => {
+    it('omits pending tiles from the draw view when no cached substitute exists', () => {
         const leaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
         ]);
-        const state = updateTileSlotCache(
+        const state = updateTileTable(
             leaves,
             allVisible(leaves.count),
             allVisibleResident(leaves.count),
@@ -388,10 +401,10 @@ describe('quadtree/tileSlotCache', () => {
         expect(state.telemetry.visibleSlotCount).toBe(0);
         expect(state.telemetry.notReadyVisibleCount).toBe(2);
         // The pending tiles are still scheduled for compute.
-        expect(state.telemetry.dirtyVisibleCount).toBe(2);
+        expect(state.telemetry.dirtyResidentCount).toBe(2);
 
-        markSlotsComputed(state, state.dirtyVisibleSlots, state.telemetry.dirtyVisibleCount);
-        const second = updateTileSlotCache(
+        markRowsComputed(state, state.dirtyRows, state.telemetry.dirtyResidentCount);
+        const second = updateTileTable(
             leaves,
             allVisible(leaves.count),
             allVisibleResident(leaves.count),
@@ -405,18 +418,18 @@ describe('quadtree/tileSlotCache', () => {
         expect(second.telemetry.notReadyVisibleCount).toBe(0);
     });
 
-    it('evicts the least-recently-resident slot first (keeps warm substitutes)', () => {
+    it('evicts the least-recently-resident row first (keeps warm substitutes)', () => {
         const tileA: [number, number, number, number] = [0, 2, 0, 0];
         const tileB: [number, number, number, number] = [0, 2, 1, 0];
         const tileC: [number, number, number, number] = [0, 2, 2, 0];
         const tileD: [number, number, number, number] = [0, 2, 3, 0];
         const tileE: [number, number, number, number] = [0, 2, 4, 0];
-        const update = (
+        const run = (
             keys: Array<[number, number, number, number]>,
-            prev?: ReturnType<typeof updateTileSlotCache>
+            prev?: ReturnType<typeof updateTileTable>
         ) => {
             const leaves = makeLeaves(keys);
-            return updateTileSlotCache(
+            return updateTileTable(
                 leaves,
                 allVisible(keys.length),
                 allVisibleResident(keys.length),
@@ -428,16 +441,16 @@ describe('quadtree/tileSlotCache', () => {
         };
 
         // C drops out of residency first, D one generation later.
-        let state = update([tileA, tileB, tileC, tileD]);
-        state = update([tileA, tileB, tileD], state); // C inactive since here
-        state = update([tileA, tileB], state); // D inactive since here
+        let table = run([tileA, tileB, tileC, tileD]);
+        table = run([tileA, tileB, tileD], table); // C inactive since here
+        table = run([tileA, tileB], table); // D inactive since here
 
-        // E needs a slot: with no free slots, the coldest inactive slot (C)
-        // must be evicted — not simply the lowest slot index.
-        state = update([tileA, tileB, tileE], state);
-        expect(state.telemetry.evictedCount).toBe(1);
-        expect(state.keyToSlot.has('0:2:2:0')).toBe(false); // C evicted
-        expect(state.keyToSlot.has('0:2:3:0')).toBe(true); // D retained
+        // E needs a row: with no free rows, the coldest inactive row (C) must
+        // be evicted — not simply the lowest row index.
+        table = run([tileA, tileB, tileE], table);
+        expect(table.telemetry.evictedCount).toBe(1);
+        expect(hasKey(table, 0, 2, 2, 0)).toBe(false); // C evicted
+        expect(hasKey(table, 0, 2, 3, 0)).toBe(true); // D retained
     });
 
     it('allocates and dirties resident support tiles even when they are not visible', () => {
@@ -448,9 +461,9 @@ describe('quadtree/tileSlotCache', () => {
         const visibility = visibilityForIndices(leaves.count, [0]);
         const residency = residencyForIndices(leaves.count, [0, 1], 1);
 
-        const state = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1);
+        const state = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
 
-        // The pending visible tile is omitted from the draw list this frame,
+        // The pending visible tile is omitted from the draw view this frame,
         // but residency/support/dirty accounting is unaffected.
         expect(state.telemetry.visibleSlotCount).toBe(0);
         expect(state.telemetry.notReadyVisibleCount).toBe(1);
@@ -459,11 +472,52 @@ describe('quadtree/tileSlotCache', () => {
         expect(state.telemetry.allocatedCount).toBe(2);
         expect(state.telemetry.dirtyResidentCount).toBe(2);
         expect(state.telemetry.dirtyVisibleCount).toBe(2);
-        expect(Array.from(state.residentSlots.subarray(0, 2))).toEqual([0, 1]);
+        expect(Array.from(state.residentRows.subarray(0, 2))).toEqual([0, 1]);
 
-        markSlotsComputed(state, state.dirtyVisibleSlots, state.telemetry.dirtyVisibleCount);
-        const second = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1, state);
+        markRowsComputed(state, state.dirtyRows, state.telemetry.dirtyResidentCount);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, state);
         expect(second.telemetry.visibleSlotCount).toBe(1);
-        expect(Array.from(second.visibleSlots.subarray(0, 1))).toEqual([0]);
+        expect(Array.from(second.drawRows.subarray(0, 1))).toEqual([0]);
+    });
+
+    it('exposes only computed resident rows through the query view', () => {
+        const leaves = makeLeaves([
+            [0, 2, 1, 1],
+            [0, 2, 2, 1],
+        ]);
+        const visibility = allVisible(leaves.count);
+        const residency = allVisibleResident(leaves.count);
+
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        // Nothing computed yet: queries must not resolve any tile.
+        expect(first.queryRowCount).toBe(0);
+
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, first);
+        expect(second.queryRowCount).toBe(2);
+        expect(Array.from(second.queryRows.subarray(0, 2)).sort()).toEqual([0, 1]);
+    });
+
+    it('keys tiles with negative coordinates distinctly (infinite-flat roots)', () => {
+        const leaves = makeLeaves([
+            [0, 0, -1, -1],
+            [0, 0, 1, 1],
+            [0, 0, -1, 1],
+        ]);
+        const visibility = allVisible(leaves.count);
+        const residency = allVisibleResident(leaves.count);
+
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        expect(first.telemetry.allocatedCount).toBe(3);
+        markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
+
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, first);
+        // All three tiles resolve back to their own rows — no aliasing.
+        expect(second.telemetry.reusedCount).toBe(3);
+        expect(second.telemetry.allocatedCount).toBe(0);
+        expect(hasKey(second, 0, 0, -1, -1)).toBe(true);
+        expect(hasKey(second, 0, 0, -1, 1)).toBe(true);
+        expect(second.x[0]).toBe(-1);
+        expect(second.y[0]).toBe(-1);
     });
 });
