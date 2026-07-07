@@ -82,7 +82,9 @@ describe('quadtree/tileSlotCache', () => {
         const residency = allVisibleResident(leaves.count);
 
         const first = updateTileSlotCache(leaves, visibility, residency, 8, 'cubeSphere:8', 1);
-        expect(first.telemetry.visibleSlotCount).toBe(3);
+        // Frame 1: everything is pending (no compute yet) — omitted, not drawn.
+        expect(first.telemetry.visibleSlotCount).toBe(0);
+        expect(first.telemetry.notReadyVisibleCount).toBe(3);
         expect(first.telemetry.residentSlotCount).toBe(3);
         expect(first.telemetry.activeSlotCount).toBe(3);
         expect(first.telemetry.allocatedCount).toBe(3);
@@ -93,6 +95,9 @@ describe('quadtree/tileSlotCache', () => {
         expect(first.slotLevel[0]).toBe(2);
         expect(first.slotX[0]).toBe(1);
         expect(first.slotY[0]).toBe(1);
+
+        // Model the dispatch completing (as the compute task does each run).
+        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
 
         const second = updateTileSlotCache(
             leaves,
@@ -107,8 +112,32 @@ describe('quadtree/tileSlotCache', () => {
         expect(second.telemetry.activeSlotCount).toBe(3);
         expect(second.telemetry.allocatedCount).toBe(0);
         expect(second.telemetry.dirtyVisibleCount).toBe(0);
+        expect(second.telemetry.requeuedDirtyCount).toBe(0);
         expect(second.telemetry.reusedCount).toBe(3);
         expect(second.telemetry.reuseRatio).toBe(1);
+    });
+
+    it('requeues dirty slots when a dispatch never completed (preempted run)', () => {
+        const leaves = makeLeaves([
+            [0, 2, 1, 1],
+            [0, 2, 2, 1],
+        ]);
+        const visibility = allVisible(leaves.count);
+        const residency = allVisibleResident(leaves.count);
+
+        const first = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1);
+        expect(first.telemetry.dirtyVisibleCount).toBe(2);
+        // No markSlotsComputed: the run was aborted before the compute dispatch.
+
+        const second = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1, first);
+        // The obligation survives — the slots are re-queued, not silently dropped.
+        expect(second.telemetry.dirtyVisibleCount).toBe(2);
+        expect(second.telemetry.requeuedDirtyCount).toBe(2);
+
+        markSlotsComputed(second, second.dirtyVisibleSlots, second.telemetry.dirtyVisibleCount);
+        const third = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1, second);
+        expect(third.telemetry.dirtyVisibleCount).toBe(0);
+        expect(third.telemetry.requeuedDirtyCount).toBe(0);
     });
 
     it('recreates slots when the topology shape key changes', () => {
@@ -152,6 +181,7 @@ describe('quadtree/tileSlotCache', () => {
         const residency = allVisibleResident(leaves.count);
 
         const first = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1);
+        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
         const second = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 2, first);
 
         expect(second).toBe(first);
@@ -175,6 +205,7 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
+        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
 
         const visibleAOnly = makeLeaves([[0, 2, 1, 1]]);
         const second = updateTileSlotCache(
@@ -187,6 +218,7 @@ describe('quadtree/tileSlotCache', () => {
             first
         );
         expect(second.telemetry.dirtyVisibleCount).toBe(1);
+        markSlotsComputed(second, second.dirtyVisibleSlots, second.telemetry.dirtyVisibleCount);
 
         const bothAgain = updateTileSlotCache(
             firstLeaves,
@@ -215,6 +247,7 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
+        markSlotsComputed(first, first.dirtyVisibleSlots, first.telemetry.dirtyVisibleCount);
         const secondLeaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 3, 1],
@@ -337,7 +370,7 @@ describe('quadtree/tileSlotCache', () => {
         expect(childSlots).not.toContain(third.visibleSlots[0]);
     });
 
-    it('draws pending tiles directly when no cached substitute exists', () => {
+    it('omits pending tiles from the draw list when no cached substitute exists', () => {
         const leaves = makeLeaves([
             [0, 2, 1, 1],
             [0, 2, 2, 1],
@@ -350,8 +383,61 @@ describe('quadtree/tileSlotCache', () => {
             'shape',
             1
         );
-        // Initial load: nothing is computed and nothing is cached — old behavior.
-        expect(state.telemetry.visibleSlotCount).toBe(2);
+        // Initial load: nothing is computed and nothing is cached. Omitting for
+        // a frame beats drawing uninitialized field data (flash/garbage).
+        expect(state.telemetry.visibleSlotCount).toBe(0);
+        expect(state.telemetry.notReadyVisibleCount).toBe(2);
+        // The pending tiles are still scheduled for compute.
+        expect(state.telemetry.dirtyVisibleCount).toBe(2);
+
+        markSlotsComputed(state, state.dirtyVisibleSlots, state.telemetry.dirtyVisibleCount);
+        const second = updateTileSlotCache(
+            leaves,
+            allVisible(leaves.count),
+            allVisibleResident(leaves.count),
+            8,
+            'shape',
+            1,
+            state
+        );
+        expect(second.telemetry.visibleSlotCount).toBe(2);
+        expect(second.telemetry.visibleReadyCount).toBe(2);
+        expect(second.telemetry.notReadyVisibleCount).toBe(0);
+    });
+
+    it('evicts the least-recently-resident slot first (keeps warm substitutes)', () => {
+        const tileA: [number, number, number, number] = [0, 2, 0, 0];
+        const tileB: [number, number, number, number] = [0, 2, 1, 0];
+        const tileC: [number, number, number, number] = [0, 2, 2, 0];
+        const tileD: [number, number, number, number] = [0, 2, 3, 0];
+        const tileE: [number, number, number, number] = [0, 2, 4, 0];
+        const update = (
+            keys: Array<[number, number, number, number]>,
+            prev?: ReturnType<typeof updateTileSlotCache>
+        ) => {
+            const leaves = makeLeaves(keys);
+            return updateTileSlotCache(
+                leaves,
+                allVisible(keys.length),
+                allVisibleResident(keys.length),
+                4,
+                'shape',
+                1,
+                prev
+            );
+        };
+
+        // C drops out of residency first, D one generation later.
+        let state = update([tileA, tileB, tileC, tileD]);
+        state = update([tileA, tileB, tileD], state); // C inactive since here
+        state = update([tileA, tileB], state); // D inactive since here
+
+        // E needs a slot: with no free slots, the coldest inactive slot (C)
+        // must be evicted — not simply the lowest slot index.
+        state = update([tileA, tileB, tileE], state);
+        expect(state.telemetry.evictedCount).toBe(1);
+        expect(state.keyToSlot.has('0:2:2:0')).toBe(false); // C evicted
+        expect(state.keyToSlot.has('0:2:3:0')).toBe(true); // D retained
     });
 
     it('allocates and dirties resident support tiles even when they are not visible', () => {
@@ -364,13 +450,20 @@ describe('quadtree/tileSlotCache', () => {
 
         const state = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1);
 
-        expect(state.telemetry.visibleSlotCount).toBe(1);
+        // The pending visible tile is omitted from the draw list this frame,
+        // but residency/support/dirty accounting is unaffected.
+        expect(state.telemetry.visibleSlotCount).toBe(0);
+        expect(state.telemetry.notReadyVisibleCount).toBe(1);
         expect(state.telemetry.residentSlotCount).toBe(2);
         expect(state.telemetry.supportSlotCount).toBe(1);
         expect(state.telemetry.allocatedCount).toBe(2);
         expect(state.telemetry.dirtyResidentCount).toBe(2);
         expect(state.telemetry.dirtyVisibleCount).toBe(2);
-        expect(Array.from(state.visibleSlots.subarray(0, 1))).toEqual([0]);
         expect(Array.from(state.residentSlots.subarray(0, 2))).toEqual([0, 1]);
+
+        markSlotsComputed(state, state.dirtyVisibleSlots, state.telemetry.dirtyVisibleCount);
+        const second = updateTileSlotCache(leaves, visibility, residency, 8, 'shape', 1, state);
+        expect(second.telemetry.visibleSlotCount).toBe(1);
+        expect(Array.from(second.visibleSlots.subarray(0, 1))).toEqual([0]);
     });
 });

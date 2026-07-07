@@ -51,6 +51,8 @@ import { createTileSlotShapeKey } from './cache-key';
 export type VisibleLeafSetState = {
     leaves: LeafSet;
     index: SpatialIndex;
+    /** Slot values paired with `leaves` entries (scratch for filtered sets). */
+    slotValues?: Uint32Array;
 };
 
 export type TileIncrementalTelemetryState = {
@@ -308,21 +310,35 @@ export const residentLeafSetTask = task((get, work) => {
         const slots = slotUpdate.slots;
         const canReuse = prev?.leaves.capacity === slots.capacity;
         const leaves = canReuse ? prev.leaves : allocLeafSet(slots.capacity);
-        leaves.count = Math.min(slots.telemetry.residentSlotCount, leaves.capacity);
+        const slotValues =
+            canReuse && prev.slotValues ? prev.slotValues : new Uint32Array(slots.capacity);
+        const residentCount = Math.min(slots.telemetry.residentSlotCount, leaves.capacity);
 
-        for (let residentIndex = 0; residentIndex < leaves.count; residentIndex += 1) {
+        // Ready-gate the query set: only slots whose compute has actually run
+        // may resolve from the spatial index. A freshly (re)allocated slot holds
+        // uninitialized or a previous tile's field data — resolving it would
+        // report phantom ground to queries/raycasts (e.g. falling through
+        // terrain right after a teleport). Excluded tiles simply report
+        // `valid: false` until their dispatch lands.
+        let count = 0;
+        for (let residentIndex = 0; residentIndex < residentCount; residentIndex += 1) {
             const slot = slots.residentSlots[residentIndex] ?? 0;
-            leaves.space[residentIndex] = slots.slotSpace[slot] ?? 0;
-            leaves.level[residentIndex] = slots.slotLevel[slot] ?? 0;
-            leaves.x[residentIndex] = slots.slotX[slot] ?? 0;
-            leaves.y[residentIndex] = slots.slotY[slot] ?? 0;
+            if (slots.slotComputed[slot] !== 1) continue;
+            leaves.space[count] = slots.slotSpace[slot] ?? 0;
+            leaves.level[count] = slots.slotLevel[slot] ?? 0;
+            leaves.x[count] = slots.slotX[slot] ?? 0;
+            leaves.y[count] = slots.slotY[slot] ?? 0;
+            slotValues[count] = slot;
+            count += 1;
         }
+        leaves.count = count;
 
         const index = canReuse ? prev.index : createSpatialIndex(slots.capacity);
-        const valueIndex = buildLeafValueIndex(leaves, slots.residentSlots, index);
+        const valueIndex = buildLeafValueIndex(leaves, slotValues, index);
         return {
             leaves,
             index: valueIndex,
+            slotValues,
         };
     });
 }).displayName('residentLeafSetTask');

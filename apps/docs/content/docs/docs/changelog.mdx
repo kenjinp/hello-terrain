@@ -57,6 +57,15 @@ const field = createHeightmapField({ data, width, height, minMeters, maxMeters }
 const elevation: ElevationCallback = ({ rootUV }) => field.sampleMetersBicubic(rootUV);
 ```
 
+### Incremental pipeline correctness
+
+Fixes for tile flashing, permanent holes, and phantom ground in the persistent-slot pipeline:
+
+- **Dirty work survives preempted runs.** The compute obligation is now a per-slot dirty bit cleared only after a dispatch actually ran, instead of an epoch stamped at enqueue time — a run aborted between the cache update and the compute dispatch used to drop the work forever, leaving permanently uncomputed tiles (holes). Re-queues are visible as `requeuedDirtyCount`.
+- **LRU slot eviction.** Eviction now frees the least-recently-resident slot instead of the lowest index, keeping the substitution cache (just-split parents / just-merged children) warm under memory pressure.
+- **Pending tiles are omitted, never drawn.** A visible tile whose compute hasn't landed and has no cached substitute is dropped from the draw list for that update (`notReadyVisibleCount`) instead of drawing uninitialized or leftover field data. New readiness telemetry: `visibleReadyCount`, `fallbackVisibleCount`, `notReadyVisibleCount`.
+- **Queries are ready-gated.** The resident spatial index (CPU queries, raycasts, and the GPU spatial index) only resolves slots whose compute has run. Freshly allocated slots report `valid: false` instead of another tile's leftover elevations — previously a teleport could report phantom ground and drop characters through the terrain.
+
 ### GPU diagnostics
 
 - **`createGpuProfiler`** — per-frame GPU-timeline timings split into render vs compute (`GpuFrameTimings`), with per-dispatch compute pass breakdowns, so "compute-bound or render-bound?" has a measured answer.
