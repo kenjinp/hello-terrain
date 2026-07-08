@@ -74,6 +74,11 @@ field names are unchanged. See `packages/three/spec/architecture-simplification.
   `TileSlotTelemetry`; `tileKeyString` is removed.
 - The ready-gated query set now comes straight from the table (`queryRows`);
   `residentLeafSetTask` is a thin view over it.
+- **New `gateOnComputedField` param** (default `false`): readiness gating of
+  draw/query views is explicit pipeline metadata. `terrainGraph()` enables it
+  (its field compute marks rows computed); hand-assembled geometry-only graphs
+  — which never run `executeComputeTask` and don't consume the terrain field —
+  keep ungated behavior, where every visible tile draws immediately.
 
 ### Incremental pipeline correctness
 
@@ -83,6 +88,28 @@ Fixes for tile flashing, permanent holes, and phantom ground in the persistent-s
 - **LRU slot eviction.** Eviction now frees the least-recently-resident slot instead of the lowest index, keeping the substitution cache (just-split parents / just-merged children) warm under memory pressure.
 - **Pending tiles are omitted, never drawn.** A visible tile whose compute hasn't landed and has no cached substitute is dropped from the draw list for that update (`notReadyVisibleCount`) instead of drawing uninitialized or leftover field data. New readiness telemetry: `visibleReadyCount`, `fallbackVisibleCount`, `notReadyVisibleCount`.
 - **Queries are ready-gated.** The resident spatial index (CPU queries, raycasts, and the GPU spatial index) only resolves slots whose compute has run. Freshly allocated slots report `valid: false` instead of another tile's leftover elevations — previously a teleport could report phantom ground and drop characters through the terrain.
+- **Snapshot readbacks no longer lose dirty batches.** Dirty slots arriving while a readback was in flight (nearly always, while walking) were silently dropped — their CPU query data then stayed stale forever, serving coarse-ancestor or previous-tenant elevations that sank characters into the ground (found by the gym's `query-truthfulness` invariant, first real run). Un-fetched dirty slots now accumulate in the snapshot state, schedule follow-up readbacks even when the tile set is unchanged, and requeue on readback failure.
+
+### Validation Gym
+
+A scenario-driven correctness harness (`packages/three/spec/validation-gym.md`):
+seeded scenarios drive a kinematic probe over a real WebGPU terrain while
+behavioral invariants — draw readiness, hole/dirty drainage, grounding and
+query truthfulness against **analytic** elevation, draw-set stability — are
+asserted every frame. Three faces over one implementation:
+
+- **Library gym module** (`gym/`): pure, unit-tested probe, invariant
+  evaluators, seeded paths, scenario manifest, and a paired GPU+CPU sine
+  elevation (prototyping the paired-elevation contract).
+- **`/gym` page**: real viewport with probe marker, invariant lamps, and a
+  violation list — watch exactly what the runner measures; `?scenario=…&seed=…&autorun=1`
+  reproduces any failing run headed. Automation via `window.__helloTerrainGym`.
+- **`pnpm gym` / `pnpm gym:suite`**: CDP runner (real or `--software-webgpu`
+  Chrome) failing non-zero on violations, with JSON artifacts; experimental
+  CI workflow (`validation-gym.yml`) runs the suite on SwiftShader.
+
+Scenarios: `surface-walk`, `teleport-shock`, `rest-stability` — one per bug
+class shipped this cycle.
 
 ### GPU diagnostics
 

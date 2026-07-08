@@ -404,6 +404,13 @@ export function updateTileTable(
     capacity: number,
     shapeKey: string,
     contentEpoch: number,
+    /**
+     * Gate draw/query views on computed field content. Only valid when the
+     * graph actually runs the field compute pipeline (`executeComputeTask`
+     * calls {@link markRowsComputed}); geometry-only graphs must pass `false`
+     * or nothing will ever draw. See the `gateOnComputedField` param.
+     */
+    gateOnComputedField: boolean,
     prev?: TileTable
 ): TileTable {
     const table =
@@ -516,18 +523,27 @@ export function updateTileTable(
         allocatedRowCount += 1;
     }
 
-    applyPendingRowSubstitution(table);
+    if (gateOnComputedField) {
+        applyPendingRowSubstitution(table);
 
-    // Ready-gated query view: only computed resident rows may resolve from
-    // queries/raycasts/the GPU spatial index.
-    let queryRowCount = 0;
-    for (let i = 0; i < telemetry.residentSlotCount; i += 1) {
-        const row = table.residentRows[i]!;
-        if ((table.flags[row]! & TileRowFlags.Computed) === 0) continue;
-        table.queryRows[queryRowCount] = row;
-        queryRowCount += 1;
+        // Ready-gated query view: only computed resident rows may resolve from
+        // queries/raycasts/the GPU spatial index.
+        let queryRowCount = 0;
+        for (let i = 0; i < telemetry.residentSlotCount; i += 1) {
+            const row = table.residentRows[i]!;
+            if ((table.flags[row]! & TileRowFlags.Computed) === 0) continue;
+            table.queryRows[queryRowCount] = row;
+            queryRowCount += 1;
+        }
+        table.queryRowCount = queryRowCount;
+    } else {
+        // No field compute in this graph: rendering doesn't consume the
+        // terrain field, so readiness is meaningless — draw every visible row
+        // and expose every resident row to queries.
+        telemetry.visibleReadyCount = telemetry.visibleSlotCount;
+        table.queryRows.set(table.residentRows.subarray(0, telemetry.residentSlotCount));
+        table.queryRowCount = telemetry.residentSlotCount;
     }
-    table.queryRowCount = queryRowCount;
 
     telemetry.activeSlotCount = table.activeRowCount;
     telemetry.retainedInactiveCount = Math.max(0, allocatedRowCount - telemetry.residentSlotCount);

@@ -35,6 +35,7 @@ import {
     cameraView,
     elevationFn,
     elevationScale,
+    gateOnComputedField,
     innerTileSegments,
     lodCriteria,
     maxLevel,
@@ -254,6 +255,7 @@ export const tileSlotUpdateTask = task((get, work) => {
     const residency = get(tileResidencyTask);
     const maxNodesValue = get(maxNodes);
     const contentEpoch = get(terrainFieldContentEpochTask);
+    const gate = get(gateOnComputedField);
     const shapeKey = createTileSlotShapeKey(topologyValue, maxNodesValue);
 
     return work((prev?: TileIncrementalTelemetryState): TileIncrementalTelemetryState => {
@@ -264,6 +266,7 @@ export const tileSlotUpdateTask = task((get, work) => {
             maxNodesValue,
             shapeKey,
             contentEpoch,
+            gate,
             prev?.slots
         );
         return {

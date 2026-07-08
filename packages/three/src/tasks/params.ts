@@ -63,5 +63,20 @@ export const terrainFieldFilter = param<'nearest' | 'linear'>('linear').displayN
     'terrainFieldFilter'
 );
 
+/**
+ * Whether draw/query views are gated on computed terrain-field content.
+ *
+ * `terrainGraph()` enables this: with the field compute pipeline present,
+ * drawing or querying a tile whose dispatch hasn't landed shows uninitialized
+ * or leftover slot data (flash/garbage/phantom ground), so pending tiles are
+ * substituted/omitted until `markRowsComputed` runs.
+ *
+ * Hand-assembled graphs WITHOUT `executeComputeTask` must leave this `false`
+ * (the default): nothing ever marks rows computed there, and their rendering
+ * doesn't consume the terrain field, so gating would blank the terrain
+ * forever.
+ */
+export const gateOnComputedField = param<boolean>(false).displayName('gateOnComputedField');
+
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));

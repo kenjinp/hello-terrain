@@ -57,6 +57,7 @@ export * from './query/terrain-raycast';
 export * from './query/types';
 export { createComputePipelineTasks } from './tasks/compute.task';
 
+export * from './gym';
 export * from './heightmap/field';
 export * from './tsl/cubeSphere';
 export * from './tsl/materials';

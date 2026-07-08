@@ -28,6 +28,7 @@ import {
     visibleLeafSetTask,
     visibleSlotStorageTask,
 } from './quadtree.task';
+import { gateOnComputedField } from './params';
 import { createUniformsTask, updateUniformsTask } from './uniforms/uniforms.task';
 import { terrainQueryTask, terrainReadbackTask } from './terrain-query.task';
 import { terrainRaycastTask } from './terrain-raycast.task';
@@ -77,5 +78,9 @@ export function terrainGraph(): TerrainGraph {
     for (const t of Object.values(terrainTasks)) {
         g.add(t as Parameters<typeof g.add>[0]);
     }
+    // The full pipeline runs the field compute, so draw/query views are gated
+    // on computed content (see the param's docs). Hand-assembled graphs
+    // without executeComputeTask keep the ungated default.
+    g.set(gateOnComputedField, () => true);
     return g;
 }

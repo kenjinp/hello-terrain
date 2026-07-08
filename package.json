@@ -13,6 +13,8 @@
     "format": "oxfmt .",
     "agent:gpu": "node scripts/run-gpu-agent-lab.js",
     "agent:gpu:orbit-surface": "node scripts/run-gpu-agent-lab.js --orbit-surface-suite",
+    "gym": "node scripts/run-gym.js",
+    "gym:suite": "node scripts/run-gym.js --suite",
     "commit": "gitmoji -c"
   },
   "devDependencies": {

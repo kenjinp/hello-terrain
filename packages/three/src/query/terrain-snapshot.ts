@@ -51,6 +51,17 @@ export interface TerrainSnapshotState {
     boundsReadback: ReadbackSlot;
     /** Conservative per-tile elevation range pyramid for LOD bounds. */
     elevationPyramid: TileElevationPyramid;
+    /**
+     * Dirty slots whose GPU data has not been fetched into a CPU snapshot yet.
+     * Every incoming dirty batch is merged here BEFORE any early-out — batches
+     * that arrive while a readback is in flight (or while the index is
+     * unchanged) must survive to the next schedule. Dropping them leaves those
+     * slots' CPU data permanently stale once they leave the dirty list: while
+     * walking, a readback is almost always in flight, so queries end up served
+     * coarse-ancestor or previous-tenant elevations (the gym's
+     * `query-truthfulness` failure and the real-world walking fall-through).
+     */
+    pendingDirtySlots: Set<number>;
 }
 
 type RendererReadback = WebGPURenderer & {
@@ -88,6 +99,7 @@ export function createTerrainSnapshotState(
         elevationReadback: createReadbackSlot(),
         boundsReadback: createReadbackSlot(),
         elevationPyramid: createTileElevationPyramid(maxNodes, maxLevel),
+        pendingDirtySlots: new Set(),
     };
 }
 
@@ -105,18 +117,27 @@ function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
     target.values.set(source.values);
 }
 
-function collectDirtySlots(
+/** Merge an incoming dirty batch into the accumulated pending set. */
+function mergePendingDirtySlots(
+    pending: Set<number>,
     dirtySlots: ArrayLike<number> | undefined,
-    dirtySlotCount: number | undefined,
-    activeLeafCount: number
-): number[] {
+    dirtySlotCount: number | undefined
+): void {
     const count = Math.min(dirtySlotCount ?? 0, dirtySlots?.length ?? 0);
-    const unique = new Set<number>();
     for (let i = 0; i < count; i += 1) {
         const slot = Math.floor(dirtySlots?.[i] ?? -1);
-        if (slot >= 0 && slot < activeLeafCount) unique.add(slot);
+        if (slot >= 0) pending.add(slot);
     }
-    return [...unique];
+}
+
+/** Drain the pending set into a schedulable list, bounded to active slots. */
+function takePendingDirtySlots(pending: Set<number>, activeLeafCount: number): number[] {
+    const slots: number[] = [];
+    for (const slot of pending) {
+        if (slot < activeLeafCount) slots.push(slot);
+    }
+    pending.clear();
+    return slots;
 }
 
 function collectVisibleSlots(index: SpatialIndex, activeLeafCount: number): number[] {
@@ -239,21 +260,25 @@ export function triggerSnapshotReadback(
     boundsAttribute: StorageBufferAttribute | undefined,
     captured: SnapshotCapture
 ): void {
+    // Accumulate FIRST: dirty batches arriving during an in-flight readback
+    // (or an unchanged index) must survive to the next schedule.
+    mergePendingDirtySlots(state.pendingDirtySlots, captured.dirtySlots, captured.dirtySlotCount);
+
     if (state.readbackPending) return;
     const withReadback = renderer as RendererReadback;
     const useDeviceReadback = canDeviceReadback(renderer);
     if (!useDeviceReadback && !withReadback.getArrayBufferAsync) return;
-    if (spatialIndex.stampGen === state.lastScheduledStampGen) return;
+    // Re-schedule when the index changed OR un-fetched dirty data remains
+    // (e.g. an in-place recompute that didn't alter the tile set).
+    if (spatialIndex.stampGen === state.lastScheduledStampGen && state.pendingDirtySlots.size === 0) {
+        return;
+    }
 
     cloneSpatialIndex(state.backIndex, spatialIndex);
     state.lastScheduledStampGen = spatialIndex.stampGen;
 
     const { activeLeafCount, totalElements, verticesPerNode, elevationScale, originY } = captured;
-    const dirtySlots = collectDirtySlots(
-        captured.dirtySlots,
-        captured.dirtySlotCount,
-        activeLeafCount
-    );
+    const dirtySlots = takePendingDirtySlots(state.pendingDirtySlots, activeLeafCount);
 
     state.readbackPending = true;
 
@@ -292,13 +317,23 @@ export function triggerSnapshotReadback(
 
     const effectiveDirtySlots = state.hasSnapshot
         ? dirtySlots
-        : collectVisibleSlots(state.backIndex, activeLeafCount);
+        : [
+              ...new Set([
+                  ...dirtySlots,
+                  ...collectVisibleSlots(state.backIndex, activeLeafCount),
+              ]),
+          ];
 
     if (effectiveDirtySlots.length === 0 && state.hasSnapshot) {
         promoteIndexOnlySnapshot();
         state.readbackPending = false;
         return;
     }
+
+    /** A failed fetch must not lose the slots — retry on the next schedule. */
+    const requeueDirtySlots = () => {
+        for (const slot of effectiveDirtySlots) state.pendingDirtySlots.add(slot);
+    };
 
     if (useDeviceReadback) {
         const runDeviceReadback = async (): Promise<void> => {
@@ -313,7 +348,10 @@ export function triggerSnapshotReadback(
                 slotRanges(effectiveDirtySlots, verticesPerNode),
                 'terrainElevationReadback'
             );
-            if (!elevationFilled) return;
+            if (!elevationFilled) {
+                requeueDirtySlots();
+                return;
+            }
 
             let boundsFilled = false;
             if (boundsAttribute) {
@@ -330,9 +368,15 @@ export function triggerSnapshotReadback(
             promoteBackSnapshot(boundsFilled);
         };
 
-        runDeviceReadback().finally(() => {
-            state.readbackPending = false;
-        });
+        runDeviceReadback()
+            // Requeue on failure and swallow: the accumulated set makes the
+            // snapshot self-healing on the next schedule.
+            .catch(() => {
+                requeueDirtySlots();
+            })
+            .finally(() => {
+                state.readbackPending = false;
+            });
         return;
     }
 
@@ -368,12 +412,18 @@ export function triggerSnapshotReadback(
     if (boundsPromise) {
         Promise.all([elevationPromise, boundsPromise])
             .then(([elev, bounds]) => onComplete(elev, bounds))
+            .catch(() => {
+                requeueDirtySlots();
+            })
             .finally(() => {
                 state.readbackPending = false;
             });
     } else {
         elevationPromise
             .then((elev) => onComplete(elev, null))
+            .catch(() => {
+                requeueDirtySlots();
+            })
             .finally(() => {
                 state.readbackPending = false;
             });

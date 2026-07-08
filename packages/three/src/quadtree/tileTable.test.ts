@@ -90,7 +90,7 @@ describe('quadtree/tileTable', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere:8', 1);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere:8', 1, true);
         // Frame 1: everything is pending (no compute yet) — omitted, not drawn.
         expect(first.telemetry.visibleSlotCount).toBe(0);
         expect(first.telemetry.notReadyVisibleCount).toBe(3);
@@ -108,7 +108,16 @@ describe('quadtree/tileTable', () => {
         // Model the dispatch completing (as the compute task does each run).
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
 
-        const second = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere:8', 1, first);
+        const second = updateTileTable(
+            leaves,
+            visibility,
+            residency,
+            8,
+            'cubeSphere:8',
+            1,
+            true,
+            first
+        );
         expect(second.telemetry.visibleSlotCount).toBe(3);
         expect(second.telemetry.activeSlotCount).toBe(3);
         expect(second.telemetry.allocatedCount).toBe(0);
@@ -126,17 +135,17 @@ describe('quadtree/tileTable', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true);
         expect(first.telemetry.dirtyResidentCount).toBe(2);
         // No markRowsComputed: the run was aborted before the compute dispatch.
 
-        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, first);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true, first);
         // The obligation survives — the rows are re-queued, not silently dropped.
         expect(second.telemetry.dirtyResidentCount).toBe(2);
         expect(second.telemetry.requeuedDirtyCount).toBe(2);
 
         markRowsComputed(second, second.dirtyRows, second.telemetry.dirtyResidentCount);
-        const third = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, second);
+        const third = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true, second);
         expect(third.telemetry.dirtyResidentCount).toBe(0);
         expect(third.telemetry.requeuedDirtyCount).toBe(0);
     });
@@ -149,7 +158,15 @@ describe('quadtree/tileTable', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileTable(leaves, visibility, residency, 8, 'cubeSphere|radius=1000', 1);
+        const first = updateTileTable(
+            leaves,
+            visibility,
+            residency,
+            8,
+            'cubeSphere|radius=1000',
+            1,
+            true
+        );
         const second = updateTileTable(
             leaves,
             visibility,
@@ -157,6 +174,7 @@ describe('quadtree/tileTable', () => {
             8,
             'cubeSphere|radius=2000',
             1,
+            true,
             first
         );
 
@@ -174,9 +192,9 @@ describe('quadtree/tileTable', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true);
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
-        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 2, first);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 2, true, first);
 
         expect(second).toBe(first);
         expect(second.telemetry.allocatedCount).toBe(0);
@@ -197,7 +215,8 @@ describe('quadtree/tileTable', () => {
             allVisibleResident(firstLeaves.count),
             4,
             'shape',
-            1
+            1,
+            true
         );
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
 
@@ -209,6 +228,7 @@ describe('quadtree/tileTable', () => {
             4,
             'shape',
             2,
+            true,
             first
         );
         expect(second.telemetry.dirtyVisibleCount).toBe(1);
@@ -221,6 +241,7 @@ describe('quadtree/tileTable', () => {
             4,
             'shape',
             2,
+            true,
             second
         );
         expect(bothAgain.telemetry.reusedCount).toBe(2);
@@ -239,7 +260,8 @@ describe('quadtree/tileTable', () => {
             allVisibleResident(firstLeaves.count),
             4,
             'shape',
-            1
+            1,
+            true
         );
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
         const secondLeaves = makeLeaves([
@@ -254,6 +276,7 @@ describe('quadtree/tileTable', () => {
             4,
             'shape',
             1,
+            true,
             first
         );
 
@@ -273,7 +296,8 @@ describe('quadtree/tileTable', () => {
             allVisibleResident(1),
             8,
             'shape',
-            1
+            1,
+            true
         );
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
         const second = updateTileTable(
@@ -283,6 +307,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             first
         );
         const parentRow = second.drawRows[0]!;
@@ -302,6 +327,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             second
         );
         expect(third.telemetry.visibleSlotCount).toBe(1);
@@ -319,6 +345,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             third
         );
         expect(fourth.telemetry.visibleSlotCount).toBe(4);
@@ -339,7 +366,8 @@ describe('quadtree/tileTable', () => {
             allVisibleResident(4),
             8,
             'shape',
-            1
+            1,
+            true
         );
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
         const second = updateTileTable(
@@ -349,6 +377,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             first
         );
         const childRows = Array.from(second.drawRows.subarray(0, 4));
@@ -363,6 +392,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             second
         );
         expect(third.telemetry.visibleSlotCount).toBe(4);
@@ -377,6 +407,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             third
         );
         expect(fourth.telemetry.visibleSlotCount).toBe(1);
@@ -394,7 +425,8 @@ describe('quadtree/tileTable', () => {
             allVisibleResident(leaves.count),
             8,
             'shape',
-            1
+            1,
+            true
         );
         // Initial load: nothing is computed and nothing is cached. Omitting for
         // a frame beats drawing uninitialized field data (flash/garbage).
@@ -411,6 +443,7 @@ describe('quadtree/tileTable', () => {
             8,
             'shape',
             1,
+            true,
             state
         );
         expect(second.telemetry.visibleSlotCount).toBe(2);
@@ -436,6 +469,7 @@ describe('quadtree/tileTable', () => {
                 4,
                 'shape',
                 1,
+                true,
                 prev
             );
         };
@@ -461,7 +495,7 @@ describe('quadtree/tileTable', () => {
         const visibility = visibilityForIndices(leaves.count, [0]);
         const residency = residencyForIndices(leaves.count, [0, 1], 1);
 
-        const state = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        const state = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true);
 
         // The pending visible tile is omitted from the draw view this frame,
         // but residency/support/dirty accounting is unaffected.
@@ -475,7 +509,7 @@ describe('quadtree/tileTable', () => {
         expect(Array.from(state.residentRows.subarray(0, 2))).toEqual([0, 1]);
 
         markRowsComputed(state, state.dirtyRows, state.telemetry.dirtyResidentCount);
-        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, state);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true, state);
         expect(second.telemetry.visibleSlotCount).toBe(1);
         expect(Array.from(second.drawRows.subarray(0, 1))).toEqual([0]);
     });
@@ -488,14 +522,39 @@ describe('quadtree/tileTable', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true);
         // Nothing computed yet: queries must not resolve any tile.
         expect(first.queryRowCount).toBe(0);
 
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
-        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, first);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true, first);
         expect(second.queryRowCount).toBe(2);
         expect(Array.from(second.queryRows.subarray(0, 2)).sort()).toEqual([0, 1]);
+    });
+
+    it('draws pending rows and exposes all resident rows when compute gating is off', () => {
+        // Geometry-only graphs (no executeComputeTask) never call
+        // markRowsComputed; gating there would blank the terrain forever.
+        const leaves = makeLeaves([
+            [0, 2, 1, 1],
+            [0, 2, 2, 1],
+        ]);
+        const visibility = allVisible(leaves.count);
+        const residency = allVisibleResident(leaves.count);
+
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, false);
+        // Nothing is computed, but everything draws and queries resolve.
+        expect(first.telemetry.visibleSlotCount).toBe(2);
+        expect(first.telemetry.visibleReadyCount).toBe(2);
+        expect(first.telemetry.notReadyVisibleCount).toBe(0);
+        expect(first.queryRowCount).toBe(2);
+
+        // Dirty accounting still works (harmless without a consumer).
+        expect(first.telemetry.dirtyResidentCount).toBe(2);
+
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, false, first);
+        expect(second.telemetry.visibleSlotCount).toBe(2);
+        expect(second.telemetry.reusedCount).toBe(2);
     });
 
     it('keys tiles with negative coordinates distinctly (infinite-flat roots)', () => {
@@ -507,11 +566,11 @@ describe('quadtree/tileTable', () => {
         const visibility = allVisible(leaves.count);
         const residency = allVisibleResident(leaves.count);
 
-        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1);
+        const first = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true);
         expect(first.telemetry.allocatedCount).toBe(3);
         markRowsComputed(first, first.dirtyRows, first.telemetry.dirtyResidentCount);
 
-        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, first);
+        const second = updateTileTable(leaves, visibility, residency, 8, 'shape', 1, true, first);
         // All three tiles resolve back to their own rows — no aliasing.
         expect(second.telemetry.reusedCount).toBe(3);
         expect(second.telemetry.allocatedCount).toBe(0);
