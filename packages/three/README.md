@@ -26,7 +26,9 @@ import {
   innerTileSegments,
   elevationScale,
   elevationFn,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   quadtreeUpdateTask,
   positionNodeTask,
   voronoiCells,
@@ -73,13 +75,9 @@ function Terrain({ graph }) {
   }, [graph]);
 
   // Update camera and run the graph each frame
+  const cameraScratch = useMemo(() => createInitialCameraView(), []);
   useFrame(async ({ camera, gl }) => {
-    graph.set(quadtreeUpdate, (prev) => {
-      prev.cameraOrigin.x = camera.position.x;
-      prev.cameraOrigin.y = camera.position.y;
-      prev.cameraOrigin.z = camera.position.z;
-      return prev;
-    });
+    graph.set(cameraView, readCameraView(camera, cameraScratch));
     await graph.run({ resources: { renderer: gl } });
   });
 
@@ -122,7 +120,9 @@ import {
   innerTileSegments,
   elevationScale,
   elevationFn,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   quadtreeUpdateTask,
   positionNodeTask,
   voronoiCells,
@@ -177,14 +177,10 @@ graph.add(
 );
 
 // Render loop
+const cameraScratch = createInitialCameraView();
 renderer.setAnimationLoop(async () => {
   controls.update();
-  graph.set(quadtreeUpdate, (prev) => {
-    prev.cameraOrigin.x = camera.position.x;
-    prev.cameraOrigin.y = camera.position.y;
-    prev.cameraOrigin.z = camera.position.z;
-    return prev;
-  });
+  graph.set(cameraView, readCameraView(camera, cameraScratch));
   await graph.run({ resources: { renderer } });
   renderer.render(scene, camera);
 });

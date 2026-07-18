@@ -29,8 +29,10 @@ function Scene() {
     rootSize: 4096,
     maxLevel: 6,
     elevation,
-    getCameraOrigin,
-    cameraHysteresis: 0.35,
+    culling: {
+      getCameraOrigin,
+      originHysteresis: 0.35,
+    },
   });
 
   return (

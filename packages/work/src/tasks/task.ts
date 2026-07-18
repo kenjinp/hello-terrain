@@ -96,6 +96,16 @@ export function task<
     },
 
     /**
+     * Registers a disposer invoked with the cached value on graph disposal.
+     * @param dispose - Cleanup callback receiving the cached value.
+     * @returns The same task ref (fluent API).
+     */
+    disposer(dispose: (value: Out) => void) {
+      options.disposer = dispose as (value: unknown) => void;
+      return ref;
+    },
+
+    /**
      * Internal task definition for graph registration & execution.
      * @internal
      */

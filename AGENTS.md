@@ -13,6 +13,12 @@ Prefer functions over classes.
 
 In library internals, don't use three.js. Only expose three.js for consumer level methods. 
 
+When you do import three.js, import runtime values only from its public entry points — `three`, `three/tsl`, `three/webgpu`. Never import values from deep source paths (`three/src/*`): they create a second TSL/node instance that fails to compile against a consumer's renderer, so the terrain silently doesn't render while the rest of the scene does. Type-only imports from `three/src/*` are fine but must be written as `import type`. See `packages/three/spec/patterns.md` → "Import three.js Only Through Public Entry Points".
+
 Don't use module-scope variables, as there maybe be mulitple instances of the terrain. 
 
 Review the apps/docs and make sure that any API changes are reflected in the docs
+
+Do not modify blog posts in `apps/docs/content/docs/blog/`. They are published snapshots and should stay unchanged unless the user explicitly asks.
+
+Sandpack examples in `apps/docs/src/components/Sandpack/` must pin all package versions in the `dependencies` prop (e.g. `"@hello-terrain/three": "0.0.0-alpha.6"`). Do not use `"latest"` or unpinned semver ranges.

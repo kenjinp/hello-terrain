@@ -27,6 +27,10 @@ The elevation field is a buffer of floats that determines how vertices will be o
 
 ### When does the Elevation Fn run?
 
+<Callout title="API updated" type="warn">
+  The **`quadtreeUpdate`** param described below has been replaced by **`cameraView`**, **`residencyAnchors`**, and **`lodCriteria`**. **`quadtreeUpdateTask`** still runs when those params change, but you should set **`cameraView`** with **`readCameraView(camera, scratch)`** each frame instead of mutating `quadtreeUpdate`. Hysteresis is built into the param's equality check, so the manual **`cameraHysteresis`** pattern in this post is no longer needed. See [When does the Elevation Fn run?](/docs/core/elevation-function#when-does-the-elevation-fn-run) and the [changelog](/docs/changelog).
+</Callout>
+
 The elevation function is part of hello-terrain's compute graph, which dispatches compute tasks only when their inputs change. 
 The elevation function will be ran when it's upstream dependencies change, which are (broadly):
  1. the `quadtreeUpdateTask` output changes, which fires when you set `quadtreeUpdate` on the graph.  

@@ -9,6 +9,7 @@ description: Build Hello Terrain scenes in react-three/fiber with the @hello-ter
 
 - `Terrain` for rendering a `TerrainMesh` with a node material.
 - `useTerrain()` for creating and owning a terrain handle in React.
+- optional `camera` for decoupling the render view from the culling/refinement camera.
 - `TerrainProvider` and `useTerrainContext()` for sharing that handle with sibling systems such as controllers or tools.
 - `terrain.ready` and `terrain.runtime` for coordinating render timing and runtime queries.
 
@@ -65,6 +66,8 @@ If you want to wire meshes, graph tasks, and runtime execution manually, use `@h
 
 `Terrain` renders the terrain mesh and expects a render-prop child that returns a node material. The child receives `TerrainNodes`, which currently contains `positionNode`.
 In the future this will also contain texture nodes for the texturing system.
+
+Pass an optional `camera` when render visibility should follow a different camera than the canvas viewer. See [useTerrain](./use-terrain#custom-culling-camera).
 
 ### `useTerrain()`
 

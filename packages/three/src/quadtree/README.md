@@ -3,6 +3,7 @@
 This directory will contain a **hot-loop-friendly**, **allocation-free** quadtree LOD system.
 
 The design targets:
+
 - **Large flat terrain today**
 - A future **6-faced cube-sphere planet** (one quadtree per face)
 
@@ -15,20 +16,20 @@ The core principle is: **the quadtree only deals in TileIds** (tile space), and 
 The public API is intended to be a small set of functions operating on explicit state objects and preallocated buffers.
 
 - **`createState(cfg, topology)`** → `State`
-  - Allocates typed arrays once
-  - Initializes root nodes for each `topology.spaceCount`
+    - Allocates typed arrays once
+    - Initializes root nodes for each `topology.spaceCount`
 
 - **`update(state, topology, params, outLeaves?)`** → `LeafSet`
-  - Hot-loop entrypoint
-  - Produces the current set of renderable leaf tiles
-  - Performs refinement and **2:1 balancing**
-  - Writes into caller-provided buffers when supplied (no allocations)
+    - Hot-loop entrypoint
+    - Produces the current set of renderable leaf tiles
+    - Performs refinement and **2:1 balancing**
+    - Writes into caller-provided buffers when supplied (no allocations)
 
 - **`buildLeafIndex(leaves, outIndex?)`** → `SpatialIndex`
-  - Open-addressing lookup for `(space, level, x, y) -> leafListIndex`
+    - Open-addressing lookup for `(space, level, x, y) -> leafListIndex`
 
 - **`buildSeams2to1(topology, leaves, leafIndex, out?)`** → `SeamTable`
-  - Fixed-width seam/neighbor table suitable for GPU consumption
+    - Fixed-width seam/neighbor table suitable for GPU consumption
 
 ---
 
@@ -37,6 +38,7 @@ The public API is intended to be a small set of functions operating on explicit 
 #### TileId
 
 Every tile is identified by:
+
 - `space: u8` (0 for flat terrain; 0..5 cube faces for planet)
 - `level: u8`
 - `x: u32`
@@ -47,6 +49,7 @@ Every tile is identified by:
 #### LeafSet output (SoA)
 
 `update()` returns a `LeafSet` using **structure-of-arrays** typed buffers:
+
 - `count: number`
 - `space: Uint8Array`
 - `level: Uint8Array`
@@ -60,6 +63,7 @@ Only the prefix `[0, count)` is valid each frame. No JS arrays of nodes are prod
 ### Topology adapter (flat now, cube-sphere later)
 
 The quadtree is **topology-agnostic**. It relies on `Topology` for:
+
 - **Topology** (neighbors across edges)
 - **Bounds** (conservative camera-relative bounds for LOD decisions)
 
@@ -111,9 +115,11 @@ export type Topology = {
 ### Strategy: crack-free LOD via 2:1 balancing
 
 We plan to enforce **2:1 balance**:
+
 - Along any shared edge, neighboring leaves differ by **at most 1 level**.
 
 Benefits:
+
 - Crack handling becomes predictable
 - Each edge has at most **two** neighbors
 - Seam buffers can be **fixed width** and GPU-friendly
@@ -136,4 +142,3 @@ Benefits:
 - No per-frame full buffer clears (use live ranges and/or generation stamping)
 - Prefer iterative traversal with a preallocated stack
 - Prefer squared distance metrics (avoid `sqrt`)
-

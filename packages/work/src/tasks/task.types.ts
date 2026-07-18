@@ -23,6 +23,14 @@ export interface TaskOptions<L extends Lane = Lane> {
   cache?: CacheStrategy;
   /** Tags for this task (useful for filtering, debugging, etc). */
   tags?: readonly string[];
+  /**
+   * Called with the task's cached value when the graph is disposed, so tasks
+   * that own external resources (GPU buffers, workers, ...) can release them.
+   * Not called when the task re-executes — re-run cleanup is the task's own
+   * responsibility via the `work((prev) => ...)` previous-value parameter,
+   * since only the task knows whether it reuses parts of the previous value.
+   */
+  disposer?: (value: unknown) => void;
 }
 
 /**
@@ -84,6 +92,16 @@ export interface TaskRef<_T> {
    * @returns The current task ref (for chaining).
    */
   tags(tags: readonly string[]): this;
+
+  /**
+   * Register a disposer invoked with the task's cached value when the graph
+   * is disposed. Use for tasks that own external resources (GPU buffers,
+   * textures, workers). Not invoked on re-execution — handle that in the
+   * task via the `work((prev) => ...)` previous-value parameter.
+   * @param dispose - Cleanup callback receiving the cached value.
+   * @returns The current task ref (for chaining).
+   */
+  disposer(dispose: (value: _T) => void): this;
 }
 
 /**
