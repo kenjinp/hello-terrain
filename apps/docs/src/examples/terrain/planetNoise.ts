@@ -26,7 +26,7 @@ const randomGradient = Fn(([p]: [any]) => {
   );
 });
 
-const perlinNoise = Fn(([p]: [any]) => {
+export const perlinNoise = Fn(([p]: [any]) => {
   const i = floor(p).toVar();
   const f = fract(p).toVar();
   const u = f.mul(f).mul(float(3).sub(f.mul(2)));

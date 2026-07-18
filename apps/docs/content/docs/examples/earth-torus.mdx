@@ -1,0 +1,21 @@
+---
+title: Earth-Scale Torus
+description: Stress test — a torus world with the surface area of Earth, zoomable from orbit to the surface
+---
+
+import EarthTorusScene from "@/examples/EarthTorusScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<EarthTorusScene />
+</div>
+
+## Overview
+
+The same stress test as the [Earth-Scale Planet](/examples/earth-planet), but on `createTorusTopology`: a donut world whose surface area equals Earth's (major radius ~6,236 km, minor radius ~2,079 km, a 3:1 ratio). The identical elevation field, colour ramp, and altitude-aware cameras are reused — only the topology and the elevation-recovery math differ, which is the point of the topology + projection API.
+
+The button in the top-left corner (hotkey **V**) switches to a pointer-lock fly camera (click the canvas to grab the mouse, **WASD** to move, **Space**/**C** for up/down, **Q**/**E** to roll, **Shift** to boost, **Esc** to release). Flying the inside of the hole is the interesting bit: the "up" direction comes from the sampled surface normal, so it stays correct even where the surface curves back over your head.
+
+Points of interest at this scale:
+
+- **Anisotropic roots** — the torus seeds a `baseU × baseV` grid of level-0 roots so tiles start approximately square, then the same quadtree LOD machinery refines both the outer equator and the inner hole seamlessly as you zoom.
+- **float32 precision floor** — as with the planet, world positions are ~6e6 m, so `maxLevel` defaults to 14 (~10 m vertices). Raising it past ~15 quantises vertex positions to ~1 ULP apart and the close-up surface dissolves into shard noise.

@@ -8,6 +8,8 @@
     "infinite-flat",
     "cube-sphere",
     "torus",
+    "earth-planet",
+    "earth-torus",
     "raycast-character-controller",
     "---Materials---",
     "...materials"

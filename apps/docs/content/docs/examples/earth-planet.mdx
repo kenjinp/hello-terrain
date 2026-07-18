@@ -1,0 +1,21 @@
+---
+title: Earth-Scale Planet
+description: Stress test — a full Earth-sized cube-sphere world, zoomable from orbit to the surface
+---
+
+import EarthPlanetScene from "@/examples/EarthPlanetScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<EarthPlanetScene />
+</div>
+
+## Overview
+
+This example stress-tests the library at real planetary scale: a cube-sphere with the authalic Earth radius (**6,371,007.2 m**) and up to ~10 km of relief. Scroll to zoom — the orbit camera scales its zoom and rotate speed with your altitude above the terrain (via the runtime surface query), so a single gesture carries you from orbit down to a hover a few hundred metres above a mountainside.
+
+The button in the top-left corner (hotkey **V**) switches to a pointer-lock fly camera: click the canvas to grab the mouse, **WASD** to move, **Space**/**C** for up/down along the local surface normal, **Q**/**E** to roll, **Shift** to boost, **Esc** to release. Its move speed also scales with altitude, so the same keys work for crossing an ocean from orbit or skimming a valley floor.
+
+Points of interest at this scale:
+
+- **LOD range** — from orbit to the surface the quadtree spans ~14 levels of subdivision. Switch the `lod` mode between `distance` and `screen` to compare refinement strategies, and enable `wireframe` to watch tiles split as you descend.
+- **float32 precision floor** — the elevation field is evaluated from `worldPosition` (~6.37e6 m) in a float32 compute pass, where one ULP is ~0.5 m. `maxLevel` defaults to 14, which keeps vertices ~10 m apart; push it past ~15 and vertex positions quantise, dissolving the close-up surface into shard noise. This is the library operating at the edge of what single-precision world coordinates allow.
