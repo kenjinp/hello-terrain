@@ -684,14 +684,21 @@ describe("graph()", () => {
 
     // Basic shape + ordering for a successful run.
     expect(allEvents[0]?.type).toBe("run:start");
-    expect(allEvents.some((e) => e.type === "task:start" && e.taskId === ok.id)).toBe(true);
-    expect(allEvents.some((e) => e.type === "task:finish" && e.taskId === ok.id)).toBe(true);
+    expect(
+      allEvents.some((e) => e.type === "task:start" && e.taskId === ok.id),
+    ).toBe(true);
+    expect(
+      allEvents.some((e) => e.type === "task:finish" && e.taskId === ok.id),
+    ).toBe(true);
     expect(allEvents[allEvents.length - 1]?.type).toBe("run:finish");
 
     const runId1 = allEvents[0].runId;
     expect(allEvents.every((e) => e.runId === runId1)).toBe(true);
 
-    expect(taskEvents.map((e) => e.type)).toEqual(["task:start", "task:finish"]);
+    expect(taskEvents.map((e) => e.type)).toEqual([
+      "task:start",
+      "task:finish",
+    ]);
     expect(cacheHitEvents.length).toBe(0);
     expect(errorEvents.length).toBe(0);
 
@@ -702,7 +709,11 @@ describe("graph()", () => {
     errorEvents.length = 0;
     const r2 = await g.run({ targets: [ok] });
     expect(r2.status).toBe("ok");
-    expect(allEvents.map((e) => e.type)).toEqual(["run:start", "task:cacheHit", "run:finish"]);
+    expect(allEvents.map((e) => e.type)).toEqual([
+      "run:start",
+      "task:cacheHit",
+      "run:finish",
+    ]);
     expect(allEvents[0].runId).toBe(allEvents[1].runId);
     expect(taskEvents.map((e) => e.type)).toEqual(["task:cacheHit"]);
     expect(cacheHitEvents.map((e) => e.type)).toEqual(["task:cacheHit"]);
@@ -723,11 +734,18 @@ describe("graph()", () => {
     expect(r3.status).toBe("error");
 
     expect(allEvents[0]?.type).toBe("run:start");
-    expect(allEvents.some((e) => e.type === "task:start" && e.taskId === bad.id)).toBe(true);
-    const errEvent = allEvents.find((e) => e.type === "task:error" && e.taskId === bad.id);
+    expect(
+      allEvents.some((e) => e.type === "task:start" && e.taskId === bad.id),
+    ).toBe(true);
+    const errEvent = allEvents.find(
+      (e) => e.type === "task:error" && e.taskId === bad.id,
+    );
     expect(errEvent).toBeTruthy();
     expect(errEvent.error).toBe(boom);
-    expect(allEvents[allEvents.length - 1]).toMatchObject({ type: "run:finish", status: "error" });
+    expect(allEvents[allEvents.length - 1]).toMatchObject({
+      type: "run:finish",
+      status: "error",
+    });
 
     expect(taskEvents.map((e) => e.type)).toEqual(["task:start", "task:error"]);
     expect(cacheHitEvents.length).toBe(0);
@@ -770,16 +788,26 @@ describe("graph()", () => {
     await g.run({ targets: [b] });
 
     const inspected = g.inspect();
-    expect(inspected.nodes.some((n) => n.kind === "task" && n.id === a.id)).toBe(true);
-    expect(inspected.nodes.some((n) => n.kind === "task" && n.id === b.id)).toBe(true);
-    expect(inspected.nodes.some((n) => n.kind === "param" && n.id === p.id)).toBe(true);
+    expect(
+      inspected.nodes.some((n) => n.kind === "task" && n.id === a.id),
+    ).toBe(true);
+    expect(
+      inspected.nodes.some((n) => n.kind === "task" && n.id === b.id),
+    ).toBe(true);
+    expect(
+      inspected.nodes.some((n) => n.kind === "param" && n.id === p.id),
+    ).toBe(true);
 
     expect(
-      inspected.edges.some((e) => e.from === p.id && e.to === a.id && e.kind === "param"),
+      inspected.edges.some(
+        (e) => e.from === p.id && e.to === a.id && e.kind === "param",
+      ),
     ).toBe(true);
-    expect(inspected.edges.some((e) => e.from === a.id && e.to === b.id && e.kind === "task")).toBe(
-      true,
-    );
+    expect(
+      inspected.edges.some(
+        (e) => e.from === a.id && e.to === b.id && e.kind === "task",
+      ),
+    ).toBe(true);
   });
 
   it("does not recompile DAG when only values change", async () => {
@@ -873,7 +901,9 @@ describe("graph()", () => {
         return work(() => pv);
       });
 
-      const g = graph().add(t).set(p, () => 42);
+      const g = graph()
+        .add(t)
+        .set(p, () => 42);
       await g.run({ targets: [t] });
 
       expect(g.get(t)).toBe(42);
@@ -888,7 +918,9 @@ describe("graph()", () => {
         return work(() => pv);
       });
 
-      const g = graph().add(t).set(p, () => 1);
+      const g = graph()
+        .add(t)
+        .set(p, () => 1);
       await g.run({ targets: [t] });
       expect(g.get(t)).toBe(1);
 
@@ -917,8 +949,12 @@ describe("graph()", () => {
         return work(() => pv);
       });
 
-      const g1 = graph().add(t).set(p, () => 10);
-      const g2 = graph().add(t).set(p, () => 20);
+      const g1 = graph()
+        .add(t)
+        .set(p, () => 10);
+      const g2 = graph()
+        .add(t)
+        .set(p, () => 20);
 
       await g1.run({ targets: [t] });
       await g2.run({ targets: [t] });
@@ -1006,7 +1042,9 @@ describe("graph()", () => {
         });
       });
 
-      const g = graph().add(t).set(p, () => 10);
+      const g = graph()
+        .add(t)
+        .set(p, () => 10);
       await g.run({ targets: [t] });
       expect(g.get(t)).toBe(20);
       expect(calls).toBe(1);
@@ -1053,7 +1091,9 @@ describe("graph()", () => {
         return work(() => pv);
       });
 
-      const g = graph().add(t).set(p, () => 10);
+      const g = graph()
+        .add(t)
+        .set(p, () => 10);
 
       // Increment using prev.
       g.set(p, (prev) => prev + 5);
@@ -1156,6 +1196,194 @@ describe("graph()", () => {
       await g.run({ targets: [t] });
 
       expect(g.get(t)).toBe(1);
+    });
+  });
+
+  describe("param equals gating via graph.set()", () => {
+    it("skips version bump and downstream invalidation when equals reports no change", async () => {
+      const p = param(0, { equals: (a, b) => a === b });
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv;
+        });
+      });
+
+      const g = graph().add(t).set(p, 1);
+      await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(1);
+      expect(calls).toBe(1);
+
+      g.set(p, 1);
+      const report = await g.run({ targets: [t] });
+      expect(g.get(t)).toBe(1);
+      expect(calls).toBe(1);
+      expect(report.taskCount).toBe(0);
+      expect(report.cacheHits).toBeGreaterThanOrEqual(1);
+    });
+
+    it("still invalidates downstream tasks when equals reports a change", async () => {
+      const p = param(0, { equals: (a, b) => a === b });
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv;
+        });
+      });
+
+      const g = graph().add(t).set(p, 1);
+      await g.run({ targets: [t] });
+
+      g.set(p, 2);
+      await g.run({ targets: [t] });
+
+      expect(g.get(t)).toBe(2);
+      expect(calls).toBe(2);
+    });
+  });
+
+  describe("run() preemption and coalescing", () => {
+    it("returns the in-flight promise when targets are still clean", async () => {
+      let started = 0;
+      let finished = 0;
+
+      const slow = task(async (_get, work, ctx) =>
+        work(async () => {
+          started += 1;
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(), 30);
+            ctx.signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(ctx.signal.reason ?? new Error("aborted"));
+              },
+              { once: true },
+            );
+          });
+          finished += 1;
+          return "done";
+        }),
+      ).displayName("slow");
+
+      const g = graph().add(slow);
+      const first = g.run({ targets: [slow] });
+      const second = g.run({ targets: [slow] });
+
+      expect(second).toBe(first);
+
+      const report = await second;
+      expect(report.status).toBe("ok");
+      expect(g.get(slow)).toBe("done");
+      expect(started).toBe(1);
+      expect(finished).toBe(1);
+    });
+
+    it("preempts an in-flight run when inputs become dirty", async () => {
+      const p = param(1, { equals: (a, b) => a === b });
+      let started = 0;
+      let finished = 0;
+      const seen: number[] = [];
+
+      const slow = task(async (get, work, ctx) => {
+        const pv = get(p);
+        return work(async () => {
+          started += 1;
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(() => resolve(), 50);
+            ctx.signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(ctx.signal.reason ?? new Error("aborted"));
+              },
+              { once: true },
+            );
+          });
+          finished += 1;
+          seen.push(pv);
+          return pv;
+        });
+      }).displayName("slow");
+
+      const g = graph().add(slow).set(p, 1);
+      const first = g.run({ targets: [slow] });
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      g.set(p, 2);
+      const second = g.run({ targets: [slow] });
+
+      expect(second).not.toBe(first);
+
+      await expect(first).resolves.toMatchObject({ status: "cancelled" });
+      const report = await second;
+      expect(report.status).toBe("ok");
+      expect(g.get(slow)).toBe(2);
+      expect(seen).toEqual([2]);
+      expect(started).toBe(2);
+      expect(finished).toBe(1);
+    });
+  });
+
+  describe("task disposer()", () => {
+    it("invokes the disposer with the cached value on graph.dispose()", async () => {
+      const g = graph();
+      const disposed: Array<{ id: number }> = [];
+      const resource = task((_get, work) => work(() => ({ id: 42 })))
+        .displayName("resource")
+        .disposer((value) => disposed.push(value));
+      g.add(resource);
+
+      await g.run({ targets: [resource] });
+      expect(disposed).toEqual([]);
+
+      g.dispose();
+      expect(disposed).toEqual([{ id: 42 }]);
+    });
+
+    it("does not invoke the disposer on re-execution (prev-value cleanup is the task's job)", async () => {
+      const g = graph();
+      const p = param(1);
+      const disposed: number[] = [];
+      const prevSeen: Array<number | undefined> = [];
+      const resource = task((get, work) => {
+        const pv = get(p);
+        return work((prev?: number) => {
+          prevSeen.push(prev);
+          return pv;
+        });
+      })
+        .displayName("resource")
+        .disposer((value) => disposed.push(value));
+      g.add(resource);
+
+      await g.run({ targets: [resource] });
+      g.set(p, 2);
+      await g.run({ targets: [resource] });
+
+      // Re-run replaced the value but did not call the disposer; the task saw
+      // the previous value and could have released it itself.
+      expect(disposed).toEqual([]);
+      expect(prevSeen).toEqual([undefined, 1]);
+
+      g.dispose();
+      expect(disposed).toEqual([2]);
+    });
+
+    it("does not invoke the disposer for tasks that never produced a value", async () => {
+      const g = graph();
+      const disposed: unknown[] = [];
+      const resource = task((_get, work) => work(() => "value"))
+        .displayName("never-ran")
+        .disposer((value) => disposed.push(value));
+      g.add(resource);
+
+      g.dispose();
+      expect(disposed).toEqual([]);
     });
   });
 });

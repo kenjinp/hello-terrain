@@ -135,6 +135,8 @@ export type RunTimingBarsProps = {
   /** Pixel height of each timing bar. @default 8 */
   barHeight?: number;
   maxTasks?: number;
+  /** Maximum HUD refresh rate. @default 250 ms */
+  refreshIntervalMs?: number;
 };
 
 export function RunTimingBars({
@@ -142,6 +144,7 @@ export function RunTimingBars({
   className,
   barHeight = 8,
   maxTasks = 10,
+  refreshIntervalMs = 250,
 }: RunTimingBarsProps) {
   const { showUI, showControls } = useExamplesCanvas();
   const [, forceRender] = useState(0);
@@ -158,22 +161,44 @@ export function RunTimingBars({
   const runStartedAtRef = useRef<number | null>(null);
   const activeRunIdRef = useRef<string | null>(null);
   const staleNowRef = useRef<boolean>(false);
-  const [staleNow, setStaleNow] = useState(false);
+  const lastInspectAtRef = useRef(0);
+  const lastRenderAtRef = useRef(0);
+  const renderTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    // Seed names if inspect exists.
-    try {
-      const inspect = graph.inspect?.({ includeRuntime: false }) as any;
-      if (inspect?.nodes) {
-        for (const n of inspect.nodes) {
-          if (n?.kind === "task" && typeof n.id === "string" && typeof n.name === "string") {
-            nameByIdRef.current.set(n.id, n.name);
+    const refreshNames = (now: number, force = false) => {
+      if (!force && now - lastInspectAtRef.current < 1000) return;
+      lastInspectAtRef.current = now;
+      try {
+        const inspect = graph.inspect?.({ includeRuntime: false }) as any;
+        if (inspect?.nodes) {
+          for (const n of inspect.nodes) {
+            if (n?.kind === "task" && typeof n.id === "string" && typeof n.name === "string") {
+              nameByIdRef.current.set(n.id, n.name);
+            }
           }
         }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
+    };
+
+    const scheduleRender = () => {
+      if (renderTimerRef.current !== null) return;
+      const now = performance.now();
+      const delay = Math.max(
+        0,
+        refreshIntervalMs - (now - lastRenderAtRef.current),
+      );
+      renderTimerRef.current = window.setTimeout(() => {
+        renderTimerRef.current = null;
+        lastRenderAtRef.current = performance.now();
+        forceRender((x) => (x + 1) | 0);
+      }, delay);
+    };
+
+    // Seed names if inspect exists.
+    refreshNames(performance.now(), true);
 
     const unsub = graph.on((e) => {
       if (e.type === "run:start") {
@@ -181,7 +206,6 @@ export function RunTimingBars({
         runStartedAtRef.current = e.at;
         curDurationsRef.current.clear();
         staleNowRef.current = true;
-        setStaleNow(true);
         return;
       }
 
@@ -202,18 +226,7 @@ export function RunTimingBars({
 
       if (e.type === "run:finish") {
         // Refresh names if available (tasks can be added lazily).
-        try {
-          const inspect = graph.inspect?.({ includeRuntime: false }) as any;
-          if (inspect?.nodes) {
-            for (const n of inspect.nodes) {
-              if (n?.kind === "task" && typeof n.id === "string" && typeof n.name === "string") {
-                nameByIdRef.current.set(n.id, n.name);
-              }
-            }
-          }
-        } catch {
-          // ignore
-        }
+        refreshNames(performance.now());
 
         const nameById = nameByIdRef.current;
         const colorById = colorByIdRef.current;
@@ -233,23 +246,26 @@ export function RunTimingBars({
           }
           maxBarRef.current = buildBar(maxByIdRef.current, nameById, colorById, maxTasks);
           staleNowRef.current = false;
-          setStaleNow(false);
         } else {
           // Keep the last values visible (greyed) when this run had no durations.
           staleNowRef.current = true;
-          setStaleNow(true);
         }
 
-        // Force a render so SVG segments update immediately.
-        forceRender((x) => (x + 1) | 0);
+        scheduleRender();
 
         activeRunIdRef.current = null;
         runStartedAtRef.current = null;
       }
     });
 
-    return () => unsub();
-  }, [graph, maxTasks]);
+    return () => {
+      unsub();
+      if (renderTimerRef.current !== null) {
+        window.clearTimeout(renderTimerRef.current);
+        renderTimerRef.current = null;
+      }
+    };
+  }, [graph, maxTasks, refreshIntervalMs]);
 
   const visible = showUI && !showControls;
 
@@ -262,6 +278,7 @@ export function RunTimingBars({
     { label: "n-1", bar: prevBarRef.current },
     { label: "max", bar: maxBarRef.current },
   ];
+  const staleNow = staleNowRef.current;
 
   return (
     <div className={`${containerClass} ${visible ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
@@ -333,4 +350,3 @@ export function RunTimingBars({
     </div>
   );
 }
-

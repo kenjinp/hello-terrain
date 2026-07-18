@@ -1,0 +1,90 @@
+# Validation Gym — behavioral correctness scenarios on software WebGPU.
+#
+# EXPERIMENTAL (spec/validation-gym.md Phase 4 promotes it to a required
+# check once it has run green for ~2 weeks). SwiftShader WebGPU is slower and
+# occasionally behind real drivers; if it proves unstable, keep this
+# workflow_dispatch-only and rely on the documented pre-release ritual of
+# `pnpm gym:suite` on real hardware (including Apple silicon).
+name: Validation Gym
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.27.0"
+
+jobs:
+  gym:
+    runs-on: ubuntu-latest
+    # Experimental: visible, never blocking (remove when promoted per spec).
+    continue-on-error: true
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
+      - name: Build workspace packages
+        run: pnpm -r --filter './packages/**' build
+
+      - name: Build docs (static export)
+        run: pnpm --filter @hello-terrain/docs build
+
+      - name: Serve static export
+        run: |
+          npx serve apps/docs/out -l 3000 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:3000/gym > /dev/null && break
+            sleep 1
+          done
+
+      - name: Run gym smoke suite (software WebGPU)
+        run: |
+          node scripts/run-gym.js \
+            --suite \
+            --frames 400 \
+            --software-webgpu \
+            --chrome "${{ steps.chrome.outputs.chrome-path }}" \
+            --output gym-results.json
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gym-results
+          path: gym-results.json
+          if-no-files-found: ignore

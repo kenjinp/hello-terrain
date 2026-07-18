@@ -1,4 +1,4 @@
-import { terrainGraph, terrainTasks } from "@hello-terrain/three";
+import { terrainGraph, terrainTargets, terrainTasks } from "@hello-terrain/three";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createSyncTerrainNodesTask, createSyncTerrainRuntimeTask } from "./runtimeTasks";
 import type {
@@ -64,22 +64,31 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
 
     return nextGraph;
   }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
-  const runnerTargets = useMemo(() => {
-    const userTasks = options.tasks ?? [];
-    return [
-      ...userTasks,
-      terrainTasks.executeCompute,
-      terrainTasks.terrainReadback,
-      terrainTasks.gpuSpatialIndexUpload,
-      syncTerrainRuntimeTask,
-      syncTerrainNodesTask,
-    ] satisfies readonly TerrainTask[];
-  }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
-  const stopTerrainRunner = useTerrainRunner({
+
+  const runnerTargets = useMemo((): TerrainTask[] => {
+    const userTasks = (options.tasks ?? []) as TerrainTask[];
+    const targets = terrainTargets(options.pipeline ?? {}, userTasks) as TerrainTask[];
+    targets.push(syncTerrainRuntimeTask as TerrainTask, syncTerrainNodesTask as TerrainTask);
+    return targets;
+  }, [options.pipeline, options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
+
+  const cameraRef = useRef(options.culling?.camera);
+  const optionsCameraRef = useRef(options.culling?.camera);
+  const bindCamera = useCallback((camera: import("three/webgpu").Camera | undefined) => {
+    cameraRef.current = camera ?? optionsCameraRef.current;
+  }, []);
+
+  useLayoutEffect(() => {
+    optionsCameraRef.current = options.culling?.camera;
+    cameraRef.current = options.culling?.camera;
+  }, [options.culling?.camera]);
+
+  useTerrainRunner({
     graph,
     targets: runnerTargets,
-    getCameraOrigin: options.getCameraOrigin,
-    cameraHysteresis: options.cameraHysteresis,
+    cameraRef,
+    culling: options.culling,
+    residency: options.residency,
   });
 
   useEffect(() => {
@@ -90,13 +99,10 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
       isMountedRef.current = false;
       queueMicrotask(() => {
         if (graphLifecycleRef.current !== lifecycle) return;
-        void stopTerrainRunner().finally(() => {
-          if (graphLifecycleRef.current !== lifecycle) return;
-          graph.dispose();
-        });
+        graph.dispose();
       });
     };
-  }, [graph, stopTerrainRunner]);
+  }, [graph]);
 
   useLayoutEffect(() => {
     runtime.query = null;
@@ -121,8 +127,9 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
       runtime,
       ready,
       topology,
+      bindCamera,
       ...terrainNodes,
     }),
-    [graph, ready, runtime, topology, terrainNodes],
+    [bindCamera, graph, ready, runtime, topology, terrainNodes],
   );
 }

@@ -2,6 +2,7 @@ import {
   elevationFn,
   elevationScale,
   innerTileSegments,
+  lodCriteria,
   maxLevel,
   maxNodes,
   origin,
@@ -48,6 +49,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     topology: nextTopology,
     terrainFieldFilter: nextTerrainFieldFilter,
+    lod: nextLod,
   } = options;
 
   useLayoutEffect(() => {
@@ -125,6 +127,13 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
       nextTerrainFieldFilter,
       () => nextTerrainFieldFilter as "nearest" | "linear",
     );
+    resetOrSet(
+      graph,
+      ownedParamIds,
+      lodCriteria,
+      nextLod,
+      () => nextLod as Exclude<TerrainOptions["lod"], undefined>,
+    );
 
     if (elevation === undefined) {
       if (ownedParamIds.has(elevationFn.id)) {
@@ -148,5 +157,6 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     nextTopology,
     nextTerrainFieldFilter,
+    nextLod,
   ]);
 }

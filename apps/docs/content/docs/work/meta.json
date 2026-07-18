@@ -7,6 +7,7 @@
     "param",
     "task",
     "graph",
+    "gpu-agent-lab",
     "benchmarks",
     "semaphore"
   ]

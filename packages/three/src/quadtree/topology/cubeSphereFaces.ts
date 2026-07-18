@@ -20,24 +20,24 @@
 export type Vec3 = readonly [number, number, number];
 
 export type CubeFace = {
-  forward: Vec3;
-  right: Vec3;
-  up: Vec3;
+    forward: Vec3;
+    right: Vec3;
+    up: Vec3;
 };
 
 export const CUBE_FACE_COUNT = 6;
 
 export const CUBE_FACES: readonly CubeFace[] = [
-  // 0: +X
-  { forward: [1, 0, 0], right: [0, 0, -1], up: [0, 1, 0] },
-  // 1: -X
-  { forward: [-1, 0, 0], right: [0, 0, 1], up: [0, 1, 0] },
-  // 2: +Y (north pole)
-  { forward: [0, 1, 0], right: [1, 0, 0], up: [0, 0, -1] },
-  // 3: -Y (south pole)
-  { forward: [0, -1, 0], right: [1, 0, 0], up: [0, 0, 1] },
-  // 4: +Z
-  { forward: [0, 0, 1], right: [1, 0, 0], up: [0, 1, 0] },
-  // 5: -Z
-  { forward: [0, 0, -1], right: [-1, 0, 0], up: [0, 1, 0] },
+    // 0: +X
+    { forward: [1, 0, 0], right: [0, 0, -1], up: [0, 1, 0] },
+    // 1: -X
+    { forward: [-1, 0, 0], right: [0, 0, 1], up: [0, 1, 0] },
+    // 2: +Y (north pole)
+    { forward: [0, 1, 0], right: [1, 0, 0], up: [0, 0, -1] },
+    // 3: -Y (south pole)
+    { forward: [0, -1, 0], right: [1, 0, 0], up: [0, 0, 1] },
+    // 4: +Z
+    { forward: [0, 0, 1], right: [1, 0, 0], up: [0, 1, 0] },
+    // 5: -Z
+    { forward: [0, 0, -1], right: [-1, 0, 0], up: [0, 1, 0] },
 ] as const;

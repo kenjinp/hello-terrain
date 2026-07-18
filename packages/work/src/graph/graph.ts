@@ -1,8 +1,18 @@
 import { dag } from "../dag/dag";
 import { events } from "../events/events";
-import type { ParamRef, ParamSetCallback, ParamSetInput, Unsubscribe } from "../param/param.types";
+import type {
+  ParamRef,
+  ParamSetCallback,
+  ParamSetInput,
+  Unsubscribe,
+} from "../param/param.types";
 import { semaphore } from "../semaphore/semaphore";
-import { TASK_DEF, type Task, type TaskRef, type TaskState } from "../tasks/task.types";
+import {
+  TASK_DEF,
+  type Task,
+  type TaskRef,
+  type TaskState,
+} from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
 import { createRunId, isParam, isTask, nowMs } from "../utils";
 import {
@@ -13,7 +23,13 @@ import {
   UnknownNodeError,
   UnknownTaskError,
 } from "./graph.errors";
-import type { Graph, InspectOptions, InspectResult, RunOptions, RunReport } from "./graph.types";
+import type {
+  Graph,
+  InspectOptions,
+  InspectResult,
+  RunOptions,
+  RunReport,
+} from "./graph.types";
 import { createRun } from "./run";
 
 type TaskNodeRuntime<L extends Lane, Res> = {
@@ -77,6 +93,8 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
 
   // Tasks marked dirty by upstream changes.
   const dirtyTasks = new Set<string>();
+  /** Monotonic epoch bumped when a graph param input meaningfully changes. */
+  let inputEpoch = 0;
 
   const compileTopologyIfNeeded = () => {
     if (compiledVersion === structureVersion) return;
@@ -87,6 +105,9 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
 
   /** Mark all downstream tasks dirty starting from `nodeId`. */
   function propagateDirty(nodeId: string) {
+    if (paramsMap.has(nodeId)) {
+      inputEpoch += 1;
+    }
     const stack = [...(d.getAdjacenciesId(nodeId) ?? [])];
     while (stack.length) {
       const id = stack.pop()!;
@@ -139,7 +160,8 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     for (const depId of deps) {
       // If we depend on a cache:none task, we must re-run because the upstream value is not stable across runs.
       const upstreamTask = tasksMap.get(depId);
-      if (upstreamTask && upstreamTask.ref[TASK_DEF].options.cache === "none") return true;
+      if (upstreamTask && upstreamTask.ref[TASK_DEF].options.cache === "none")
+        return true;
 
       const previous = task.lastDepVersions.get(depId) ?? -1;
       const cur = currentVersion(depId);
@@ -189,7 +211,10 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     return api;
   }
 
-  function setParam<T>(paramRef: ParamRef<T>, valueOrCb: ParamSetInput<T>): Graph<L, Res> {
+  function setParam<T>(
+    paramRef: ParamRef<T>,
+    valueOrCb: ParamSetInput<T>,
+  ): Graph<L, Res> {
     let node = paramsMap.get(paramRef.id);
 
     if (!node) {
@@ -210,11 +235,19 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
       node.bound = { value: initial, initial };
     }
 
-    // Apply the update.
-    node.bound.value =
+    const prev = node.bound.value;
+    const next =
       typeof valueOrCb === "function"
-        ? (valueOrCb as ParamSetCallback<T>)(node.bound.value)
+        ? (valueOrCb as ParamSetCallback<T>)(prev)
         : valueOrCb;
+
+    node.bound.value = next;
+
+    const equals = paramRef.equals;
+    if (equals?.(prev, next)) {
+      return api;
+    }
+
     node.version += 1;
     propagateDirty(paramRef.id);
 
@@ -227,7 +260,15 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
 
   function resetBoundParam(node: ParamNodeRuntime) {
     if (!node.bound) return;
-    node.bound.value = node.bound.initial;
+    const prev = node.bound.value;
+    const next = node.bound.initial;
+    node.bound.value = next;
+
+    const equals = node.ref.equals;
+    if (equals?.(prev, next)) {
+      return;
+    }
+
     node.version += 1;
     propagateDirty(node.ref.id);
     if (hasListeners("param:set")) {
@@ -281,16 +322,95 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     UnknownTaskError,
   });
 
-  async function run(options?: RunOptions<L, Res>): Promise<RunReport> {
-    return runImpl(state as any, options);
+  let activeRun: {
+    promise: Promise<RunReport>;
+    controller: AbortController;
+    inputEpoch: number;
+  } | null = null;
+
+  function resolveRunTargets(
+    options?: RunOptions<L, Res>,
+  ): readonly TaskRef<any>[] {
+    return options?.targets && options.targets.length > 0
+      ? options.targets
+      : allTaskRefNodes;
+  }
+
+  function run(options?: RunOptions<L, Res>): Promise<RunReport> {
+    const targets = resolveRunTargets(options);
+
+    if (activeRun && activeRun.inputEpoch === inputEpoch) {
+      return activeRun.promise;
+    }
+
+    if (activeRun) {
+      if (!activeRun.controller.signal.aborted) {
+        activeRun.controller.abort(
+          new Error("Graph run preempted by newer state"),
+        );
+      }
+      const prior = activeRun;
+      activeRun = null;
+      return prior.promise.catch(() => {}).then(() => run(options));
+    }
+
+    const runController = new AbortController();
+    if (options?.signal) {
+      const userSignal = options.signal;
+      if (userSignal.aborted) {
+        runController.abort(userSignal.reason);
+      } else {
+        userSignal.addEventListener(
+          "abort",
+          () => runController.abort(userSignal.reason),
+          { once: true },
+        );
+      }
+    }
+
+    const runOptions = {
+      ...options,
+      targets,
+      signal: runController.signal,
+    } as RunOptions<L, Res>;
+
+    const capturedInputEpoch = inputEpoch;
+    const promise = runImpl(state as any, runOptions).finally(() => {
+      if (activeRun?.controller === runController) {
+        activeRun = null;
+      }
+    });
+
+    activeRun = {
+      promise,
+      controller: runController,
+      inputEpoch: capturedInputEpoch,
+    };
+    return promise;
   }
 
   function dispose() {
+    if (activeRun && !activeRun.controller.signal.aborted) {
+      activeRun.controller.abort(new Error("Graph disposed"));
+    }
+    activeRun = null;
     for (const p of paramsMap.values()) {
       try {
         p.unsubscribe?.();
       } catch {
         // ignore
+      }
+    }
+    // Release externally owned resources (GPU buffers, workers, ...) held by
+    // cached task values before dropping them.
+    for (const node of tasksMap.values()) {
+      if (node.state !== "ready") continue;
+      const disposer = node.ref[TASK_DEF].options.disposer;
+      if (!disposer) continue;
+      try {
+        disposer(node.value);
+      } catch {
+        // ignore — disposal must never prevent graph teardown
       }
     }
     paramsMap.clear();

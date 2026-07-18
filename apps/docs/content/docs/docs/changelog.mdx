@@ -5,6 +5,141 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased
+
+This cycle separates **what renders** from **what stays resident**: tiles outside the view frustum stop rendering and recomputing, while residency anchors keep the terrain under characters and physics alive even when the camera looks away. GPU tile slots persist across frames so only dirty work is recomputed. Per-frame inputs are split into focused params with equality gating, and heightmap sampling is now precision-safe on every GPU vendor.
+
+### Frustum + horizon culling — render only visible tiles
+
+`computeTileVisibility` classifies every leaf each update — `Visible`, `Guard` (margin around the frustum), `FrustumCulled`, `HorizonCulled`, or `Unculled` (kept because horizon culling wasn't applicable) — and only the visible leaf set is drawn and dispatched. The resident set (`residentLeafSetTask`) and the visible set (`visibleLeafSetTask`) are now distinct: culling decides rendering, never data lifetime. Per-update telemetry (`TileVisibilityTelemetry`) reports candidate/visible/culled counts and the visible ratio.
+
+### Residency anchors — terrain that outlives the frustum
+
+`computeTileResidency` keeps tiles resident for two reasons: they are visible, or they intersect a **residency anchor** — a world-space sphere published via the `residencyAnchors` param (e.g. around the player). Anchored tiles keep ground queries, shadows, and character controllers working when the camera turns away, without rendering them. See the [Residency Anchors](/examples/residency-anchors) example.
+
+### Persistent tile slots + incremental GPU compute
+
+GPU tile slots are now a persistent cache (`createTileSlotCacheState` / `updateTileSlotCache`) instead of being rebuilt from scratch every update:
+
+- Slots are **reused** across frames when a tile stays resident; only newly resident tiles allocate, and eviction is deferred until capacity demands it.
+- Compute runs only for **dirty resident slots**; re-render uploads only **dirty visible slots** (indirect dispatch via `dirtyVisibleSlotBufferTask` / `dirtyVisibleSlotStorageTask`).
+- A **content epoch** (`terrainFieldContentEpochTask`) invalidates all slots when anything that changes generated field values changes — elevation function, topology, root size/origin, radius, segment count, or elevation scale.
+- `TileSlotTelemetry` reports reuse/allocation/eviction counts and dirty ratios per update.
+
+Design rationale lives in `packages/three/spec/incremental-gpu-updates.md`.
+
+### Split runtime params
+
+The monolithic `quadtreeUpdate` param is replaced by:
+
+- `cameraView` — camera origin + view-projection matrix (hysteresis via param `equals`)
+- `residencyAnchors` — world-space support regions for off-screen residency
+- `lodCriteria` — static LOD configuration
+
+Vanilla and React consumers follow the same loop, with `terrainTargets({ compute, readback, gpuSpatialIndex })` selecting which pipeline stages a run executes:
+
+```ts
+graph.set(cameraView, readCameraView(camera, scratch));
+graph.set(residencyAnchors, anchors);
+await graph.run({ targets: terrainTargets({ ...pipeline }), resources: { renderer } });
+```
+
+### Precision-safe heightmap sampling
+
+New `createHeightmapField` API: `r32float` storage read with `textureLoad` and
+interpolated in fp32 (exact bilinear + Catmull-Rom bicubic, TSL and CPU
+mirrors). Replaces the RG-packed helpers, whose decode-after-filter sampling
+terraced on GPUs that quantize filtered unorm8 results (Apple silicon). See
+`packages/three/spec/heightmap-precision.md` for the invariant and rationale.
+
+```ts
+const field = createHeightmapField({ data, width, height, minMeters, maxMeters });
+const elevation: ElevationCallback = ({ rootUV }) => field.sampleMetersBicubic(rootUV);
+```
+
+### TileTable — one home per tile
+
+Tile lifecycle bookkeeping (`tileSlotCache`) is restructured into a single
+SoA `TileTable` (`quadtree/tileTable.ts`): identity, lifecycle flags, recency,
+and content epoch live on one row per GPU field slot, and the draw list, dirty
+list, and ready-gated query list are derived views rebuilt in the same pass
+that mutates the rows. Tile identity is integer-keyed through the existing
+`SpatialIndex` — string keys and per-update `Map` churn are gone. Telemetry
+field names are unchanged. See `packages/three/spec/architecture-simplification.md`
+(Phase 1) for the plan this lands.
+
+- **`updateTileTable` / `markRowsComputed` / `createTileTable` / `TileTable` /
+  `TileTableTelemetry` / `TileRowFlags`** replace `updateTileSlotCache` /
+  `markSlotsComputed` / `createTileSlotCacheState` / `TileSlotCacheState` /
+  `TileSlotTelemetry`; `tileKeyString` is removed.
+- The ready-gated query set now comes straight from the table (`queryRows`);
+  `residentLeafSetTask` is a thin view over it.
+- **New `gateOnComputedField` param** (default `false`): readiness gating of
+  draw/query views is explicit pipeline metadata. `terrainGraph()` enables it
+  (its field compute marks rows computed); hand-assembled geometry-only graphs
+  — which never run `executeComputeTask` and don't consume the terrain field —
+  keep ungated behavior, where every visible tile draws immediately.
+
+### Incremental pipeline correctness
+
+Fixes for tile flashing, permanent holes, and phantom ground in the persistent-slot pipeline:
+
+- **Dirty work survives preempted runs.** The compute obligation is now a per-slot dirty bit cleared only after a dispatch actually ran, instead of an epoch stamped at enqueue time — a run aborted between the cache update and the compute dispatch used to drop the work forever, leaving permanently uncomputed tiles (holes). Re-queues are visible as `requeuedDirtyCount`.
+- **LRU slot eviction.** Eviction now frees the least-recently-resident slot instead of the lowest index, keeping the substitution cache (just-split parents / just-merged children) warm under memory pressure.
+- **Pending tiles are omitted, never drawn.** A visible tile whose compute hasn't landed and has no cached substitute is dropped from the draw list for that update (`notReadyVisibleCount`) instead of drawing uninitialized or leftover field data. New readiness telemetry: `visibleReadyCount`, `fallbackVisibleCount`, `notReadyVisibleCount`.
+- **Queries are ready-gated.** The resident spatial index (CPU queries, raycasts, and the GPU spatial index) only resolves slots whose compute has run. Freshly allocated slots report `valid: false` instead of another tile's leftover elevations — previously a teleport could report phantom ground and drop characters through the terrain.
+- **Snapshot readbacks no longer lose dirty batches.** Dirty slots arriving while a readback was in flight (nearly always, while walking) were silently dropped — their CPU query data then stayed stale forever, serving coarse-ancestor or previous-tenant elevations that sank characters into the ground (found by the gym's `query-truthfulness` invariant, first real run). Un-fetched dirty slots now accumulate in the snapshot state, schedule follow-up readbacks even when the tile set is unchanged, and requeue on readback failure.
+
+### Validation Gym
+
+A scenario-driven correctness harness (`packages/three/spec/validation-gym.md`):
+seeded scenarios drive a kinematic probe over a real WebGPU terrain while
+behavioral invariants — draw readiness, hole/dirty drainage, grounding and
+query truthfulness against **analytic** elevation, draw-set stability — are
+asserted every frame. Three faces over one implementation:
+
+- **Library gym module** (`gym/`): pure, unit-tested probe, invariant
+  evaluators, seeded paths, scenario manifest, and a paired GPU+CPU sine
+  elevation (prototyping the paired-elevation contract).
+- **`/gym` page**: real viewport with probe marker, invariant lamps, and a
+  violation list — watch exactly what the runner measures; `?scenario=…&seed=…&autorun=1`
+  reproduces any failing run headed. Automation via `window.__helloTerrainGym`.
+- **`pnpm gym` / `pnpm gym:suite`**: CDP runner (real or `--software-webgpu`
+  Chrome) failing non-zero on violations, with JSON artifacts; experimental
+  CI workflow (`validation-gym.yml`) runs the suite on SwiftShader.
+
+Scenarios: `surface-walk`, `teleport-shock`, `rest-stability` — one per bug
+class shipped this cycle.
+
+### GPU diagnostics
+
+- **`createGpuProfiler`** — per-frame GPU-timeline timings split into render vs compute (`GpuFrameTimings`), with per-dispatch compute pass breakdowns, so "compute-bound or render-bound?" has a measured answer.
+- **`disposeStorageBufferAttribute`** — destroys the GPU buffer behind a replaced storage attribute and detaches it from the renderer's backend cache; three has no `BufferAttribute.dispose()`, so replaced attributes previously leaked until renderer disposal.
+
+### `@hello-terrain/work`
+
+- **`param(initial, { equals })`** — optional equality comparator gates version bumps and dirty propagation in `graph.set()`.
+- **`graph.run()` preemption** — overlapping runs coalesce when inputs are unchanged; in-flight runs abort when inputs change.
+
+### `@hello-terrain/react`
+
+- **`TerrainOptions` regrouped** — `culling`, `residency`, `lod`, and `pipeline` replace flat `camera`, `getCameraOrigin`, `cameraHysteresis`, `getResidencyAnchors`, `residencyHysteresis`, `runCompute`, `runReadback`, and `runGpuSpatialIndex`.
+- **Thinner runner** — hysteresis, abort, and preemption live in `work`/`three`; React only sets params and calls `run()`.
+
+### Docs
+
+- New [Frustum Culling](/examples/frustum-culling) examples (flat, cube-sphere, torus) with an orbiting viewer and an animated helper camera driving visibility.
+- New [Residency Anchors](/examples/residency-anchors) example.
+- Agent GPU lab page for offline/headless GPU testing of the compute pipeline.
+
+### Breaking ⚠️
+
+- **`decodeUint16RG` and `sampleHeightmapMeters` removed.** Their decode-after-filter sampling is precision-unsafe. Use `createHeightmapField` instead.
+- **Tile slot cache API renamed.** `updateTileSlotCache`/`markSlotsComputed`/`createTileSlotCacheState`/`TileSlotCacheState`/`TileSlotTelemetry`/`tileKeyString` are replaced by the `TileTable` API (`updateTileTable`, `markRowsComputed`, `createTileTable`, `TileTable`, `TileTableTelemetry`). Telemetry field names are unchanged.
+- **`quadtreeUpdate` param removed.** Use `cameraView`, `residencyAnchors`, and `lodCriteria` instead.
+- **React flat options removed.** Migrate to grouped options (see [Params](/docs/core/params)).
+- **`writeUpdateParamsFromCamera` is internal wiring.** Prefer `readCameraView(camera, scratch)` for the `cameraView` param.
+
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 
 Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 

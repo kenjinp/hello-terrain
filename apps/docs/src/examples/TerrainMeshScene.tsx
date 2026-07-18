@@ -13,15 +13,16 @@ import {
   maxNodes,
   positionNodeTask,
   quadtreeConfigTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
   quadtreeUpdateTask,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
   TerrainGraph,
   TerrainMesh,
   updateUniformsTask,
-  type UpdateParams,
 } from "@hello-terrain/three";
 import { graph } from "@hello-terrain/work";
 import { Bounds, OrbitControls } from "@react-three/drei";
@@ -85,7 +86,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
     tileColors: { ...tileColorsLevaControl, value: true },
   }, { store });
 
-  const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
   const meshRef = useRef<THREE.InstancedMesh | null>(null);
   const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
   const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
@@ -113,7 +114,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
 
   useEffect(() => {
     return g.on("run:finish", () => {
-      const leafSet = g.peek(quadtreeUpdateTask);
+      const leafSet = g.peek(leafGpuBufferTask);
       const lastCount = meshRef.current?.count || 0;
       if (leafSet?.count && leafSet?.count !== lastCount && meshRef.current) {
         meshRef.current.count = leafSet.count;
@@ -133,19 +134,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   }, [g]);
 
   useFrame(async ({ camera, gl }) => {
-    const cameraHysteresis = 0.05;
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      cameraHysteresis * cameraHysteresis
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
       resources: {
@@ -180,7 +169,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
 const TerrainMeshScene = () => {
   const store = useCreateStore();
   const g = useMemo(() => {
-    return graph()
+    return graph<{ renderer: THREE.WebGPURenderer }>()
       .add(instanceIdTask)
       .add(quadtreeConfigTask)
       .add(quadtreeUpdateTask)

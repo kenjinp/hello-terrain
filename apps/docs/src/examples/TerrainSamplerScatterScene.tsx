@@ -15,18 +15,19 @@ import {
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeUpdate,
-  quadtreeUpdateTask,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
   terrainGraph,
   terrainTasks,
   TerrainMesh,
-  type ElevationCallback,
+  visibleLeafSetTask,
+    type ElevationCallback,
   type TerrainSampler,
   type TerrainGraph,
-  type UpdateParams,
 } from "@hello-terrain/three";
 import { param, task } from "@hello-terrain/work";
 import { OrbitControls } from "@react-three/drei";
@@ -215,7 +216,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
     { store },
   );
 
-  const lastCameraRef = useRef(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
   const terrainMeshRef = useRef<THREE.InstancedMesh | null>(null);
   const terrainMaterialRef = useRef<THREE.MeshStandardNodeMaterial | null>(
     null,
@@ -293,7 +294,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
   const renderStateTask = useMemo(
     () =>
       task((get, work) => {
-        const leaves = get(quadtreeUpdateTask);
+        const leaves = get(visibleLeafSetTask).leaves;
         const terrainPositionNode = get(positionNodeTask);
         const scatter = get(scatterNodesTask);
 
@@ -369,21 +370,12 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
   }, [g, controls.scatterScale, scatterScaleParam]);
 
   useFrame(async ({ camera, gl }) => {
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >
-      0.05 * 0.05
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
-      resources: { renderer: gl as unknown as THREE.WebGPURenderer },
+      resources: {
+        renderer: gl as unknown as THREE.WebGPURenderer,
+      },
     });
   });
 

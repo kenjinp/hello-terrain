@@ -55,6 +55,10 @@ I think it's pretty cool, anyways.
 
 ### Setting up the graph
 
+<Callout title="API updated" type="warn">
+  This post describes the original **`quadtreeUpdate`** param. It has been removed: per-frame inputs are now split across **`cameraView`**, **`residencyAnchors`**, and **`lodCriteria`**. Push **`readCameraView(camera, scratch)`** into **`cameraView`** each frame — built-in hysteresis on the param replaces the manual distance checks shown below. See the [changelog](/docs/changelog) and [params](/docs/core/params) docs for the current API.
+</Callout>
+
 `terrainGraph()` returns a pre-wired `Graph` containing all the params and tasks needed
 for rendering the quadtree tiles. Parameters like `rootSize`, `maxLevel`, and `innerTileSegments`
 control tile resolution and quadtree depth. The `quadtreeUpdate` param carries the

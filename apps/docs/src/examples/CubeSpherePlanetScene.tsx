@@ -3,16 +3,16 @@
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { createPlanetColorNode, createPlanetElevation } from "@/examples/terrain/planetNoise";
+import {
+  resolveTerrainMaterialAppearance,
+  tileColorsLevaControl,
+} from "@/examples/terrain/tileInstanceColor";
 import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import { createCubeSphereTopology } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useCallback, useMemo, useRef, useState } from "react";
-import {
-  resolveTerrainMaterialAppearance,
-  tileColorsLevaControl,
-} from "@/examples/terrain/tileInstanceColor";
 import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
 
@@ -206,12 +206,7 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
 
   return (
     <>
-      <Terrain
-        terrain={terrain}
-        maxNodes={controls.maxNodes}
-        frustumCulled={false}
-        onPointerDown={handlePointerDown}
-      >
+      <Terrain terrain={terrain} onPointerDown={handlePointerDown}>
         {({ positionNode }) => (
           <meshStandardNodeMaterial
             positionNode={positionNode}

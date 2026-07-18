@@ -3,6 +3,9 @@
   "extends": "@config/typescript/react.json",
   "compilerOptions": {
     "paths": {
+      "@hello-terrain/three": [
+        "../three/src/index.ts"
+      ],
       "@hello-terrain/work": [
         "../work/src/index.ts"
       ]

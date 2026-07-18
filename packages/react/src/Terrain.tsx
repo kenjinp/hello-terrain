@@ -1,8 +1,9 @@
 import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
-import { cloneElement, isValidElement, useEffect, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useState } from "react";
 import { TerrainProvider } from "./TerrainContext";
 import type {
+  TerrainCullingOptions,
   TerrainHandle,
   TerrainPrimitiveProps,
   TerrainProps,
@@ -43,15 +44,14 @@ function useTerrainMesh(
 }
 
 function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
-  const leaves = terrain.graph.peek(terrainTasks.quadtreeUpdate);
-  if (leaves && mesh.count !== leaves.count) {
-    mesh.count = leaves.count;
+  const leafBuffer = terrain.graph.peek(terrainTasks.leafGpuBuffer);
+  const visibleCount =
+    leafBuffer?.count ?? terrain.graph.peek(terrainTasks.visibleLeafSet)?.leaves.count;
+  if (visibleCount !== undefined && mesh.count !== visibleCount) {
+    mesh.count = visibleCount;
     mesh.instanceMatrix.needsUpdate = true;
   }
 
-  // Keep the tile geometry resolution in sync with the effective
-  // `innerTileSegments` param (prop-driven or set directly via `graph.set`).
-  // The setter rebuilds the geometry only when the value actually changes.
   const uniforms = terrain.graph.peek(terrainTasks.updateUniforms);
   if (uniforms) {
     const segments = uniforms.uInnerTileSegments.value;
@@ -81,18 +81,29 @@ function attachTerrainMaterial(
 function TerrainWithHandle({
   terrain,
   children,
+  culling,
   innerTileSegments,
   maxNodes,
   ...primitiveProps
 }: {
   terrain: TerrainHandle;
   children: TerrainRenderProps["children"];
+  culling?: TerrainCullingOptions;
   innerTileSegments?: number;
   maxNodes?: number;
 } & TerrainPrimitiveProps) {
   const flipWinding = terrain.topology?.projection?.faceOutward ?? false;
   const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
   const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
+
+  useLayoutEffect(() => {
+    const camera = culling?.camera;
+    if (camera === undefined) return;
+    terrain.bindCamera?.(camera);
+    return () => {
+      terrain.bindCamera?.(undefined);
+    };
+  }, [culling?.camera, terrain]);
 
   useFrame(() => {
     syncTerrainMesh(mesh, terrain);
@@ -127,8 +138,10 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
     elevation,
     topology,
     terrainFieldFilter,
-    getCameraOrigin,
-    cameraHysteresis,
+    culling,
+    residency,
+    lod,
+    pipeline,
     tasks,
     maxNodes,
     ...primitiveProps
@@ -145,8 +158,10 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
     elevation,
     topology,
     terrainFieldFilter,
-    getCameraOrigin,
-    cameraHysteresis,
+    culling,
+    residency,
+    lod,
+    pipeline,
     tasks,
     maxNodes,
   });
@@ -154,6 +169,7 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
   return (
     <TerrainWithHandle
       terrain={terrain}
+      culling={culling}
       innerTileSegments={innerTileSegments}
       maxNodes={maxNodes}
       {...primitiveProps}
@@ -164,12 +180,10 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
 }
 
 export function Terrain(props: TerrainProps) {
-  const { terrain: providedTerrain, children } = props;
-
-  if (providedTerrain) {
+  if (props.terrain) {
     const {
-      terrain: _terrain,
-      children: _children,
+      terrain: providedTerrain,
+      children,
       innerTileSegments,
       maxNodes,
       ...primitiveProps
@@ -187,6 +201,7 @@ export function Terrain(props: TerrainProps) {
   }
 
   const {
+    children,
     rootSize,
     origin,
     maxLevel,
@@ -197,8 +212,10 @@ export function Terrain(props: TerrainProps) {
     elevation,
     topology,
     terrainFieldFilter,
-    getCameraOrigin,
-    cameraHysteresis,
+    culling,
+    residency,
+    lod,
+    pipeline,
     tasks,
     maxNodes,
     ...primitiveProps
@@ -216,8 +233,10 @@ export function Terrain(props: TerrainProps) {
       elevation={elevation}
       topology={topology}
       terrainFieldFilter={terrainFieldFilter}
-      getCameraOrigin={getCameraOrigin}
-      cameraHysteresis={cameraHysteresis}
+      culling={culling}
+      residency={residency}
+      lod={lod}
+      pipeline={pipeline}
       tasks={tasks}
       maxNodes={maxNodes}
       {...primitiveProps}

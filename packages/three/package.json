@@ -1,48 +1,48 @@
 {
-  "name": "@hello-terrain/three",
-  "description": "High performance terrain system for three.js",
-  "homepage": "http://hello-terrain.kenny.wtf",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/kenjinp/hello-terrain.git"
-  },
-  "version": "0.0.0-alpha.14",
-  "type": "module",
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.cjs"
+    "name": "@hello-terrain/three",
+    "version": "0.0.0-alpha.14",
+    "description": "High performance terrain system for three.js",
+    "homepage": "http://hello-terrain.kenny.wtf",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/kenjinp/hello-terrain.git"
+    },
+    "files": [
+        "dist"
+    ],
+    "type": "module",
+    "main": "./dist/index.mjs",
+    "module": "./dist/index.mjs",
+    "types": "./dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.mjs",
+            "require": "./dist/index.cjs"
+        }
+    },
+    "scripts": {
+        "build": "unbuild",
+        "release": "pnpm run build && pnpm publish --access=public",
+        "test": "vitest",
+        "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
+        "bench": "npx tsx benchmarks/Quadtree.bench.ts",
+        "lint": "oxlint -c node_modules/@config/oxlint/base.json",
+        "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
+    },
+    "dependencies": {
+        "@hello-terrain/work": "workspace:*"
+    },
+    "devDependencies": {
+        "@config/oxfmt": "workspace:*",
+        "@config/oxlint": "workspace:*",
+        "@config/typescript": "workspace:*",
+        "@types/three": "catalog:",
+        "mitata": "^1.0.34",
+        "unbuild": "^3.5.0",
+        "vitest": "^4.0.16"
+    },
+    "peerDependencies": {
+        "three": "catalog:"
     }
-  },
-  "files": [
-    "dist"
-  ],
-  "scripts": {
-    "build": "unbuild",
-    "release": "pnpm run build && pnpm publish --access=public",
-    "test": "vitest",
-    "typecheck": "tsc -p tsconfig.json --noEmit --composite false",
-    "bench": "npx tsx benchmarks/Quadtree.bench.ts",
-    "lint": "oxlint -c node_modules/@config/oxlint/base.json",
-    "format": "oxfmt -c node_modules/@config/oxfmt/base.json --write ."
-  },
-  "peerDependencies": {
-    "three": "catalog:"
-  },
-  "devDependencies": {
-    "@config/oxfmt": "workspace:*",
-    "@config/oxlint": "workspace:*",
-    "@config/typescript": "workspace:*",
-    "@types/three": "catalog:",
-    "mitata": "^1.0.34",
-    "unbuild": "^3.5.0",
-    "vitest": "^4.0.16"
-  },
-  "dependencies": {
-    "@hello-terrain/work": "workspace:*"
-  }
 }

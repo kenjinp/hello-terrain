@@ -15,7 +15,9 @@ import {
   maxLevel,
   maxNodes,
   positionNodeTask,
-  quadtreeUpdate,
+  cameraView,
+  createInitialCameraView,
+  readCameraView,
   rootSize,
   skirtScale,
   TerrainGeometry,
@@ -26,8 +28,7 @@ import {
   type LeafSet,
   type TerrainGraph,
   type TerrainTileBounds,
-  type UpdateParams,
-} from "@hello-terrain/three";
+  } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
@@ -141,7 +142,7 @@ function TileBoundsViz({ g, currentRootSize }: { g: TerrainGraph; currentRootSiz
   const geo = useMemo(makeBoxGeo, []);
 
   useFrame(() => {
-    const leafSet = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
+    const leafSet = g.peek(terrainTasks.visibleLeafSet)?.leaves as LeafSet | undefined;
     const terrainQuery = g.peek(terrainTasks.terrainQuery)?.query;
 
     if (!leafSet || !terrainQuery) {
@@ -207,7 +208,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
   const meshRef = useRef<TerrainMesh | null>(null);
   const materialRef = useRef<THREE.MeshBasicNodeMaterial | null>(null);
   const lastPositionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
-  const lastCameraRef = useRef(new THREE.Vector3());
+  const cameraViewScratchRef = useRef(createInitialCameraView());
 
   const controls = useControls(
     "Terrain",
@@ -277,15 +278,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
   const colorNode = controls.tileColors ? tileInstanceColorNode : terrainColorNode;
 
   useFrame(async ({ camera, gl }) => {
-    if (lastCameraRef.current.distanceToSquared(camera.position) >= 0.05 * 0.05) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
+    g.set(cameraView, readCameraView(camera, cameraViewScratchRef.current));
 
     await g.run({
       resources: { renderer: gl as unknown as THREE.WebGPURenderer },
@@ -294,7 +287,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
     const mesh = meshRef.current;
     if (!mesh) return;
 
-    const leaves = g.peek(terrainTasks.quadtreeUpdate) as LeafSet | undefined;
+    const leaves = g.peek(terrainTasks.visibleLeafSet)?.leaves as LeafSet | undefined;
     if (leaves && mesh.count !== leaves.count) {
       mesh.count = leaves.count;
       mesh.instanceMatrix.needsUpdate = true;

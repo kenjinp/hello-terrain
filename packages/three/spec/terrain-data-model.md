@@ -19,20 +19,20 @@ This document defines the canonical runtime data model for `@hello-terrain/three
 The terrain system spans four data domains:
 
 1. **Param domain (graph inputs)**
-   - App-provided values and callbacks (`rootSize`, `origin`, `maxNodes`, `elevationFn`, etc.).
-   - Primary invalidation drivers.
+    - App-provided values and callbacks (`rootSize`, `origin`, `maxNodes`, `elevationFn`, etc.).
+    - Primary invalidation drivers.
 
 2. **CPU topology domain (quadtree)**
-   - Active tile topology and lookup structures.
-   - Authoritative source of tile identity each frame.
+    - Active tile topology and lookup structures.
+    - Authoritative source of tile identity each frame.
 
 3. **GPU production domain (compute + textures/buffers)**
-   - Elevation, derived terrain field, and reduction outputs.
-   - Authoritative source of render-time geometric payloads.
+    - Elevation, derived terrain field, and reduction outputs.
+    - Authoritative source of render-time geometric payloads.
 
 4. **CPU snapshot/query domain**
-   - Async readback snapshots for synchronous gameplay queries and raycasts.
-   - Eventually consistent with GPU production.
+    - Async readback snapshots for synchronous gameplay queries and raycasts.
+    - Eventually consistent with GPU production.
 
 ## Core Entities
 
@@ -40,9 +40,9 @@ The terrain system spans four data domains:
 
 Defined in `packages/three/src/tasks/params.ts`.
 
-- **World config:** `rootSize`, `origin`, `elevationScale`
+- **World config:** `rootSize`, `origin`, `elevationScale`, `radius`
 - **Shape config:** `innerTileSegments`, `maxNodes`, `maxLevel`
-- **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`
+- **Runtime controls:** `cameraView`, `residencyAnchors`, `lodCriteria`, `terrainFieldFilter`
 - **Customization callbacks:** `topology`, `elevationFn`
 
 These values are not copied into one monolithic config object; they are consumed directly by task dependencies.
@@ -107,8 +107,8 @@ CPU query facade and backing cache:
 
 - `cache: CpuTerrainCache`
 - `query: TerrainQuery`
-- `shapeKey: string` (buffer-shape identity; a change recreates the cache)
-- `projection: SurfaceProjection` (the projection the queries close over; an identity change — any surface-geometry change — swaps surface ops + rebuilds queries)
+- `shapeKey: string` (buffer-shape identity derived from capacity, sampling shape, `maxLevel`, and topology `cacheKey`; a change recreates the cache)
+- `projection: SurfaceProjection` (the projection the queries close over; an identity change with the same `cacheKey` swaps surface ops + rebuilds queries)
 
 This is the authoritative CPU query entrypoint for app/raycast usage.
 
@@ -124,12 +124,12 @@ Raycast adapter over `TerrainQuery`, produced by `terrainRaycastTask`.
 To avoid accidental rebuild churn:
 
 - **Stable identity objects** should be allocated once per shape key (or once lifetime):
-  - uniform node objects,
-  - long-lived storage contexts keyed by capacity/shape.
+    - uniform node objects,
+    - long-lived storage contexts keyed by capacity/shape.
 - **Payload fields** should be updated per frame:
-  - uniform values,
-  - leaf counts,
-  - compute/readback outputs.
+    - uniform values,
+    - leaf counts,
+    - compute/readback outputs.
 
 In practice:
 
@@ -228,7 +228,9 @@ CPU/TSL mirror pairs are never merged across the boundary; they are co-located o
 
 ## Consumer Guidance
 
-- Use `positionNodeTask` + `quadtreeUpdateTask.count` for rendering.
+- Use `positionNodeTask` + visible slot count for rendering.
 - Use `terrainQueryTask.query` for CPU terrain sampling APIs.
+- Use resident slot/index data for query, raycast, physics, and sampler support;
+  render visibility must not be the residency source of truth.
 - Use `terrainRaycastTask` for scene picking integration.
 - Treat query data as snapshot-based and generation-driven rather than immediate GPU truth.

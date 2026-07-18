@@ -1,9 +1,9 @@
-import { task } from "@hello-terrain/work";
-import { Vector3 } from "three";
-import { createTerrainUniforms } from "../../gpu/uniforms";
-import type { TerrainUniformsParams } from "../../types";
-import { instanceIdTask } from "../instanceId.task";
-import { elevationScale, innerTileSegments, origin, radius, rootSize, skirtScale } from "../params";
+import { task } from '@hello-terrain/work';
+import { Vector3 } from 'three';
+import { createTerrainUniforms } from '../../gpu/uniforms';
+import type { TerrainUniformsParams } from '../../types';
+import { instanceIdTask } from '../instanceId.task';
+import { elevationScale, innerTileSegments, origin, radius, rootSize, skirtScale } from '../params';
 
 const scratchVector3 = new Vector3();
 
@@ -13,45 +13,45 @@ const scratchVector3 = new Vector3();
  * must persist across runs.
  */
 export const createUniformsTask = task((get, work) => {
-  const uniformParams: TerrainUniformsParams = {
-    rootOrigin: get(origin),
-    rootSize: get(rootSize),
-    innerTileSegments: get(innerTileSegments),
-    skirtScale: get(skirtScale),
-    elevationScale: get(elevationScale),
-    radius: get(radius),
-    instanceId: get(instanceIdTask),
-  };
-  return work(() => createTerrainUniforms(uniformParams));
+    const uniformParams: TerrainUniformsParams = {
+        rootOrigin: get(origin),
+        rootSize: get(rootSize),
+        innerTileSegments: get(innerTileSegments),
+        skirtScale: get(skirtScale),
+        elevationScale: get(elevationScale),
+        radius: get(radius),
+        instanceId: get(instanceIdTask),
+    };
+    return work(() => createTerrainUniforms(uniformParams));
 })
-  .displayName("createUniformsTask")
-  .cache("once");
+    .displayName('createUniformsTask')
+    .cache('once');
 
 /**
  * Updates the terrain uniform values each run. Reads the persisted uniform
  * nodes from createUniformsTask and writes the latest param values.
  */
 export const updateUniformsTask = task((get, work) => {
-  const terrainUniformsContext = get(createUniformsTask);
-  const rootSizeVal = get(rootSize);
-  const rootOrigin = get(origin);
-  const innerTileSegmentsVal = get(innerTileSegments);
-  const skirtScaleVal = get(skirtScale);
-  const elevationScaleVal = get(elevationScale);
-  const radiusVal = get(radius);
+    const terrainUniformsContext = get(createUniformsTask);
+    const rootSizeVal = get(rootSize);
+    const rootOrigin = get(origin);
+    const innerTileSegmentsVal = get(innerTileSegments);
+    const skirtScaleVal = get(skirtScale);
+    const elevationScaleVal = get(elevationScale);
+    const radiusVal = get(radius);
 
-  return work(() => {
-    terrainUniformsContext.uRootSize.value = rootSizeVal;
-    terrainUniformsContext.uRootOrigin.value = scratchVector3.set(
-      rootOrigin.x,
-      rootOrigin.y,
-      rootOrigin.z,
-    );
-    terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
-    terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
-    terrainUniformsContext.uElevationScale.value = elevationScaleVal;
-    terrainUniformsContext.uRadius.value = radiusVal;
+    return work(() => {
+        terrainUniformsContext.uRootSize.value = rootSizeVal;
+        terrainUniformsContext.uRootOrigin.value = scratchVector3.set(
+            rootOrigin.x,
+            rootOrigin.y,
+            rootOrigin.z
+        );
+        terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
+        terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
+        terrainUniformsContext.uElevationScale.value = elevationScaleVal;
+        terrainUniformsContext.uRadius.value = radiusVal;
 
-    return terrainUniformsContext;
-  });
-}).displayName("updateUniformsTask");
+        return terrainUniformsContext;
+    });
+}).displayName('updateUniformsTask');
