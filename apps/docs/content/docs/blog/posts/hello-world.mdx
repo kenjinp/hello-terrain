@@ -94,12 +94,14 @@ the graph is run. The quadtree refines and leaf tiles are uploaded to GPU storag
 
 ```tsx
 useFrame(async ({ camera }) => {
-  g.set(quadtreeUpdate, (prev) => {
-    prev.cameraOrigin.x = camera.position.x;
-    prev.cameraOrigin.y = camera.position.y;
-    prev.cameraOrigin.z = camera.position.z;
-    return prev;
-  });
+  g.set(quadtreeUpdate, (prev) => ({
+    ...prev,
+    cameraOrigin: {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+    },
+  }));
   // is it okay to do async work in a render loop? Who knows! I'll find out!
   await g.run();
 });

@@ -46,6 +46,7 @@ export function useTerrainRunner({
   const targetsRef = useRef(targets);
   const getCameraOriginRef = useRef(getCameraOrigin);
   const lastCameraOriginRef = useRef<Vector3 | null>(null);
+  const nextCameraOriginRef = useRef<Vector3 | null>(null);
   const runningRef = useRef(false);
   const generationRef = useRef(0);
   const runAbortControllerRef = useRef<AbortController | null>(null);
@@ -81,11 +82,9 @@ export function useTerrainRunner({
     (state: RootState, activeGraph: TerrainGraph) => {
       const activeGetCameraOrigin = getCameraOriginRef.current;
       const cameraOrigin = toVector3Like(state, activeGetCameraOrigin);
-      const nextOrigin = new Vector3(
-        cameraOrigin.x,
-        cameraOrigin.y,
-        cameraOrigin.z,
-      );
+      // Reuse one scratch vector per runner instead of allocating every frame.
+      const nextOrigin = (nextCameraOriginRef.current ??= new Vector3());
+      nextOrigin.set(cameraOrigin.x, cameraOrigin.y, cameraOrigin.z);
       const lastOrigin = lastCameraOriginRef.current;
       const hysteresisSq = cameraHysteresis * cameraHysteresis;
 
@@ -93,13 +92,18 @@ export function useTerrainRunner({
         !lastOrigin ||
         lastOrigin.distanceToSquared(nextOrigin) >= hysteresisSq
       ) {
-        activeGraph.set(quadtreeUpdate, (prev) => {
-          prev.cameraOrigin.x = nextOrigin.x;
-          prev.cameraOrigin.y = nextOrigin.y;
-          prev.cameraOrigin.z = nextOrigin.z;
-          return prev;
-        });
-        lastCameraOriginRef.current = nextOrigin;
+        const { x, y, z } = nextOrigin;
+        // Immutable update: the graph-local value is this graph's own copy, but
+        // replacing the object keeps the param free of aliasing by construction.
+        activeGraph.set(quadtreeUpdate, (prev) => ({
+          ...prev,
+          cameraOrigin: { x, y, z },
+        }));
+        if (lastOrigin) {
+          lastOrigin.copy(nextOrigin);
+        } else {
+          lastCameraOriginRef.current = nextOrigin.clone();
+        }
       }
     },
     [cameraHysteresis],

@@ -36,6 +36,29 @@ calcGraph.get(calcSquare); // 16
 - **Upstream tasks** referenced by `get(otherTask)` are registered automatically when discovered.
 - **`cache:"none"`**:\n  - the task recomputes on every run\n  - any downstream tasks are treated as dirty every run\n  - within a run, downstream tasks can still depend on values computed earlier in the run
 
+## Graph-local params (`graph.set`)
+
+`graph.set(param, valueOrCb)` takes **graph-local ownership** of a param so several graphs can share
+one module-scope `param()` token with isolated values. On the first `graph.set()` the graph seeds its
+local value from `param.get()`; plain objects and arrays in that default are **deep-copied**, so every
+graph gets its own copy and `param.get()` (the shared default) is never touched. Functions, class
+instances, typed arrays, `Map`/`Set`, etc. are kept by reference.
+
+```ts
+const config = param({ origin: { x: 0, y: 0 }, mode: "distance" });
+
+const a = graph().set(config, (prev) => ({ ...prev, origin: { x: 1, y: 0 } }));
+const b = graph().set(config, (prev) => ({ ...prev, origin: { x: 2, y: 0 } }));
+// a and b each see their own origin; config.get().origin.x is still 0.
+```
+
+Because the bound value is graph-private, mutating `prev` in place inside the callback is safe per
+graph, but immutable updates (as above) are still recommended: they make change tracking obvious and
+keep the value safe to hand to other code. `graph.reset(param)` restores a fresh copy of the default.
+
+Tasks that only `get(param)` — without any `graph.set()` on that graph — read the shared
+`param.get()` value directly and follow `param.subscribe()`; that value is *not* copied.
+
 ## Lanes and `laneConcurrency`
 
 Tasks can be tagged with a **lane** (default `"cpu"`). Lanes become meaningful when you pass

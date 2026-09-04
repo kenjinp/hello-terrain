@@ -1060,6 +1060,187 @@ describe("graph()", () => {
       await g.run({ targets: [t] });
       expect(g.get(t)).toBe(15);
     });
+
+    it("still bumps the version and dirties downstream when the callback returns prev", async () => {
+      const p = param({ origin: { x: 0 } });
+      let calls = 0;
+      const t = task((get, work) => {
+        const pv = get(p);
+        return work(() => {
+          calls += 1;
+          return pv.origin.x;
+        });
+      });
+
+      const g = graph().add(t).set(p, (prev) => prev);
+      await g.run({ targets: [t] });
+      expect(calls).toBe(1);
+
+      const before = g.inspect({ includeRuntime: true }).nodes.find((n) => n.id === p.id)!;
+      g.set(p, (prev) => {
+        prev.origin.x = 7;
+        return prev;
+      });
+      const after = g.inspect({ includeRuntime: true }).nodes.find((n) => n.id === p.id)!;
+      expect(after.version).toBe(before.version! + 1);
+
+      await g.run({ targets: [t] });
+      expect(calls).toBe(2);
+      expect(g.get(t)).toBe(7);
+    });
+
+    describe("object-valued params", () => {
+      type Origin = { cameraOrigin: { x: number; y: number; z: number }; mode: string };
+      const makeOriginParam = () =>
+        param<Origin>({ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance" });
+      const readX = (p: ReturnType<typeof makeOriginParam>) =>
+        task((get, work) => {
+          const pv = get(p);
+          return work(() => pv.cameraOrigin.x);
+        });
+
+      it("gives each graph its own copy so in-place mutation does not alias", async () => {
+        const p = makeOriginParam();
+        const t = readX(p);
+
+        const a = graph()
+          .add(t)
+          .set(p, (prev) => {
+            prev.cameraOrigin.x = 111;
+            return prev;
+          });
+        const b = graph()
+          .add(t)
+          .set(p, (prev) => {
+            prev.cameraOrigin.x = 222;
+            return prev;
+          });
+
+        await a.run({ targets: [t] });
+        await b.run({ targets: [t] });
+
+        expect(a.get(t)).toBe(111);
+        expect(b.get(t)).toBe(222);
+        // The module-scope default is untouched.
+        expect(p.get().cameraOrigin.x).toBe(0);
+        expect(p.get().mode).toBe("distance");
+      });
+
+      it("copies self-referencing plain-object defaults without recursing forever", async () => {
+        type Cyclic = { x: number; self?: Cyclic };
+        const cyclic: Cyclic = { x: 1 };
+        cyclic.self = cyclic;
+        const p = param<Cyclic>(cyclic);
+        const t = task((get, work) => {
+          const pv = get(p);
+          return work(() => pv);
+        });
+
+        const g = graph()
+          .add(t)
+          .set(p, (prev) => {
+            prev.x = 2;
+            return prev;
+          });
+        await g.run({ targets: [t] });
+
+        const bound = g.get(t);
+        expect(bound).not.toBe(cyclic);
+        expect(bound.x).toBe(2);
+        // The cycle is preserved inside the copy and does not point at the default.
+        expect(bound.self).toBe(bound);
+        expect(cyclic.x).toBe(1);
+      });
+
+      it("does not alias when ownership is taken over from a subscription", async () => {
+        const p = makeOriginParam();
+        const t = readX(p);
+
+        // Auto-registered via get() first (subscription path), then bound.
+        const a = graph().add(t);
+        await a.run({ targets: [t] });
+        a.set(p, (prev) => {
+          prev.cameraOrigin.x = 5;
+          return prev;
+        });
+        await a.run({ targets: [t] });
+
+        expect(a.get(t)).toBe(5);
+        expect(p.get().cameraOrigin.x).toBe(0);
+      });
+
+      it("reset() restores the defaults and later mutations do not leak into another graph", async () => {
+        const p = makeOriginParam();
+        const t = readX(p);
+
+        const a = graph().add(t).set(p, (prev) => {
+          prev.cameraOrigin.x = 111;
+          return prev;
+        });
+        const b = graph().add(t).set(p, (prev) => {
+          prev.cameraOrigin.x = 222;
+          return prev;
+        });
+
+        a.reset(p);
+        await a.run({ targets: [t] });
+        await b.run({ targets: [t] });
+        expect(a.get(t)).toBe(0);
+        expect(b.get(t)).toBe(222);
+
+        // Mutating after reset must not corrupt the baseline...
+        a.set(p, (prev) => {
+          prev.cameraOrigin.x = 333;
+          return prev;
+        });
+        a.reset(p);
+        await a.run({ targets: [t] });
+        expect(a.get(t)).toBe(0);
+
+        // ...nor another graph, nor the module default.
+        await b.run({ targets: [t] });
+        expect(b.get(t)).toBe(222);
+        expect(p.get().cameraOrigin.x).toBe(0);
+      });
+
+      it("copies plain arrays but leaves non-plain values by reference", async () => {
+        const typed = new Float32Array([1, 2, 3]);
+        const list = param<{ items: number[]; typed: Float32Array }>({ items: [1, 2], typed });
+        const t = task((get, work) => {
+          const pv = get(list);
+          return work(() => pv);
+        });
+
+        const a = graph().add(t).set(list, (prev) => {
+          prev.items.push(3);
+          return prev;
+        });
+        await a.run({ targets: [t] });
+
+        expect(a.get(t).items).toEqual([1, 2, 3]);
+        expect(list.get().items).toEqual([1, 2]);
+        expect(a.get(t).typed).toBe(typed);
+      });
+
+      it("passes function-valued params through by reference", async () => {
+        type Fn = (x: number) => number;
+        const fn: Fn = (x) => x * 2;
+        const p = param<Fn>(fn);
+        const t = task((get, work) => {
+          const f = get(p);
+          return work(() => f);
+        });
+
+        // T is itself a function, so the updater must be annotated to disambiguate.
+        const a = graph().add(t).set(p, (prev: Fn) => prev);
+        await a.run({ targets: [t] });
+        expect(a.get(t)).toBe(fn);
+
+        a.reset(p);
+        await a.run({ targets: [t] });
+        expect(a.get(t)).toBe(fn);
+      });
+    });
   });
 
   describe("graph.reset()", () => {

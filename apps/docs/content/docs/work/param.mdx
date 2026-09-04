@@ -269,10 +269,37 @@ console.log(g2.get(configTask)); // { size: 512, level: 20 }
 
 - Before `graph.set()` is called, the graph subscribes to `param.subscribe()` — exactly like today.
 - The first `graph.set(param, valueOrCb)` call **detaches** the external subscription and stores a graph-local value.
+- That graph-local value is seeded from `param.get()`, but plain objects and arrays are **deep-copied** so each graph owns its own copy and the shared default is never mutated. Functions, class instances, typed arrays, `Map`/`Set`, etc. are kept by reference.
 - Subsequent `graph.set()` calls update the graph-local value and mark downstream tasks dirty.
 - External `param.set()` calls no longer affect a graph that has taken ownership.
-- `graph.reset(param)` resets one graph-owned param back to its owned baseline.
+- `graph.reset(param)` resets one graph-owned param back to a fresh copy of its owned baseline.
 - `graph.reset()` resets all graph-owned params in the graph.
+
+### Object-valued params
+
+Every graph gets its own copy of an object default, so two graphs can never see each other's
+edits — even if the updater mutates `prev` in place:
+
+```ts
+const cameraConfig = param({ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance" });
+
+const a = graph().set(cameraConfig, (prev) => ({ ...prev, cameraOrigin: { x: 1, y: 0, z: 0 } }));
+const b = graph().set(cameraConfig, (prev) => ({ ...prev, cameraOrigin: { x: 2, y: 0, z: 0 } }));
+
+// a → x: 1, b → x: 2, and the module-scope default is untouched:
+cameraConfig.get().cameraOrigin.x; // 0
+```
+
+<Callout type="note">
+  In-place mutation of `prev` (`prev.cameraOrigin.x = 1; return prev`) is safe per graph, but
+  **immutable updates are still recommended**: returning a new object keeps intent obvious and
+  means the value can be shared with other code without surprises.
+</Callout>
+
+<Callout type="warn">
+  Only `graph.set()` copies. A task that merely calls `get(param)` on a graph that never bound that
+  param reads the shared `param.get()` value directly — mutate it and every graph sees the change.
+</Callout>
 
 <Callout type="note">
   You can mix owned and unowned params in the same graph. Only params you explicitly
