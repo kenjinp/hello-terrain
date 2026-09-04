@@ -22,6 +22,8 @@ export function createFlatTopology(cfg: FlatTopologyConfig): Topology {
     spaceCount: 1,
     maxRootCount: 1,
     projection: createFlatProjection(),
+    rootSize: cfg.rootSize,
+    origin: cfg.origin,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       const level = tile.level;

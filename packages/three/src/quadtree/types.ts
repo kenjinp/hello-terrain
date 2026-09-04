@@ -49,6 +49,27 @@ export type Topology = {
   projection: SurfaceProjection;
 
   /**
+   * World-space root tile edge size this topology was built with. The
+   * pipeline reads it (via `resolveTerrainWorldConfig`) to drive `uRootSize`
+   * so the GPU tile layout and the CPU LOD bounds share one value.
+   *
+   * Flat topologies set it from their config. Curved topologies (cube-sphere,
+   * torus) leave it undefined — their GPU projections size tiles from
+   * `projection.radius` / their own geometry and never read `uRootSize`; the
+   * uniform then falls back to the `rootSize` param and is only forwarded to
+   * the user's elevation function as its `rootSize` argument.
+   */
+  rootSize?: number;
+
+  /**
+   * World-space origin this topology was built with. Drives `uRootOrigin` and
+   * the CPU query/raycast origin. Flat topologies use their root origin;
+   * curved topologies use their surface `center`. Undefined falls back to
+   * `projection.center`, then the `origin` param.
+   */
+  origin?: { x: number; y: number; z: number };
+
+  /**
    * Compute the same-level neighbor TileId in the requested direction.
    * Returns false if the neighbor is outside the valid topology.
    *

@@ -236,7 +236,8 @@ const INFINITE_FLAT_CODE = buildAppCode({
         origin: { x: 0, y: 0, z: 0 },
         rootGridRadius: 1,
       })`,
-  // rootSize must match the topology's root size for the GPU projection.
+  // Only needed by the pinned published packages (COMMON_DEPENDENCIES): in the
+  // current source the topology owns rootSize/origin and this option is redundant.
   terrainOptions: `    rootSize: 200,
     maxLevel: 10,
     maxNodes: 512,
@@ -257,7 +258,8 @@ const CUBE_SPHERE_CODE = buildAppCode({
         radius: 1000,
         center: { x: 0, y: 0, z: 0 },
       })`,
-  // radius drives the GPU sphere projection.
+  // Only needed by the pinned published packages (COMMON_DEPENDENCIES): in the
+  // current source the topology owns the radius and the `radius` option is deprecated.
   terrainOptions: `    radius: 1000,
     maxLevel: 10,
     maxNodes: 512,

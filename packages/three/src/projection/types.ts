@@ -142,9 +142,15 @@ export interface SurfaceProjectionCpu {
 export interface SurfaceProjection {
   /** Identifier; never switched on internally. */
   readonly kind: ProjectionKind;
-  /** Representative radius (bounds/uniform helper); undefined for flat. */
+  /**
+   * Representative radius; the source of truth for `uRadius` and the CPU
+   * query/raycast (see `resolveTerrainWorldConfig`). Undefined for flat.
+   */
   readonly radius?: number;
-  /** Surface center in world space; undefined for flat. */
+  /**
+   * Surface center in world space; fallback for `Topology.origin` when the
+   * topology does not set one. Undefined for flat.
+   */
   readonly center?: Vec3Like;
   /** Closed surfaces face outward → flip triangle winding. */
   readonly faceOutward: boolean;

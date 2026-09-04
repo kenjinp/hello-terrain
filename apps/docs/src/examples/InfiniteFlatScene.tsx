@@ -14,7 +14,6 @@ import {
   positionNodeTask,
   quadtreeUpdate,
   quadtreeUpdateTask,
-  rootSize,
   skirtScale,
   TerrainGeometry,
   terrainGraph,
@@ -155,10 +154,6 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   useEffect(() => {
     g.set(maxNodes, () => controls.maxNodes);
   }, [controls.maxNodes]);
-
-  useEffect(() => {
-    g.set(rootSize, () => controls.rootSize);
-  }, [controls.rootSize]);
 
   useEffect(() => {
     g.set(maxLevel, () => controls.maxLevel);

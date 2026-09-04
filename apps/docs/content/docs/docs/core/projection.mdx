@@ -13,9 +13,9 @@ This is dependency injection rather than a `switch`/`if (projection === ...)` la
 interface SurfaceProjection {
   /** Identifier for debugging/telemetry only — never switched on internally. */
   readonly kind: "flat" | "cubeSphere" | "torus" | (string & {});
-  /** Representative radius (bounds/uniform helper); undefined for flat. */
+  /** Representative radius; drives `uRadius` + CPU query/raycast. Undefined for flat. */
   readonly radius?: number;
-  /** Surface center in world space; undefined for flat. */
+  /** Surface center in world space; the topology's `origin` fallback. Undefined for flat. */
   readonly center?: { x: number; y: number; z: number };
   /** Closed surfaces face outward → the mesh flips its triangle winding. */
   readonly faceOutward: boolean;
@@ -56,6 +56,8 @@ interface SurfaceProjection {
 | `createTorusProjection({ majorRadius, minorRadius, center, invert, baseU, baseV })` | `torus` | Closed donut; exposes `surfaceQuery`. `baseU`/`baseV` default to `1`; the topology auto-sets `baseU = round(major/minor)`. |
 
 You normally never construct these directly — the topology factories (`createFlatTopology`, `createCubeSphereTopology`, `createTorusTopology`, …) wire the matching projection for you.
+
+`radius` and `center` are authoritative: the pipeline feeds `uRadius` / `uRootOrigin` and the CPU query/raycast from the topology and its projection rather than from the legacy `radius` / `origin` params (see [World config ownership](/docs/core/params#world-config-ownership)). A custom projection that represents a curved surface should therefore set both.
 
 ## Adding a new surface shape
 

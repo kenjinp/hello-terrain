@@ -8,9 +8,10 @@ import type {
   TerrainSphereQuery,
   TerrainSurfaceQuery,
 } from "../query/types";
-import { elevationScale, origin, rootSize } from "./params";
+import { elevationScale, origin, radius, rootSize } from "./params";
 import { topologyTask } from "./quadtree.task";
 import { terrainQueryTask } from "./terrain-query.task";
+import { resolveTerrainWorldConfig } from "./world-config";
 
 const BOUNDS_PADDING = 1;
 const RAYCAST_STATE = Symbol("terrainRaycastTaskState");
@@ -29,10 +30,16 @@ type TerrainRaycastWithState = TerrainRaycast & {
 export const terrainRaycastTask = task(
   (get, work) => {
     const { query: terrainQuery, surfaceQuery, sphereQuery } = get(terrainQueryTask);
-    const rootSizeValue = get(rootSize);
-    const originValue = get(origin);
     const elevationScaleValue = get(elevationScale);
-    const projection = get(topologyTask).projection;
+    const topologyValue = get(topologyTask);
+    const projection = topologyValue.projection;
+    // Topology owns rootSize/origin; params are only a fallback.
+    const world = resolveTerrainWorldConfig(topologyValue, {
+      rootSize: get(rootSize),
+      origin: get(origin),
+      radius: get(radius),
+    });
+    const originValue = world.origin;
 
     return work((prev?: TerrainRaycast): TerrainRaycast => {
       let raycast = prev as TerrainRaycastWithState | undefined;
@@ -61,7 +68,7 @@ export const terrainRaycastTask = task(
       state.terrainQuery = terrainQuery;
       state.surfaceQuery = surfaceQuery;
       state.sphereQuery = sphereQuery;
-      state.config.rootSize = rootSizeValue;
+      state.config.rootSize = world.rootSize;
       state.config.originX = originValue.x;
       state.config.originY = originValue.y;
       state.config.originZ = originValue.z;

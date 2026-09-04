@@ -116,9 +116,11 @@ const planet = createCubeSphereTopology({
 
 Unlike the flat topologies, the cube-sphere injects a cube-sphere `projection` (its `kind` is `"cubeSphere"`) along with its `radius` and `center`. The GPU position pipeline calls into the projection to map each tile vertex from its face-local `(u, v)` onto the cube, normalize it onto the unit sphere, scale by `radius`, and displace it radially by elevation. Normals are reconstructed from the displaced neighbor positions so lighting follows the planet's curvature.
 
+The `radius` and `center` you pass here are the **only** place they need to live: the GPU uniforms (`uRadius`, `uRootOrigin`) and the CPU query/raycast read them from the topology, so there is no separate `radius` param to keep in sync (the legacy `radius` param is deprecated — see [World config ownership](/docs/core/params#world-config-ownership)).
+
 Cross-face topology (`neighborSameLevel`) is derived numerically from a shared cube-face basis, so tiles that cross a face edge — including the rotated edges near the poles — resolve to the correct neighbor for 2:1 balancing and seam filling.
 
-The same graph wiring drives a full planet — only the topology, the `radius` param, and the camera distance change. Open the **Cube-sphere** tab above and orbit around to see the six faces refine toward the camera.
+The same graph wiring drives a full planet — only the topology and the camera distance change. Open the **Cube-sphere** tab above and orbit around to see the six faces refine toward the camera.
 
 See the [Cube-Sphere Planet example](/docs/examples/cube-sphere) for a richer interactive demo.
 
@@ -174,6 +176,10 @@ type Topology = {
   maxRootCount: number;
   /** Injected surface projection (GPU position/normal + CPU query/raycast/LOD). */
   projection: SurfaceProjection;
+  /** World-space root tile size (flat topologies); drives `uRootSize`. */
+  rootSize?: number;
+  /** World-space origin / surface center; drives `uRootOrigin` and the CPU query origin. */
+  origin?: { x: number; y: number; z: number };
 
   neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean;
   tileBounds(
@@ -189,6 +195,7 @@ type Topology = {
 - `spaceCount` — number of independent root spaces (1 for flat/torus, 6 for the cube-sphere's faces).
 - `maxRootCount` — the maximum number of roots `rootTiles` can emit in a frame.
 - `projection` — the injected [`SurfaceProjection`](/docs/core/projection) strategy. The pipeline never branches on a projection kind; it calls into the projection's GPU and CPU hooks. The built-in factories set this for you.
+- `rootSize` / `origin` — the world config the topology was built with. The pipeline reads these (and `projection.radius`) in preference to the `rootSize` / `origin` / `radius` params, so the GPU geometry and the CPU LOD/query/raycast always agree. Flat topologies set both; curved topologies set `origin` to their `center` and leave `rootSize` undefined (their GPU projections size tiles from the radius). See [World config ownership](/docs/core/params#world-config-ownership).
 - `neighborSameLevel` — fills the same-level neighbor in a direction; returns `false` when there is no neighbor (e.g. the edge of a bounded topology).
 - `tileBounds` — writes a conservative, camera-relative bounding sphere used for LOD decisions. When an elevation range is supplied, bounds account for displaced geometry.
 - `rootTiles` — fills the active level-0 tiles for the current frame and returns the count.
@@ -230,7 +237,7 @@ export function Planet() {
       <ambientLight intensity={0.15} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
 
-      <Terrain topology={topology} radius={1000} maxLevel={12} elevation={elevation}>
+      <Terrain topology={topology} maxLevel={12} elevation={elevation}>
         {({ positionNode }) => (
           <meshStandardNodeMaterial positionNode={positionNode} />
         )}
@@ -271,7 +278,7 @@ function useInfiniteFlatGraph(rootSize: number, rootGridRadius: number) {
 }
 ```
 
-Because the `topology` param feeds the `topologyTask`, re-assigning it re-derives the quadtree tile layout and keeps CPU LOD and GPU geometry in sync. The [Infinite Flat](/docs/examples/infinite-flat) and [Cube-Sphere Planet](/docs/examples/cube-sphere) example sources show this pattern end to end.
+Because the `topology` param feeds the `topologyTask`, re-assigning it re-derives the quadtree tile layout and keeps CPU LOD and GPU geometry in sync. Note there is no matching `g.set(rootSize, …)`: the topology carries its own `rootSize`/`origin`, and the uniforms read those directly. The [Infinite Flat](/docs/examples/infinite-flat) and [Cube-Sphere Planet](/docs/examples/cube-sphere) example sources show this pattern end to end.
 
 ## Related Pages
 

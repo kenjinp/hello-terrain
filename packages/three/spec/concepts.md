@@ -13,6 +13,12 @@ A topology carries an injected `SurfaceProjection` (see below) and, for curved
 surfaces, a `radius`/`center`. The projection — not a branch on a projection
 kind — selects how the GPU assembles world positions and normals.
 
+The topology is also the single owner of the world config the GPU and CPU must
+agree on: flat topologies expose `rootSize` / `origin`, curved topologies expose
+`origin` (= `center`) and `projection.radius`. The pipeline reads these through
+`resolveTerrainWorldConfig`, falling back to the `rootSize` / `origin` / `radius`
+params only when the topology does not carry a value (`radius` is deprecated).
+
 Cross-face topology (`neighborSameLevel`) for the cube-sphere is derived
 numerically from a shared face basis (`CUBE_FACES`) so the CPU LOD topology and
 the GPU geometry agree, including the rotated edges near the poles. The same
