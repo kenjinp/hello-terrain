@@ -259,7 +259,7 @@ The elevation function is the first stage of a **compute pipeline**: an ordered 
 type ComputeStageCallback = (
   nodeIndex: Node,          // int  — index of the tile (quadtree leaf) being processed
   globalVertexIndex: Node,  // int  — nodeIndex * verticesPerTile + (iy * edgeVertexCount + ix)
-  uv: Node,                 // vec2 — tile-local coordinates in [0, 1)
+  uv: Node,                 // vec2 — localCoordinates / edgeVertexCount, in [0, 1); spans the whole grid incl. skirt ring
   localCoordinates: Node,   // vec2 — texel coordinates (ix, iy) inside the tile
   texelSize: Node,          // vec2 — 1 / edgeVertexCount on both axes
 ) => void;
@@ -272,42 +272,50 @@ function createComputePipelineTasks(leafStageTask: TaskRef<ComputePipeline>): {
 };
 ```
 
-Stages use the **accumulation pattern**: `get()` the upstream stage task, spread its pipeline, and append your callback. Pass the resulting leaf task to the factory:
+Stages use the **accumulation pattern**: `get()` the upstream stage task, spread its pipeline, and append your callback. Pass the resulting leaf task to the factory.
+
+A custom pipeline **replaces** the default one — it must not run alongside it. `terrainGraph()` already registers `terrainTasks.compileCompute` / `terrainTasks.executeCompute`, and two execute tasks would both re-run the elevation stage against the same field buffer every frame. Build the graph without the default compute tasks and add your own `execute` instead:
 
 ```ts
 import {
   createComputePipelineTasks,
-  elevationFieldStageTask,
-  terrainGraph,
+  terrainFieldStageTask,
   terrainTasks,
 } from "@hello-terrain/three";
 import type { ComputePipeline } from "@hello-terrain/three";
-import { task } from "@hello-terrain/work";
+import { graph, task } from "@hello-terrain/work";
+import type { WebGPURenderer } from "three/webgpu";
 
-const erosionStageTask = task((get, work) => {
-  const upstream = get(elevationFieldStageTask);
+// Derive extra per-vertex data (here: a slope mask) from the *final* elevation.
+const slopeMaskStageTask = task((get, work) => {
+  const upstream = get(terrainFieldStageTask); // elevation + terrain-field pack
   const elevationField = get(terrainTasks.createElevationFieldContext);
+  const slopeMask = get(mySlopeMaskStorageTask); // your own storage buffer task
 
   return work((): ComputePipeline => [
     ...upstream,
     (nodeIndex, globalVertexIndex, uv) => {
-      // Read/modify the elevation field written by the previous stage.
       const height = elevationField.node.element(globalVertexIndex);
-      height.assign(height.mul(0.9));
+      slopeMask.node.element(globalVertexIndex).assign(height.greaterThan(50).select(1, 0));
     },
   ]);
-}).displayName("erosionStageTask");
+}).displayName("slopeMaskStageTask");
 
-const { compile, execute } = createComputePipelineTasks(erosionStageTask);
+const { execute } = createComputePipelineTasks(slopeMaskStageTask);
 
-const graph = terrainGraph();
-graph.add(execute); // `compile` is registered automatically as an upstream dependency
+const g = graph<{ renderer: WebGPURenderer }>();
+for (const [name, t] of Object.entries(terrainTasks)) {
+  if (name === "compileCompute" || name === "executeCompute") continue;
+  g.add(t as Parameters<typeof g.add>[0]);
+}
+g.add(execute); // `compile` is registered automatically as an upstream dependency
 ```
 
 How it fits together:
 
 - The built-in `terrainTasks.compileCompute` / `terrainTasks.executeCompute` are created by this same factory with `terrainFieldStageTask` as the leaf, so a custom pipeline behaves exactly like the default one.
-- When a pipeline has more than one stage, all stages but the last run first, the per-tile elevation bounds are reduced mid-pipeline, and then the final stage runs. Keep the terrain-field pack stage (or any stage that reads final elevation bounds) last.
+- When a pipeline has more than one stage, all stages but the last run first, the per-tile elevation bounds are reduced mid-pipeline, and then the final stage runs.
+- `terrainFieldStageTask` accumulates directly from `elevationFieldStageTask`, so today custom stages can only be appended **after** the terrain-field pack (as above) or used **instead of** it. A stage that modifies elevation *before* packing (erosion, terracing) must ship its own pack stage — folding that into the elevation callback itself is usually simpler.
 - The returned `execute` task needs `{ resources: { renderer } }` on `graph.run(...)`, like the default compute tasks.
 - Each stage is dispatched as its own compute kernel (one dispatch per stage, `instanceCount` tiles deep). Workgroup sizes are clamped to the device limits reported by [`getDeviceComputeLimits`](/docs/advanced/gpu-resources).
 
