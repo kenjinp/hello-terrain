@@ -67,6 +67,10 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
     spaceCount: 6,
     maxRootCount: 6,
     projection: createCubeSphereProjection({ radius, center, invert: cfg.invert }),
+    // The sphere's world origin is its center (drives `uRootOrigin` + CPU query).
+    // `rootSize` is intentionally left undefined: the cube-sphere GPU projection
+    // sizes tiles from `uRadius`, never `uRootSize`.
+    origin: center,
 
     neighborSameLevel(tile: TileId, dir: 0 | 1 | 2 | 3, out: TileId): boolean {
       const level = tile.level;

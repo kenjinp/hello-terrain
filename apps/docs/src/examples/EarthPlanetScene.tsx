@@ -127,7 +127,6 @@ function EarthPlanetSceneImpl({ store, cameraMode }: { store: LevaStore; cameraM
 
   const terrain = useTerrain({
     topology,
-    radius: EARTH_AUTHALIC_RADIUS,
     maxLevel: controls.maxLevel,
     maxNodes: controls.maxNodes,
     innerTileSegments: INNER_TILE_SEGMENTS,

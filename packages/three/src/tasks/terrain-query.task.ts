@@ -14,30 +14,33 @@ import {
 } from "./params";
 import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./compute.task";
+import { resolveTerrainWorldConfig } from "./world-config";
 
 export const terrainQueryTask = task((get, work) => {
   const maxNodesValue = get(maxNodes);
   const innerTileSegmentsValue = get(innerTileSegments);
   const maxLevelValue = get(maxLevel);
-  const rootSizeValue = get(rootSize);
-  const originValue = get(origin);
   const elevationScaleValue = get(elevationScale);
-  const radiusValue = get(radius);
   const topologyValue = get(topologyTask);
   const projection = topologyValue.projection;
+  // Topology owns rootSize/origin/radius; params are only a fallback.
+  const world = resolveTerrainWorldConfig(topologyValue, {
+    rootSize: get(rootSize),
+    origin: get(origin),
+    radius: get(radius),
+  });
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
     const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
-    const resolvedRadius = projection.radius ?? radiusValue;
     const configValues = {
-      rootSize: rootSizeValue,
-      originX: originValue.x,
-      originY: originValue.y,
-      originZ: originValue.z,
+      rootSize: world.rootSize,
+      originX: world.origin.x,
+      originY: world.origin.y,
+      originZ: world.origin.z,
       innerTileSegments: innerTileSegmentsValue,
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
-      radius: resolvedRadius,
+      radius: world.radius,
       baseU: projection.baseResolution?.u ?? 1,
       baseV: projection.baseResolution?.v ?? 1,
     };

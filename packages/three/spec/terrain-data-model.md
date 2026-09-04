@@ -40,12 +40,21 @@ The terrain system spans four data domains:
 
 Defined in `packages/three/src/tasks/params.ts`.
 
-- **World config:** `rootSize`, `origin`, `elevationScale`
+- **World config:** `rootSize`, `origin`, `elevationScale` (+ the deprecated `radius`)
 - **Shape config:** `innerTileSegments`, `maxNodes`, `maxLevel`
 - **Runtime controls:** `quadtreeUpdate`, `terrainFieldFilter`
 - **Customization callbacks:** `topology`, `elevationFn`
 
 These values are not copied into one monolithic config object; they are consumed directly by task dependencies.
+
+**World-config ownership.** `rootSize`, `origin`, and `radius` have a single
+owner: the resolved `Topology` (`topologyTask`). The default flat topology is
+built *from* the `rootSize` / `origin` params; a custom topology carries its own
+`rootSize` / `origin` and `projection.radius`. Every consumer (`createUniformsTask`,
+`updateUniformsTask`, `terrainQueryTask`, `terrainRaycastTask`) resolves the
+effective values through `resolveTerrainWorldConfig(topology, params)` —
+topology first, params as fallback — so the GPU uniforms and the CPU LOD/query/
+raycast can never disagree. The `radius` param is deprecated and only a fallback.
 
 ### 2) QuadtreeConfigState
 

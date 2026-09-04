@@ -51,6 +51,11 @@ export interface TerrainOptions {
   innerTileSegments?: number;
   skirtScale?: number;
   elevationScale?: number;
+  /**
+   * @deprecated The topology owns the radius — `createCubeSphereTopology({ radius })`
+   * is read directly by the GPU and CPU paths. Only a fallback for custom
+   * topologies whose projection has no `radius`; will be removed.
+   */
   radius?: number;
   elevation?: ElevationCallback;
   topology?: Topology | null;

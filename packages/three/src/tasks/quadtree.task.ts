@@ -7,9 +7,11 @@ import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, t
 import { terrainQueryTask } from "./terrain-query.task";
 
 /**
- * Derives the terrain topology from `rootSize` and `origin`.
- * Automatically recomputes when either param changes, keeping the
- * quadtree refinement in sync with the GPU-side tile positioning.
+ * Resolves the active topology: the custom `topology` param when set, else a
+ * bounded flat topology derived from `rootSize` and `origin`. The topology is
+ * the single owner of world config (`rootSize` / `origin` / `radius`) — the
+ * uniforms, query and raycast tasks read those from it via
+ * `resolveTerrainWorldConfig`, so CPU LOD and GPU geometry cannot desync.
  */
 export const topologyTask = task((get, work) => {
   const customTopology = get(topology);

@@ -5,6 +5,32 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased
+
+The **topology is now the single source of truth** for `radius`, `origin`, and `rootSize`. Previously the GPU read them from the `radius` / `origin` / `rootSize` params (via `uRadius` / `uRootOrigin` / `uRootSize`) while the CPU LOD bounds, terrain query, and raycast read the values baked into the topology you constructed — so `createCubeSphereTopology({ radius: 6371000 })` without a matching `radius={6371000}` prop silently rendered a 1000 m planet against Earth-scale LOD/picking.
+
+### Topology owns the world config
+
+- `Topology` gains optional `rootSize` and `origin` fields. Flat and infinite-flat topologies fill them from their config; cube-sphere and torus set `origin` to their `center` (their `radius` already lives on `projection.radius`).
+- New `resolveTerrainWorldConfig(topology, { rootSize, origin, radius })` helper resolves the effective values with the topology first and the params as fallback. `createUniformsTask`, `updateUniformsTask`, `terrainQueryTask`, and `terrainRaycastTask` all use it, so GPU geometry and CPU LOD/query/raycast can no longer disagree.
+- Curved topologies leave `rootSize` undefined: their GPU projections size tiles from the radius/geometry and never read `uRootSize`, which is only forwarded to your elevation function's `rootSize` argument (still driven by the `rootSize` param there).
+
+```tsx
+// Before: had to set both, and they had to match.
+<Terrain topology={createCubeSphereTopology({ radius: 6371000 })} radius={6371000} />
+
+// After: configure the shape once, on the topology.
+<Terrain topology={createCubeSphereTopology({ radius: 6371000 })} />
+```
+
+### Deprecated
+
+- **`radius` param** (`@hello-terrain/three`) and **`radius` option/prop** (`@hello-terrain/react`). Both still work as a fallback for custom topologies whose projection has no `radius`, but are no longer needed for the built-in topologies and will be removed in a future release. `rootSize` / `origin` are **not** deprecated — they still drive the default bounded flat topology.
+
+### Fixes 🐛
+
+- **`uRootOrigin` aliasing across instances.** `updateUniformsTask` wrote a shared module-scope `Vector3` into every terrain's `uRootOrigin`, so two terrains with different origins in one scene shared whichever was updated last. The uniform's own vector is now mutated in place.
+
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 
 Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 

@@ -22,6 +22,8 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
     spaceCount: 1,
     maxRootCount: rootWidth * rootWidth,
     projection: createFlatProjection(),
+    rootSize: cfg.rootSize,
+    origin: cfg.origin,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       let nx = tile.x;

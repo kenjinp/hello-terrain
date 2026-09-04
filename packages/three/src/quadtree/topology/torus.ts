@@ -54,6 +54,9 @@ export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
       baseU,
       baseV,
     }),
+    // The torus' world origin is its center. `rootSize` is left undefined: the
+    // torus GPU projection derives tile size from its own geometry.
+    origin: center,
 
     neighborSameLevel(tile: TileId, dir: Dir, out: TileId): boolean {
       const { nU, nV } = levelResolution(tile.level);

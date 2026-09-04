@@ -11,18 +11,53 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 
 | Param | Type | Default | What It Controls |
 |-------|------|---------|------------------|
-| `rootSize` | `number` | `256` | The world-space size of the root terrain region. Larger values cover more world space before subdivision. |
-| `origin` | `{ x: number; y: number; z: number }` | `{ x: 0, y: 0, z: 0 }` | The world-space origin of the terrain root. This offsets the terrain surface and related bounds calculations. |
+| `rootSize` | `number` | `256` | The world-space size of the root terrain region. Larger values cover more world space before subdivision. Drives the default flat topology; when you pass a custom `topology` that carries its own `rootSize` (flat / infinite flat), the topology's value wins. |
+| `origin` | `{ x: number; y: number; z: number }` | `{ x: 0, y: 0, z: 0 }` | The world-space origin of the terrain root. This offsets the terrain surface and related bounds calculations. Drives the default flat topology; a custom `topology`'s `origin` (or its projection `center` for curved surfaces) wins. |
 | `maxLevel` | `number` | `16` | The maximum quadtree subdivision depth. Higher values allow finer terrain detail close to the tracked origin. |
 | `maxNodes` | `number` | `1024` | The maximum number of active terrain tiles that can be rendered and processed at once. |
 | `innerTileSegments` | `number` | `61` | The vertex resolution inside each terrain tile before skirts are added (effective edge vertex count is `innerTileSegments + 3`, so the default is a `64×64` tile grid). Higher values increase per-tile detail and cost. |
 | `skirtScale` | `number` | `100` | The length of the downward skirt geometry used to hide cracks between terrain LOD levels. |
 | `elevationScale` | `number` | `1` | A multiplier applied to the sampled elevation values, controlling the vertical exaggeration of the terrain. |
-| `radius` | `number` | `1000` | The sphere radius used by the cube-sphere projection. Ignored by flat topologies. See [Cube-Sphere Planet](/docs/examples/cube-sphere). |
+| `radius` | `number` | `1000` | **Deprecated.** The sphere radius is owned by the topology (`createCubeSphereTopology({ radius })` → `topology.projection.radius`) and read from there by both the GPU uniforms and the CPU query/raycast. This param is only a fallback for custom topologies whose projection has no `radius`, and will be removed. See [World config ownership](#world-config-ownership). |
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
 | `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
 | `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
 | `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. Terrain fields use `rgba16float` with per-tile normalized elevation in `.r` (denormalized at sample time using per-tile pack bounds). |
+
+## World Config Ownership
+
+The topology is the **single source of truth** for the world configuration that the GPU geometry and the CPU LOD/query/raycast must agree on: `rootSize`, `origin`, and `radius`. Every built-in topology factory records the values it was built with, and the pipeline resolves them with the topology taking precedence over the params:
+
+| Value | Resolution order |
+|:--|:--|
+| `rootSize` | `topology.rootSize` → `rootSize` param |
+| `origin` | `topology.origin` → `topology.projection.center` → `origin` param |
+| `radius` | `topology.projection.radius` → `radius` param (deprecated) |
+
+- Flat / infinite-flat topologies carry `rootSize` and `origin` from their config.
+- Cube-sphere and torus topologies carry `origin` (their `center`) and `projection.radius`. They leave `rootSize` undefined because their GPU projections size tiles from the radius/geometry, so the `rootSize` param only surfaces as the `rootSize` argument of your [elevation function](/docs/core/elevation-function).
+
+In practice this means you configure the shape **once**, on the topology:
+
+```ts
+graph.set(topology, () => createCubeSphereTopology({ radius: 6371000 }));
+// No need to also set the `radius` param — the uniforms read the topology.
+```
+
+The same resolver is exported for custom tasks that need the effective values:
+
+```ts
+import { resolveTerrainWorldConfig, topologyTask, rootSize, origin, radius } from "@hello-terrain/three";
+
+const worldTask = task((get, work) => {
+  const world = resolveTerrainWorldConfig(get(topologyTask), {
+    rootSize: get(rootSize),
+    origin: get(origin),
+    radius: get(radius),
+  });
+  return work(() => world); // { rootSize, origin, radius }
+});
+```
 
 ## Where These Params Apply
 
