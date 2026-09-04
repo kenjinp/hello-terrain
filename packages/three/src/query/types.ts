@@ -1,5 +1,5 @@
 import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
-import type { SurfaceProjection } from "../projection/types";
+import type { SurfaceProjection, Vec3Like } from "../projection/types";
 import type { ElevationCallback } from "../tsl/elevation";
 import type { TerrainUniformsContext } from "../types";
 import type { Ray, Vector3 } from "three";
@@ -124,15 +124,18 @@ export interface TerrainQuery {
  * ...); `null` on flat surfaces. Elevation is the displacement above the base
  * surface (already scaled by `elevationScale`); `position` is the full
  * world-space surface point.
+ *
+ * Inputs accept any `{ x, y, z }` (a `THREE.Vector3` or a plain object);
+ * results are `THREE.Vector3`s.
  */
 export interface TerrainSurfaceQuery {
   readonly generation: number;
 
-  getElevationByPosition(position: Vector3): number | null;
-  getNormalByPosition(position: Vector3): Vector3 | null;
-  sampleTerrainByPosition(position: Vector3): TerrainSurfaceSample;
-  getTileByPosition(position: Vector3): TerrainTile | null;
-  getTileBoundsByPosition(position: Vector3): TerrainTileBounds | null;
+  getElevationByPosition(position: Vec3Like): number | null;
+  getNormalByPosition(position: Vec3Like): Vector3 | null;
+  sampleTerrainByPosition(position: Vec3Like): TerrainSurfaceSample;
+  getTileByPosition(position: Vec3Like): TerrainTile | null;
+  getTileBoundsByPosition(position: Vec3Like): TerrainTileBounds | null;
 
   /** Batch sample; `positions` is a Float32Array of xyz triples. */
   sampleTerrainBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
@@ -149,19 +152,19 @@ export interface TerrainSurfaceQuery {
  * (otherwise `null` on the query context / runtime).
  */
 export interface TerrainSphereQuery extends TerrainSurfaceQuery {
-  getElevationByDirection(direction: Vector3): number | null;
+  getElevationByDirection(direction: Vec3Like): number | null;
   getElevationByLatLong(latitudeDeg: number, longitudeDeg: number): number | null;
 
-  getNormalByDirection(direction: Vector3): Vector3 | null;
+  getNormalByDirection(direction: Vec3Like): Vector3 | null;
   getNormalByLatLong(latitudeDeg: number, longitudeDeg: number): Vector3 | null;
 
-  sampleTerrainByDirection(direction: Vector3): TerrainSurfaceSample;
+  sampleTerrainByDirection(direction: Vec3Like): TerrainSurfaceSample;
   sampleTerrainByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainSurfaceSample;
 
-  getTileByDirection(direction: Vector3): TerrainTile | null;
+  getTileByDirection(direction: Vec3Like): TerrainTile | null;
   getTileByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTile | null;
 
-  getTileBoundsByDirection(direction: Vector3): TerrainTileBounds | null;
+  getTileBoundsByDirection(direction: Vec3Like): TerrainTileBounds | null;
   getTileBoundsByLatLong(latitudeDeg: number, longitudeDeg: number): TerrainTileBounds | null;
 
   /** Batch sample; `directions` is a Float32Array of xyz triples. */
@@ -189,6 +192,17 @@ export interface TerrainRaycastConfig {
   centerX: number;
   centerY: number;
   centerZ: number;
+}
+
+/**
+ * Plain-object hit produced by the CPU marchers (`SurfaceProjectionCpu.raycast`).
+ * Converted once into a {@link TerrainRaycastResult} (three.js vectors) by
+ * {@link TerrainRaycast.pick}; the internals never touch three.js.
+ */
+export interface CpuRaycastHit {
+  position: Vec3Like;
+  normal: Vec3Like;
+  distance: number;
 }
 
 export interface TerrainRaycastResult {

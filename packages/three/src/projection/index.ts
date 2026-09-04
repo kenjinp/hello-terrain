@@ -4,6 +4,7 @@ export type {
   FieldNormalFn,
   ProjectionKind,
   ProjectionRaycastContext,
+  RayLike,
   RenderVertexPositionContext,
   RuntimeQueries,
   SurfaceKey,

@@ -82,16 +82,26 @@ Synchronous CPU sampling backed by an async readback of the elevation field.
 - `flat`: keyed on world `(x, z)`; elevation is a world-`Y` value, exposed via
   the flat `TerrainQuery`.
 - Closed surfaces: the projection injects `CpuSurfaceOps` into the terrain cache
-  (`positionToKey`, `surfacePosition`, `surfaceNormal`). A world point is mapped
-  to a surface key `(space, u, v)`, then to a quadtree tile via the shared
-  `(space, level, x, y)` spatial index used for rendering. Results report a world
-  `position` on the displaced surface and a world-space normal from the neighbor
-  cross product, mirroring the GPU assembly. Every closed surface exposes a
-  generic position-keyed `TerrainSurfaceQuery` (`null` on flat). The cube-sphere
+  (`positionToKey`, `surfacePosition(key, elevation, out)`,
+  `surfaceNormal(key, ctx, out)`). A world point is mapped to a surface key
+  `(space, u, v)`, then to a quadtree tile via the shared `(space, level, x, y)`
+  spatial index used for rendering. Results report a world `position` on the
+  displaced surface and a world-space normal from the neighbor cross product,
+  mirroring the GPU assembly. Every closed surface exposes a generic
+  position-keyed `TerrainSurfaceQuery` (`null` on flat). The cube-sphere
   additionally exposes a `TerrainSphereQuery` (which **extends**
   `TerrainSurfaceQuery`) with `ByDirection` / `ByLatLong` keys. Raycasts
   (`cpu.raycast`) intersect the surface's bounding shell and march in signed
   distance (radial for the sphere, tube-relative for the torus).
+- Renderer-free internals: all CPU query / raycast / surface-ops math runs on
+  plain `{ x, y, z }` objects (`Vec3Like`, `RayLike`) with the allocation-free
+  helpers in `query/vec3.ts`; surface ops write into caller-provided scratch.
+  three.js `Vector3`s exist only at the consumer boundary — the public
+  `CpuTerrainCache` sample methods, `TerrainQuery` / `TerrainSurfaceQuery` /
+  `TerrainSphereQuery`, and `TerrainRaycast.pick` (which converts the marcher's
+  plain `CpuRaycastHit` into a `TerrainRaycastResult`). A `THREE.Vector3` /
+  `THREE.Ray` satisfies the plain shapes structurally, so no copying happens on
+  the way in.
 
 ## Task Graph
 

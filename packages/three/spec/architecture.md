@@ -19,7 +19,10 @@ The terrain library is organized in layers from pure logic to runtime integratio
 
 4. `query/`  
    CPU snapshot sampling: the terrain cache, flat/surface/sphere query objects,
-   raycasting, and the GPU sampler.
+   raycasting, and the GPU sampler. The CPU internals (cache sampling, raycast
+   marchers, `vec3.ts` helpers) are renderer-free — plain `{ x, y, z }` math,
+   no three.js; `THREE.Vector3` results are materialized only by the
+   consumer-facing query / raycast objects.
 
 5. `projection/`  
    Surface-projection strategies (`SurfaceProjection`) that are *injected* into a

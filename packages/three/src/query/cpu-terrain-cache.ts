@@ -6,7 +6,12 @@ import {
   TILE_BOUNDS_LOD_MAX_OFFSET,
   TILE_BOUNDS_LOD_MIN_OFFSET,
 } from "../gpu/terrainFieldStorage";
-import type { CpuSurfaceOps, SurfaceKey } from "../projection/types";
+import type {
+  CpuSurfaceOps,
+  SurfaceKey,
+  SurfaceNormalContext,
+  Vec3Like,
+} from "../projection/types";
 import { tileLocalToFieldUVNumber } from "../gpu/tile";
 import {
   type ElevationGradient,
@@ -38,6 +43,7 @@ import type {
   TerrainTile,
   TerrainTileBounds,
 } from "./types";
+import { vec3, vec3Normalize, vec3Set } from "./vec3";
 
 type TerrainElevationSample = {
   elevation: number;
@@ -60,6 +66,11 @@ export type TerrainQueryConfig = {
   baseV?: number;
 };
 
+/**
+ * CPU terrain snapshot cache. Internally all vector math runs on plain
+ * `{ x, y, z }` scratch owned by the cache; `THREE.Vector3`s are allocated
+ * only by the public methods below (the consumer boundary).
+ */
 export interface CpuTerrainCache {
   readonly generation: number;
   readonly ready: boolean;
@@ -135,6 +146,20 @@ export function createCpuTerrainCache(
   const gridScratch = { gx: 0, gy: 0 };
   const gradientScratch: ElevationGradient = { dhdu: 0, dhdv: 0 };
   const keyScratch: SurfaceKey = { space: 0, u: 0, v: 0, dirX: 0, dirY: 0, dirZ: 0 };
+  /** Flat-sample normal scratch (plain vector; copied into a `Vector3` at the boundary). */
+  const normalScratch: Vec3Like = vec3();
+  /** Surface-sample scratch; filled by `sampleSurfaceInto`. */
+  const surfaceScratch = { position: vec3(), normal: vec3(), elevation: 0 };
+  const normalCtxScratch: SurfaceNormalContext = {
+    elevation: state.frontElevation,
+    shape,
+    leafIndex: 0,
+    gx: 0,
+    gy: 0,
+    innerTileSegments: config.innerTileSegments,
+    elevationScale: config.elevationScale,
+    level: 0,
+  };
 
   const surfaceLookupConfig = (): TileLookupConfig => ({
     rootSize: config.rootSize,
@@ -161,12 +186,14 @@ export function createCpuTerrainCache(
     return sampleGridBilinear(state.frontElevation, shape, lookup.leafIndex, g.gx, g.gy);
   };
 
-  const computeNormal = (
+  /** Flat heightfield normal `normalize(-dh/du, 1, -dh/dv)`; writes/returns `out`. */
+  const computeNormalInto = (
     leafIndex: number,
     gx: number,
     gy: number,
     tileSize: number,
-  ): Vector3 => {
+    out: Vec3Like,
+  ): Vec3Like => {
     const stepWorld = tileSize / config.innerTileSegments;
     const { dhdu, dhdv } = elevationGradientAt(
       state.frontElevation,
@@ -178,14 +205,22 @@ export function createCpuTerrainCache(
       config.elevationScale,
       gradientScratch,
     );
-    return new Vector3(-dhdu, 1, -dhdv).normalize();
+    vec3Set(out, -dhdu, 1, -dhdv);
+    return vec3Normalize(out, out);
   };
 
-  const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
+  /** Scaled elevation for a lookup; leaves the normal in `normalScratch`. */
+  const sampleIntoScratch = (lookup: TileLookupResult): number => {
     const height = rawHeightFromLookup(lookup);
-    const scaledHeight = config.originY + height * config.elevationScale;
-    const normal = computeNormal(lookup.leafIndex, gridScratch.gx, gridScratch.gy, lookup.tileSize);
-    return { elevation: scaledHeight, normal, valid: true };
+    computeNormalInto(lookup.leafIndex, gridScratch.gx, gridScratch.gy, lookup.tileSize, normalScratch);
+    return config.originY + height * config.elevationScale;
+  };
+
+  /** Boundary: materialize a flat sample with a fresh `Vector3` normal. */
+  const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
+    const elevation = sampleIntoScratch(lookup);
+    const n = normalScratch;
+    return { elevation, normal: new Vector3(n.x, n.y, n.z), valid: true };
   };
 
   const sampleTerrain = (worldX: number, worldZ: number): TerrainSample => {
@@ -274,15 +309,23 @@ export function createCpuTerrainCache(
     );
   };
 
-  const sampleSurfaceByPosition = (
+  /**
+   * Sample the displaced surface at a world point into `surfaceScratch`
+   * (position / normal / elevation) and `keyScratch` (direction). Plain-object
+   * math only; the public methods convert to `Vector3` once.
+   *
+   * - `"noKey"`: no snapshot, no surface ops, or the point has no projection.
+   * - `"noTile"`: projected fine but no active tile covers it (`keyScratch` valid).
+   * - `"ok"`: `surfaceScratch` is filled (normal only when `withNormal`).
+   */
+  const sampleSurfaceInto = (
     px: number,
     py: number,
     pz: number,
-  ): TerrainSurfaceSample => {
-    if (!state.hasSnapshot || !surfaceOps) return invalidSurfaceSample(0, 1, 0);
-    if (!surfaceOps.positionToKey(px, py, pz, keyScratch)) {
-      return invalidSurfaceSample(0, 1, 0);
-    }
+    withNormal: boolean,
+  ): "noKey" | "noTile" | "ok" => {
+    if (!state.hasSnapshot || !surfaceOps) return "noKey";
+    if (!surfaceOps.positionToKey(px, py, pz, keyScratch)) return "noKey";
     const key = keyScratch;
     const lookup = lookupTileByFaceUV(
       state.frontIndex,
@@ -291,27 +334,44 @@ export function createCpuTerrainCache(
       key.u,
       key.v,
     );
-    if (!lookup.found) return invalidSurfaceSample(key.dirX, key.dirY, key.dirZ);
+    if (!lookup.found) return "noTile";
 
     const height = rawHeightFromLookup(lookup);
     const elevation = height * config.elevationScale;
-    const position = new Vector3();
-    surfaceOps.surfacePosition(key, elevation, position);
-    const normal = surfaceOps.surfaceNormal(key, {
-      elevation: state.frontElevation,
-      shape,
-      leafIndex: lookup.leafIndex,
-      gx: gridScratch.gx,
-      gy: gridScratch.gy,
-      innerTileSegments: config.innerTileSegments,
-      elevationScale: config.elevationScale,
-      level: lookup.level,
-    });
+    surfaceScratch.elevation = elevation;
+    surfaceOps.surfacePosition(key, elevation, surfaceScratch.position);
+    if (withNormal) {
+      const ctx = normalCtxScratch;
+      ctx.elevation = state.frontElevation;
+      ctx.shape = shape;
+      ctx.leafIndex = lookup.leafIndex;
+      ctx.gx = gridScratch.gx;
+      ctx.gy = gridScratch.gy;
+      ctx.innerTileSegments = config.innerTileSegments;
+      ctx.elevationScale = config.elevationScale;
+      ctx.level = lookup.level;
+      surfaceOps.surfaceNormal(key, ctx, surfaceScratch.normal);
+    }
+    return "ok";
+  };
+
+  /** Boundary: materialize a surface sample with fresh `Vector3`s. */
+  const sampleSurfaceByPosition = (
+    px: number,
+    py: number,
+    pz: number,
+  ): TerrainSurfaceSample => {
+    const status = sampleSurfaceInto(px, py, pz, true);
+    if (status === "noKey") return invalidSurfaceSample(0, 1, 0);
+    const key = keyScratch;
+    if (status === "noTile") return invalidSurfaceSample(key.dirX, key.dirY, key.dirZ);
+    const p = surfaceScratch.position;
+    const n = surfaceScratch.normal;
     return {
-      position,
-      normal,
+      position: new Vector3(p.x, p.y, p.z),
+      normal: new Vector3(n.x, n.y, n.z),
       direction: new Vector3(key.dirX, key.dirY, key.dirZ),
-      elevation,
+      elevation: surfaceScratch.elevation,
       valid: true,
     };
   };
@@ -432,11 +492,11 @@ export function createCpuTerrainCache(
           continue;
         }
 
-        const sample = sampleFromLookup(lookup);
-        elevations[i] = sample.elevation;
-        normals[i * 3] = sample.normal.x;
-        normals[i * 3 + 1] = sample.normal.y;
-        normals[i * 3 + 2] = sample.normal.z;
+        // Plain scratch straight into the typed arrays (no per-point Vector3).
+        elevations[i] = sampleIntoScratch(lookup);
+        normals[i * 3] = normalScratch.x;
+        normals[i * 3 + 1] = normalScratch.y;
+        normals[i * 3 + 2] = normalScratch.z;
         valid[i] = 1;
       }
 
@@ -447,12 +507,13 @@ export function createCpuTerrainCache(
     // ── Generic surface ──
     sampleSurfaceByPosition,
     getElevationBySurfacePosition(px, py, pz) {
-      const sample = sampleSurfaceByPosition(px, py, pz);
-      return sample.valid ? sample.elevation : null;
+      if (sampleSurfaceInto(px, py, pz, false) !== "ok") return null;
+      return surfaceScratch.elevation;
     },
     getNormalBySurfacePosition(px, py, pz) {
-      const sample = sampleSurfaceByPosition(px, py, pz);
-      return sample.valid ? sample.normal : null;
+      if (sampleSurfaceInto(px, py, pz, true) !== "ok") return null;
+      const n = surfaceScratch.normal;
+      return new Vector3(n.x, n.y, n.z);
     },
     getTileBySurfacePosition(px, py, pz) {
       if (!state.hasSnapshot || !surfaceOps) return null;
@@ -472,22 +533,26 @@ export function createCpuTerrainCache(
         return { positions: outPositions, normals, elevations, valid, generation: state.generation };
       }
       for (let i = 0; i < count; i += 1) {
-        const sample = sampleSurfaceByPosition(
+        const status = sampleSurfaceInto(
           positions[i * 3] ?? 0,
           positions[i * 3 + 1] ?? 0,
           positions[i * 3 + 2] ?? 0,
+          true,
         );
-        if (!sample.valid) {
+        if (status !== "ok") {
           normals[i * 3 + 1] = 1;
           continue;
         }
-        outPositions[i * 3] = sample.position.x;
-        outPositions[i * 3 + 1] = sample.position.y;
-        outPositions[i * 3 + 2] = sample.position.z;
-        normals[i * 3] = sample.normal.x;
-        normals[i * 3 + 1] = sample.normal.y;
-        normals[i * 3 + 2] = sample.normal.z;
-        elevations[i] = sample.elevation;
+        // Plain scratch straight into the typed arrays (no per-point Vector3s).
+        const p = surfaceScratch.position;
+        const n = surfaceScratch.normal;
+        outPositions[i * 3] = p.x;
+        outPositions[i * 3 + 1] = p.y;
+        outPositions[i * 3 + 2] = p.z;
+        normals[i * 3] = n.x;
+        normals[i * 3 + 1] = n.y;
+        normals[i * 3 + 2] = n.z;
+        elevations[i] = surfaceScratch.elevation;
         valid[i] = 1;
       }
       return { positions: outPositions, normals, elevations, valid, generation: state.generation };

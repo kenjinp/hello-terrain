@@ -1,4 +1,3 @@
-import { Vector3 } from "three";
 import { Fn, float, pow } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { HALF_PI } from "../gpu/tile";
@@ -20,6 +19,7 @@ import {
 } from "../query/cpu-raycast";
 import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
 import { augmentCubeSphereSampler } from "../query/terrain-sampler";
+import { vec3, vec3Normalize, vec3Set } from "../query/vec3";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type {
   TerrainSphereQuery,
@@ -126,11 +126,11 @@ export function createCubeSphereProjection(
       out.dirZ = nz;
       return true;
     },
-    surfacePosition(key, elevation, outVec) {
+    surfacePosition(key, elevation, out: Vec3Like) {
       const r = invert ? radius - elevation : radius + elevation;
-      outVec.set(center.x + key.dirX * r, center.y + key.dirY * r, center.z + key.dirZ * r);
+      vec3Set(out, center.x + key.dirX * r, center.y + key.dirY * r, center.z + key.dirZ * r);
     },
-    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
+    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext, out: Vec3Like): Vec3Like {
       const scale = ctx.elevationScale;
       const duv = 1 / (ctx.innerTileSegments * 2 ** ctx.level);
       dirScratch[0] = key.dirX;
@@ -168,7 +168,8 @@ export function createCubeSphereProjection(
         ny = -ny;
         nz = -nz;
       }
-      return new Vector3(nx, ny, nz).normalize();
+      vec3Set(out, nx, ny, nz);
+      return vec3Normalize(out, out);
     },
   };
 
@@ -257,11 +258,12 @@ function createCubeSphereQuery(
   surfaceQuery: TerrainSurfaceQuery,
   center: Vec3Like,
 ): TerrainSphereQuery {
-  const scratch = new Vector3();
+  // Per-instance plain scratch; the surface query accepts any `{ x, y, z }`.
+  const scratch: Vec3Like = vec3();
   const ll: Vec3Mutable = [0, 0, 0];
 
-  const positionFromDirection = (dx: number, dy: number, dz: number): Vector3 =>
-    scratch.set(center.x + dx, center.y + dy, center.z + dz);
+  const positionFromDirection = (dx: number, dy: number, dz: number): Vec3Like =>
+    vec3Set(scratch, center.x + dx, center.y + dy, center.z + dz);
 
   return {
     get generation() {

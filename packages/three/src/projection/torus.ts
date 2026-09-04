@@ -1,4 +1,3 @@
-import { Vector3 } from "three";
 import { Fn, float, pow } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
@@ -15,6 +14,7 @@ import {
 import { sampleGridBilinear } from "../query/elevation-field-sampling";
 import { torusRaycast, type TorusRaycastParams } from "../query/cpu-raycast";
 import { createTerrainQuery, createTerrainSurfaceQuery } from "../query/terrain-query";
+import { vec3Normalize, vec3Set } from "../query/vec3";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type {
   CpuSurfaceOps,
@@ -106,7 +106,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       out.dirZ = normalScratch[2];
       return true;
     },
-    surfacePosition(key, elevation, outVec) {
+    surfacePosition(key, elevation, out: Vec3Like) {
       torusUVToPoint(
         key.u,
         key.v,
@@ -117,9 +117,9 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         normalScratch,
         invert,
       );
-      outVec.set(normalScratch[0], normalScratch[1], normalScratch[2]);
+      vec3Set(out, normalScratch[0], normalScratch[1], normalScratch[2]);
     },
-    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
+    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext, out: Vec3Like): Vec3Like {
       const scale = ctx.elevationScale;
       const levelScale = 2 ** ctx.level;
       const duvU = 1 / (ctx.innerTileSegments * baseU * levelScale);
@@ -153,7 +153,8 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         ny = -ny;
         nz = -nz;
       }
-      return new Vector3(nx, ny, nz).normalize();
+      vec3Set(out, nx, ny, nz);
+      return vec3Normalize(out, out);
     },
   };
 

@@ -1,16 +1,16 @@
-import { Vector3 } from "three";
-import type { Ray } from "three";
 import { positionToTorusParams, type TorusSurfaceParams } from "../quadtree/topology/torusInverse";
+import type { RayLike, Vec3Like } from "../projection/types";
 import type {
+  CpuRaycastHit,
   RaycastOptions,
   TerrainQuery,
   TerrainRaycastConfig,
-  TerrainRaycastResult,
   TerrainSphereQuery,
   TerrainSurfaceQuery,
 } from "./types";
+import { rayAt, vec3, vec3Distance, vec3Set } from "./vec3";
 
-export type { TerrainRaycastConfig };
+export type { CpuRaycastHit, TerrainRaycastConfig };
 
 /** Curved-shell parameters supplied by the cube-sphere projection. */
 export type SphereRaycastParams = {
@@ -50,7 +50,7 @@ type TerrainBounds = {
 };
 
 function intersectRayAabb(
-  ray: Ray,
+  ray: RayLike,
   minX: number,
   minY: number,
   minZ: number,
@@ -131,16 +131,16 @@ type SignedDistanceAt = (px: number, py: number, pz: number) => number | undefin
  * positive→non-positive signed-distance crossing binary-refine the crossing.
  */
 function marchSignedDistance(
-  ray: Ray,
+  ray: RayLike,
   startT: number,
   endT: number,
   stepSignedDistanceAt: SignedDistanceAt,
   refineSignedDistanceAt: SignedDistanceAt,
   options: { maxSteps: number; refinementSteps: number },
-  point: Vector3,
+  point: Vec3Like,
 ): number | null {
   let prevT = startT;
-  ray.at(prevT, point);
+  rayAt(ray, prevT, point);
   let prevSignedDistance = stepSignedDistanceAt(point.x, point.y, point.z);
 
   if (prevSignedDistance !== undefined && prevSignedDistance <= 0) {
@@ -149,7 +149,7 @@ function marchSignedDistance(
 
   for (let i = 1; i <= options.maxSteps; i += 1) {
     const t = startT + ((endT - startT) * i) / options.maxSteps;
-    ray.at(t, point);
+    rayAt(ray, t, point);
     const signedDistance = stepSignedDistanceAt(point.x, point.y, point.z);
     if (signedDistance === undefined) {
       prevSignedDistance = undefined;
@@ -162,7 +162,7 @@ function marchSignedDistance(
       let hi = t;
       for (let r = 0; r < options.refinementSteps; r += 1) {
         const mid = (lo + hi) * 0.5;
-        ray.at(mid, point);
+        rayAt(ray, mid, point);
         const midDistance = refineSignedDistanceAt(point.x, point.y, point.z);
         if (midDistance === undefined) {
           lo = mid;
@@ -181,12 +181,21 @@ function marchSignedDistance(
   return null;
 }
 
+/** Build a plain hit from a surface point + normal (fresh objects, owned by the caller). */
+function makeHit(ray: RayLike, position: Vec3Like, normal: Vec3Like): CpuRaycastHit {
+  return {
+    position: vec3(position.x, position.y, position.z),
+    normal: vec3(normal.x, normal.y, normal.z),
+    distance: vec3Distance(ray.origin, position),
+  };
+}
+
 export function cpuRaycast(
   query: TerrainQuery,
-  ray: Ray,
+  ray: RayLike,
   config: TerrainRaycastConfig,
   options?: RaycastOptions,
-): TerrainRaycastResult | null {
+): CpuRaycastHit | null {
   const bounds = getTerrainBounds(config);
   const segment = intersectRayAabb(
     ray,
@@ -204,7 +213,7 @@ export function cpuRaycast(
   const endT = Math.min(segment.tMax, maxDistance);
   if (endT < startT) return null;
 
-  const point = new Vector3();
+  const point = vec3();
   const hitT = marchSignedDistance(
     ray,
     startT,
@@ -219,22 +228,18 @@ export function cpuRaycast(
   );
   if (hitT === null) return null;
 
-  ray.at(hitT, point);
+  rayAt(ray, hitT, point);
   const sample = query.sampleTerrain(point.x, point.z);
   if (!sample.valid) return null;
   point.y = sample.elevation;
-  return {
-    position: point.clone(),
-    normal: sample.normal.clone(),
-    distance: ray.origin.distanceTo(point),
-  };
+  return makeHit(ray, point, sample.normal);
 }
 
 type SphereSegment = { t0: number; t1: number };
 
 /** Intersect a ray with a sphere; returns near/far parametric distances. */
 function intersectRaySphere(
-  ray: Ray,
+  ray: RayLike,
   cx: number,
   cy: number,
   cz: number,
@@ -262,13 +267,13 @@ function sphereSignedDistance(
   px: number,
   py: number,
   pz: number,
-  scratchDir: Vector3,
+  scratchDir: Vec3Like,
 ): number | undefined {
   const dx = px - params.centerX;
   const dy = py - params.centerY;
   const dz = pz - params.centerZ;
   const dist = Math.hypot(dx, dy, dz);
-  scratchDir.set(dx, dy, dz);
+  vec3Set(scratchDir, dx, dy, dz);
   const elevation = query.getElevationByDirection(scratchDir);
   if (elevation === null) return undefined;
   const s = params.invert ? -1 : 1;
@@ -277,10 +282,10 @@ function sphereSignedDistance(
 
 export function cubeSphereRaycast(
   query: TerrainSphereQuery,
-  ray: Ray,
+  ray: RayLike,
   params: SphereRaycastParams,
   options?: RaycastOptions,
-): TerrainRaycastResult | null {
+): CpuRaycastHit | null {
   const shell = intersectRaySphere(
     ray,
     params.centerX,
@@ -295,8 +300,8 @@ export function cubeSphereRaycast(
   const endT = Math.min(shell.t1, maxDistance);
   if (endT < startT) return null;
 
-  const scratchDir = new Vector3();
-  const point = new Vector3();
+  const scratchDir = vec3();
+  const point = vec3();
   const signedDistanceAt: SignedDistanceAt = (px, py, pz) =>
     sphereSignedDistance(query, params, px, py, pz, scratchDir);
 
@@ -314,14 +319,10 @@ export function cubeSphereRaycast(
   );
   if (hitT === null) return null;
 
-  ray.at(hitT, point);
+  rayAt(ray, hitT, point);
   const sample = query.sampleTerrainByPosition(point);
   if (!sample.valid) return null;
-  return {
-    position: sample.position.clone(),
-    normal: sample.normal.clone(),
-    distance: ray.origin.distanceTo(sample.position),
-  };
+  return makeHit(ray, sample.position, sample.normal);
 }
 
 function torusSignedDistance(
@@ -330,7 +331,7 @@ function torusSignedDistance(
   px: number,
   py: number,
   pz: number,
-  scratchPoint: Vector3,
+  scratchPoint: Vec3Like,
   scratchParams: TorusSurfaceParams,
 ): number | undefined {
   positionToTorusParams(
@@ -341,7 +342,7 @@ function torusSignedDistance(
     { x: params.centerX, y: params.centerY, z: params.centerZ },
     scratchParams,
   );
-  scratchPoint.set(px, py, pz);
+  vec3Set(scratchPoint, px, py, pz);
   const elevation = query.getElevationByPosition(scratchPoint);
   if (elevation === null) return undefined;
   const s = params.invert ? -1 : 1;
@@ -350,10 +351,10 @@ function torusSignedDistance(
 
 export function torusRaycast(
   query: TerrainSurfaceQuery,
-  ray: Ray,
+  ray: RayLike,
   params: TorusRaycastParams,
   options?: RaycastOptions,
-): TerrainRaycastResult | null {
+): CpuRaycastHit | null {
   const shell = intersectRaySphere(
     ray,
     params.centerX,
@@ -368,9 +369,9 @@ export function torusRaycast(
   const endT = Math.min(shell.t1, maxDistance);
   if (endT < startT) return null;
 
-  const scratchPoint = new Vector3();
+  const scratchPoint = vec3();
   const scratchParams: TorusSurfaceParams = { u: 0, v: 0, tubeDistance: 0 };
-  const point = new Vector3();
+  const point = vec3();
   const signedDistanceAt: SignedDistanceAt = (px, py, pz) =>
     torusSignedDistance(query, params, px, py, pz, scratchPoint, scratchParams);
 
@@ -388,12 +389,8 @@ export function torusRaycast(
   );
   if (hitT === null) return null;
 
-  ray.at(hitT, point);
+  rayAt(ray, hitT, point);
   const sample = query.sampleTerrainByPosition(point);
   if (!sample.valid) return null;
-  return {
-    position: sample.position.clone(),
-    normal: sample.normal.clone(),
-    distance: ray.origin.distanceTo(sample.position),
-  };
+  return makeHit(ray, sample.position, sample.normal);
 }

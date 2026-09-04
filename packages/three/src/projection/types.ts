@@ -1,4 +1,3 @@
-import type { Ray, Vector3 } from "three";
 import type { Node, StorageBufferNode } from "three/webgpu";
 import type {
   LeafTileNodes,
@@ -10,11 +9,11 @@ import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type { ElevationGridShape } from "../query/elevation-field-sampling";
 import type {
+  CpuRaycastHit,
   CreateTerrainSamplerParams,
   RaycastOptions,
   TerrainQuery,
   TerrainRaycastConfig,
-  TerrainRaycastResult,
   TerrainSampler,
   TerrainSphereQuery,
   TerrainSurfaceQuery,
@@ -24,10 +23,21 @@ import type { LeafStorageState, TerrainUniformsContext } from "../types";
 /** Stable projection identifier — for debugging/telemetry only, never switched on. */
 export type ProjectionKind = "flat" | "cubeSphere" | "torus" | (string & {});
 
+/**
+ * Plain `{ x, y, z }` vector. The CPU internals (query, raycast, projection
+ * surface ops) use this shape so they never depend on three.js; a
+ * `THREE.Vector3` satisfies it structurally.
+ */
 export interface Vec3Like {
   x: number;
   y: number;
   z: number;
+}
+
+/** Plain ray (`origin + direction * t`); a `THREE.Ray` satisfies it structurally. */
+export interface RayLike {
+  origin: Vec3Like;
+  direction: Vec3Like;
 }
 
 // ── GPU (TSL) ────────────────────────────────────────────────────────────
@@ -92,21 +102,26 @@ export interface SurfaceNormalContext {
 /**
  * Projection-specific CPU surface math, injected into the terrain cache so the
  * cache stays projection-agnostic. Implementations own their scratch (no
- * module-scope state).
+ * module-scope state) and work on plain {@link Vec3Like} objects — never
+ * three.js types — so the CPU internals stay renderer-free.
  */
 export interface CpuSurfaceOps {
   /** Map a world position to a surface key; `false` if it has no projection. */
   positionToKey(px: number, py: number, pz: number, out: SurfaceKey): boolean;
   /** Displaced world position from a key + scaled elevation (writes `out`). */
-  surfacePosition(key: SurfaceKey, elevation: number, out: Vector3): void;
-  /** Unit world-space surface normal from a key + grid neighborhood. */
-  surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3;
+  surfacePosition(key: SurfaceKey, elevation: number, out: Vec3Like): void;
+  /**
+   * Unit world-space surface normal from a key + grid neighborhood. Writes
+   * into the caller-provided `out` and returns it (no allocation per sample).
+   */
+  surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext, out: Vec3Like): Vec3Like;
 }
 
 // ── CPU (query / raycast / LOD) ────────────────────────────────────────────
 
 export interface ProjectionRaycastContext {
-  ray: Ray;
+  /** Plain ray; a `THREE.Ray` is passed through unchanged at the boundary. */
+  ray: RayLike;
   options?: RaycastOptions;
   terrainQuery: TerrainQuery | null;
   surfaceQuery: TerrainSurfaceQuery | null;
@@ -131,10 +146,12 @@ export interface SurfaceProjectionCpu {
   /** Build the runtime query objects the projection exposes. */
   createRuntimeQueries(cache: CpuTerrainCache): RuntimeQueries;
   /**
-   * Projection-specific CPU raycast against the displaced surface. Returns
-   * `null` when the ray misses the surface or the query snapshot isn't ready.
+   * Projection-specific CPU raycast against the displaced surface. Returns a
+   * plain-object hit (converted to a `TerrainRaycastResult` with three.js
+   * vectors by `TerrainRaycast.pick`), or `null` when the ray misses the
+   * surface or the query snapshot isn't ready.
    */
-  raycast(ctx: ProjectionRaycastContext): TerrainRaycastResult | null;
+  raycast(ctx: ProjectionRaycastContext): CpuRaycastHit | null;
 }
 
 // ── The injected strategy ──────────────────────────────────────────────────
