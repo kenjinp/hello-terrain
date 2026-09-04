@@ -13,7 +13,7 @@ import {
   gpuSpatialIndexUploadTask,
 } from "./gpuSpatialIndex.task";
 import {
-  createTerrainFieldTextureTask,
+  createTerrainFieldStorageTask,
   terrainFieldStageTask,
 } from "./terrain-field.task";
 import { createTerrainSamplerTask } from "./terrain-sampler.task";
@@ -51,8 +51,8 @@ export const terrainTasks = {
   updateUniforms: updateUniformsTask,
   positionNode: positionNodeTask,
   createElevationFieldContext: createElevationFieldContextTask,
-  createTileNodes: tileNodesTask,
-  createTerrainFieldTexture: createTerrainFieldTextureTask,
+  tileNodes: tileNodesTask,
+  createTerrainFieldStorage: createTerrainFieldStorageTask,
   createTerrainSampler: createTerrainSamplerTask,
   elevationFieldStage: elevationFieldStageTask,
   terrainFieldStage: terrainFieldStageTask,

@@ -7,7 +7,7 @@ import {
   DEBUG_TEXT_SIZE,
 } from "@/lib/debug-overlay";
 import {
-  createTerrainFieldTextureTask,
+  createTerrainFieldStorageTask,
   leafGpuBufferTask,
   loadTerrainField,
 } from "@hello-terrain/three";
@@ -416,7 +416,7 @@ export function TerrainFieldTextureDebug({
     const THROTTLE_MS = 16;
 
     function updateInfo() {
-      const storage = graph.peek(createTerrainFieldTextureTask);
+      const storage = graph.peek(createTerrainFieldStorageTask);
       const leaves = graph.peek(leafGpuBufferTask);
       if (!storage || !leaves) return;
       const edge = storage.edgeVertexCount;
@@ -455,7 +455,7 @@ export function TerrainFieldTextureDebug({
 
       const info = infoRef.current;
       const canvas = canvasRef.current;
-      const storage = graph.peek(createTerrainFieldTextureTask);
+      const storage = graph.peek(createTerrainFieldStorageTask);
       const renderer = rendererTask
         ? (graph.peek(rendererTask) as WebGPURenderer | undefined)
         : undefined;

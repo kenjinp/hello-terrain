@@ -41,10 +41,26 @@ export const { compile: compileComputeTask, execute: executeComputeTask } =
  *   ]);
  * });
  *
- * const { compile, execute } = createComputePipelineTasks(erosionStageTask);
+ * // Named so the tasks show up as `erosionCompileTask` / `erosionExecuteTask`
+ * // in `graph.inspect()` instead of colliding with the default pipeline.
+ * const { compile, execute } = createComputePipelineTasks(erosionStageTask, {
+ *   name: "erosion",
+ * });
  * ```
+ *
+ * @param leafStageTask - The last stage of the pipeline (typically the terrain-field pack).
+ * @param options.name - Optional prefix for the generated task display names
+ *   (`${name}CompileTask` / `${name}ExecuteTask`). Defaults to the built-in
+ *   `compileComputeTask` / `executeComputeTask` names.
  */
-export function createComputePipelineTasks(leafStageTask: TaskRef<ComputePipeline>) {
+export function createComputePipelineTasks(
+  leafStageTask: TaskRef<ComputePipeline>,
+  options?: { name?: string },
+) {
+  const name = options?.name;
+  const compileName = name ? `${name}CompileTask` : "compileComputeTask";
+  const executeName = name ? `${name}ExecuteTask` : "executeComputeTask";
+
   const compile = task((get, work) => {
     const pipeline = get(leafStageTask);
     const edgeVertexCount = get(innerTileSegments) + 3;
@@ -57,14 +73,14 @@ export function createComputePipelineTasks(leafStageTask: TaskRef<ComputePipelin
         },
       }),
     );
-  }).displayName("compileComputeTask");
+  }).displayName(compileName);
 
   const execute = task<{ renderer: WebGPURenderer }>((get, work, { resources }) => {
     const { execute: run } = get(compile);
     const leafState = get(leafGpuBufferTask);
     return work(() => (resources?.renderer ? run(resources.renderer, leafState.count) : () => {}));
   })
-    .displayName("executeComputeTask")
+    .displayName(executeName)
     .lane("gpu");
 
   return { compile, execute };

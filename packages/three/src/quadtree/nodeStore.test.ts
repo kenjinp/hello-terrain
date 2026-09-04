@@ -4,7 +4,7 @@ import { allocNode, beginFrame, createNodeStore, ensureChildren } from "./nodeSt
 
 describe("quadtree/nodeStore", () => {
   it("allocates nodes and children contiguously", () => {
-    const store = createNodeStore(16, 1);
+    const store = createNodeStore(16);
     beginFrame(store);
 
     const root = store.nodesUsed;
@@ -38,7 +38,7 @@ describe("quadtree/nodeStore", () => {
   });
 
   it("refuses to allocate children when out of capacity", () => {
-    const store = createNodeStore(4, 1);
+    const store = createNodeStore(4);
     beginFrame(store);
 
     const rootId = allocNode(store, { space: 0, level: 0, x: 0, y: 0 });

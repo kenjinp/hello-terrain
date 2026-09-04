@@ -64,3 +64,8 @@ The terrain library is organized in layers from pure logic to runtime integratio
   - individual task refs
   - custom compute stages
   - low-level helpers in `gpu/` and `tsl/`
+- `src/index.ts` is a curated list of named exports. Do not `export *` from
+  `quadtree/` or `tasks/`; the LOD driver (`update`, `createState`, leaf-set /
+  seam allocators, spatial-index builders) stays internal. The `Topology`
+  contract, topology factories, projection math helpers, every `*Task` ref,
+  params, and the graph `Context` / `State` types are public.

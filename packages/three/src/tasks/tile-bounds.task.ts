@@ -11,7 +11,6 @@ import {
 } from "../gpu/terrainFieldStorage";
 import { createElevationFieldContextTask } from "./elevation-field.task";
 import { innerTileSegments, maxNodes } from "./params";
-import { leafGpuBufferTask } from "./quadtree.task";
 
 export interface TileBoundsContext {
   data: Float32Array<ArrayBuffer>;

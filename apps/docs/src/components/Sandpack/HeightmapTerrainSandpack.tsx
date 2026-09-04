@@ -99,7 +99,7 @@ function Terrain({ graph }) {
 
   // Sample the heightmap in the elevation function using rootUV.
   // This EXR stores elevation in the red channel. For RG-packed 16-bit PNG
-  // heightmaps, use sampleHeightmapMeters(heightmap, rootUV, float(minM), float(maxM), float(rangeM)).
+  // heightmaps, use sampleElevationTextureMeters(heightmap, rootUV, float(minM), float(maxM), float(rangeM)).
   useEffect(() => {
     const elevation: ElevationCallback = ({ rootUV }) => {
       return texture(heightmap, rootUV).x;

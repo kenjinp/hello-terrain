@@ -5,6 +5,40 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased — Trimmed Public Surface
+
+Housekeeping release: `@hello-terrain/three` now exports an explicit, curated public surface instead of re-exporting whole internal modules, a few names were aligned with the [naming conventions](https://github.com/kenjinp/hello-terrain/blob/main/packages/three/spec/naming-conventions.md), and every package is flagged as side-effect free for tree shaking.
+
+### What's New
+
+- **`createComputePipelineTasks(leafStageTask, { name })`** — pass a `name` to label the generated tasks `${name}CompileTask` / `${name}ExecuteTask` so custom pipelines no longer collide with the default `compileComputeTask` / `executeComputeTask` in `graph.inspect()`. See [custom compute stages](/docs/core/elevation-function#custom-compute-stages).
+- **`elevationFn`** now carries a `displayName`, so it shows up by name in graph inspection like every other param.
+- **`"sideEffects": false`** on `@hello-terrain/three`, `@hello-terrain/react`, and `@hello-terrain/work`, so bundlers can drop unused tasks and helpers.
+
+### Renames (old names deprecated, removed next release)
+
+| Old | New |
+|:--|:--|
+| `sampleHeightmapMeters` | `sampleElevationTextureMeters` |
+| `HeightmapTexture` (type) | `ElevationTexture` |
+| `createTerrainFieldTextureTask` | `createTerrainFieldStorageTask` |
+| `terrainTasks.createTerrainFieldTexture` | `terrainTasks.createTerrainFieldStorage` |
+| `terrainTasks.createTileNodes` | `terrainTasks.tileNodes` |
+
+The old TSL helper and task names still work as `@deprecated` aliases. The two `terrainTasks` keys were renamed outright (they only ever pointed at the same `tileNodesTask` / `createTerrainFieldStorageTask` refs, which remain exported).
+
+### Breaking ⚠️
+
+The following quadtree internals are no longer exported from `@hello-terrain/three`. They were leaking through `export *` and are implementation details of the LOD driver rather than part of the terrain API:
+
+- `update`, `createState`, `beginUpdate`
+- `allocLeafSet`, `resetLeafSet`, `allocSeamTable`, `resetSeamTable`, `buildSeams2to1`, `SeamTable`
+- `buildLeafIndex`, `createSpatialIndex`
+- `U32_EMPTY`
+- `runTileBoundsReduction` (the reduction is dispatched inside `createComputePipelineTasks`)
+
+Everything documented — the `Topology` contract and its `Dir` directions, all `create*Topology` factories, the cube-sphere and torus math helpers, every `*Task` ref, `terrainTasks`, `terrainGraph`, all params, and the `Context` / `State` / `Params` types — remains exported. If you were driving the quadtree directly, run the graph's `quadtreeUpdateTask` instead.
+
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 
 Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 

@@ -221,6 +221,7 @@ CPU/TSL mirror pairs are never merged across the boundary; they are co-located o
 - **Topology producer:** `quadtreeConfigTask`, `quadtreeUpdateTask`
 - **GPU upload/materialization:** `leafGpuBufferTask`, `gpuSpatialIndexUploadTask`
 - **Uniform lifecycle:** `createUniformsTask`, `updateUniformsTask`
+- **Storage lifecycle:** `createElevationFieldContextTask`, `createTerrainFieldStorageTask`, `tileBoundsContextTask`, `tileNodesTask`
 - **Compute production:** `elevationFieldStageTask`, `terrainFieldStageTask`, `executeComputeTask`
 - **Reduction/readback:** `tileBoundsReductionTask`, `terrainReadbackTask`
 - **CPU consumption:** `terrainQueryTask`, `terrainRaycastTask`

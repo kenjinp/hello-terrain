@@ -7,7 +7,7 @@ Realtime web terrain engine for vast virtual worlds. Built for [three.js](https:
 - Performant variable LOD system for huge (earth-scale!) open worlds
 - Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
 - TSL-based elevation and texture assignment nodes
-- Composable compute stage plugins
+- Composable compute stage plugins (see [custom compute stages](http://hello-terrain.kenny.wtf/docs/core/elevation-function#custom-compute-stages))
 
 ## Quick Start
 
