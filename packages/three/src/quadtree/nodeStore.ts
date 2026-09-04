@@ -52,21 +52,35 @@ export function beginFrame(store: NodeStore): void {
   }
 }
 
-export function allocNode(store: NodeStore, tile: TileId): number {
+/**
+ * Allocate a node from scalar tile coordinates. Allocation-free; used on hot
+ * paths (`ensureChildren`) where building a `TileId` literal would allocate.
+ */
+export function allocNodeRaw(
+  store: NodeStore,
+  space: number,
+  level: number,
+  x: number,
+  y: number,
+): number {
   const id = store.nodesUsed;
   if (id >= store.maxNodes) return U32_EMPTY;
 
   store.nodesUsed = id + 1;
 
   store.gen[id] = store.currentGen;
-  store.space[id] = tile.space;
-  store.level[id] = tile.level;
-  store.x[id] = tile.x;
-  store.y[id] = tile.y;
+  store.space[id] = space;
+  store.level[id] = level;
+  store.x[id] = x;
+  store.y[id] = y;
   store.firstChild[id] = U32_EMPTY;
   store.flags[id] = 0;
 
   return id;
+}
+
+export function allocNode(store: NodeStore, tile: TileId): number {
+  return allocNodeRaw(store, tile.space, tile.level, tile.x, tile.y);
 }
 
 export function isLive(store: NodeStore, nodeId: number): boolean {
@@ -95,10 +109,10 @@ export function ensureChildren(store: NodeStore, parentId: number): number {
   // 1: (1,0) top-right
   // 2: (0,1) bottom-left
   // 3: (1,1) bottom-right
-  allocNode(store, { space, level, x: px, y: py });
-  allocNode(store, { space, level, x: px + 1, y: py });
-  allocNode(store, { space, level, x: px, y: py + 1 });
-  allocNode(store, { space, level, x: px + 1, y: py + 1 });
+  allocNodeRaw(store, space, level, px, py);
+  allocNodeRaw(store, space, level, px + 1, py);
+  allocNodeRaw(store, space, level, px, py + 1);
+  allocNodeRaw(store, space, level, px + 1, py + 1);
 
   store.firstChild[parentId] = childBase;
   return childBase;

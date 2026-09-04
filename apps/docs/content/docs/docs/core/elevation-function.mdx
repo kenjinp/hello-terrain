@@ -75,16 +75,24 @@ type ElevationCallback = (params: ElevationParams) => Node;
 
 The parameters passed to the elevation callback. All values are TSL `Node` objects, usable in GPU shader expressions.
 
+#### Parameter reference
+
+The elevation function runs once per texel of a tile's **field grid**. That grid is `innerTileSegments + 3` texels wide: the `innerTileSegments + 1` inner vertices plus a **1-texel skirt ring** on every side. Skirt texels sit just outside the tile's footprint (they stitch seams and feed normal derivation), so some parameters extend slightly past their nominal range on skirt samples.
+
 | Parameter | Type | Description |
 |:--|:--|:--|
-| `worldPosition` | `Node` (vec3) | World-space position of the vertex |
-| `rootSize` | `Node` (float) | Size of the root tile in world units |
-| `rootUV` | `Node` (vec2) | UV coordinates relative to the root tile `[0, 1]` |
-| `tileUV` | `Node` (vec2) | UV coordinates relative to the current tile `[0, 1]` |
-| `tileLevel` | `Node` (float) | Quadtree depth level of the tile |
-| `tileSize` | `Node` (float) | World-space size of the current tile |
-| `tileOriginVec2` | `Node` (vec2) | World-space origin of the current tile |
-| `nodeIndex` | `Node` (uint) | Index of the tile node in the quadtree |
+| `worldPosition` | `Node` (vec3) | World-space position of the sample on the *undisplaced* surface (flat: the `y = origin.y` plane; sphere/torus: the base surface). Continuous across tiles and skirts — the safest domain for noise and heightmap lookups. |
+| `rootSize` | `Node` (float) | Size of a root tile in world units. |
+| `rootUV` | `Node` (vec2) | Position within the root tile / cube face, continuous across all tiles of that root. Inner vertices span exactly `[0, 1]`; skirt texels fall one texel outside that range at the root edge. On flat terrain `x` follows world `+X` and `y` follows world `−Z`. |
+| `tileUV` | `Node` (vec2) | Position within the **whole tile grid including skirts**: `(ix, iy) / (innerTileSegments + 3)`. Starts at `0` on the first skirt texel and never reaches `1.0`; the inner grid occupies roughly `[1/width, (width−2)/width]`. This is *not* the inner-grid `[0, 1]` mapping used by the material samplers. Prefer `rootUV` or `worldPosition` for seam-continuous patterns. |
+| `tileLevel` | `Node` (int) | Quadtree depth of the tile (`0` = root). |
+| `tileSize` | `Node` (float) | Edge length of the tile in world units: `rootSize / 2^level` on flat terrain, or the arc length `radius · π/2 / 2^level` on a sphere/torus. |
+| `tileOriginVec2` | `Node` (vec2) | Integer tile coordinates `(x, y)` within the root at this level (`[0, 2^level)` per axis; may be negative on infinite flat terrain). Not a world-space position — multiply by `tileSize` for that on flat terrain. |
+| `nodeIndex` | `Node` (int) | Leaf slot index in `[0, leafCount)`. Only stable within a frame; do not use it as a hash seed. |
+
+<Callout type="warn">
+  `tileUV` spans the skirted grid and never reaches `1.0`, so patterns built from it will not line up across tile boundaries. Its numeric behavior is kept for backward compatibility; use `rootUV` or `worldPosition` when continuity matters.
+</Callout>
 
 ## Examples
 
