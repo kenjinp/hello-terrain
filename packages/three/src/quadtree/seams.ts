@@ -60,8 +60,9 @@ export function buildSeams2to1(
 
       // 2) coarser neighbor leaf (level-1)
       if (level > 0) {
-        const px = x >>> 1;
-        const py = y >>> 1;
+        // Signed tile coords: arithmetic shift keeps negative parents negative.
+        const px = x >> 1;
+        const py = y >> 1;
 
         scratchParentTile.space = space;
         scratchParentTile.level = level - 1;
@@ -84,9 +85,11 @@ export function buildSeams2to1(
       }
 
       // 3) finer neighbor leaves (level+1): two children along the neighbor edge
+      // `<< 1` is sign-preserving; keep child coords signed so `+ 1` below
+      // stays in int32 space (the spatial index wraps to uint32 when hashing).
       const childLevel = scratchNbr.level + 1;
-      const x2 = (scratchNbr.x << 1) >>> 0;
-      const y2 = (scratchNbr.y << 1) >>> 0;
+      const x2 = scratchNbr.x << 1;
+      const y2 = scratchNbr.y << 1;
 
       let ax = 0;
       let ay = 0;
