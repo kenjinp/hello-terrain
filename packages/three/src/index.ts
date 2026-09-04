@@ -15,6 +15,8 @@ export {
   quadtreeUpdate,
   topology,
   terrainFieldFilter,
+  terrainReadbackEnabled,
+  terrainReadbackIntervalMs,
   elevationFn,
 } from "./tasks/params";
 

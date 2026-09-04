@@ -9,6 +9,8 @@ import {
   rootSize,
   skirtScale,
   terrainFieldFilter,
+  terrainReadbackEnabled,
+  terrainReadbackIntervalMs,
   topology,
   type TerrainGraph,
 } from "@hello-terrain/three";
@@ -48,6 +50,8 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     topology: nextTopology,
     terrainFieldFilter: nextTerrainFieldFilter,
+    terrainReadback: nextTerrainReadback,
+    terrainReadbackIntervalMs: nextTerrainReadbackIntervalMs,
   } = options;
 
   useLayoutEffect(() => {
@@ -125,6 +129,20 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
       nextTerrainFieldFilter,
       () => nextTerrainFieldFilter as "nearest" | "linear",
     );
+    resetOrSet(
+      graph,
+      ownedParamIds,
+      terrainReadbackEnabled,
+      nextTerrainReadback,
+      () => nextTerrainReadback as boolean,
+    );
+    resetOrSet(
+      graph,
+      ownedParamIds,
+      terrainReadbackIntervalMs,
+      nextTerrainReadbackIntervalMs,
+      () => nextTerrainReadbackIntervalMs as number,
+    );
 
     if (elevation === undefined) {
       if (ownedParamIds.has(elevationFn.id)) {
@@ -148,5 +166,7 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     nextTopology,
     nextTerrainFieldFilter,
+    nextTerrainReadback,
+    nextTerrainReadbackIntervalMs,
   ]);
 }

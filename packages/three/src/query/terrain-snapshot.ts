@@ -46,6 +46,11 @@ export interface TerrainSnapshotState {
   readbackPending: boolean;
   generation: number;
   lastScheduledStampGen: number;
+  /**
+   * Message of the last reported readback failure. Used to `console.error`
+   * each distinct failure once instead of once per frame.
+   */
+  lastErrorKey: string | null;
   elevationReadback: ReadbackSlot;
   boundsReadback: ReadbackSlot;
   /** Conservative per-tile elevation range pyramid for LOD bounds. */
@@ -76,6 +81,7 @@ export function createTerrainSnapshotState(
     readbackPending: false,
     generation: 0,
     lastScheduledStampGen: -1,
+    lastErrorKey: null,
     elevationReadback: createReadbackSlot(),
     boundsReadback: createReadbackSlot(),
     elevationPyramid: createTileElevationPyramid(maxNodes, maxLevel),
@@ -99,13 +105,30 @@ function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
 }
 
 /**
+ * Handle a failed readback: leave the front buffers untouched (no swap), make
+ * the next call retry regardless of the spatial-index generation, and report
+ * each distinct error message once per snapshot state.
+ */
+function handleReadbackFailure(state: TerrainSnapshotState, error: unknown): void {
+  state.lastScheduledStampGen = -1;
+  const key = error instanceof Error ? error.message : String(error);
+  if (state.lastErrorKey === key) return;
+  state.lastErrorKey = key;
+  console.error("[hello-terrain] terrain readback failed:", error);
+}
+
+/**
  * Schedule an async GPU readback of the elevation field (and optionally tile
  * bounds) into the snapshot back-buffers, then swap front/back on completion.
  *
- * No-ops when a readback is already pending, the renderer does not support
- * readback, or the spatial index has not advanced since the last schedule.
- * `captured` values are pinned at schedule time so the swapped-in snapshot is
- * internally consistent even if the config mutates while the readback flies.
+ * Returns `true` when a readback was scheduled. Returns `false` (no-op) when a
+ * readback is already pending, the renderer does not support readback, or the
+ * spatial index has not advanced since the last schedule. `captured` values are
+ * pinned at schedule time so the swapped-in snapshot is internally consistent
+ * even if the config mutates while the readback flies.
+ *
+ * A failing readback never swaps buffers; it resets `readbackPending`, reports
+ * once (see {@link handleReadbackFailure}), and lets the next call retry.
  */
 export function triggerSnapshotReadback(
   state: TerrainSnapshotState,
@@ -120,12 +143,12 @@ export function triggerSnapshotReadback(
     elevationScale: number;
     originY: number;
   },
-): void {
-  if (state.readbackPending) return;
+): boolean {
+  if (state.readbackPending) return false;
   const withReadback = renderer as RendererReadback;
   const useDeviceReadback = canDeviceReadback(renderer);
-  if (!useDeviceReadback && !withReadback.getArrayBufferAsync) return;
-  if (spatialIndex.stampGen === state.lastScheduledStampGen) return;
+  if (!useDeviceReadback && !withReadback.getArrayBufferAsync) return false;
+  if (spatialIndex.stampGen === state.lastScheduledStampGen) return false;
 
   cloneSpatialIndex(state.backIndex, spatialIndex);
   state.lastScheduledStampGen = spatialIndex.stampGen;
@@ -217,10 +240,12 @@ export function triggerSnapshotReadback(
       applySnapshot(boundsFilled);
     };
 
-    runDeviceReadback().finally(() => {
-      state.readbackPending = false;
-    });
-    return;
+    runDeviceReadback()
+      .catch((error: unknown) => handleReadbackFailure(state, error))
+      .finally(() => {
+        state.readbackPending = false;
+      });
+    return true;
   }
 
   // Fallback: Three.js' allocating readback (used when no WebGPU backend is
@@ -254,16 +279,19 @@ export function triggerSnapshotReadback(
   if (boundsPromise) {
     Promise.all([elevationPromise, boundsPromise])
       .then(([elev, bounds]) => onComplete(elev, bounds))
+      .catch((error: unknown) => handleReadbackFailure(state, error))
       .finally(() => {
         state.readbackPending = false;
       });
   } else {
     elevationPromise
       .then((elev) => onComplete(elev, null))
+      .catch((error: unknown) => handleReadbackFailure(state, error))
       .finally(() => {
         state.readbackPending = false;
       });
   }
+  return true;
 }
 
 /** Destroy the GPU staging buffers held by the snapshot state. */

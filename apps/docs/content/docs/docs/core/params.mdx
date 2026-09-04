@@ -23,6 +23,8 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
 | `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
 | `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. Terrain fields use `rgba16float` with per-tile normalized elevation in `.r` (denormalized at sample time using per-tile pack bounds). |
+| `terrainReadbackEnabled` | `boolean` | `true` | Whether `terrainReadbackTask` schedules the GPU→CPU elevation readback that powers `TerrainQuery`, `TerrainRaycast`, and surface-relative LOD. Set to `false` when nothing on the CPU needs terrain data. See [Controlling readback](/docs/core/query/how-it-works#controlling-readback). React exposes this as the `terrainReadback` option. |
+| `terrainReadbackIntervalMs` | `number` | `0` | Minimum milliseconds between scheduled readbacks. `0` reads back whenever the previous readback finished and the quadtree changed; larger values throttle the ~`activeLeafCount × (innerTileSegments + 3)² × 4` byte copy at the cost of a staler CPU snapshot. |
 
 ## Where These Params Apply
 
@@ -113,6 +115,7 @@ const terrain = useTerrain({
 ```
 
 - `elevation` maps to the core `elevationFn` param.
+- `terrainReadback` maps to `terrainReadbackEnabled`; `terrainReadbackIntervalMs` maps to the param of the same name.
 - `getCameraOrigin` and `cameraHysteresis` influence how the runner updates the core `quadtreeUpdate` param over time.
 - `tasks` lets you add extra `@hello-terrain/work` tasks to the terrain graph.
 

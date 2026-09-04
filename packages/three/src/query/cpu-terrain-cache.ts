@@ -64,13 +64,18 @@ export interface CpuTerrainCache {
   readonly generation: number;
   readonly ready: boolean;
   updateConfig(config: TerrainQueryConfig): void;
+  /**
+   * Schedule an async GPU→CPU readback into the back buffers. Returns `true`
+   * when a readback was actually scheduled (false when one is pending, the
+   * renderer cannot read back, or the spatial index has not changed).
+   */
   triggerReadback(
     renderer: WebGPURenderer,
     attribute: StorageBufferAttribute,
     spatialIndex: SpatialIndex,
     boundsAttribute?: StorageBufferAttribute,
     activeLeafCount?: number,
-  ): void;
+  ): boolean;
   /** Release GPU readback staging buffers owned by this cache. */
   dispose(): void;
 
@@ -336,7 +341,7 @@ export function createCpuTerrainCache(
       totalElements = maxNodes * shape.verticesPerNode;
     },
     triggerReadback(renderer, attribute, spatialIndex, boundsAttribute, activeLeafCount) {
-      triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
+      return triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
         verticesPerNode: shape.verticesPerNode,

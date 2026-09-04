@@ -49,5 +49,20 @@ export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayN
   "terrainFieldFilter",
 );
 
+/**
+ * Whether `terrainReadbackTask` schedules GPU→CPU elevation readbacks.
+ *
+ * Readback feeds `TerrainQuery`, `TerrainRaycast`, and the surface-relative LOD
+ * elevation ranges. When `false`, queries return `{ valid: false }`/`null`,
+ * raycasts fall back to bounds-only picking, and LOD uses the datum surface.
+ */
+export const terrainReadbackEnabled = param(true).displayName("terrainReadbackEnabled");
+
+/**
+ * Minimum wall-clock time (ms) between scheduled readbacks. `0` schedules a new
+ * readback as soon as the previous one completes and the spatial index changed.
+ */
+export const terrainReadbackIntervalMs = param(0).displayName("terrainReadbackIntervalMs");
+
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));

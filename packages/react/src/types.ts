@@ -55,6 +55,17 @@ export interface TerrainOptions {
   elevation?: ElevationCallback;
   topology?: Topology | null;
   terrainFieldFilter?: "nearest" | "linear";
+  /**
+   * Enable the GPU→CPU elevation readback that powers `runtime.query`,
+   * `runtime.raycast`, and surface-relative LOD. Maps to the core
+   * `terrainReadbackEnabled` param (default `true`).
+   */
+  terrainReadback?: boolean;
+  /**
+   * Minimum milliseconds between scheduled readbacks (`0` = every frame the
+   * quadtree changes). Maps to the core `terrainReadbackIntervalMs` param.
+   */
+  terrainReadbackIntervalMs?: number;
   getCameraOrigin?: (state: RootState) => TerrainVector3Like;
   cameraHysteresis?: number;
   tasks?: readonly TerrainTask[];
