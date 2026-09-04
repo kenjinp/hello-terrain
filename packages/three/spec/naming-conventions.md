@@ -26,6 +26,8 @@ Prefer names that reflect **what data is** and **how it is stored**.
   - `ElevationFieldContext`
   - `createElevationFieldContextTask`
   - `elevationFieldStageTask`
+  - `ElevationTexture`, `sampleElevationTextureMeters` (texture-sourced
+    elevation; "heightmap" is fine in prose but not in identifiers)
 
 ## Topology Terminology
 
@@ -59,6 +61,14 @@ Prefer names that reflect **what data is** and **how it is stored**.
 - Recommended pattern:
   - `{domain}{action}Task`
   - Examples: `quadtreeUpdateTask`, `elevationFieldStageTask`, `positionNodeTask`.
+- Name what the task *produces*, not its storage medium: a task returning a
+  `TerrainFieldStorage` is `createTerrainFieldStorageTask`.
+- `terrainTasks` keys are the task symbol without the `Task` suffix
+  (`tileNodesTask` → `terrainTasks.tileNodes`,
+  `createTerrainFieldStorageTask` → `terrainTasks.createTerrainFieldStorage`).
+- Factory-generated tasks (`createComputePipelineTasks(leaf, { name })`) derive
+  display names from the caller-supplied `name`: `${name}CompileTask`,
+  `${name}ExecuteTask`.
 
 ## Type Naming
 

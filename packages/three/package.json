@@ -8,6 +8,7 @@
   },
   "version": "0.0.0-alpha.14",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",

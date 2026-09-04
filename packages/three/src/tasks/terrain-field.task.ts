@@ -18,9 +18,14 @@ import { innerTileSegments, maxNodes, terrainFieldFilter } from "./params";
 import { tileBoundsContextTask } from "./tile-bounds.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
-// ── Storage buffer context ──────────────────────────────────────────────
+// ── Terrain field storage ───────────────────────────────────────────────
 
-export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
+/**
+ * Allocates the `TerrainFieldStorage` (RGBA texture + storage node) sized for
+ * the current `innerTileSegments` / `maxNodes`. Stable identity; recreated
+ * only when shape or filter params change.
+ */
+export const createTerrainFieldStorageTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
     const edgeVertexCount = get(innerTileSegments) + 3;
     const maxNodesValue = get(maxNodes);
@@ -34,22 +39,29 @@ export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
       ),
     );
   },
-).displayName("createTerrainFieldTextureTask");
+).displayName("createTerrainFieldStorageTask");
+
+/** @deprecated Use {@link createTerrainFieldStorageTask}. Removed in the next release. */
+export const createTerrainFieldTextureTask = createTerrainFieldStorageTask;
 
 // ── Compute stage ───────────────────────────────────────────────────────
 
 /**
- * Normal field compute stage — reads height neighbors from the elevation field
- * buffer, computes surface normals via central differences, packs XZ
- * components into a u32 via `packHalf2x16`, and writes to the normal field
- * storage buffer.
+ * Terrain-field pack stage — the last stage of the default compute pipeline.
+ * For every vertex it reads the raw height from the elevation field buffer,
+ * reconstructs the world-space surface normal through the topology's
+ * projection (`projection.gpu.createFieldNormal`, central differences over
+ * neighboring heights), normalizes the height into `[0, 1]` against the tile's
+ * pack bounds (`packMin` / `packMax` from `tileBoundsContextTask`), and writes
+ * `[normalizedHeight, Nx, Ny, Nz]` into the RGBA `TerrainFieldStorage` texture
+ * consumed by the render and GPU sampler paths.
  *
  * Accumulates the upstream elevation pipeline via `get(elevationFieldStageTask)`.
  */
 export const terrainFieldStageTask = task((get, work) => {
   const upstream = get(elevationFieldStageTask);
   const elevationFieldContext = get(createElevationFieldContextTask);
-  const terrainFieldStorage = get(createTerrainFieldTextureTask);
+  const terrainFieldStorage = get(createTerrainFieldStorageTask);
   const tileEdgeVertexCount = get(innerTileSegments) + 3;
   const tile = get(tileNodesTask);
   const uniforms = get(updateUniformsTask);

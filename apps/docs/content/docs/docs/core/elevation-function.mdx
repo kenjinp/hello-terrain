@@ -205,6 +205,75 @@ graph.set(elevationFn, () => ({ worldPosition, tileLevel, rootUV }) => {
 });
 ```
 
+### Elevation textures (heightmaps)
+
+For image-based elevation data, sample a texture with `rootUV`. Single-channel formats (EXR, 16-bit grayscale) can be read directly with `texture()`; for RG-packed 16-bit PNGs use the `sampleElevationTextureMeters` helper, which decodes the two 8-bit channels and rescales into meters.
+
+```ts
+import {
+  elevationFn,
+  sampleElevationTextureMeters,
+  type ElevationCallback,
+  type ElevationTexture,
+} from "@hello-terrain/three";
+import { float } from "three/tsl";
+
+const heightmap: ElevationTexture = textureLoader.load("/elevation-rg16.png");
+const minM = 1200;
+const maxM = 4200;
+
+const elevation: ElevationCallback = ({ rootUV }) =>
+  sampleElevationTextureMeters(
+    heightmap,
+    rootUV,
+    float(minM),
+    float(maxM),
+    float(maxM - minM),
+  );
+
+graph.set(elevationFn, () => elevation);
+```
+
+`decodeUint16RG` is also exported if you only need the `[0, 1]` decode step.
+
+<Callout>
+  `sampleHeightmapMeters` and the `HeightmapTexture` type are deprecated aliases for `sampleElevationTextureMeters` / `ElevationTexture` and will be removed in the next release.
+</Callout>
+
+## Custom compute stages
+
+The elevation function is the first stage of a GPU compute pipeline; the default pipeline then reduces per-tile bounds and packs the terrain field texture. You can insert your own stage (erosion, stamping, blending a second data source, …) by writing a stage task that accumulates on `elevationFieldStageTask` and handing the leaf stage to `createComputePipelineTasks`.
+
+```ts
+import {
+  createComputePipelineTasks,
+  elevationFieldStageTask,
+  type ComputePipeline,
+} from "@hello-terrain/three";
+import { task } from "@hello-terrain/work";
+
+const erosionStageTask = task((get, work) => {
+  const upstream = get(elevationFieldStageTask);
+  return work((): ComputePipeline => [
+    ...upstream,
+    (nodeIndex, globalVertexIndex, uv) => {
+      // read/write the elevation field for this vertex
+    },
+  ]);
+}).displayName("erosionStageTask");
+
+const { compile, execute } = createComputePipelineTasks(erosionStageTask, {
+  name: "erosion",
+});
+
+graph.add(compile);
+graph.add(execute);
+```
+
+Passing `name` labels the generated tasks `erosionCompileTask` / `erosionExecuteTask` in `graph.inspect()`. Without it they take the default `compileComputeTask` / `executeComputeTask` names and would be indistinguishable from the built-in pipeline.
+
+Each stage callback receives `(nodeIndex, globalVertexIndex, uv, localCoordinates, texelSize)` as TSL nodes. Keep the terrain-field pack (`terrainFieldStageTask`) as the last stage when you need the packed texture — the factory runs the bounds reduction between upstream stages and the leaf stage.
+
 ## How it works
 
 1. **You provide** an `ElevationCallback` and set it on the terrain graph via `elevationFn`.

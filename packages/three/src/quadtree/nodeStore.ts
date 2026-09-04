@@ -1,9 +1,5 @@
 import { type TileId, U32_EMPTY } from "./types";
 
-export const NodeFlags = {
-  LEAF: 1 << 0,
-} as const;
-
 export type NodeStore = {
   maxNodes: number;
   nodesUsed: number;
@@ -19,13 +15,9 @@ export type NodeStore = {
 
   /** sentinel U32_EMPTY means no children; otherwise children are [firstChild..firstChild+3] */
   firstChild: Uint32Array;
-  flags: Uint8Array;
-
-  /** root node id per space */
-  roots: Uint32Array;
 };
 
-export function createNodeStore(maxNodes: number, spaceCount: number): NodeStore {
+export function createNodeStore(maxNodes: number): NodeStore {
   return {
     maxNodes,
     nodesUsed: 0,
@@ -36,8 +28,6 @@ export function createNodeStore(maxNodes: number, spaceCount: number): NodeStore
     x: new Int32Array(maxNodes),
     y: new Int32Array(maxNodes),
     firstChild: new Uint32Array(maxNodes),
-    flags: new Uint8Array(maxNodes),
-    roots: new Uint32Array(spaceCount),
   };
 }
 
@@ -64,13 +54,8 @@ export function allocNode(store: NodeStore, tile: TileId): number {
   store.x[id] = tile.x;
   store.y[id] = tile.y;
   store.firstChild[id] = U32_EMPTY;
-  store.flags[id] = 0;
 
   return id;
-}
-
-export function isLive(store: NodeStore, nodeId: number): boolean {
-  return store.gen[nodeId] === store.currentGen;
 }
 
 export function hasChildren(store: NodeStore, nodeId: number): boolean {

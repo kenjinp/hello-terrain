@@ -68,8 +68,8 @@ export interface TerrainTasks {
   updateUniforms: TaskRef<TerrainUniformsContext>;
   positionNode: TaskRef<ShaderCallNodeInternal>;
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
-  createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
-  createTerrainFieldTexture: TaskRef<TerrainFieldStorage>;
+  tileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
+  createTerrainFieldStorage: TaskRef<TerrainFieldStorage>;
   createTerrainSampler: TaskRef<TerrainSampler>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   terrainFieldStage: TaskRef<ComputePipeline>;

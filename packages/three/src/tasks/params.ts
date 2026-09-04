@@ -50,4 +50,4 @@ export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayN
 );
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
-export const elevationFn = param<ElevationCallback>(() => float(0));
+export const elevationFn = param<ElevationCallback>(() => float(0)).displayName("elevationFn");

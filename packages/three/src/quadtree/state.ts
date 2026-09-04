@@ -46,7 +46,7 @@ export type QuadtreeState = {
 };
 
 export function createState(cfg: QuadtreeConfig, topology: Topology): QuadtreeState {
-  const store = createNodeStore(cfg.maxNodes, topology.spaceCount);
+  const store = createNodeStore(cfg.maxNodes);
   const scratchRootTiles: TileId[] = [];
   for (let i = 0; i < topology.maxRootCount; i++) {
     scratchRootTiles.push({ space: 0, level: 0, x: 0, y: 0 });
