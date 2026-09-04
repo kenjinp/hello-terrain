@@ -1,4 +1,4 @@
-import type { Intersection, Raycaster } from "three";
+import type { BufferGeometry, Intersection, Raycaster } from "three";
 import {
   InstancedBufferAttribute,
   InstancedMesh,
@@ -12,7 +12,12 @@ import { innerTileSegments as innerTileSegmentsParam } from "../tasks/params";
 export type TerrainMeshParams = {
   innerTileSegments: number;
   maxNodes: number;
-  material: NodeMaterial;
+  /**
+   * Material for the instanced tiles. When omitted, each `TerrainMesh`
+   * creates its own `MeshStandardNodeMaterial` so meshes never share a
+   * material instance by default.
+   */
+  material?: NodeMaterial;
   /**
    * Reverse tile triangle winding. Cube-sphere surfaces set this so the
    * planet's outer shell is front-facing and renders with `FrontSide`.
@@ -20,23 +25,39 @@ export type TerrainMeshParams = {
   flipWinding: boolean;
 };
 
-export const defaultTerrainMeshParams: TerrainMeshParams = {
+/**
+ * Default construction params. Intentionally has no `material`: a material is
+ * a GPU resource, so the default is allocated lazily per mesh in the
+ * constructor rather than once at module import time.
+ */
+export const defaultTerrainMeshParams: Omit<TerrainMeshParams, "material"> = {
   // Source of truth is the `innerTileSegments` param itself.
   innerTileSegments: innerTileSegmentsParam.get(),
   maxNodes: 1024,
-  material: new MeshStandardNodeMaterial(),
   flipWinding: false,
 };
+
+/**
+ * Geometry swaps are deferred one macrotask so a caller that swaps geometry
+ * from inside a render callback (`useFrame`, `onBeforeRender`) never disposes
+ * GPU buffers the renderer may still reference during the current frame.
+ */
+function disposeGeometryAfterFrame(geometry: BufferGeometry) {
+  setTimeout(() => geometry.dispose());
+}
+
 export class TerrainMesh extends InstancedMesh {
   private _innerTileSegments: number;
   private _maxNodes: number;
   private _flipWinding: boolean;
   terrainRaycast: TerrainRaycast | null = null;
-  constructor(params: Partial<TerrainMeshParams> = defaultTerrainMeshParams) {
-    const mergedParams = { ...defaultTerrainMeshParams, ...params };
-    const { innerTileSegments, maxNodes, material, flipWinding } = mergedParams;
+  constructor(params: Partial<TerrainMeshParams> = {}) {
+    const { innerTileSegments, maxNodes, material, flipWinding } = {
+      ...defaultTerrainMeshParams,
+      ...params,
+    };
     const geometry = new TerrainGeometry(innerTileSegments, true, flipWinding);
-    super(geometry, material, maxNodes);
+    super(geometry, material ?? new MeshStandardNodeMaterial(), maxNodes);
     this.instanceMatrix.name = "terrainInstanceMatrix";
     this.frustumCulled = false;
     this._innerTileSegments = innerTileSegments;
@@ -52,7 +73,7 @@ export class TerrainMesh extends InstancedMesh {
     const oldGeometry = this.geometry;
     this.geometry = new TerrainGeometry(tileSegments, true, this._flipWinding);
     this._innerTileSegments = tileSegments;
-    setTimeout(() => oldGeometry.dispose());
+    disposeGeometryAfterFrame(oldGeometry);
   }
 
   get flipWinding() {
@@ -63,7 +84,7 @@ export class TerrainMesh extends InstancedMesh {
     const oldGeometry = this.geometry;
     this.geometry = new TerrainGeometry(this._innerTileSegments, true, flip);
     this._flipWinding = flip;
-    setTimeout(() => oldGeometry.dispose());
+    disposeGeometryAfterFrame(oldGeometry);
   }
 
   get maxNodes() {

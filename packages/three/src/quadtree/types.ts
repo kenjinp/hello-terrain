@@ -102,6 +102,17 @@ export function resetLeafSet(leaves: LeafSet): void {
   leaves.count = 0;
 }
 
+/**
+ * Preallocated `TileId` scratch owned by a `SeamTable`, so `buildSeams2to1`
+ * stays allocation-free without sharing state across terrain instances.
+ */
+export type SeamTableScratch = {
+  tile: TileId;
+  nbr: TileId;
+  parentTile: TileId;
+  parentNbr: TileId;
+};
+
 export type SeamTable = {
   /** maximum number of leaves the table can describe */
   capacity: number;
@@ -116,7 +127,13 @@ export type SeamTable = {
    * slot: 0..1 (at most 2 neighbors per edge under 2:1 balance)
    */
   neighbors: Uint32Array;
+  /** per-table scratch used while building the neighbor table */
+  scratch: SeamTableScratch;
 };
+
+function allocTileId(): TileId {
+  return { space: 0, level: 0, x: 0, y: 0 };
+}
 
 export function allocSeamTable(capacity: number): SeamTable {
   return {
@@ -124,6 +141,12 @@ export function allocSeamTable(capacity: number): SeamTable {
     count: 0,
     stride: 8,
     neighbors: new Uint32Array(capacity * 8),
+    scratch: {
+      tile: allocTileId(),
+      nbr: allocTileId(),
+      parentTile: allocTileId(),
+      parentNbr: allocTileId(),
+    },
   };
 }
 

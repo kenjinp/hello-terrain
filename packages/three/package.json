@@ -37,6 +37,7 @@
     "@config/oxfmt": "workspace:*",
     "@config/oxlint": "workspace:*",
     "@config/typescript": "workspace:*",
+    "@types/node": "24.3.0",
     "@types/three": "catalog:",
     "mitata": "^1.0.34",
     "unbuild": "^3.5.0",
