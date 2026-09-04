@@ -1,0 +1,5 @@
+{
+  "title": "Advanced",
+  "description": "Lower-level building blocks and GPU resources",
+  "pages": ["terrain-geometry", "gpu-resources"]
+}

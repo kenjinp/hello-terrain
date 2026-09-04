@@ -3,7 +3,7 @@ title: Params
 description: Reference for the core terrain graph params and how to create your own with @hello-terrain/work
 ---
 
-Terrain configuration in Hello Terrain is built on top of the `Param` system from `@hello-terrain/work`.
+Terrain configuration in Hello Terrain is built on top of the `param()` / `ParamRef` system from `@hello-terrain/work`.
 
 The core terrain graph in `@hello-terrain/three` exposes a shared set of params such as `rootSize`, `maxLevel`, `elevationScale`, and `terrainFieldFilter`. Higher-level APIs like `@hello-terrain/react` map their props and options onto these same graph inputs.
 
@@ -20,9 +20,9 @@ The core terrain graph in `@hello-terrain/three` exposes a shared set of params 
 | `elevationScale` | `number` | `1` | A multiplier applied to the sampled elevation values, controlling the vertical exaggeration of the terrain. |
 | `radius` | `number` | `1000` | The sphere radius used by the cube-sphere projection. Ignored by flat topologies. See [Cube-Sphere Planet](/docs/examples/cube-sphere). |
 | `elevationFn` | `ElevationCallback` | `() => float(0)` | The terrain height function. See [Elevation Function](/docs/core/elevation-function). React exposes this as the `elevation` option. |
-| `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and update mode. |
-| `topology` | `Topology` | `null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
-| `terrainFieldFilter` | `"nearest"` | `"linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. Terrain fields use `rgba16float` with per-tile normalized elevation in `.r` (denormalized at sample time using per-tile pack bounds). |
+| `quadtreeUpdate` | `UpdateParams` | `{ cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 }` | The camera-relative quadtree refinement settings, including the tracked origin and LOD criteria. In `mode: "distance"` a tile splits when the camera is within `distanceFactor × r` of its bounding sphere (`r` is the surface-relative bounds radius); `distanceFactor` falls back to `1.5` when omitted. `mode: "screen"` requires `projectionFactor` and `targetPixels` instead. |
+| `topology` | `Topology \| null` | `null` | The terrain topology that defines tile layout, bounds, and the injected [surface projection](/docs/core/projection). Leave it unset for the default flat topology, or pass `createInfiniteFlatTopology` / `createCubeSphereTopology` / `createTorusTopology`. See [Topology Types](/docs/core/topology). |
+| `terrainFieldFilter` | `"nearest" \| "linear"` | `"linear"` | The sampling filter used when reading terrain field textures. Use `linear` for smoother interpolation or `nearest` for exact texel reads. Terrain fields use `rgba16float` with per-tile normalized elevation in `.r` (denormalized at sample time using per-tile pack bounds). |
 
 ## Where These Params Apply
 

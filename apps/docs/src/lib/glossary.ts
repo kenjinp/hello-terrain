@@ -93,6 +93,24 @@ export const glossary: GlossaryEntry[] = [
       "A terrain rendering technique using nested, camera-centered grids at different resolutions for efficient large-scale terrain display.",
     aliases: ["clipmaps", "geometry clipmap"],
   },
+  {
+    term: "Topology",
+    definition:
+      "The pluggable adapter that defines how terrain tiles are laid out: root tiles, same-level neighbors (including across cube faces or wrapping edges), conservative LOD bounds, and the injected surface projection. Built-ins: bounded flat, infinite flat, cube-sphere, and torus.",
+    aliases: ["topologies", "terrain topology"],
+  },
+  {
+    term: "Surface Projection",
+    definition:
+      "The strategy a topology carries (SurfaceProjection) that maps tile coordinates onto a shape — flat plane, cube-sphere, or torus — assembling GPU positions/normals and powering the CPU query, raycast, and LOD hooks. The pipeline never branches on a projection kind; it calls into the projection.",
+    aliases: ["surface projections", "SurfaceProjection"],
+  },
+  {
+    term: "Elevation Field",
+    definition:
+      "The computed per-vertex elevation dataset produced by the elevation function on the GPU. World positions, normals, and the packed terrain field are derived from it.",
+    aliases: ["elevation fields"],
+  },
 ];
 
 // Build lookup maps for efficient term matching

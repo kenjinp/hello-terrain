@@ -205,3 +205,19 @@ displacements above the base radius (not absolute world Y).
 - Readback is triggered by a separate `terrainReadbackTask` that runs on the GPU lane. It is fire-and-forget — downstream tasks like `terrainRaycastTask` depend on the stable `terrainQueryTask`, not the readback, so they don't block on GPU compute.
 - Readback reuses a persistent per-attribute GPU staging buffer instead of allocating one each frame, so the GPU buffer pool stays flat over time. (Three.js' `getArrayBufferAsync` leaks a `_readback` buffer per call and is only used as a no-backend fallback.)
 
+## Low-level factories
+
+`terrainTasks.terrainQuery` (or `terrain.runtime` in React) is the normal entry point: the task owns the CPU terrain cache, keeps it in sync with the active projection, and rebuilds the query objects when the buffer shape changes. The query objects themselves are thin wrappers created by two exported factories:
+
+```ts
+import { createTerrainQuery, createTerrainSurfaceQuery } from "@hello-terrain/three";
+
+// Both take the `CpuTerrainCache` owned by the terrainQuery task.
+const { cache } = graph.get(terrainTasks.terrainQuery);
+
+const query: TerrainQuery = createTerrainQuery(cache);               // flat, keyed on world XZ
+const surfaceQuery: TerrainSurfaceQuery = createTerrainSurfaceQuery(cache); // closed surfaces, keyed on world position
+```
+
+You only need these when implementing a custom [`SurfaceProjection`](/docs/core/projection) — its `cpu.createRuntimeQueries(cache)` hook is where the built-in projections call them — or when you want an independent query facade over the same cache. The `TerrainSphereQuery` (direction / lat-long keys) is created inside the cube-sphere projection and has no standalone factory export.
+

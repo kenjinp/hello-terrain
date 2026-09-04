@@ -1,5 +1,12 @@
 import { type TileBounds, type UpdateParams } from "./types";
 
+/**
+ * Default `distanceFactor` for `mode: "distance"` LOD: a tile splits when the
+ * camera is within `distanceFactor × r` of its bounding sphere. Shared by the
+ * `quadtreeUpdate` param default and the fallback used when the caller omits it.
+ */
+export const DEFAULT_DISTANCE_FACTOR = 1.5;
+
 export function shouldSplit(bounds: TileBounds, level: number, maxLevel: number, params: UpdateParams): boolean {
   if (level >= maxLevel) return false;
 
@@ -27,7 +34,7 @@ export function shouldSplit(bounds: TileBounds, level: number, maxLevel: number,
   }
 
   // distance mode
-  const f = params.distanceFactor ?? 2;
+  const f = params.distanceFactor ?? DEFAULT_DISTANCE_FACTOR;
   const threshold = bounds.r * f;
   return safeDistSq < threshold * threshold;
 }

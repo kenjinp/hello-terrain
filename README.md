@@ -12,10 +12,20 @@ Realtime web terrain engine, for vast virtual worlds. Built for [three.js](https
 
 ## Features
 
-- Performant variable LOD system for huge (earth-scale!) open worlds
-- Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
-- TSL-based elevation and texture assignment nodes
-- Composable compute stage plugins
+- Performant quadtree LOD for huge (earth-scale!) open worlds, with surface-relative distance criteria driven by real per-tile elevation ranges
+- GPU elevation via a TSL `elevationFn` callback evaluated in WebGPU compute, with world-space normals derived on the GPU
+- Composable compute stages (`createComputePipelineTasks`) for custom passes on top of the elevation field
+- Multiple topologies: bounded flat, infinite flat, cube-sphere planets, and torus — each backed by a pluggable `SurfaceProjection`
+- Synchronous CPU `TerrainQuery` / `TerrainSurfaceQuery` / `TerrainSphereQuery` sampling from an async GPU readback cache
+- CPU `TerrainRaycast` picking that integrates with three.js `Raycaster` and R3F pointer events
+- GPU terrain sampler TSL nodes for scattering and snapping non-terrain objects to the surface
+- TSL material helpers (normal blending, skirt masks) and a reactive task graph (`@hello-terrain/work`)
+
+### Roadmap (not yet implemented)
+
+- Terrain holes
+- Texture painting and overlays
+- Per-vertex colors and wetness
 
 ## Getting Started
 

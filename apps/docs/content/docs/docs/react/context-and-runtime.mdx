@@ -68,8 +68,21 @@ function CharacterController() {
 const terrain = useTerrainContext();
 
 const query = terrain.runtime.query;
+const surfaceQuery = terrain.runtime.surfaceQuery;
+const sphereQuery = terrain.runtime.sphereQuery;
 const raycast = terrain.runtime.raycast;
 ```
+
+`TerrainRuntime` has four fields:
+
+| Field | Type | Notes |
+|:--|:--|:--|
+| `query` | `TerrainQuery \| null` | Flat heightfield query keyed on world XZ. |
+| `surfaceQuery` | `TerrainSurfaceQuery \| null` | Generic closed-surface query keyed on a world position; `null` on flat topologies. |
+| `sphereQuery` | `TerrainSphereQuery \| null` | Cube-sphere query with direction / lat-long keys; `null` unless the topology uses the `cubeSphere` projection. |
+| `raycast` | `TerrainRaycast \| null` | CPU raycaster (`pick(ray, options?)`). |
+
+All of these types are re-exported from `@hello-terrain/react`. See the [Terrain Query API](/docs/core/query/terrain-query) for the methods on each query object.
 
 These values are updated by the terrain graph. They may be `null` before the terrain is ready.
 

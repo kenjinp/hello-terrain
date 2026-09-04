@@ -112,3 +112,33 @@ the terrain report nothing.
 
 Higher `maxSteps` / `refinementSteps` values improve precision on steep/complex terrain but increase query cost.
 
+## Low-level factory
+
+`terrainTasks.terrainRaycast` is the normal entry point: the task wires the raycaster to the live query objects, the active projection, and a bounds config derived from the current global elevation range. The raycaster it returns is built with the exported `createTerrainRaycast` factory, which you can call yourself if you need a raycaster over a different set of query objects (for example inside a custom [`SurfaceProjection`](/docs/core/projection)):
+
+```ts
+import { createTerrainRaycast } from "@hello-terrain/three";
+import type { TerrainRaycastConfig } from "@hello-terrain/three";
+
+const { query, surfaceQuery, sphereQuery, projection } = graph.get(terrainTasks.terrainQuery);
+
+const config: TerrainRaycastConfig = {
+  rootSize: 256,
+  originX: 0, originY: 0, originZ: 0,
+  minY: -100, maxY: 100,        // vertical clip of the flat heightfield shell
+  centerX: 0, centerY: 0, centerZ: 0, // center for closed surfaces
+};
+
+const raycast = createTerrainRaycast({
+  getProjection: () => projection,
+  getTerrainQuery: () => query,
+  getSurfaceQuery: () => surfaceQuery,
+  getSphereQuery: () => sphereQuery,
+  getConfig: () => config,
+});
+
+raycast.pick(ray); // delegates to projection.cpu.raycast(...)
+```
+
+Every getter is read on each `pick` call, so you can mutate the objects they return (as `terrainRaycastTask` does with its config) without rebuilding the raycaster.
+
