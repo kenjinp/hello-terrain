@@ -1126,6 +1126,32 @@ describe("graph()", () => {
         expect(p.get().mode).toBe("distance");
       });
 
+      it("copies self-referencing plain-object defaults without recursing forever", async () => {
+        type Cyclic = { x: number; self?: Cyclic };
+        const cyclic: Cyclic = { x: 1 };
+        cyclic.self = cyclic;
+        const p = param<Cyclic>(cyclic);
+        const t = task((get, work) => {
+          const pv = get(p);
+          return work(() => pv);
+        });
+
+        const g = graph()
+          .add(t)
+          .set(p, (prev) => {
+            prev.x = 2;
+            return prev;
+          });
+        await g.run({ targets: [t] });
+
+        const bound = g.get(t);
+        expect(bound).not.toBe(cyclic);
+        expect(bound.x).toBe(2);
+        // The cycle is preserved inside the copy and does not point at the default.
+        expect(bound.self).toBe(bound);
+        expect(cyclic.x).toBe(1);
+      });
+
       it("does not alias when ownership is taken over from a subscription", async () => {
         const p = makeOriginParam();
         const t = readX(p);

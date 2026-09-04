@@ -82,19 +82,31 @@ function isPlainObject(value: unknown): value is Record<PropertyKey, unknown> {
  * @param value - The param default to copy.
  * @returns {T} A structurally equal value with fresh plain containers.
  */
-export function cloneParamInitial<T>(value: T): T {
+export function cloneParamInitial<T>(value: T, seen?: WeakMap<object, unknown>): T {
   if (Array.isArray(value)) {
     if (Object.getPrototypeOf(value) !== Array.prototype) return value;
-    return value.map((item) => cloneParamInitial(item)) as T;
+    const visited = seen ?? new WeakMap<object, unknown>();
+    const cached = visited.get(value);
+    if (cached) return cached as T;
+    const out: unknown[] = [];
+    visited.set(value, out);
+    for (const item of value) out.push(cloneParamInitial(item, visited));
+    return out as T;
   }
   if (!isPlainObject(value)) return value;
 
+  const visited = seen ?? new WeakMap<object, unknown>();
+  const cached = visited.get(value);
+  if (cached) return cached as T;
+
   const out: Record<PropertyKey, unknown> =
     Object.getPrototypeOf(value) === null ? Object.create(null) : {};
+  // Register before recursing so self-referencing defaults terminate.
+  visited.set(value, out);
   for (const key of Reflect.ownKeys(value)) {
     const desc = Object.getOwnPropertyDescriptor(value, key);
     if (!desc?.enumerable) continue;
-    out[key] = cloneParamInitial(value[key]);
+    out[key] = cloneParamInitial(value[key], visited);
   }
   return out as T;
 }
