@@ -1,437 +1,62 @@
 import { bench, group, run, summary } from "mitata";
-import { SpatialIndex, buildSpatialIndex, encodeKey } from "../src/quadtree/find-neighbors";
-import { Direction, Quadtree } from "../src/quadtree/Quadtree";
-import { QuadtreeNodeView } from "../src/quadtree/QuadtreeNodeView";
 import {
-  computeScreenSpaceInfo,
-  distanceBasedSubdivision,
-  screenSpaceSubdivision,
-} from "../src/quadtree/subdivision-strategies";
+  createFlatTopology,
+  createInfiniteFlatTopology,
+  createState,
+  update,
+  type UpdateParams,
+} from "../src/quadtree";
 
-// Common config for benchmarks
-const defaultConfig = {
-  maxLevel: 8,
-  rootSize: 1000,
-  minNodeSize: 1,
-  origin: { x: 0, y: 0, z: 0 },
-  maxNodes: 4096,
-};
+const cfg = { maxNodes: 8192, maxLevel: 10 };
+const rootSize = 1000;
+const origin = { x: 0, y: 0, z: 0 };
 
-const largeConfig = {
-  maxLevel: 12,
-  rootSize: 10000,
-  minNodeSize: 1,
-  origin: { x: 0, y: 0, z: 0 },
-  maxNodes: 16384,
-};
+const flat = createFlatTopology({ rootSize, origin });
+const infinite = createInfiniteFlatTopology({ rootSize, origin, rootGridRadius: 1 });
 
-// Pre-create instances for reuse tests
-let quadtree: Quadtree;
-let largeQuadtree: Quadtree;
-let reusableNodeView: QuadtreeNodeView;
+const distance = (x: number, y: number, z: number): UpdateParams => ({
+  cameraOrigin: { x, y, z },
+  mode: "distance",
+  distanceFactor: 2,
+});
 
-// Test positions
-const centerPosition = { x: 0, y: 10, z: 0 };
-const edgePosition = { x: 450, y: 10, z: 450 };
-const farPosition = { x: 1000, y: 500, z: 1000 };
-const movingPositions = Array.from({ length: 100 }, (_, i) => ({
-  x: Math.sin(i * 0.1) * 400,
-  y: 10 + Math.cos(i * 0.05) * 50,
-  z: Math.cos(i * 0.1) * 400,
-}));
+// 1080p, 60deg vertical FOV: screenHeight / (2 * tan(fov / 2)).
+const projectionFactor = 1080 / (2 * Math.tan(Math.PI / 6));
+const screen = (x: number, y: number, z: number): UpdateParams => ({
+  cameraOrigin: { x, y, z },
+  mode: "screen",
+  projectionFactor,
+  targetPixels: 64,
+});
 
-// ============================================================
-// Construction Benchmarks
-// ============================================================
+// Circular camera path for the movement benchmark.
+const path = Array.from({ length: 100 }, (_, i) =>
+  distance(Math.sin(i * 0.1) * 400, 10 + Math.cos(i * 0.05) * 50, Math.cos(i * 0.1) * 400),
+);
+
 summary(() => {
-  group("Construction", () => {
-    bench("new Quadtree (default config, 4096 nodes)", () => {
-      const qt = new Quadtree(defaultConfig);
-      qt.destroy();
-    });
-
-    bench("new Quadtree (large config, 16384 nodes)", () => {
-      const qt = new Quadtree(largeConfig);
-      qt.destroy();
-    });
-
-    bench("new Quadtree with custom strategy", () => {
-      const qt = new Quadtree(defaultConfig, distanceBasedSubdivision(3));
-      qt.destroy();
-    });
-
-    bench("new QuadtreeNodeView (4096 nodes)", () => {
-      const view = new QuadtreeNodeView(4096);
-      view.destroy();
-    });
-
-    bench("new QuadtreeNodeView (16384 nodes)", () => {
-      const view = new QuadtreeNodeView(16384);
-      view.destroy();
-    });
+  group("update() — flat topology, distance mode", () => {
+    const state = createState(cfg, flat);
+    bench("camera at center (deep subdivision)", () => update(state, flat, distance(0, 10, 0)));
+    bench("camera at edge", () => update(state, flat, distance(450, 10, 450)));
+    bench("camera far away (shallow)", () => update(state, flat, distance(1000, 500, 1000)));
   });
 });
 
-// ============================================================
-// Update Benchmarks (main subdivision logic)
-// ============================================================
 summary(() => {
-  group("Update (subdivision)", () => {
-    // Setup for this group
-    quadtree = new Quadtree(defaultConfig);
-    largeQuadtree = new Quadtree(largeConfig);
-
-    bench("update() from center (high subdivision)", () => {
-      quadtree.update(centerPosition);
-    });
-
-    bench("update() from edge", () => {
-      quadtree.update(edgePosition);
-    });
-
-    bench("update() from far (minimal subdivision)", () => {
-      quadtree.update(farPosition);
-    });
-
-    bench("update() large config from center", () => {
-      largeQuadtree.update(centerPosition);
-    });
+  group("update() — LOD criteria", () => {
+    const distanceState = createState(cfg, flat);
+    const screenState = createState(cfg, flat);
+    bench("distance mode", () => update(distanceState, flat, distance(0, 10, 0)));
+    bench("screen mode", () => update(screenState, flat, screen(0, 10, 0)));
   });
 });
 
-// ============================================================
-// Sequential Updates (simulating camera movement)
-// ============================================================
-group("Sequential updates (movement simulation)", () => {
-  quadtree = new Quadtree(defaultConfig);
-
+group("update() — infinite flat, 100-step camera path", () => {
+  const state = createState(cfg, infinite);
   bench("100 sequential updates (circular path)", () => {
-    for (const pos of movingPositions) {
-      quadtree.update(pos);
-    }
+    for (const params of path) update(state, infinite, params);
   });
 });
 
-// ============================================================
-// Buffer Reuse Benchmarks
-// ============================================================
-summary(() => {
-  group("Buffer reuse patterns", () => {
-    reusableNodeView = new QuadtreeNodeView(defaultConfig.maxNodes);
-    quadtree = new Quadtree(defaultConfig);
-
-    bench("new Quadtree (fresh buffers) + update + destroy", () => {
-      const qt = new Quadtree(defaultConfig);
-      qt.update(centerPosition);
-      qt.destroy();
-    });
-
-    bench("new Quadtree (reused NodeView) + update", () => {
-      const qt = new Quadtree(defaultConfig, distanceBasedSubdivision(2), reusableNodeView);
-      qt.update(centerPosition);
-      // Don't destroy - we're reusing the NodeView
-    });
-
-    bench("reset() + update() (no allocation)", () => {
-      quadtree.reset();
-      quadtree.update(centerPosition);
-    });
-  });
-});
-
-// ============================================================
-// Query Operations
-// ============================================================
-summary(() => {
-  group("Query operations", () => {
-    // Setup with a subdivided tree
-    quadtree = new Quadtree(defaultConfig);
-    quadtree.update(centerPosition);
-
-    bench("getNodeCount()", () => {
-      quadtree.getNodeCount();
-    });
-
-    bench("getLeafNodeCount()", () => {
-      quadtree.getLeafNodeCount();
-    });
-
-    bench("getDeepestLevel()", () => {
-      quadtree.getDeepestLevel();
-    });
-
-    bench("getActiveLeafNodeIndices() (zero-copy)", () => {
-      quadtree.getActiveLeafNodeIndices();
-    });
-
-    bench("getLeafNodes() (allocates array)", () => {
-      quadtree.getLeafNodes();
-    });
-
-    bench("getConfig()", () => {
-      quadtree.getConfig();
-    });
-  });
-});
-
-// ============================================================
-// NodeView Direct Operations
-// ============================================================
-summary(() => {
-  group("QuadtreeNodeView operations", () => {
-    const nodeView = new QuadtreeNodeView(4096);
-
-    bench("getLevel()", () => {
-      nodeView.getLevel(0);
-    });
-
-    bench("setLevel()", () => {
-      nodeView.setLevel(0, 5);
-    });
-
-    bench("getX() + getY()", () => {
-      nodeView.getX(0);
-      nodeView.getY(0);
-    });
-
-    bench("getChildren()", () => {
-      nodeView.getChildren(0);
-    });
-
-    bench("setChildren()", () => {
-      nodeView.setChildren(0, [1, 2, 3, 4]);
-    });
-
-    bench("getNeighbors()", () => {
-      nodeView.getNeighbors(0);
-    });
-
-    bench("setNeighbors()", () => {
-      nodeView.setNeighbors(0, [1, 2, 3, 4]);
-    });
-
-    bench("getLeaf()", () => {
-      nodeView.getLeaf(0);
-    });
-
-    bench("setLeaf(true)", () => {
-      nodeView.setLeaf(0, true);
-    });
-
-    bench("clear()", () => {
-      nodeView.clear();
-    });
-  });
-});
-
-// ============================================================
-// Subdivision Strategy Benchmarks
-// ============================================================
-summary(() => {
-  group("Subdivision strategies", () => {
-    // Create a quadtree instance for strategy benchmarks
-    const strategyQuadtree = new Quadtree(defaultConfig);
-
-    const distanceStrategy = distanceBasedSubdivision(2);
-    const screenStrategy = screenSpaceSubdivision({
-      targetTrianglePixels: 6,
-      tileSegments: 13,
-      getScreenSpaceInfo: () => computeScreenSpaceInfo(Math.PI / 3, 1080),
-    });
-
-    // Context: [quadtree, distance, level, nodeSize, minNodeSize, rootSize, nodeX, nodeY, minX, minY, worldX, worldY]
-    const closeContext: Parameters<typeof distanceStrategy> = [
-      strategyQuadtree,
-      50,
-      3,
-      125,
-      1,
-      1000,
-      4,
-      4,
-      -437.5,
-      -437.5,
-      -375,
-      -375,
-    ];
-    const farContext: Parameters<typeof distanceStrategy> = [
-      strategyQuadtree,
-      500,
-      1,
-      500,
-      1,
-      1000,
-      1,
-      1,
-      -250,
-      -250,
-      0,
-      0,
-    ];
-
-    bench("distanceBasedSubdivision (close)", () => {
-      distanceStrategy(...closeContext);
-    });
-
-    bench("distanceBasedSubdivision (far)", () => {
-      distanceStrategy(...farContext);
-    });
-
-    bench("screenSpaceSubdivision (close)", () => {
-      screenStrategy(...closeContext);
-    });
-
-    bench("screenSpaceSubdivision (far)", () => {
-      screenStrategy(...farContext);
-    });
-
-    bench("computeScreenSpaceInfo()", () => {
-      computeScreenSpaceInfo(Math.PI / 3, 1080);
-    });
-  });
-});
-
-// ============================================================
-// Memory-related benchmarks
-// ============================================================
-group("Memory patterns", () => {
-  bench("create + update + destroy cycle", () => {
-    const qt = new Quadtree(defaultConfig);
-    qt.update(centerPosition);
-    qt.destroy();
-  });
-
-  bench("NodeView clone()", () => {
-    const view = new QuadtreeNodeView(4096);
-    view.clone();
-    view.destroy();
-  });
-
-  bench("getBuffers() (zero-copy access)", () => {
-    const view = new QuadtreeNodeView(4096);
-    view.getBuffers();
-    view.destroy();
-  });
-});
-
-// ============================================================
-// Neighbor Finding Benchmarks
-// ============================================================
-summary(() => {
-  group("Neighbor finding - SpatialIndex", () => {
-    const spatialIndex = new SpatialIndex(4096);
-
-    // Pre-populate with some entries
-    for (let i = 0; i < 1000; i++) {
-      spatialIndex.insert(i % 8, i % 64, Math.floor(i / 64) % 64, i);
-    }
-
-    bench("encodeKey()", () => {
-      encodeKey(5, 32, 48);
-    });
-
-    bench("SpatialIndex.insert()", () => {
-      spatialIndex.insert(3, 10, 20, 500);
-    });
-
-    bench("SpatialIndex.lookup() - hit", () => {
-      spatialIndex.lookup(3, 10, 20);
-    });
-
-    bench("SpatialIndex.lookup() - miss", () => {
-      spatialIndex.lookup(7, 99, 99);
-    });
-
-    bench("SpatialIndex.has()", () => {
-      spatialIndex.has(3, 10, 20);
-    });
-
-    bench("SpatialIndex.clear()", () => {
-      spatialIndex.clear();
-    });
-
-    bench("new SpatialIndex(4096)", () => {
-      const idx = new SpatialIndex(4096);
-      idx.clear(); // prevent optimization
-    });
-  });
-});
-
-summary(() => {
-  group("Neighbor finding - buildSpatialIndex", () => {
-    // Setup quadtree with subdivision
-    const qt = new Quadtree(defaultConfig);
-    qt.update(centerPosition);
-    const nodeView = qt.getNodeView();
-    const nodeCount = qt.getNodeCount();
-    const spatialIndex = new SpatialIndex(defaultConfig.maxNodes);
-
-    bench("buildSpatialIndex() (reuse buffer)", () => {
-      buildSpatialIndex(nodeView, nodeCount, spatialIndex);
-    });
-
-    bench("buildSpatialIndex() (new buffer)", () => {
-      buildSpatialIndex(nodeView, nodeCount);
-    });
-  });
-});
-
-summary(() => {
-  group("Neighbor finding - findNeighbor", () => {
-    // Setup subdivided quadtree
-    quadtree = new Quadtree(defaultConfig);
-    quadtree.update(centerPosition);
-
-    // Get a middle node index for testing
-    const { indices, count } = quadtree.getActiveLeafNodeIndices();
-    const middleLeafIdx = indices[Math.floor(count / 2)];
-
-    bench("findNeighbor() - LEFT (first call, builds index)", () => {
-      // This will build the spatial index on first call
-      quadtree.update(centerPosition); // Reset to force rebuild
-      quadtree.findNeighbor(middleLeafIdx, Direction.LEFT);
-    });
-
-    bench("findNeighbor() - LEFT (cached index)", () => {
-      quadtree.findNeighbor(middleLeafIdx, Direction.LEFT);
-    });
-
-    bench("findNeighbor() - RIGHT", () => {
-      quadtree.findNeighbor(middleLeafIdx, Direction.RIGHT);
-    });
-
-    bench("findNeighbor() - TOP", () => {
-      quadtree.findNeighbor(middleLeafIdx, Direction.TOP);
-    });
-
-    bench("findNeighbor() - BOTTOM", () => {
-      quadtree.findNeighbor(middleLeafIdx, Direction.BOTTOM);
-    });
-
-    bench("findAllNeighbors()", () => {
-      quadtree.findAllNeighbors(middleLeafIdx);
-    });
-
-    bench("getSpatialIndex()", () => {
-      quadtree.getSpatialIndex();
-    });
-  });
-});
-
-summary(() => {
-  group("Neighbor finding - all leaves", () => {
-    // Setup subdivided quadtree
-    quadtree = new Quadtree(defaultConfig);
-    quadtree.update(centerPosition);
-    const { indices, count } = quadtree.getActiveLeafNodeIndices();
-
-    bench(`findAllNeighbors() for all ${count} leaves`, () => {
-      for (let i = 0; i < count; i++) {
-        quadtree.findAllNeighbors(indices[i]);
-      }
-    });
-  });
-});
-
-// Run all benchmarks
 await run();

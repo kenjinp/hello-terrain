@@ -5,6 +5,24 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased
+
+Hardening pass on the compute pipeline and quadtree hot paths. No numeric behavior changes for elevation functions.
+
+### Fixes 🐛
+
+- **`midPipelineExecute` can no longer be skipped.** The internal `compileComputePipeline` used to fuse all stages into a single kernel whenever `preferSingleKernelWhenPossible` was `true` (its default) and the tile grid fit in one workgroup — and that fused path never called `midPipelineExecute`. Any caller relying on the default would silently skip the tile-bounds reduction, leaving pack bounds at zero and breaking terrain-field normalization. Providing `midPipelineExecute` now always forces the staged (multi-dispatch) path. Pipelines built through `createComputePipelineTasks` were unaffected because it already passed `preferSingleKernelWhenPossible: false`.
+- Fixed the broken `pnpm --filter @hello-terrain/three bench` script, which imported quadtree modules that no longer exist. It now benchmarks `update()` against the current functional quadtree API.
+
+### Docs
+
+- **UV semantics are now documented precisely.** `ElevationParams.tileUV` and the `uv` argument of a `ComputeStageCallback` span the *whole* skirted tile grid (`(ix, iy) / (innerTileSegments + 3)`) and never reach `1.0`, whereas `rootUV` / `tileFaceUV` map the inner grid to `[0, 1]`. The [Elevation Function](/docs/core/elevation-function#parameter-reference) page gained a parameter reference table; the previous table wrongly described `tileUV` as `[0, 1]` and `tileOriginVec2` as a world-space origin (it is the integer tile coordinate). Numeric behavior is unchanged.
+
+### Under the hood
+
+- `compileComputePipeline` caches device compute limits per renderer instead of re-reading them every `execute()`, uses the real `ComputeNode` type for compiled kernels, and shares one invocation-context builder between the single-kernel and staged paths.
+- Quadtree `ensureChildren` no longer allocates four `TileId` literals per split (`allocNodeRaw`).
+
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 
 Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 
