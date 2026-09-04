@@ -23,6 +23,12 @@ const ALLOWLIST: Record<string, string> = {};
 const TOP_LEVEL_LET_OR_VAR = /^(export )?(let|var) /;
 const TOP_LEVEL_MUTABLE_CONTAINER =
   /^(export )?const \w+(: [^=]+)? = new (Vector[234]|Matrix[34]|Float(32|64)Array|Uint\d+Array|Int\d+Array|Map|Set|WeakMap)\(/;
+/**
+ * Object/array literals named like scratch space (`scratchTile`, `tmpNode`,
+ * `_scratch`) are shared mutable buffers regardless of how they are built.
+ * Frozen lookup tables are not matched because they are not named this way.
+ */
+const TOP_LEVEL_SCRATCH_LITERAL = /^(export )?const _?(scratch|tmp|temp)\w*(: [^=]+)? = [{[]/i;
 
 function collectSourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -41,7 +47,11 @@ function findViolations(source: string): string[] {
   const lines = source.split("\n");
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (TOP_LEVEL_LET_OR_VAR.test(line) || TOP_LEVEL_MUTABLE_CONTAINER.test(line)) {
+    if (
+      TOP_LEVEL_LET_OR_VAR.test(line) ||
+      TOP_LEVEL_MUTABLE_CONTAINER.test(line) ||
+      TOP_LEVEL_SCRATCH_LITERAL.test(line)
+    ) {
       violations.push(`${i + 1}: ${line.trim()}`);
     }
   }
