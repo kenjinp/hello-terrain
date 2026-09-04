@@ -87,6 +87,25 @@ const terrain = useTerrain({
 });
 ```
 
+## Controlling CPU Readback
+
+`runtime.query`, `runtime.raycast`, and surface-relative LOD are fed by an asynchronous GPU→CPU elevation readback that runs on nearly every frame (several MB at default settings). Two options let you throttle or disable it:
+
+| Option | Type | Default | Maps To | Effect |
+|--------|------|---------|---------|--------|
+| `terrainReadback` | `boolean` | `true` | `terrainReadbackEnabled` | When `false`, no readback is scheduled. Queries return `{ valid: false }`, raycasts fall back to bounds-only plane hits, and LOD uses the datum surface instead of real elevation ranges. |
+| `terrainReadbackIntervalMs` | `number` | `0` | `terrainReadbackIntervalMs` | Minimum milliseconds between readbacks. `0` reads back as soon as the previous one completes and the quadtree changed. |
+
+```tsx
+// Purely visual terrain — nothing on the CPU needs elevation data.
+const terrain = useTerrain({ elevation, terrainReadback: false });
+
+// Gameplay queries that can tolerate a ~100 ms stale snapshot.
+const terrain = useTerrain({ elevation, terrainReadbackIntervalMs: 100 });
+```
+
+Both options are also accepted as `<Terrain>` props when you let the component build the handle. See [Controlling readback](/docs/core/query/how-it-works#controlling-readback) for the cost model and the full list of consumers that depend on the snapshot.
+
 ## Custom Tasks
 
 You can add extra graph tasks with the `tasks` option:

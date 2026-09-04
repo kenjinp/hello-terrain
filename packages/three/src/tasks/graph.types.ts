@@ -54,6 +54,12 @@ export interface TerrainQueryContext {
   projection: SurfaceProjection;
 }
 
+/** Task-local throttle state owned by `terrainReadbackTask`. */
+export interface TerrainReadbackState {
+  /** Timestamp (ms, `performance.now()` domain) of the last scheduled readback; `-Infinity` if none. */
+  lastScheduledAt: number;
+}
+
 /** Task refs for the standard terrain pipeline. */
 export interface TerrainTasks {
   instanceId: TaskRef<string>;
@@ -80,7 +86,7 @@ export interface TerrainTasks {
   tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
   tileBoundsReduction: TaskRef<TileBoundsContext>;
   terrainQuery: TaskRef<TerrainQueryContext>;
-  terrainReadback: TaskRef<void>;
+  terrainReadback: TaskRef<TerrainReadbackState>;
   terrainRaycast: TaskRef<TerrainRaycast>;
 }
 

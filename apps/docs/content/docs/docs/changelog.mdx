@@ -5,6 +5,34 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased
+
+The GPU→CPU elevation readback that powers `TerrainQuery`, `TerrainRaycast`, and surface-relative LOD can now be **throttled or switched off**. Previously it ran on nearly every frame (≈ `activeLeafCount × (innerTileSegments + 3)² × 4` bytes, about 5 MB at defaults) even when nothing on the CPU consumed it.
+
+### Readback control
+
+Two new core params, exposed in React as `useTerrain` / `<Terrain>` options:
+
+| Param | React option | Default | Effect |
+|-------|--------------|---------|--------|
+| `terrainReadbackEnabled` | `terrainReadback` | `true` | `false` disables readback entirely. Queries return `{ valid: false }`, raycasts fall back to bounds-only picking, and LOD uses the datum surface. |
+| `terrainReadbackIntervalMs` | `terrainReadbackIntervalMs` | `0` | Minimum milliseconds between scheduled readbacks; `0` keeps the previous behavior. |
+
+```tsx
+const terrain = useTerrain({ elevation, terrainReadbackIntervalMs: 100 });
+```
+
+See [Controlling readback](/docs/core/query/how-it-works#controlling-readback) for the cost model and what depends on the snapshot.
+
+### Fixes 🐛
+
+- **Unhandled readback rejections.** A failing readback (device lost, destroyed buffer) used to surface as an unhandled promise rejection and could leave the snapshot stuck in a pending state. Failures are now caught on both the pooled and fallback paths: the front buffers are left untouched, the pending flag is cleared, the next run retries, and each distinct error is logged once instead of once per frame.
+
+### Under the hood
+
+- `CpuTerrainCache.triggerReadback` / `triggerSnapshotReadback` return `boolean` (`true` when a readback was actually scheduled).
+- `terrainReadbackTask` now returns a small `TerrainReadbackState` (`{ lastScheduledAt }`) instead of `void`; `TerrainTasks.terrainReadback` is typed accordingly.
+
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 
 Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 

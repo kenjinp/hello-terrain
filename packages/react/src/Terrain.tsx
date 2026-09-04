@@ -127,6 +127,8 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
     elevation,
     topology,
     terrainFieldFilter,
+    terrainReadback,
+    terrainReadbackIntervalMs,
     getCameraOrigin,
     cameraHysteresis,
     tasks,
@@ -145,6 +147,8 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
     elevation,
     topology,
     terrainFieldFilter,
+    terrainReadback,
+    terrainReadbackIntervalMs,
     getCameraOrigin,
     cameraHysteresis,
     tasks,
@@ -197,6 +201,8 @@ export function Terrain(props: TerrainProps) {
     elevation,
     topology,
     terrainFieldFilter,
+    terrainReadback,
+    terrainReadbackIntervalMs,
     getCameraOrigin,
     cameraHysteresis,
     tasks,
@@ -216,6 +222,8 @@ export function Terrain(props: TerrainProps) {
       elevation={elevation}
       topology={topology}
       terrainFieldFilter={terrainFieldFilter}
+      terrainReadback={terrainReadback}
+      terrainReadbackIntervalMs={terrainReadbackIntervalMs}
       getCameraOrigin={getCameraOrigin}
       cameraHysteresis={cameraHysteresis}
       tasks={tasks}

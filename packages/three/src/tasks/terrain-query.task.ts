@@ -1,8 +1,9 @@
 import { task } from "@hello-terrain/work";
 import type { WebGPURenderer } from "three/webgpu";
 import { createCpuTerrainCache } from "../query/cpu-terrain-cache";
+import { readbackNow, shouldScheduleReadback } from "../query/readback-schedule";
 import { createElevationFieldContextTask } from "./elevation-field.task";
-import type { TerrainQueryContext } from "./graph.types";
+import type { TerrainQueryContext, TerrainReadbackState } from "./graph.types";
 import {
   elevationScale,
   innerTileSegments,
@@ -11,6 +12,8 @@ import {
   origin,
   radius,
   rootSize,
+  terrainReadbackEnabled,
+  terrainReadbackIntervalMs,
 } from "./params";
 import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./compute.task";
@@ -68,6 +71,14 @@ export const terrainQueryTask = task((get, work) => {
   });
 }).displayName("terrainQueryTask");
 
+/**
+ * Schedules the GPU→CPU elevation/bounds readback that feeds `TerrainQuery`,
+ * `TerrainRaycast`, and the surface-relative LOD elevation ranges.
+ *
+ * Gated by `terrainReadbackEnabled` / `terrainReadbackIntervalMs`. The
+ * last-scheduled timestamp lives in the task's own returned state (`prev`), so
+ * multiple terrain instances never share throttle state.
+ */
 export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
     const boundsContext = get(tileBoundsReductionTask);
@@ -75,17 +86,27 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
     const quadtreeConfig = get(quadtreeConfigTask);
     const leafState = get(leafGpuBufferTask);
     const { cache } = get(terrainQueryTask);
+    const enabled = get(terrainReadbackEnabled);
+    const intervalMs = get(terrainReadbackIntervalMs);
 
-    return work((): void => {
-      if (!resources?.renderer) return;
+    return work((prev?: TerrainReadbackState): TerrainReadbackState => {
+      const state = prev ?? { lastScheduledAt: -Infinity };
+      if (!resources?.renderer) return state;
 
-      cache.triggerReadback(
+      const now = readbackNow();
+      if (!shouldScheduleReadback(now, state.lastScheduledAt, intervalMs, enabled)) {
+        return state;
+      }
+
+      const scheduled = cache.triggerReadback(
         resources.renderer,
         elevationFieldContext.attribute,
         quadtreeConfig.state.leafIndex,
         boundsContext.attribute,
         leafState.count,
       );
+      if (scheduled) state.lastScheduledAt = now;
+      return state;
     });
   },
 )

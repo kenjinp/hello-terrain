@@ -57,6 +57,46 @@ flowchart TD
 
 7. **TerrainRaycast** uses the query for ray marching. Its AABB is derived from the actual global elevation range rather than a conservative estimate, giving tighter clipping. The mesh's `raycast()` override routes Three.js raycaster calls through this system.
 
+## Controlling readback
+
+Readback is not free. Every scheduled readback copies the active elevation region plus the per-tile bounds from GPU to CPU:
+
+```
+bytesPerReadback ≈ activeLeafCount × (innerTileSegments + 3)² × 4
+                 + activeLeafCount × 4 × 4        // tile bounds
+```
+
+With the defaults (`innerTileSegments = 61`, a few hundred active tiles) that is roughly **5 MB per readback**, and because the quadtree rebuilds its spatial index whenever the camera moves, a readback is scheduled on nearly every frame. Two core params let you cap or disable this work:
+
+| Param | Type | Default | Effect |
+|-------|------|---------|--------|
+| `terrainReadbackEnabled` | `boolean` | `true` | When `false`, `terrainReadbackTask` never schedules a readback. The task stays in the graph and remains a runner target, but it no-ops. |
+| `terrainReadbackIntervalMs` | `number` | `0` | Minimum wall-clock time between scheduled readbacks. `0` keeps the current behavior (as soon as the previous readback resolves and the spatial index changed). The timestamp only advances when a readback was actually scheduled, so a skipped frame does not delay the next one. |
+
+```ts
+import { terrainGraph, terrainReadbackEnabled, terrainReadbackIntervalMs } from "@hello-terrain/three";
+
+const graph = terrainGraph();
+graph.set(terrainReadbackIntervalMs, 100); // at most ~10 readbacks per second
+graph.set(terrainReadbackEnabled, false);  // or turn it off entirely
+```
+
+In React these map onto the `terrainReadback` and `terrainReadbackIntervalMs` options of [`useTerrain`](/docs/react/use-terrain) and `<Terrain>`.
+
+### What turns off when readback is disabled
+
+The CPU snapshot is the single source for every CPU-side consumer, so disabling readback (or throttling it heavily) affects more than `TerrainQuery`:
+
+- **`TerrainQuery` / surface / sphere queries** return `{ valid: false }` (or `null`) because no snapshot ever arrives. `query.ready` stays `false` and `generation` never advances.
+- **`TerrainRaycast` / pointer events** fall back to the bounds-only plane intersection at the terrain's reference Y (stage 3 of the [fallback chain](#fallback-chain)). Hits are approximate and carry no terrain elevation or normal.
+- **Surface-relative LOD** loses its per-tile elevation ranges. `quadtreeUpdateTask` reads `cache.getTileElevationRange`, which is built from the readback pyramid, so the quadtree falls back to the datum surface (see [Elevation-aware LOD bounds](/docs/core/topology#elevation-aware-lod-bounds)). On high-relief terrain tiles may split later or earlier than expected.
+
+With a non-zero interval the same consumers still work; they simply see a snapshot that is up to `terrainReadbackIntervalMs` older than the GPU.
+
+### Readback failures
+
+A readback that rejects (device lost, buffer destroyed mid-flight, etc.) never swaps the front/back buffers, so consumers keep the last good snapshot. The pending flag is cleared and the next `terrainReadbackTask` run retries even if the spatial index has not changed. Each distinct error message is reported once via `console.error` rather than once per frame.
+
 ## CPU terrain cache
 
 The cache is the core data structure. It holds two sets of buffers (front and back) and exposes sampling methods.
@@ -183,7 +223,7 @@ The systems are integrated into the reactive task graph:
 
 - `terrainQueryTask` depends on `quadtreeConfigTask` and terrain params. It creates and manages the `CpuTerrainCache` and `TerrainQuery` facade. This is a stable "create" task — it only re-runs when configuration changes, not every frame. It does **not** depend on GPU compute tasks, keeping it off the GPU critical path.
 
-- `terrainReadbackTask` depends on `tileBoundsReductionTask`, `terrainQueryTask`, and the leaf GPU state. It triggers readback of both the elevation buffer and the bounds buffer each frame. No downstream tasks depend on it — readback is a fire-and-forget side effect. It runs on the GPU lane.
+- `terrainReadbackTask` depends on `tileBoundsReductionTask`, `terrainQueryTask`, the leaf GPU state, and the `terrainReadbackEnabled` / `terrainReadbackIntervalMs` params. It triggers readback of both the elevation buffer and the bounds buffer, subject to the gating described in [Controlling readback](#controlling-readback). Its returned state holds only the last-scheduled timestamp (per task instance, so multiple terrains never share throttle state). No downstream tasks depend on it — readback is a fire-and-forget side effect. It runs on the GPU lane.
 
 - `terrainRaycastTask` depends on `terrainQueryTask` (not the readback task). It reads the global elevation range from the query to set its AABB, falling back to a conservative estimate before the first readback completes. Because it depends on the stable query task rather than the per-frame readback, it avoids blocking on GPU compute.
 

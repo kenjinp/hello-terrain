@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, renderHook, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-three/fiber", () => ({
@@ -48,15 +48,19 @@ vi.mock("@hello-terrain/three", () => {
     maxLevel: "maxLevel",
     maxNodes: "maxNodes",
     origin: "origin",
+    radius: "radius",
     rootSize: "rootSize",
     skirtScale: "skirtScale",
     topology: "topology",
     terrainFieldFilter: "terrainFieldFilter",
+    terrainReadbackEnabled: { id: "terrainReadbackEnabled" },
+    terrainReadbackIntervalMs: { id: "terrainReadbackIntervalMs" },
   };
 });
 
-import type { TerrainHandle } from "../src/index.js";
+import type { TerrainHandle, TerrainOptions } from "../src/index.js";
 import { Terrain, TerrainProvider, useTerrainContext } from "../src/index.js";
+import { useTerrainParams } from "../src/useTerrainParams.js";
 
 function createTerrainHandle(overrides: Partial<TerrainHandle> = {}): TerrainHandle {
   return {
@@ -145,5 +149,63 @@ describe("@hello-terrain/react", () => {
     );
 
     expect(view.container.querySelector("[data-testid='node-value']")).toBeNull();
+  });
+});
+
+describe("useTerrainParams readback options", () => {
+  function createGraph() {
+    return {
+      set: vi.fn(),
+      reset: vi.fn(),
+    } as unknown as TerrainHandle["graph"];
+  }
+
+  function calledParamIds(fn: ReturnType<typeof vi.fn>) {
+    return fn.mock.calls.map(([ref]) => (ref as { id: string }).id);
+  }
+
+  it("maps terrainReadback / terrainReadbackIntervalMs onto the core params", () => {
+    const graph = createGraph();
+    renderHook(() =>
+      useTerrainParams(graph, { terrainReadback: false, terrainReadbackIntervalMs: 250 }),
+    );
+
+    const set = graph.set as unknown as ReturnType<typeof vi.fn>;
+    const enabledCall = set.mock.calls.find(
+      ([ref]) => (ref as { id: string }).id === "terrainReadbackEnabled",
+    );
+    const intervalCall = set.mock.calls.find(
+      ([ref]) => (ref as { id: string }).id === "terrainReadbackIntervalMs",
+    );
+    expect(enabledCall).toBeDefined();
+    expect(intervalCall).toBeDefined();
+    expect((enabledCall![1] as () => boolean)()).toBe(false);
+    expect((intervalCall![1] as () => number)()).toBe(250);
+  });
+
+  it("leaves the readback params untouched when the options are omitted", () => {
+    const graph = createGraph();
+    renderHook(() => useTerrainParams(graph, {}));
+
+    const set = graph.set as unknown as ReturnType<typeof vi.fn>;
+    const reset = graph.reset as unknown as ReturnType<typeof vi.fn>;
+    expect(calledParamIds(set)).not.toContain("terrainReadbackEnabled");
+    expect(calledParamIds(set)).not.toContain("terrainReadbackIntervalMs");
+    expect(reset).not.toHaveBeenCalled();
+  });
+
+  it("resets owned readback params when the options go back to undefined", () => {
+    const graph = createGraph();
+    const initialProps: TerrainOptions = { terrainReadback: false, terrainReadbackIntervalMs: 100 };
+    const { rerender } = renderHook((options: TerrainOptions) => useTerrainParams(graph, options), {
+      initialProps,
+    });
+
+    rerender({});
+
+    const reset = graph.reset as unknown as ReturnType<typeof vi.fn>;
+    expect(calledParamIds(reset)).toEqual(
+      expect.arrayContaining(["terrainReadbackEnabled", "terrainReadbackIntervalMs"]),
+    );
   });
 });

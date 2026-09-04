@@ -162,7 +162,7 @@ LOD subdivision uses each tile's **real elevation range**, not a fixed padding c
 
 During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range, which is what makes LOD distance surface-relative — no extra camera offset is applied. Newly-seen areas fall back to the datum surface for one frame until readback data arrives.
 
-You do not configure this manually; it is automatic when the terrain query readback is active.
+You do not configure this manually; it is automatic whenever the terrain readback is enabled. If you disable or heavily throttle readback via `terrainReadbackEnabled` / `terrainReadbackIntervalMs`, the pyramid is never (or rarely) refreshed and LOD falls back to the datum surface — see [Controlling readback](/docs/core/query/how-it-works#controlling-readback).
 
 ## The `Topology` Type
 
