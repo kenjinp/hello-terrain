@@ -50,6 +50,39 @@ describe("tile-elevation-pyramid", () => {
     expect(out.max).toBeCloseTo(25);
   });
 
+  it("propagates a leaf with negative tile coords to its signed ancestors", () => {
+    const index = createSpatialIndex(8);
+    // Leaf at level 3, x=-8, y=-3 (stored as wrapped uint32 keys in the index).
+    insertSpatialIndexRaw(index, 0, 3, -8, -3, 0);
+
+    const tileBounds = new Float32Array(8 * 4);
+    tileBounds[0] = -12;
+    tileBounds[1] = 33;
+
+    const pyramid = createTileElevationPyramid(8, 4);
+    buildTileElevationPyramid(pyramid, index, tileBounds, 1);
+
+    const out = { min: 0, max: 0 };
+    expect(lookupTileElevationRange(pyramid, 0, 3, -8, -3, out)).toBe(true);
+    expect(out.min).toBeCloseTo(-12);
+    expect(out.max).toBeCloseTo(33);
+
+    // Ancestors via arithmetic shift: (-8,-3) -> (-4,-2) -> (-2,-1) -> (-1,-1).
+    expect(lookupTileElevationRange(pyramid, 0, 2, -4, -2, out)).toBe(true);
+    expect(out.max).toBeCloseTo(33);
+
+    expect(lookupTileElevationRange(pyramid, 0, 1, -2, -1, out)).toBe(true);
+    expect(out.max).toBeCloseTo(33);
+
+    expect(lookupTileElevationRange(pyramid, 0, 0, -1, -1, out)).toBe(true);
+    expect(out.min).toBeCloseTo(-12);
+    expect(out.max).toBeCloseTo(33);
+
+    // The unsigned-shift ancestor of the wrapped key must not exist.
+    expect(lookupTileElevationRange(pyramid, 0, 2, 4294967288 >>> 1, 4294967293 >>> 1, out)).toBe(false);
+    expect(lookupTileElevationRange(pyramid, 0, 0, 0, 0, out)).toBe(false);
+  });
+
   it("returns false for tiles with no pyramid data", () => {
     const index = createSpatialIndex(4);
     const tileBounds = new Float32Array(4 * 4);

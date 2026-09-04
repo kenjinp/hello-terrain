@@ -133,8 +133,11 @@ export function buildTileElevationPyramid(
 
     const space = index.keysSpace[slot]!;
     const level = index.keysLevel[slot]!;
-    const x = index.keysX[slot]!;
-    const y = index.keysY[slot]!;
+    // Index keys are stored as uint32 (wrapped for hashing) but tile coords are
+    // signed int32. Reinterpret before shifting so negative coords produce the
+    // correct ancestor (-8 >> 2 === -2); mergeRange re-wraps for hashing.
+    const x = index.keysX[slot]! | 0;
+    const y = index.keysY[slot]! | 0;
     const rawMin =
       tileBounds[leafIndex * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MIN_OFFSET]!;
     const rawMax =
@@ -146,8 +149,8 @@ export function buildTileElevationPyramid(
         pyramid,
         space,
         ancestorLevel,
-        x >>> shift,
-        y >>> shift,
+        x >> shift,
+        y >> shift,
         rawMin,
         rawMax,
       );

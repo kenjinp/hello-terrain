@@ -55,11 +55,14 @@ export function balance2to1(
         for (let candidateLevel = leafLevel - 2; candidateLevel >= 0; candidateLevel--) {
           const shift = leafLevel - candidateLevel;
 
+          // Tile coords are signed (infinite topologies use negative roots), so
+          // the ancestor must be derived with an arithmetic shift: -8 >> 2 === -2,
+          // whereas -8 >>> 2 would wrap to a bogus uint32 ancestor.
           const tile = state.scratchTile;
           tile.space = leafSpace;
           tile.level = candidateLevel;
-          tile.x = leafX >>> shift;
-          tile.y = leafY >>> shift;
+          tile.x = leafX >> shift;
+          tile.y = leafY >> shift;
 
           const neighbor = state.scratchNeighbor;
           if (!topology.neighborSameLevel(tile, dir as Dir, neighbor)) break;
