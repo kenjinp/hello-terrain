@@ -145,12 +145,14 @@ function Terrain({ graph }) {
   }, [graph]);
 
   useFrame(async ({ camera, gl }) => {
-    graph.set(quadtreeUpdate, (prev: UpdateParams) => {
-      prev.cameraOrigin.x = camera.position.x;
-      prev.cameraOrigin.y = camera.position.y;
-      prev.cameraOrigin.z = camera.position.z;
-      return prev;
-    });
+    graph.set(quadtreeUpdate, (prev: UpdateParams) => ({
+      ...prev,
+      cameraOrigin: {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      },
+    }));
     await graph.run({ resources: { renderer: gl } });
   });
 

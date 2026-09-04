@@ -74,12 +74,14 @@ function Terrain({ graph }) {
 
   // Update camera and run the graph each frame
   useFrame(async ({ camera, gl }) => {
-    graph.set(quadtreeUpdate, (prev) => {
-      prev.cameraOrigin.x = camera.position.x;
-      prev.cameraOrigin.y = camera.position.y;
-      prev.cameraOrigin.z = camera.position.z;
-      return prev;
-    });
+    graph.set(quadtreeUpdate, (prev) => ({
+      ...prev,
+      cameraOrigin: {
+        x: camera.position.x,
+        y: camera.position.y,
+        z: camera.position.z,
+      },
+    }));
     await graph.run({ resources: { renderer: gl } });
   });
 
@@ -179,12 +181,14 @@ graph.add(
 // Render loop
 renderer.setAnimationLoop(async () => {
   controls.update();
-  graph.set(quadtreeUpdate, (prev) => {
-    prev.cameraOrigin.x = camera.position.x;
-    prev.cameraOrigin.y = camera.position.y;
-    prev.cameraOrigin.z = camera.position.z;
-    return prev;
-  });
+  graph.set(quadtreeUpdate, (prev) => ({
+    ...prev,
+    cameraOrigin: {
+      x: camera.position.x,
+      y: camera.position.y,
+      z: camera.position.z,
+    },
+  }));
   await graph.run({ resources: { renderer } });
   renderer.render(scene, camera);
 });

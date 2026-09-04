@@ -114,7 +114,7 @@ if (maybeResult !== undefined) {
 
 **Returns:** `T | undefined`
 
-### set(param, callback)
+### set(param, valueOrCallback)
 
 Takes graph-local ownership of a param's value. After calling `set()`, the graph stores its
 own copy and detaches from the external `param.subscribe()` flow. This enables multiple graphs
@@ -127,7 +127,7 @@ const rootSize = param(256);
 
 const g = graph()
   .add(myTask)
-  .set(rootSize, () => 128);   // graph-local value: 128
+  .set(rootSize, 128);   // graph-local value: 128
 
 // Update later
 g.set(rootSize, (prev) => prev * 2);  // graph-local value: 256
@@ -136,7 +136,7 @@ g.set(rootSize, (prev) => prev * 2);  // graph-local value: 256
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `param` | `ParamRef<T>` | The param to take ownership of |
-| `callback` | `(prev: T) => T` | Function that receives current value and returns new value |
+| `valueOrCallback` | `T \| ((prev: T) => T)` | Direct value, or a function that receives the current graph-local value and returns the new one |
 
 **Returns:** `Graph` (for chaining)
 
@@ -144,6 +144,32 @@ g.set(rootSize, (prev) => prev * 2);  // graph-local value: 256
   After `graph.set()`, external `param.set()` calls no longer affect this graph's value for that param.
   Other graphs that haven't called `graph.set()` on the same param are unaffected.
 </Callout>
+
+<Callout type="note">
+  The graph-local value is seeded from `param.get()`, with plain objects and arrays **deep-copied** so
+  each graph owns its own copy of an object default and the shared default is never mutated
+  (functions, class instances, typed arrays, etc. are kept by reference). In-place mutation of
+  `prev` is therefore safe per graph, but immutable updates
+  (`(prev) => ({ ...prev, cameraOrigin: { x, y, z } })`) are still recommended.
+</Callout>
+
+Every `set()` call — including one whose callback returns `prev` unchanged — bumps the param's
+version and marks downstream tasks dirty.
+
+### reset(param?)
+
+Restores a graph-owned param to a fresh copy of the default it was seeded with. With no argument,
+resets every graph-owned param. Subscription-only params (never passed to `graph.set()`) are
+untouched.
+
+```ts
+g.set(rootSize, 512);
+g.reset(rootSize); // graph-local value: 256 again
+```
+
+**Returns:** `Graph` (for chaining)
+
+**Throws:** `UnknownNodeError` if `param` is not known to this graph
 
 ### on(callback)
 

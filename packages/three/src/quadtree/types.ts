@@ -159,6 +159,11 @@ export type TileElevationRangeFn = (tile: TileId, out: ElevationRangeOut) => boo
 export type UpdateParams = {
   cameraOrigin: { x: number; y: number; z: number };
 
+  /**
+   * Graph-managed. `quadtreeUpdateTask` supplies this from the terrain's own
+   * elevation readback cache and overrides whatever is set on the
+   * `quadtreeUpdate` param. Only provide it when calling `update()` directly.
+   */
   tileElevationRange?: TileElevationRangeFn;
 } & LodCriteria;
 

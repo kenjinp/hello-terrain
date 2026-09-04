@@ -219,12 +219,14 @@ function TerrainRaycastHoverSceneImpl({
       lastCameraRef.current.distanceToSquared(camera.position) >=
       CAMERA_HYSTERESIS * CAMERA_HYSTERESIS
     ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
-      });
+      g.set(quadtreeUpdate, (prev: UpdateParams) => ({
+        ...prev,
+        cameraOrigin: {
+          x: camera.position.x,
+          y: camera.position.y,
+          z: camera.position.z,
+        },
+      }));
       lastCameraRef.current.copy(camera.position);
     }
 

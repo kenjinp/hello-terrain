@@ -4,7 +4,7 @@ import type { ParamRef, ParamSetCallback, ParamSetInput, Unsubscribe } from "../
 import { semaphore } from "../semaphore/semaphore";
 import { TASK_DEF, type Task, type TaskRef, type TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
-import { createRunId, isParam, isTask, nowMs } from "../utils";
+import { cloneParamInitial, createRunId, isParam, isTask, nowMs } from "../utils";
 import {
   CancelledError,
   CyclicalGraphError,
@@ -33,9 +33,24 @@ type ParamNodeRuntime = {
   ref: ParamRef<any>;
   version: number;
   unsubscribe?: Unsubscribe;
-  /** When present, the graph owns the param value locally (set via `graph.set()`). */
+  /**
+   * When present, the graph owns the param value locally (set via `graph.set()`).
+   * Both `value` and `initial` are graph-private copies of the param default (see
+   * `createParamBinding`), so in-place mutation of one graph's value can never leak
+   * into another graph or into `param.get()`.
+   */
   bound?: { value: any; initial: any };
 };
+
+/**
+ * Creates a graph-local binding seeded from the param's current (module-scope)
+ * value. Plain objects/arrays are copied twice — once for the reset baseline and
+ * once for the live value — so neither aliases the shared default nor each other.
+ */
+function createParamBinding(paramRef: ParamRef<any>): NonNullable<ParamNodeRuntime["bound"]> {
+  const initial = cloneParamInitial(paramRef.get());
+  return { value: cloneParamInitial(initial), initial };
+}
 
 type GraphState<L extends Lane, Res> = {
   readonly tasksMap: Map<string, TaskNodeRuntime<L, Res>>;
@@ -194,8 +209,7 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
 
     if (!node) {
       // Auto-register with graph-local ownership (no external subscription).
-      const initial = paramRef.get();
-      node = { ref: paramRef, version: 0, bound: { value: initial, initial } };
+      node = { ref: paramRef, version: 0, bound: createParamBinding(paramRef) };
       paramsMap.set(paramRef.id, node);
       d.addNode(paramRef);
       markStructureChanged();
@@ -206,8 +220,7 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
       // Detach and switch to graph-local ownership.
       node.unsubscribe?.();
       node.unsubscribe = undefined;
-      const initial = paramRef.get();
-      node.bound = { value: initial, initial };
+      node.bound = createParamBinding(paramRef);
     }
 
     // Apply the update.
@@ -227,7 +240,8 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
 
   function resetBoundParam(node: ParamNodeRuntime) {
     if (!node.bound) return;
-    node.bound.value = node.bound.initial;
+    // Hand out a fresh copy so a later in-place mutation cannot corrupt the baseline.
+    node.bound.value = cloneParamInitial(node.bound.initial);
     node.version += 1;
     propagateDirty(node.ref.id);
     if (hasListeners("param:set")) {

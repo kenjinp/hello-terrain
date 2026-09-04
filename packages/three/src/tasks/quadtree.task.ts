@@ -1,6 +1,6 @@
 import { task } from "@hello-terrain/work";
 import { createLeafStorage } from "../gpu/leafStorage";
-import type { LeafSet } from "../quadtree";
+import type { LeafSet, TileElevationRangeFn, UpdateParams } from "../quadtree";
 import { createFlatTopology, createState, update } from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
 import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
@@ -50,7 +50,7 @@ export const quadtreeUpdateTask = task((get, work) => {
   // Surface-relative LOD comes from per-tile elevation bounds — `tileBounds`
   // places each tile's bounding sphere at its own readback elevation range,
   // so no global camera offset is needed.
-  quadtreeUpdateConfig.tileElevationRange = (tile, out) => {
+  const tileElevationRange: TileElevationRangeFn = (tile, out) => {
     if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
       return false;
     }
@@ -59,13 +59,14 @@ export const quadtreeUpdateTask = task((get, work) => {
     return true;
   };
 
+  // Task-local params: never write onto the `quadtreeUpdate` value itself. That
+  // object belongs to the graph binding (or the module-scope default when the
+  // consumer never called `graph.set`), so mutating it would leak this graph's
+  // `cache` closure into every other terrain instance.
+  const updateParams: UpdateParams = { ...quadtreeUpdateConfig, tileElevationRange };
+
   return work(() => {
-    outLeaves = update(
-      quadtreeConfig.state,
-      quadtreeConfig.topology,
-      quadtreeUpdateConfig,
-      outLeaves,
-    );
+    outLeaves = update(quadtreeConfig.state, quadtreeConfig.topology, updateParams, outLeaves);
     return outLeaves;
   });
 }).displayName("quadtreeUpdateTask");
