@@ -139,6 +139,40 @@ const createBlendedNormalNode = Fn(() => {
 });
 ```
 
+## Varyings
+
+`@hello-terrain/three` exports two pre-declared TSL varyings (`varyingProperty` handles) for passing per-vertex terrain data from the vertex stage to the fragment stage:
+
+| Varying | Type | Intended contents |
+|:--|:--|:--|
+| `vElevation` | `f32` | Elevation of the current vertex |
+| `vGlobalVertexIndex` | `int` | Global vertex index (`tileIndex * verticesPerTile + localIndex`) |
+
+<Callout type="warn">
+  The terrain `positionNode` does **not** write these varyings for you. They are shared declarations so that your vertex-stage code and your fragment-stage code agree on one varying. Assign them in a node that runs in the vertex stage (for example, a wrapper around the terrain `positionNode`), then read them in `colorNode` / fragment nodes.
+</Callout>
+
+```ts
+import { vElevation } from "@hello-terrain/three";
+import { Fn, color, mix, smoothstep } from "three/tsl";
+
+// Vertex stage: wrap the terrain position node and record the displaced height.
+const terrainPosition = graph.get(terrainTasks.positionNode);
+material.positionNode = Fn(() => {
+  const p = terrainPosition;          // vec3 position assembled by the terrain (world space for flat)
+  vElevation.assign(p.y);             // flat topology: origin.y + scaled elevation (skirts sit lower)
+  return p;
+})();
+
+// Fragment stage: read the interpolated varying.
+material.colorNode = Fn(() => {
+  const snow = smoothstep(80, 120, vElevation);
+  return mix(color("#4c7a2f"), color("#ffffff"), snow);
+})();
+```
+
+For closed surfaces (cube-sphere, torus) `p.y` is not the elevation; derive the value you want (e.g. `p.sub(center).length().sub(radius)` on a cube-sphere) before assigning. If you only need the displaced position in the fragment stage, Three.js' built-in `positionWorld` already reflects the terrain `positionNode` and needs no extra varying — see the snow-line example on the [Terrain Sampler](/docs/core/query/terrain-sampler) page.
+
 ## Related
 
 - [Terrain Geometry](/docs/advanced/terrain-geometry) — Skirt TSL functions (`isSkirtVertex`, `isSkirtUV`)

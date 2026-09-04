@@ -40,8 +40,10 @@ The standard terrain task refs exported from `@hello-terrain/three`.
 
 Imperative runtime helpers that update with the graph:
 
-- `runtime.query`
-- `runtime.raycast`
+- `runtime.query` — flat `TerrainQuery`
+- `runtime.surfaceQuery` — `TerrainSurfaceQuery` for closed surfaces (`null` on flat topologies)
+- `runtime.sphereQuery` — `TerrainSphereQuery` (`null` unless the topology is a cube-sphere)
+- `runtime.raycast` — `TerrainRaycast`
 
 ### `ready`
 

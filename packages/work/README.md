@@ -34,7 +34,10 @@ calcGraph.get(calcSquare); // 16
 - **Dependency tracking**: tasks discover dependencies by calling `get(ref)` before `work(...)`.
 - **Targets must be registered**: tasks passed as `targets` must be registered via `g.add(task)`.
 - **Upstream tasks** referenced by `get(otherTask)` are registered automatically when discovered.
-- **`cache:"none"`**:\n  - the task recomputes on every run\n  - any downstream tasks are treated as dirty every run\n  - within a run, downstream tasks can still depend on values computed earlier in the run
+- **`cache: "none"`**:
+  - the task recomputes on every run
+  - any downstream tasks are treated as dirty every run
+  - within a run, downstream tasks can still depend on values computed earlier in the run
 
 ## Lanes and `laneConcurrency`
 

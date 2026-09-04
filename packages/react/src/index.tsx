@@ -17,6 +17,7 @@ export type {
   TerrainRaycastResult,
   TerrainSample,
   TerrainSphereQuery,
+  TerrainSurfaceQuery,
   TerrainSurfaceSample,
   TerrainSurfaceSampleBatch,
   TerrainTile,

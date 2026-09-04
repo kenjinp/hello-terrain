@@ -1,6 +1,6 @@
 ---
 title: Topology Types
-description: Flat, infinite flat, and cube-sphere topologies — what each one does, their APIs, and how to set them up in a react-three/fiber scene
+description: Flat, infinite flat, cube-sphere, and torus topologies — what each one does, their APIs, and how to set them up in a react-three/fiber scene
 ---
 
 A **topology** defines the terrain's tile layout, shape, and bounds behavior. It tells the quadtree how root tiles are laid out, how neighboring tiles connect (including across edges), and how conservative bounds are computed for LOD decisions. It also carries an injected **[surface projection](/docs/core/projection)** — the strategy that assembles GPU world positions/normals and powers the CPU query/raycast/LOD for that surface shape.
@@ -14,7 +14,7 @@ Hello Terrain ships four topologies:
 | **Cube-sphere** | `createCubeSphereTopology` | 6 roots | Six quadtree faces wrapped onto a sphere to form a planet. |
 | **Torus** | `createTorusTopology` | `baseU × baseV` roots | A closed donut surface, periodic in both axes. |
 
-All three are imported from `@hello-terrain/three` and assigned through the [`topology` param](/docs/core/params).
+All four are imported from `@hello-terrain/three` and assigned through the [`topology` param](/docs/core/params).
 
 <TopologySandpackTabs />
 
@@ -163,6 +163,22 @@ LOD subdivision uses each tile's **real elevation range**, not a fixed padding c
 During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot. Each topology's `tileBounds` then displaces its sampled corners (or vertical extent on flat surfaces) by that range, which is what makes LOD distance surface-relative — no extra camera offset is applied. Newly-seen areas fall back to the datum surface for one frame until readback data arrives.
 
 You do not configure this manually; it is automatic when the terrain query readback is active.
+
+### LOD distance criteria
+
+The bounding sphere a topology writes in `tileBounds` is what the split test consumes. With the default `quadtreeUpdate` mode (`mode: "distance"`), a tile splits when the camera is within `distanceFactor × r` of the tile's bounding-sphere center, where `r` is the surface-relative radius described above. The default `distanceFactor` is **`1.5`** — both the `quadtreeUpdate` param default and the fallback used when you pass an `UpdateParams` without one. Larger values refine from farther away (more tiles); smaller values refine later.
+
+```ts
+import { quadtreeUpdate } from "@hello-terrain/three";
+
+graph.set(quadtreeUpdate, (prev) => ({
+  cameraOrigin: prev.cameraOrigin,
+  mode: "distance",
+  distanceFactor: 2, // refine from farther away than the default 1.5
+}));
+```
+
+`mode: "screen"` replaces the distance factor with `projectionFactor` and `targetPixels` (split when the projected pixel radius exceeds the target). See the [`quadtreeUpdate` param](/docs/core/params).
 
 ## The `Topology` Type
 

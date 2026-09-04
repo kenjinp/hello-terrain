@@ -1,0 +1,124 @@
+---
+title: GPU Resources
+description: Device compute limits and the terrain field storage backends used by the compute pipeline
+---
+
+## Overview
+
+Most scenes never touch these APIs — the terrain graph creates its GPU resources for you. They are exported for advanced integrations: custom [compute stages](/docs/core/elevation-function#custom-compute-stages) that need to read or write the terrain field, tooling that inspects device capabilities, or code that wants to size its own storage the same way the terrain does.
+
+## `getDeviceComputeLimits`
+
+Reads the WebGPU compute limits from a `WebGPURenderer`'s backend device. When the renderer has no WebGPU backend (or the limits are unavailable), every field falls back to `256`.
+
+```ts
+function getDeviceComputeLimits(renderer: WebGPURenderer): ComputeDeviceLimits;
+
+type ComputeDeviceLimits = {
+  maxWorkgroupSizeX: number;
+  maxWorkgroupSizeY: number;
+  maxWorkgroupInvocations: number;
+};
+```
+
+```ts
+import { getDeviceComputeLimits } from "@hello-terrain/three";
+
+const limits = getDeviceComputeLimits(renderer);
+console.log(limits.maxWorkgroupSizeX, limits.maxWorkgroupInvocations);
+```
+
+The compute pipeline calls this on every execute to clamp its requested workgroup size (`16 × 16` by default) to what the device allows, so a pipeline compiled once keeps working across devices.
+
+## Terrain field storage
+
+The **terrain field** is the packed per-vertex texture the render path and the GPU sampler read from: `[height, Nx, Ny, Nz]`, where height is normalized into `[0, 1]` per tile (see the `terrainFieldFilter` [param](/docs/core/params)) and `(Nx, Ny, Nz)` is the unit world-space normal. `createTerrainFieldStorage` allocates it and returns a `TerrainFieldStorage` handle that abstracts over how tiles are laid out in GPU memory.
+
+```ts
+function createTerrainFieldStorage(
+  edgeVertexCount: number,       // innerTileSegments + 3
+  tileCount: number,             // maxNodes
+  renderer?: WebGPURenderer,     // used to read maxTextureArrayLayers when picking a backend
+  options?: TerrainFieldStorageOptions,
+): TerrainFieldStorage;
+
+type TerrainFieldStorageOptions = {
+  backend?: "array-texture" | "atlas" | "texture-3d";
+  filter?: "nearest" | "linear";       // default "linear"
+  format?: "rgba16float" | "rgba32float"; // default "rgba16float"
+};
+
+interface TerrainFieldStorage {
+  readonly backendType: TerrainFieldStorageBackendType;
+  readonly edgeVertexCount: number;
+  readonly tileCount: number;
+  readonly texture: StorageArrayTexture | StorageTexture;
+  uv(ix: Node, iy: Node, tileIndex: Node): Node;
+  texel(ix: Node, iy: Node, tileIndex: Node): Node;
+  sample(u: Node, v: Node, tileIndex: Node): Node; // filtered, tile-local [0, 1] uv
+  resize(width: number, height: number, tileCount: number): void;
+}
+```
+
+### Backends
+
+| Backend | Texture | When it is chosen |
+|:--|:--|:--|
+| `array-texture` | `StorageArrayTexture`, one layer per tile | Default when `tileCount` fits within the device's `maxTextureArrayLayers` (falls back to `256` without a renderer). |
+| `atlas` | Single `StorageTexture`, tiles packed in a `ceil(sqrt(tileCount))` grid | Chosen automatically when `tileCount` exceeds the layer limit; can be forced with `backend: "atlas"`. |
+| `texture-3d` | Same implementation as `array-texture` (placeholder) | Reserved for true 3D storage textures once Three.js supports them; reports `backendType: "texture-3d"`. |
+
+Passing `options.backend` forces a backend and skips the device check. The two backend constructors are also exported directly as `ArrayTextureBackend(edgeVertexCount, tileCount, { filter, format })` and `AtlasBackend(...)`.
+
+```ts
+import { createTerrainFieldStorage, terrainTasks } from "@hello-terrain/three";
+
+// Same shape as the graph-owned storage (terrainTasks.createTerrainFieldTexture)
+const storage = createTerrainFieldStorage(64, 1024, renderer, {
+  backend: "atlas",
+  filter: "nearest",
+});
+
+storage.backendType; // "atlas"
+```
+
+### Reading and writing the field from TSL
+
+The exported helpers hide the backend-specific addressing so a compute stage or material node works with any backend:
+
+| Helper | Purpose |
+|:--|:--|
+| `storeTerrainField(storage, ix, iy, tileIndex, value)` | `textureStore` a packed `vec4` at integer texel `(ix, iy)` of a tile. |
+| `loadTerrainField(storage, ix, iy, tileIndex)` | `textureLoad` the raw packed `vec4` (no filtering). |
+| `loadTerrainFieldElevation(...)` / `loadTerrainFieldNormal(...)` | The `.r` height or `vec3(g, b, a)` normal from `loadTerrainField`. |
+| `sampleTerrainField(storage, u, v, tileIndex)` | Filtered sample at tile-local `(u, v)`; honours the storage `filter`. |
+| `sampleTerrainFieldElevation(storage, u, v, tileIndex)` | `.r` of the filtered sample. |
+| `packTerrainFieldSample(height, normal)` | Build the `[height, Nx, Ny, Nz]` `vec4`. |
+| `packNormalizedTerrainFieldSample(height, normal, packMin, packMax)` | Normalize height into `[0, 1]` using per-tile pack bounds before storing. |
+| `denormalizeTerrainFieldElevation(normalized, packMin, packMax)` | Restore absolute height from a normalized sample. |
+| `loadTilePackBounds(boundsNode, tileIndex)` | Read `{ packMin, packMax }` for a tile from the tile-bounds storage buffer. |
+
+```ts
+import {
+  loadTerrainFieldElevation,
+  loadTilePackBounds,
+  denormalizeTerrainFieldElevation,
+  terrainTasks,
+} from "@hello-terrain/three";
+
+const storage = graph.get(terrainTasks.createTerrainFieldTexture);
+const bounds = graph.get(terrainTasks.tileBoundsContext);
+
+// Inside a TSL Fn: absolute elevation at texel (ix, iy) of tile `tileIndex`
+const normalized = loadTerrainFieldElevation(storage, ix, iy, tileIndex);
+const { packMin, packMax } = loadTilePackBounds(bounds.node, tileIndex);
+const elevation = denormalizeTerrainFieldElevation(normalized, packMin, packMax);
+```
+
+The tile-bounds buffer stores `TILE_BOUNDS_FLOATS_PER_TILE` (`4`) floats per tile — LOD min/max and pack min/max — at the exported `TILE_BOUNDS_*_OFFSET` indices. `TERRAIN_FIELD_PACK_EPSILON` is the minimum elevation span used when a tile is perfectly flat.
+
+## Related
+
+- [Elevation Function → Custom compute stages](/docs/core/elevation-function#custom-compute-stages)
+- [Terrain Sampler TSL Nodes](/docs/core/query/terrain-sampler) — the high-level way to sample the terrain field from other materials
+- [Params](/docs/core/params) — `terrainFieldFilter`, `innerTileSegments`, `maxNodes`

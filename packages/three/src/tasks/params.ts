@@ -1,6 +1,7 @@
 import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
 import type { Topology, UpdateParams } from "../quadtree";
+import { DEFAULT_DISTANCE_FACTOR } from "../quadtree/criteria";
 import type { ElevationCallback } from "../tsl/elevation";
 
 /** Root tile size in world units. */
@@ -38,7 +39,7 @@ export const maxLevel = param(16).displayName("maxLevel");
 export const quadtreeUpdate = param<UpdateParams>({
   cameraOrigin: { x: 0, y: 0, z: 0 },
   mode: "distance",
-  distanceFactor: 1.5,
+  distanceFactor: DEFAULT_DISTANCE_FACTOR,
 }).displayName("quadtreeUpdate");
 
 /** Optional custom terrain topology; defaults to bounded flat topology when null. */
