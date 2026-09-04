@@ -42,7 +42,8 @@ export interface TorusProjectionConfig {
 
 const TWO_PI = Math.PI * 2;
 const RAYCAST_PADDING = 1;
-const ZERO_CENTER = { x: 0, y: 0, z: 0 };
+/** Immutable constant (never written; frozen so it can't become shared state). */
+const ZERO_CENTER: Readonly<Vec3Like> = Object.freeze({ x: 0, y: 0, z: 0 });
 
 function createTorusTileComputeParts(
   ctx: TileComputePartsContext,

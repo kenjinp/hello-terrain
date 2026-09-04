@@ -57,6 +57,11 @@ const elevation: ElevationCallback = ({ rootUV }) =>
 - `midPipelineExecute` hook on compute pipelines for bounds reduction between upstream stages and terrain-field pack
 - CPU readback consumers updated for the 4-float tile-bounds stride (LOD fields remain at offsets 0/1)
 - **`@hello-terrain/react`:** `TerrainProps` is now a discriminated union — when you pass a `terrain` handle from `useTerrain()`, TypeScript no longer incorrectly requires `rootSize`, `origin`, `maxLevel`, and the other construction options on `<Terrain>`.
+- **No more module-scope shared state.** Multiple terrain instances on one page no longer share hidden internals:
+  - `TerrainMesh` constructed without a `material` now gets its **own** `MeshStandardNodeMaterial` instead of one instance shared by every mesh (and allocated at import time). `TerrainMeshParams.material` is now optional; `defaultTerrainMeshParams` no longer contains a `material`.
+  - `uRootOrigin` is written in place per graph; previously every graph's `uRootOrigin.value` aliased the same `Vector3`.
+  - `SeamTable` (from `allocSeamTable`) now owns a `scratch` object used by `buildSeams2to1`, replacing module-level scratch tiles.
+  - A guard test (`no-module-scope-state.test.ts`) fails on top-level `let`/`var` or shared scratch allocations in `@hello-terrain/three`.
 
 ## 0.0.0-alpha.13 — Freezing Venus
 

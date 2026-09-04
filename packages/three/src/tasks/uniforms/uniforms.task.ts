@@ -1,11 +1,8 @@
 import { task } from "@hello-terrain/work";
-import { Vector3 } from "three";
 import { createTerrainUniforms } from "../../gpu/uniforms";
 import type { TerrainUniformsParams } from "../../types";
 import { instanceIdTask } from "../instanceId.task";
 import { elevationScale, innerTileSegments, origin, radius, rootSize, skirtScale } from "../params";
-
-const scratchVector3 = new Vector3();
 
 /**
  * Creates the terrain uniform nodes once. Downstream tasks capture
@@ -42,11 +39,10 @@ export const updateUniformsTask = task((get, work) => {
 
   return work(() => {
     terrainUniformsContext.uRootSize.value = rootSizeVal;
-    terrainUniformsContext.uRootOrigin.value = scratchVector3.set(
-      rootOrigin.x,
-      rootOrigin.y,
-      rootOrigin.z,
-    );
+    // Write into the Vector3 owned by this graph's uniform node (allocated in
+    // createTerrainUniforms). Never replace `.value` with a shared instance:
+    // multiple terrain graphs would otherwise alias the same Vector3.
+    terrainUniformsContext.uRootOrigin.value.set(rootOrigin.x, rootOrigin.y, rootOrigin.z);
     terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
     terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
     terrainUniformsContext.uElevationScale.value = elevationScaleVal;

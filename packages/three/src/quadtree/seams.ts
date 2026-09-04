@@ -1,18 +1,15 @@
 import { buildLeafIndex, type SpatialIndex } from "./leafIndex";
 import { lookupSpatialIndexRaw } from "./spatialIndex";
-import { Dir, type LeafSet, type SeamTable, type TileId, type Topology, U32_EMPTY } from "./types";
-
-// Module-scope scratch (no per-call allocations). Not re-entrant by design.
-const scratchTile: TileId = { space: 0, level: 0, x: 0, y: 0 };
-const scratchNbr: TileId = { space: 0, level: 0, x: 0, y: 0 };
-const scratchParentTile: TileId = { space: 0, level: 0, x: 0, y: 0 };
-const scratchParentNbr: TileId = { space: 0, level: 0, x: 0, y: 0 };
+import { Dir, type LeafSet, type SeamTable, type Topology, U32_EMPTY } from "./types";
 
 /**
  * Build a fixed-width seam/neighbor table for balanced leaves (2:1).
  *
  * Output neighbors are leaf-list indices, with U32_EMPTY for missing entries.
  * Layout: neighbors[leafIndex * 8 + edge*2 + slot].
+ *
+ * Allocation-free: all `TileId` scratch lives on `outSeams.scratch`, so each
+ * `SeamTable` (and therefore each terrain instance) owns its own scratch.
  */
 export function buildSeams2to1(
   topology: Topology,
@@ -28,6 +25,12 @@ export function buildSeams2to1(
   outSeams.count = leaves.count;
 
   const neighbors = outSeams.neighbors;
+  const {
+    tile: scratchTile,
+    nbr: scratchNbr,
+    parentTile: scratchParentTile,
+    parentNbr: scratchParentNbr,
+  } = outSeams.scratch;
 
   for (let i = 0; i < leaves.count; i++) {
     const base = i * 8;

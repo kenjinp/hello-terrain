@@ -285,6 +285,9 @@ importers:
       '@config/typescript':
         specifier: workspace:*
         version: link:../../.config/typescript
+      '@types/node':
+        specifier: 24.3.0
+        version: 24.3.0
       '@types/three':
         specifier: 'catalog:'
         version: 0.182.0

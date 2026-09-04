@@ -27,8 +27,13 @@ The public API is intended to be a small set of functions operating on explicit 
 - **`buildLeafIndex(leaves, outIndex?)`** → `SpatialIndex`
   - Open-addressing lookup for `(space, level, x, y) -> leafListIndex`
 
-- **`buildSeams2to1(topology, leaves, leafIndex, out?)`** → `SeamTable`
+- **`allocSeamTable(capacity)`** → `SeamTable`
+  - Allocates the neighbor buffer plus the table's own `TileId` scratch
+  - There is no module-scope scratch; each table (and terrain instance) owns its own
+
+- **`buildSeams2to1(topology, leaves, outSeams, outIndex?)`** → `SeamTable`
   - Fixed-width seam/neighbor table suitable for GPU consumption
+  - Allocation-free: uses `outSeams.scratch` for intermediate tile ids
 
 ---
 
