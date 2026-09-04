@@ -5,6 +5,25 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased
+
+### Renderer-free CPU internals
+
+The CPU query, raycast, and projection internals no longer use three.js math. Ray marching, shell intersection, surface position/normal reconstruction, and the terrain cache's sampling now run on plain `{ x, y, z }` objects (`Vec3Like`) and a plain `{ origin, direction }` ray (`RayLike`), with small allocation-free helpers. `THREE.Vector3` results are created once at the consumer boundary — `TerrainQuery` / `TerrainSurfaceQuery` / `TerrainSphereQuery` samples, `TerrainRaycast.pick`, and `TerrainMesh.raycast` are unchanged — and the normalization / distance formulas mirror `Vector3` exactly, so results are numerically identical.
+
+- Surface query inputs are more permissive: `getElevationByPosition`, `sampleTerrainByDirection`, and friends accept any `{ x, y, z }`, not only a `THREE.Vector3`. Return types are unchanged.
+- Batch sampling (`sampleTerrainBatch`, `sampleTerrainBatchByPosition`, `sampleTerrainBatchByDirection`) and `getElevationByPosition` no longer allocate a `Vector3` per point.
+- A guard test keeps `query/`, `quadtree/`, and the raycast marcher free of runtime `three` imports.
+
+### Breaking (custom projections) ⚠️
+
+Only affects code implementing its own `SurfaceProjection.cpu`:
+
+- **`CpuSurfaceOps.surfacePosition(key, elevation, out)`** — `out` is now a plain `Vec3Like` (`{ x, y, z }`) instead of a `THREE.Vector3`; assign `out.x/y/z` rather than calling `out.set(...)`.
+- **`CpuSurfaceOps.surfaceNormal(key, ctx, out)`** — takes a caller-provided `out: Vec3Like` scratch, writes into it, and returns it. Previously it returned a freshly allocated `THREE.Vector3`.
+- **`ProjectionRaycastContext.ray`** is a `RayLike` (`{ origin: Vec3Like; direction: Vec3Like }`); a `THREE.Ray` still satisfies it structurally.
+- **`SurfaceProjectionCpu.raycast(ctx)`** returns a plain `CpuRaycastHit` (`{ position: Vec3Like; normal: Vec3Like; distance }`) instead of a `TerrainRaycastResult`; `TerrainRaycast.pick` performs the `Vector3` conversion. The built-in marchers (`cpuRaycast`, `cubeSphereRaycast`, `torusRaycast`) return the same plain shape.
+
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 
 Heightmap and high-relief terrain should no longer show visible **stairstepping** in geometry and slope shadows, especially visible near ridges. 

@@ -213,6 +213,7 @@ This clone is intentional correctness protection, not incidental duplication.
 - `query/terrain-snapshot.ts`: double-buffered snapshot state plus the readback/swap lifecycle (owns the spatial-index clone above).
 - `query/tile-lookup.ts`: coarse-to-fine flat / face-UV / direction tile lookups against a snapshot index. CPU mirror of the TSL lookups in `query/gpuSpatialIndex.ts`.
 - `query/elevation-field-sampling.ts`: plain-number grid reads, bilinear sampling, and the shared central-difference elevation gradient. CPU mirror of the TSL normal derivation in `tasks/terrain-field.task.ts`.
+- `query/vec3.ts`: allocation-free plain `{ x, y, z }` / ray helpers (`vec3Set`, `vec3Normalize`, `rayAt`, …) shared by the cache, the raycast marchers, and the projections' `CpuSurfaceOps`. Formulas mirror three's `Vector3` / `Ray` so results are bit-identical; three.js itself is imported only by the boundary modules (`terrain-query.ts`, `terrain-raycast.ts`, and the public methods of `cpu-terrain-cache.ts`), which is enforced by `tests/no-three-in-cpu-internals.test.ts`.
 
 CPU/TSL mirror pairs are never merged across the boundary; they are co-located or cross-referenced (`Mirrors:` comments) with shared scalar constants in `gpu/tile.ts`.
 

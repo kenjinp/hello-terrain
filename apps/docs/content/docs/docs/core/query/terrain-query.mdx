@@ -133,7 +133,8 @@ const { query, surfaceQuery, sphereQuery } = graph.get(terrainTasks.terrainQuery
 ```
 
 `surfaceQuery` is `null` on flat surfaces and present for every closed surface.
-Its methods take a `THREE.Vector3` world position (projected onto the surface):
+Its methods take a world position (projected onto the surface) — a
+`THREE.Vector3` or any plain `{ x, y, z }`; results are always `THREE.Vector3`:
 
 - `getElevationByPosition(position)` / `getNormalByPosition(position)`
 - `sampleTerrainByPosition(position)` → `TerrainSurfaceSample`
@@ -158,8 +159,8 @@ const { sphereQuery } = graph.get(terrainTasks.terrainQuery);
 projection. Each getter comes in three explicit variants — no argument
 overloading:
 
-- `...ByDirection(direction)` — `direction` is a `THREE.Vector3` from the planet center (normalized internally). This is the canonical form.
-- `...ByPosition(position)` — any world-space `THREE.Vector3`; it is projected onto its direction from the center.
+- `...ByDirection(direction)` — `direction` is a vector (`THREE.Vector3` or plain `{ x, y, z }`) from the planet center (normalized internally). This is the canonical form.
+- `...ByPosition(position)` — any world-space position (`THREE.Vector3` or plain `{ x, y, z }`); it is projected onto its direction from the center.
 - `...ByLatLong(latitudeDeg, longitudeDeg)` — degrees, latitude `[-90, 90]`, longitude `[-180, 180]`. Latitude is measured from the equator toward +Y (north pole); longitude is measured from +Z toward +X.
 
 The variants exist for `getElevation`, `getNormal`, `sampleTerrain`, `getTile`,

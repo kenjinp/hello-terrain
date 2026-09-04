@@ -45,7 +45,37 @@ interface SurfaceProjection {
 |:--|:--|
 | `createSurfaceOps()` | The surface math injected into the terrain cache (position → `(space, u, v)`, displaced position, normal); `null` for flat. |
 | `createRuntimeQueries(cache)` | Build the runtime query objects: the flat `query`, the generic `surfaceQuery`, and (cube-sphere) the `sphereQuery`. |
-| `raycast(ctx)` | The projection-specific CPU ray pick against the displaced surface; returns `null` when the ray misses or the query snapshot isn't ready. |
+| `raycast(ctx)` | The projection-specific CPU ray pick against the displaced surface; returns a plain `CpuRaycastHit` (`position` / `normal` are `{ x, y, z }`, plus `distance`), or `null` when the ray misses or the query snapshot isn't ready. |
+
+The CPU hooks are **renderer-free**: they work on plain `{ x, y, z }` objects
+(`Vec3Like`) and a plain `{ origin, direction }` ray (`RayLike`) rather than
+three.js classes. A `THREE.Vector3` / `THREE.Ray` satisfies these shapes
+structurally, and the runtime converts hits and samples into `THREE.Vector3`
+once at the consumer boundary (`TerrainRaycast.pick`, the query objects).
+
+```ts
+interface CpuSurfaceOps {
+  /** Map a world position to a surface key; `false` if it has no projection. */
+  positionToKey(px: number, py: number, pz: number, out: SurfaceKey): boolean;
+  /** Displaced world position from a key + scaled elevation (writes `out`). */
+  surfacePosition(key: SurfaceKey, elevation: number, out: Vec3Like): void;
+  /** Unit world-space normal from a key + grid neighborhood (writes and returns `out`). */
+  surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext, out: Vec3Like): Vec3Like;
+}
+
+interface ProjectionRaycastContext {
+  ray: RayLike; // { origin: Vec3Like; direction: Vec3Like }
+  options?: RaycastOptions;
+  terrainQuery: TerrainQuery | null;
+  surfaceQuery: TerrainSurfaceQuery | null;
+  sphereQuery: TerrainSphereQuery | null;
+  config: TerrainRaycastConfig;
+}
+```
+
+Both `surfacePosition` and `surfaceNormal` write into a caller-provided scratch
+object, so a sample never allocates; implementations should own any scratch they
+need themselves (no module-scope state — several terrains may be alive at once).
 
 ## Built-in projections
 
@@ -63,7 +93,7 @@ To add a new closed surface you implement one `SurfaceProjection` and a small `T
 
 1. **Map math** — write the forward map `(u, v) → world position` (GPU + CPU) and the inverse `world position → (u, v)`, plus an outward normal.
 2. **`gpu` hooks** — assemble the displaced vertex position and reconstruct the normal from displaced neighbor positions (curvature-correct, frame-independent).
-3. **`cpu` hooks** — provide `createSurfaceOps()` (used by the terrain cache), `createRuntimeQueries()` (wraps the cache as `query`/`surfaceQuery`), and `raycast()`.
+3. **`cpu` hooks** — provide `createSurfaceOps()` (used by the terrain cache), `createRuntimeQueries()` (wraps the cache as `query`/`surfaceQuery`), and `raycast()`. Keep these on plain `{ x, y, z }` math (`Vec3Like` / `RayLike`) — don't import three.js in CPU code.
 4. **Topology** — emit root tiles, resolve same-level neighbors (wrap for periodic axes), and write conservative `tileBounds`. Set `projection` to your new strategy.
 
 The [torus source](/docs/examples/torus) is the reference implementation; it reuses the shared curved-surface render/normal helpers, so the projection itself is small.
