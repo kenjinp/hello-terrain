@@ -78,6 +78,12 @@ export const terrainQueryTask = task((get, work) => {
  * Gated by `terrainReadbackEnabled` / `terrainReadbackIntervalMs`. The
  * last-scheduled timestamp lives in the task's own returned state (`prev`), so
  * multiple terrain instances never share throttle state.
+ *
+ * `cache("none")`: the gate depends on wall-clock time and on the in-flight
+ * `readbackPending` flag, neither of which is a graph input. With memoization a
+ * readback skipped because it was throttled or still pending would not be
+ * retried until some upstream dependency changed, so the final GPU state could
+ * go unread indefinitely. The body is cheap when nothing needs scheduling.
  */
 export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
   (get, work, { resources }) => {
@@ -111,4 +117,5 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
   },
 )
   .displayName("terrainReadbackTask")
+  .cache("none")
   .lane("gpu");
