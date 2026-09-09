@@ -1,114 +1,41 @@
 ---
-title: Terrain Raycasting API
-description: High-performance terrain picking with CPU raycasting
+title: Raycasting
+description: Intersect the sampled terrain surface with explicit incomplete results
 ---
 
-import TerrainRaycastHoverScene from "@/examples/TerrainRaycastHoverScene"
-
-<div className="h-[560px] rounded overflow-hidden">
-<TerrainRaycastHoverScene />
-</div>
-
-## Overview
-
-`terrainTasks.terrainRaycast` provides terrain hit testing via `pick(ray, options?)` — a synchronous CPU raycast built on the terrain query foundation, so elevation sampling and ray intersections stay consistent.
-
-## Get the raycast context
+Use `terrain.query.raycast(origin, direction, options)` in terrain-local coordinates, or `binding.raycastWorld(origin, direction, options)` in scene coordinates. Origin and direction are `math` Vec3 tuples; provide a finite unit direction.
 
 ```ts
-import { terrainGraph, terrainTasks } from "@hello-terrain/three";
-
-const graph = terrainGraph();
-await graph.run({ resources: { renderer } });
-
-const terrainRaycast = graph.get(terrainTasks.terrainRaycast);
-if (!terrainRaycast) {
-  // Query cache is not ready yet.
-  return;
-}
-```
-
-## Direct raycasting
-
-```ts
-import { Ray } from "three";
-
-const ray = new Ray(camera.position.clone(), camera.getWorldDirection(new Vector3()));
-
-const hit = terrainRaycast.pick(ray, {
-  maxSteps: 128,
-  refinementSteps: 8,
-  maxDistance: 5000,
+const result = terrain.query.raycast([0, 100, 0], [0, -1, 0], {
+  near: 0,
+  far: 200,
+  tolerance: 0.001,
+  maxSteps: 256,
 });
-
-if (hit) {
-  marker.position.copy(hit.position);
-  marker.lookAt(hit.position.clone().add(hit.normal));
+if (result.status === "hit") {
+  console.log(result.sample.position, result.distance);
+} else {
+  console.log(result.reason);
 }
 ```
 
-## Cube-sphere raycasting
+| Option      | Default | Meaning                                     |
+| ----------- | ------- | ------------------------------------------- |
+| `near`      | `0`     | Nonnegative start distance                  |
+| `far`       | `10000` | Finite end distance, greater than near      |
+| `tolerance` | `0.001` | Positive intersection tolerance             |
+| `maxSteps`  | `256`   | Integer work budget of at least two samples |
 
-`pick(ray, options?)` is projection-aware and needs no special call site. When
-the active topology is a cube sphere, the ray is intersected with the planet's
-bounding shell and marched in **radial** signed distance (`|p - center| -
-(radius + elevation)`) rather than against a horizontal heightfield. The
-returned `position` lies on the displaced sphere surface and `normal` is the
-world-space surface normal.
+The current result is `hit` or `incomplete`; it does not return an authoritative miss. Incomplete reasons are `not-ready`, `outside-coverage`, and `work-budget`. Missing data or an exhausted search is not evidence that the ray misses the terrain.
 
-```ts
-import { Ray, Vector3 } from "three";
+The search samples and brackets the reconstructed surface. It is not an exact rendered-triangle intersection and may return incomplete for thin features or insufficient coverage. A successful result includes the snapshot revision through `result.sample.revision`.
 
-// e.g. from an R3F pointer event you can use event.ray directly.
-const ray = new Ray(camera.position.clone(), camera.getWorldDirection(new Vector3()));
-const hit = terrainRaycast.pick(ray);
-if (hit) {
-  marker.position.copy(hit.position);
-}
-```
+## Three and React picking
 
-## Three.js Raycaster integration
+A terrain binding installs a Three raycast bridge on its mesh. R3F pointer events and `Raycaster.intersectObject(binding.mesh)` use that bridge. It respects finite near/far limits; an infinite Three far limit is bounded to 10,000 scene units by the bridge.
 
-`TerrainMesh` supports standard Three.js / React Three Fiber ray interactions once a terrain raycast context is attached.
+Only successful terrain hits are added to the Three intersection list. An empty list cannot distinguish an incomplete terrain search from a miss; use `raycastWorld` when that distinction matters.
 
-```ts
-terrainMesh.terrainRaycast = terrainRaycast;
-```
+World queries apply scene placement and report world-space hit positions and distances. Local snapshot leases also expose `raycast`, allowing several tests against the same CPU revision.
 
-After this, default raycasting pipelines can hit the terrain mesh and receive terrain-aware intersection data.
-
-## React: pointer events on `<Terrain>`
-
-Because the terrain mesh raycasts against the real surface, you can attach R3F
-pointer handlers (`onPointerDown`, `onPointerMove`, …) **directly** to the
-`<Terrain>` component — no invisible proxy mesh required. The handler fires only
-when the ray meets the actual terrain, and `event.point` is the precise world-space
-hit (`event.ray` is also available if you want to re-pick with custom options).
-
-```tsx
-<Terrain
-  terrain={terrain}
-  onPointerDown={(event) => {
-    event.stopPropagation();
-    // Only fires on a real surface hit; clicks that miss the terrain do nothing.
-    dropMarker(event.point);
-  }}
->
-  {({ positionNode }) => <meshStandardNodeMaterial positionNode={positionNode} />}
-</Terrain>
-```
-
-`pick` is precise: it intersects the actual displaced surface and returns `null`
-when the ray misses (or before the query snapshot is ready), so clicks/hovers off
-the terrain report nothing.
-
-## Options
-
-`RaycastOptions`:
-
-- `maxSteps` (default `128`): linear march steps along the clipped ray segment
-- `refinementSteps` (default `8`): binary search iterations after a sign change
-- `maxDistance` (default infinite): far clip for terrain intersection distance
-
-Higher `maxSteps` / `refinementSteps` values improve precision on steep/complex terrain but increase query cost.
-
+See [terrain queries](/docs/core/query/terrain-query) for coverage, freshness, and lease lifetime.

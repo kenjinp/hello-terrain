@@ -310,6 +310,7 @@ function RaycastCharacterControllerSceneImpl({
   }, []);
 
   const terrain = useTerrain({
+    elevationRange: { min: -2, max: 2 + stampFieldScale },
     rootSize: controls.rootSize,
     maxLevel: controls.maxLevel,
     maxNodes: controls.maxNodes,

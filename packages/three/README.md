@@ -1,198 +1,40 @@
 # @hello-terrain/three
 
-Realtime web terrain engine for vast virtual worlds. Built for [three.js](https://threejs.org/) WebGPU.
+Adaptive WebGPU terrain for Three.js, with ordinary TSL elevation, instance-owned production, and coherent CPU snapshots.
 
-## Features
+## Runtime
 
-- Performant variable LOD system for huge (earth-scale!) open worlds
-- Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
-- TSL-based elevation and texture assignment nodes
-- Composable compute stage plugins
+```ts
+import { createTerrain, createTerrainBinding } from "@hello-terrain/three";
+import { sin } from "three/tsl";
 
-## Quick Start
+const terrain = createTerrain({
+  renderer, // initialized WebGPURenderer
+  elevation: ({ worldPosition }) => sin(worldPosition.x.mul(0.1)),
+  elevationRange: { min: -1, max: 1 },
+  elevationScale: 10,
+});
+const binding = createTerrainBinding(terrain);
+scene.add(binding.mesh);
 
-### React Three Fiber
+// Before drawing, after updating camera/scene matrices:
+await terrain.update(binding.viewFromCamera(camera, viewportHeight));
+renderer.render(scene, camera);
 
-```jsx
-import { useRef, useMemo, useEffect } from "react";
-import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
-import * as THREE from "three/webgpu";
-import { float, Fn, vec2 } from "three/tsl";
-import {
-  terrainGraph,
-  TerrainGeometry,
-  TerrainMesh,
-  innerTileSegments,
-  elevationScale,
-  elevationFn,
-  quadtreeUpdate,
-  quadtreeUpdateTask,
-  positionNodeTask,
-  voronoiCells,
-} from "@hello-terrain/three";
-import { task } from "@hello-terrain/work";
+const sample = binding.sampleWorld([0, 20, 0]);
+if (sample.status === "available") console.log(sample.position);
 
-extend(THREE);
-extend({ TerrainGeometry, TerrainMesh });
-
-function Terrain({ graph }) {
-  const meshRef = useRef(null);
-  const materialRef = useRef(null);
-
-  // Define the elevation function (runs on the GPU)
-  useEffect(() => {
-    graph.set(elevationFn, () => ({ worldPosition }) => {
-      return voronoiCells({
-        scale: float(1),
-        facet: 0,
-        seed: 0,
-        uv: vec2(worldPosition.x, worldPosition.z).mul(0.5),
-      }).mul(0.5);
-    });
-    graph.set(elevationScale, () => 10);
-  }, [graph]);
-
-  // Apply position node to the material when graph produces it
-  useEffect(() => {
-    graph.add(
-      task((get, work) => {
-        const positionNode = get(positionNodeTask);
-        const leafSet = get(quadtreeUpdateTask);
-        return work(() => {
-          const mesh = meshRef.current;
-          const material = materialRef.current;
-          if (mesh && leafSet?.count !== undefined) mesh.count = leafSet.count;
-          if (material && positionNode) {
-            material.positionNode = positionNode;
-            material.needsUpdate = true;
-          }
-        });
-      }).displayName("applyPositionNodeTask"),
-    );
-  }, [graph]);
-
-  // Update camera and run the graph each frame
-  useFrame(async ({ camera, gl }) => {
-    graph.set(quadtreeUpdate, (prev) => {
-      prev.cameraOrigin.x = camera.position.x;
-      prev.cameraOrigin.y = camera.position.y;
-      prev.cameraOrigin.z = camera.position.z;
-      return prev;
-    });
-    await graph.run({ resources: { renderer: gl } });
-  });
-
-  return (
-    <terrainMesh ref={meshRef} innerTileSegments={innerTileSegments.get()} maxNodes={1024}>
-      <meshStandardNodeMaterial ref={materialRef} />
-    </terrainMesh>
-  );
-}
-
-export default function App() {
-  const graph = useMemo(() => terrainGraph(), []);
-  return (
-    <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer({ ...props, antialias: true });
-        await renderer.init();
-        return renderer;
-      }}
-      camera={{ position: [0, 30, 60] }}
-    >
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[1, 1, 1]} />
-      <Terrain graph={graph} />
-      <OrbitControls />
-    </Canvas>
-  );
-}
+await binding.dispose();
+await terrain.dispose();
 ```
 
-### Vanilla Three.js
+Topologies provide bounded/infinite planes, cube spheres, and toruses. Use node materials and the published material context for direct elevation, slope, mapped control textures, and detail normals. Managed sources support ordered edits and borrowed-resource retirement.
 
-```js
-import * as THREE from "three/webgpu";
-import { float, vec2 } from "three/tsl";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import {
-  terrainGraph,
-  TerrainMesh,
-  innerTileSegments,
-  elevationScale,
-  elevationFn,
-  quadtreeUpdate,
-  quadtreeUpdateTask,
-  positionNodeTask,
-  voronoiCells,
-} from "@hello-terrain/three";
-import { task } from "@hello-terrain/work";
+CPU queries return `math` tuples with availability and revision metadata. Leases support stable Float64 batches. Queries reconstruct sampled terrain and raycasts return hit or incomplete; they do not promise exact rendered triangles.
 
-// Renderer
-const renderer = new THREE.WebGPURenderer({ antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-document.body.appendChild(renderer.domElement);
-await renderer.init();
+The runtime and precision APIs described here are implemented in this checkout. Use matching package builds. The WebGPU/backend precision limits and measured scenarios are documented in the runtime guide.
 
-// Scene & camera
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 100000);
-camera.position.set(0, 30, 60);
-const controls = new OrbitControls(camera, renderer.domElement);
-
-// Terrain
-const material = new THREE.MeshStandardNodeMaterial();
-const mesh = new TerrainMesh({ innerTileSegments: innerTileSegments.get(), maxNodes: 1024, material });
-scene.add(mesh);
-scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-scene.add(new THREE.DirectionalLight(0xffffff, 1));
-
-// Task graph
-const graph = terrainGraph();
-
-graph.set(elevationFn, () => ({ worldPosition }) => {
-  return voronoiCells({
-    scale: float(1),
-    facet: 0,
-    seed: 0,
-    uv: vec2(worldPosition.x, worldPosition.z).mul(0.5),
-  }).mul(0.5);
-});
-graph.set(elevationScale, () => 10);
-
-// Apply graph outputs to the mesh
-graph.add(
-  task((get, work) => {
-    const positionNode = get(positionNodeTask);
-    const leafSet = get(quadtreeUpdateTask);
-    return work(() => {
-      if (leafSet?.count !== undefined) mesh.count = leafSet.count;
-      if (positionNode) {
-        material.positionNode = positionNode;
-        material.needsUpdate = true;
-      }
-    });
-  }).displayName("applyPositionNodeTask"),
-);
-
-// Render loop
-renderer.setAnimationLoop(async () => {
-  controls.update();
-  graph.set(quadtreeUpdate, (prev) => {
-    prev.cameraOrigin.x = camera.position.x;
-    prev.cameraOrigin.y = camera.position.y;
-    prev.cameraOrigin.z = camera.position.z;
-    return prev;
-  });
-  await graph.run({ resources: { renderer } });
-  renderer.render(scene, camera);
-});
-```
-
-## Documentation
-
-1. Read the [Introduction](http://hello-terrain.kenny.wtf/docs) to understand the architecture.
-2. Read the [Installation](http://hello-terrain.kenny.wtf/docs/installation) guide.
-3. Browse the [Examples](http://hello-terrain.kenny.wtf/examples).
-4. Join the [Discord](https://discord.gg/HgTd2B828n) for support.
+- [Runtime](https://hello-terrain.kenny.wtf/docs/core/runtime)
+- [Configuration](https://hello-terrain.kenny.wtf/docs/core/params)
+- [Materials](https://hello-terrain.kenny.wtf/docs/core/nodes/materials)
+- [React setup](https://hello-terrain.kenny.wtf/docs/react/getting-started)

@@ -3,7 +3,7 @@ import {
   TILE_BOUNDS_FLOATS_PER_TILE,
   TILE_BOUNDS_LOD_MAX_OFFSET,
   TILE_BOUNDS_LOD_MIN_OFFSET,
-} from "../gpu/terrainFieldStorage";
+} from "../runtime/fieldLayout";
 
 function nextPow2(n: number): number {
   let x = 1;

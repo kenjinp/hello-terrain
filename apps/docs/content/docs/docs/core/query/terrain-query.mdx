@@ -1,207 +1,60 @@
 ---
-title: Terrain Query API
-description: Synchronous CPU terrain sampling from the shared elevation readback cache
+title: Terrain queries
+description: Sample coherent terrain-local or scene-space CPU snapshots
 ---
 
-## Overview
-
-`terrainTasks.terrainQuery` exposes a synchronous CPU query API for:
-
-- `getElevation(worldX, worldZ)` — elevation at a point, or `null`
-- `getNormal(worldX, worldZ)` — surface normal at a point, or `null`
-- `getTile(worldX, worldZ)` — quadtree tile containing a point
-- `getTileBounds(worldX, worldZ)` — tile with GPU-computed min/max elevation
-- `getGlobalElevationRange()` — min/max elevation across all active tiles
-- `sampleTerrain(worldX, worldZ)` — elevation + normal + validity in one call
-- `sampleTerrainBatch(positions)` — batched elevation + normal sampling
-- `generation` — increments each time the cache receives new readback data
-
-The query path reads from a shared CPU cache populated by async GPU readback of the elevation field buffer. This keeps point queries fast while avoiding any duplicate CPU `elevationFn` implementation.
-
-## Get the query context
-
-`terrainTasks.terrainQuery` returns a `TerrainQueryContext` containing the `TerrainQuery` API on its `query` property.
+Use `terrain.query` for terrain-local coordinates and `binding.sampleWorld` for scene coordinates. Both read a published CPU snapshot without evaluating the GPU source synchronously.
 
 ```ts
-import { terrainGraph, terrainTasks } from "@hello-terrain/three";
-
-const graph = terrainGraph();
-await graph.run({ resources: { renderer } });
-
-const { query: terrainQuery } = graph.get(terrainTasks.terrainQuery);
-```
-
-## Single-point queries
-
-```ts
-const elevation = terrainQuery.getElevation(player.position.x, player.position.z);
-const normal = terrainQuery.getNormal(player.position.x, player.position.z);
-
-const sample = terrainQuery.sampleTerrain(player.position.x, player.position.z);
-if (sample.valid) {
-  player.position.y = sample.elevation;
-  player.up.copy(sample.normal);
+const result = terrain.query.sample([x, y, z]);
+if (result.status === "available") {
+  const { position, normal, elevation, revision, sampleSpacing, tile } = result;
 }
 ```
 
-## Batch queries
+Positions and normals are owned `Vec3` number tuples from `math`. Elevation is signed displacement along the datum direction after `elevationScale`, in terrain-local units. It is not generally world Y. Input points are projected onto the datum; this is not a globally nearest-surface search.
 
-Use batch mode when you need many samples per frame (physics probes, AI paths, crowds).
+## Availability and freshness
+
+A result is either `available` or `unavailable`. Unavailable reasons are `not-ready`, `disabled`, `outside-coverage`, `ambiguous-projection`, `stale`, or `disposed`. Zero elevation is valid data.
 
 ```ts
-// Interleaved x,z pairs.
-const positions = new Float32Array([
-  0, 0,
-  8, 0,
-  16, 0,
-  24, 0,
-]);
+const edit = terrain.invalidateElevation();
+await terrain.requestSnapshot({ minEditVersion: edit });
+const current = terrain.query.sample([x, y, z], { minEditVersion: edit });
+```
 
-const batch = terrainQuery.sampleTerrainBatch(positions);
+Provide a view through `update` before waiting for first production. Snapshot requests target the accepted edit or newer, not a retained historical version. Errors and disabled readback reject requests; failed transfers preserve the previous successful snapshot.
 
-for (let i = 0; i < batch.elevations.length; i++) {
-  if (!batch.valid[i]) continue;
-  const y = batch.elevations[i];
-  const nx = batch.normals[i * 3];
-  const ny = batch.normals[i * 3 + 1];
-  const nz = batch.normals[i * 3 + 2];
-  // ...consume y / normal...
+Coverage follows resident terrain tiles. Infinite terrain is not an infinite CPU collision cache. Check each result even when `getStatus().queryAvailability` is `"available"`.
+
+## Scene placement
+
+```ts
+const sample = binding.sampleWorld(player.position);
+if (sample.status === "available") player.position.fromArray(sample.position);
+```
+
+The binding applies its mesh transform and inverse-transpose normal transform. Reported elevation remains in local units under nonuniform scene scale. Singular transforms throw.
+
+## Batches and leases
+
+```ts
+const lease = terrain.query.acquireSnapshot();
+if (lease) {
+  try {
+    const results = lease.sampleBatch(new Float64Array([
+      0, 20, 0,
+      10, 20, 10,
+    ]));
+    // results.valid marks available entries.
+    // positions, normals, elevations, and revision belong to this lease.
+  } finally {
+    lease.release();
+  }
 }
 ```
 
-## Tile lookup
+A lease pins one CPU record through later updates and runtime disposal. Calls after release throw; repeated release is harmless. `binding.acquireSnapshot()` additionally pins placement and exposes `sampleWorld(Vec3)` and `release()`.
 
-`getTile` returns the quadtree leaf tile that covers a world position, or `null` if no tile is active there.
-
-```ts
-const tile = terrainQuery.getTile(worldX, worldZ);
-if (tile) {
-  console.log(`Tile L${tile.level} (${tile.x},${tile.y}) index=${tile.index}`);
-}
-```
-
-## Tile bounds
-
-Each tile's min/max elevation is computed on the GPU via a parallel reduction pass and read back alongside the elevation data.
-
-```ts
-const bounds = terrainQuery.getTileBounds(worldX, worldZ);
-if (bounds) {
-  console.log(`Tile L${bounds.level} (${bounds.x},${bounds.y})`);
-  console.log(`Elevation range: ${bounds.minElevation} – ${bounds.maxElevation}`);
-}
-```
-
-The global elevation range across all active tiles is also available:
-
-```ts
-const range = terrainQuery.getGlobalElevationRange();
-if (range) {
-  console.log(`Terrain spans Y: ${range.min} – ${range.max}`);
-}
-```
-
-This is used internally by the raycast system to derive a tight AABB instead of a conservative estimate.
-
-## Quadtree LOD feedback
-
-Per-tile elevation ranges also feed back into **quadtree subdivision**. After each readback, the cache builds a conservative elevation pyramid: every leaf's min/max values propagate up to ancestor tiles so coarse tiles know about mountains beneath them.
-
-During `quadtreeUpdate`, the graph wires `UpdateParams.tileElevationRange` from the previous-frame snapshot (scaled by `elevationScale`). Each topology's `tileBounds` uses that range to inflate LOD bounding spheres — tall terrain refines from farther away without a manual `maxHeight` padding knob.
-
-```ts
-type ElevationRangeOut = { min: number; max: number };
-
-type UpdateParams = {
-  // ...
-  tileElevationRange?: (tile: TileId, out: ElevationRangeOut) => boolean;
-};
-```
-
-Returns world-space displacement min/max when data is available; `false` when the tile has no readback yet (datum-only bounds for that frame, a one-frame latency until readback data arrives).
-
-## Closed-surface queries
-
-The `TerrainQuery` above describes a flat heightfield keyed on world XZ. Closed
-surfaces (cube-sphere, torus, …) have no single ground plane, so they expose a
-**generic** `TerrainSurfaceQuery` keyed on a world position projected onto the
-surface:
-
-```ts
-const { query, surfaceQuery, sphereQuery } = graph.get(terrainTasks.terrainQuery);
-// react: const { query, surfaceQuery, sphereQuery } = terrain.runtime;
-```
-
-`surfaceQuery` is `null` on flat surfaces and present for every closed surface.
-Its methods take a `THREE.Vector3` world position (projected onto the surface):
-
-- `getElevationByPosition(position)` / `getNormalByPosition(position)`
-- `sampleTerrainByPosition(position)` → `TerrainSurfaceSample`
-- `getTileByPosition(position)` / `getTileBoundsByPosition(position)`
-- `sampleTerrainBatchByPosition(positions)` — xyz triples
-
-This is the surface API used by the [torus example](/docs/examples/torus), and it
-is identical regardless of the surface shape.
-
-## Cube-sphere queries
-
-On a cube-sphere the canonical key is a **direction from the planet center**, so
-the cube-sphere exposes a `TerrainSphereQuery` that **extends**
-`TerrainSurfaceQuery` with direction/lat-long variants:
-
-```ts
-const { sphereQuery } = graph.get(terrainTasks.terrainQuery);
-// react: const { sphereQuery } = terrain.runtime;
-```
-
-`sphereQuery` is `null` unless the active topology uses the `cubeSphere`
-projection. Each getter comes in three explicit variants — no argument
-overloading:
-
-- `...ByDirection(direction)` — `direction` is a `THREE.Vector3` from the planet center (normalized internally). This is the canonical form.
-- `...ByPosition(position)` — any world-space `THREE.Vector3`; it is projected onto its direction from the center.
-- `...ByLatLong(latitudeDeg, longitudeDeg)` — degrees, latitude `[-90, 90]`, longitude `[-180, 180]`. Latitude is measured from the equator toward +Y (north pole); longitude is measured from +Z toward +X.
-
-The variants exist for `getElevation`, `getNormal`, `sampleTerrain`, `getTile`,
-and `getTileBounds`, plus a `sampleTerrainBatchByDirection(directions)` batch
-(xyz triples).
-
-`sampleTerrain*` returns a `TerrainSurfaceSample`:
-
-```ts
-interface TerrainSurfaceSample {
-  position: Vector3; // center + direction * (radius + elevation)
-  normal: Vector3; // world-space surface normal
-  direction: Vector3; // unit direction used for the lookup
-  elevation: number; // radial displacement above the base radius (scaled)
-  valid: boolean;
-}
-```
-
-```ts
-// Snap an object to the planet surface at a lat/long.
-const sample = sphereQuery.sampleTerrainByLatLong(20, 40);
-if (sample.valid) {
-  object.position.copy(sample.position);
-  object.quaternion.setFromUnitVectors(object.up, sample.normal);
-}
-
-// Project an arbitrary world position down onto the terrain.
-const ground = sphereQuery.sampleTerrainByPosition(camera.position);
-
-// Elevation only (radial displacement above the base radius).
-const elevation = sphereQuery.getElevationByDirection(new Vector3(0, 1, 0));
-```
-
-For cube-sphere tile bounds, `minElevation` / `maxElevation` are radial
-displacements above the base radius (not absolute world Y).
-
-## Freshness and startup behavior
-
-- `graph.get(terrainTasks.terrainQuery)` always returns a `TerrainQueryContext`. Before the first successful readback, individual queries return `{ valid: false }`.
-- Per-sample `valid` indicates whether the queried point maps to an active tile with readback data.
-- Use `terrainQuery.generation` to detect when cache content changes between frames.
-- Values are frame-coherent snapshots: tile lookup, elevation data, and per-tile bounds are all paired from the same readback generation.
-- Readback is triggered by a separate `terrainReadbackTask` that runs on the GPU lane. It is fire-and-forget — downstream tasks like `terrainRaycastTask` depend on the stable `terrainQueryTask`, not the readback, so they don't block on GPU compute.
-- Readback reuses a persistent per-attribute GPU staging buffer instead of allocating one each frame, so the GPU buffer pool stays flat over time. (Three.js' `getArrayBufferAsync` leaks a `_readback` buffer per call and is only used as a no-backend fallback.)
-
+`sampleSpacing` describes nominal source-grid spacing, not a maximum error. CPU reconstruction uses raw f32 elevation while rendering can use normalized f16 storage and a different normal approximation. See [snapshot architecture](/docs/core/query/how-it-works) and [raycasting](/docs/core/query/raycasting).

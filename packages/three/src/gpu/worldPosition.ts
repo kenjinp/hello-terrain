@@ -8,8 +8,10 @@ import {
   pow,
   select,
   vec3,
+  vec2,
 } from "three/tsl";
 import type { Node, StorageBufferNode } from "three/webgpu";
+import type { TerrainMaterialContext } from "../tsl/terrainMaterial";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
 import type { TerrainFieldStorage } from "./terrainFieldStorage";
@@ -72,6 +74,7 @@ export function createFlatRenderVertexPosition(
   terrainUniforms: TerrainUniformsContext,
   terrainFieldStorage?: TerrainFieldStorage,
   tileBoundsNode?: StorageBufferNode,
+  materialContext?: TerrainMaterialContext,
 ): Node {
   return Fn(() => {
     const tile = decodeLeafTile(leafStorage, int(instanceIndex));
@@ -101,6 +104,17 @@ export function createFlatRenderVertexPosition(
     const worldY = select(skirtVertex, skirtY, baseY);
 
     assignWorldNormal(terrainUniforms, terrainFieldStorage);
+    if (materialContext) {
+      materialContext.elevation.assign(yElevation);
+      materialContext.baseNormalLocal.assign(normalLocal);
+      materialContext.datumNormalLocal.assign(vec3(0, 1, 0));
+      materialContext.datumPositionLocal.assign(vec3(worldX, rootOrigin.y, worldZ));
+      materialContext.sourceUV.assign(vec2(worldX.sub(rootOrigin.x).div(rootSize).add(half), worldZ.sub(rootOrigin.z).div(rootSize).add(half)));
+      materialContext.sourceFace.assign(float(0));
+      materialContext.tileOriginVec2.assign(vec2(tile.x, tile.y));
+      materialContext.tileLevel.assign(tile.level.toFloat());
+      materialContext.tileLocalUV.assign(vec2(clampedX.add(half), clampedZ.add(half)));
+    }
     return vec3(worldX, worldY, worldZ);
   })();
 }
@@ -120,6 +134,7 @@ export function createCurvedRenderVertexPosition(
   tileBoundsNode?: StorageBufferNode,
   baseU = 1,
   baseV = 1,
+  materialContext?: TerrainMaterialContext,
 ): Node {
   const fBaseU = float(baseU);
   const fBaseV = float(baseV);
@@ -144,6 +159,16 @@ export function createCurvedRenderVertexPosition(
     );
 
     assignWorldNormal(terrainUniforms, terrainFieldStorage);
+    if (materialContext) {
+      materialContext.elevation.assign(yElevation);
+      materialContext.baseNormalLocal.assign(normalLocal);
+      materialContext.datumPositionLocal.assign(surfacePoint(tile, faceUV, float(0)));
+      materialContext.sourceUV.assign(faceUV);
+      materialContext.sourceFace.assign(tile.face.toFloat());
+      materialContext.tileOriginVec2.assign(vec2(tile.x, tile.y));
+      materialContext.tileLevel.assign(tile.level.toFloat());
+      materialContext.tileLocalUV.assign(vec2(localU, localV));
+    }
     return surfacePoint(tile, faceUV, displacement);
   })();
 }

@@ -27,7 +27,7 @@ export type CubeSphereTopologyConfig = {
  */
 export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topology {
   const radius = cfg.radius;
-  const center = cfg.center ?? { x: 0, y: 0, z: 0 };
+  const center = Object.freeze({ ...(cfg.center ?? { x: 0, y: 0, z: 0 }) });
 
   const cube: Vec3Mutable = [0, 0, 0];
   const uv: [number, number] = [0, 0];

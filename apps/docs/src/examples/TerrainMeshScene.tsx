@@ -1,238 +1,165 @@
-"use client";
+'use client';
 
-import { ExamplesCanvas } from "@/components/ExamplesCanvas";
-import { RunTimingBars } from "@/components/RunTimingBars";
-import { TerrainTileDebug } from "@/components/TerrainTileDebug";
+import { ExamplesCanvas } from '@/components/ExamplesCanvas';
 import {
-  createUniformsTask,
-  innerTileSegments,
-  instanceIdTask,
-  leafGpuBufferTask,
-  leafStorageTask,
-  maxLevel,
-  maxNodes,
-  positionNodeTask,
-  quadtreeConfigTask,
-  quadtreeUpdate,
-  quadtreeUpdateTask,
-  rootSize,
-  skirtScale,
-  TerrainGeometry,
-  TerrainGraph,
-  TerrainMesh,
-  updateUniformsTask,
-  type UpdateParams,
-} from "@hello-terrain/three";
-import { graph } from "@hello-terrain/work";
-import { Bounds, OrbitControls } from "@react-three/drei";
-import { Canvas, extend, useFrame } from "@react-three/fiber";
-import { useControls, useCreateStore } from "leva";
+    createTerrain,
+    createTerrainBinding,
+    createFlatTopology,
+    type TerrainBinding,
+} from '@hello-terrain/three';
+import { Bounds, OrbitControls } from '@react-three/drei';
+import { Canvas, extend, useFrame, useThree } from '@react-three/fiber';
+import { useControls, useCreateStore } from 'leva';
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 import {
-  resolveTerrainMaterialAppearance,
-  tileColorsLevaControl,
-} from "@/examples/terrain/tileInstanceColor";
-import { useEffect, useMemo, useRef } from "react";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import * as THREE from "three/webgpu";
+    resolveTerrainMaterialAppearance,
+    tileColorsLevaControl,
+} from '@/examples/terrain/tileInstanceColor';
+import { useEffect, useState } from 'react';
+import type { WebGPURendererParameters } from 'three/src/renderers/webgpu/WebGPURenderer.js';
+import * as THREE from 'three/webgpu';
 
 extend(THREE as any);
-extend({ TerrainGeometry, TerrainMesh });
 
 type TerrainMeshSceneImplProps = {
-  g: TerrainGraph;
-  store: LevaStore;
+    store: LevaStore;
 };
 
-const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
-  const controls = useControls("TerrainGeometry", {
-    rootSize: {
-      value: 128,
-      min: 2,
-      max: 4092 * 2,
-      step: 2,
-      label: "root size",
-    },
-    maxLevel: {
-      value: 12,
-      min: 2,
-      max: 24,
-      step: 2,
-      label: "max level",
-    },
-    innerTileSegments: {
-      value: 14,
-      min: 2,
-      max: 64,
-      step: 2,
-      label: "inner segments",
-    },
-    maxNodes: {
-      value: 1028,
-      min: 128,
-      max: 2048,
-      step: 1,
-      label: "max nodes",
-    },
-    skirtScale: {
-      value: 10,
-      min: 0,
-      max: 1000,
-      step: 1,
-      label: "skirt scale",
-    },
-    tileColors: { ...tileColorsLevaControl, value: true },
-  }, { store });
+const TerrainMeshSceneImpl = ({ store }: TerrainMeshSceneImplProps) => {
+    const controls = useControls(
+        'TerrainGeometry',
+        {
+            rootSize: {
+                value: 128,
+                min: 2,
+                max: 4092 * 2,
+                step: 2,
+                label: 'root size',
+            },
+            maxLevel: {
+                value: 12,
+                min: 2,
+                max: 24,
+                step: 2,
+                label: 'max level',
+            },
+            innerTileSegments: {
+                value: 14,
+                min: 2,
+                max: 64,
+                step: 2,
+                label: 'inner segments',
+            },
+            maxNodes: {
+                value: 1028,
+                min: 128,
+                max: 2048,
+                step: 1,
+                label: 'max nodes',
+            },
+            skirtScale: {
+                value: 10,
+                min: 0,
+                max: 1000,
+                step: 1,
+                label: 'skirt scale',
+            },
+            tileColors: { ...tileColorsLevaControl, value: true },
+        },
+        { store }
+    );
 
-  const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
-  const meshRef = useRef<THREE.InstancedMesh | null>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
-  const postionNodeRef = useRef<THREE.TSL.ShaderCallNodeInternal | null>(null);
-
-  useEffect(() => {
-    g.set(innerTileSegments, () => controls.innerTileSegments);
-    if (materialRef.current) materialRef.current.needsUpdate = true;
-  }, [controls.innerTileSegments]);
-
-  useEffect(() => {
-    g.set(maxNodes, () => controls.maxNodes);
-  }, [controls.maxNodes]);
-
-  useEffect(() => {
-    g.set(rootSize, () => controls.rootSize);
-  }, [controls.rootSize]);
-
-  useEffect(() => {
-    g.set(maxLevel, () => controls.maxLevel);
-  }, [controls.maxLevel]);
-
-  useEffect(() => {
-    g.set(skirtScale, () => controls.skirtScale);
-  }, [controls.skirtScale]);
-
-  useEffect(() => {
-    return g.on("run:finish", () => {
-      const leafSet = g.peek(quadtreeUpdateTask);
-      const lastCount = meshRef.current?.count || 0;
-      if (leafSet?.count && leafSet?.count !== lastCount && meshRef.current) {
-        meshRef.current.count = leafSet.count;
-        meshRef.current.instanceMatrix.needsUpdate = true;
-      }
-      const positionNode = g.peek(positionNodeTask);
-      if (
-        materialRef.current &&
-        positionNode &&
-        positionNode !== postionNodeRef.current
-      ) {
-        materialRef.current.positionNode = positionNode;
-        materialRef.current.needsUpdate = true;
-        postionNodeRef.current = positionNode;
-      }
+    const renderer = useThree((state) => state.gl) as unknown as THREE.WebGPURenderer;
+    const [binding, setBinding] = useState<TerrainBinding | null>(null);
+    // Vanilla ownership, hosted in a React effect solely to attach the scene object.
+    useEffect(() => {
+        const terrain = createTerrain({ renderer });
+        const binding = createTerrainBinding(terrain);
+        setBinding(binding);
+        return () => {
+            void (async () => {
+                await binding.dispose();
+                await terrain.dispose();
+            })();
+        };
+    }, [renderer]);
+    useEffect(() => {
+        if (!binding) return;
+        binding.terrain.configure({
+            topology: createFlatTopology({
+                rootSize: controls.rootSize,
+                origin: { x: 0, y: 0, z: 0 },
+            }),
+            innerTileSegments: controls.innerTileSegments,
+            maxNodes: controls.maxNodes,
+            maxLevel: controls.maxLevel,
+            skirtScale: controls.skirtScale,
+        });
+        const appearance = resolveTerrainMaterialAppearance({
+            tileColors: controls.tileColors,
+            wireframe: true,
+        });
+        const material = binding.material as THREE.MeshStandardNodeMaterial;
+        material.colorNode = appearance.colorNode ?? null;
+        material.wireframe = appearance.wireframe;
+        if (appearance.color) material.color.set(appearance.color);
+        material.needsUpdate = true;
+    }, [
+        binding,
+        controls.rootSize,
+        controls.innerTileSegments,
+        controls.maxNodes,
+        controls.maxLevel,
+        controls.skirtScale,
+        controls.tileColors,
+    ]);
+    useFrame(({ camera, size }) => {
+        if (binding && !binding.terrain.getStatus().productionPending) {
+            void binding.terrain.update(binding.viewFromCamera(camera, size.height));
+        }
     });
-  }, [g]);
-
-  useFrame(async ({ camera, gl }) => {
-    const cameraHysteresis = 0.05;
-    if (
-      lastCameraRef.current.distanceToSquared(camera.position) >=
-      cameraHysteresis * cameraHysteresis
-    ) {
-      g.set(quadtreeUpdate, (prev: UpdateParams) => {
-        prev.cameraOrigin.x = camera.position.x;
-        prev.cameraOrigin.y = camera.position.y;
-        prev.cameraOrigin.z = camera.position.z;
-        return prev;
-      });
-      lastCameraRef.current.copy(camera.position);
-    }
-
-    await g.run({
-      resources: {
-        renderer: gl as unknown as THREE.WebGPURenderer,
-      },
-    });
-  });
-
-  const materialAppearance = resolveTerrainMaterialAppearance({
-    tileColors: controls.tileColors,
-    wireframe: true,
-  });
-
-  return (
-    <>
-      <terrainMesh
-        ref={meshRef}
-        innerTileSegments={controls.innerTileSegments}
-        maxNodes={controls.maxNodes}
-      >
-        <meshStandardNodeMaterial
-          ref={materialRef}
-          wireframe={materialAppearance.wireframe}
-          colorNode={materialAppearance.colorNode}
-          color={materialAppearance.color}
-        />
-      </terrainMesh>
-    </>
-  );
+    return binding ? <primitive object={binding.mesh} /> : null;
 };
 
 const TerrainMeshScene = () => {
-  const store = useCreateStore();
-  const g = useMemo(() => {
-    return graph()
-      .add(instanceIdTask)
-      .add(quadtreeConfigTask)
-      .add(quadtreeUpdateTask)
-      .add(leafStorageTask)
-      .add(leafGpuBufferTask)
-      .add(createUniformsTask)
-      .add(updateUniformsTask)
-      .add(positionNodeTask);
-  }, []);
+    const store = useCreateStore();
 
-  return (
-    <ExamplesCanvas store={store}>
-      {/* HUD overlays */}
-      <div className="pointer-events-none absolute z-10 bottom-2 left-2 right-2 md:left-auto md:bottom-4 md:right-4 md:max-w-xs flex flex-col gap-1.5">
-        <RunTimingBars graph={g} />
-        <TerrainTileDebug graph={g} />
-      </div>
-      <Canvas
-        className="touch-none relative w-full h-full top-0 left-0"
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          // soft shadows
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
+    return (
+        <ExamplesCanvas store={store}>
+            <Canvas
+                className="touch-none relative w-full h-full top-0 left-0"
+                shadows
+                gl={async (props) => {
+                    props.alpha = true;
+                    props.antialias = true;
+                    // soft shadows
+                    const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
 
-          renderer.logarithmicDepthBuffer = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.shadowMap.enabled = true;
+                    renderer.logarithmicDepthBuffer = true;
+                    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                    renderer.shadowMap.enabled = true;
 
-          await renderer.init();
-          return renderer;
-        }}
-        camera={{
-          near: 0.001,
-          far: Number.MAX_SAFE_INTEGER,
-          position: [0, 3, 1],
-        }}
-        dpr={[1, 1]}
-        performance={{ min: 0.5 }}
-      >
-        <ambientLight intensity={0.15} />
-        <directionalLight intensity={1} position={[1, 1, 1]} />
-        <Bounds fit observe>
-          <TerrainMeshSceneImpl g={g} store={store} />
-        </Bounds>
-        <OrbitControls makeDefault />
-      </Canvas>
-    </ExamplesCanvas>
-  );
+                    await renderer.init();
+                    return renderer;
+                }}
+                camera={{
+                    near: 0.001,
+                    far: Number.MAX_SAFE_INTEGER,
+                    position: [0, 3, 1],
+                }}
+                dpr={[1, 1]}
+                performance={{ min: 0.5 }}
+            >
+                <ambientLight intensity={0.15} />
+                <directionalLight intensity={1} position={[1, 1, 1]} />
+                <Bounds fit observe>
+                    <TerrainMeshSceneImpl store={store} />
+                </Bounds>
+                <OrbitControls makeDefault />
+            </Canvas>
+        </ExamplesCanvas>
+    );
 };
 
 export default TerrainMeshScene;

@@ -37,6 +37,9 @@ export type ElevationRangeOut = {
 };
 
 export type Topology = {
+  /** Resolved datum placement and flat root size, shared by CPU and backend. */
+  readonly rootSize?: number;
+  readonly origin?: Readonly<{ x: number; y: number; z: number }>;
   spaceCount: number;
   /** maximum number of roots returned by `rootTiles` */
   maxRootCount: number;
@@ -166,4 +169,3 @@ export type QuadtreeConfig = {
   maxNodes: number;
   maxLevel: number;
 };
-

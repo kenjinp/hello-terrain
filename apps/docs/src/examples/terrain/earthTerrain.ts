@@ -1,4 +1,4 @@
-import { isSkirtVertex, type ElevationCallback } from "@hello-terrain/three";
+import { type ElevationCallback } from "@hello-terrain/three";
 import {
   clamp,
   float,
@@ -6,11 +6,7 @@ import {
   If,
   Loop,
   mix,
-  positionWorld,
-  select,
   smoothstep,
-  sqrt,
-  varying,
   vec3,
   vec4,
 } from "three/tsl";
@@ -132,63 +128,15 @@ const NOAA_COLORS: [number, number, number][] = [
   [0.102, 0.204, 0.204],
 ];
 
-/**
- * Wrap a raw metres-of-elevation node so it is safe to feed the colour ramp:
- *
- * - The recovery subtracts two huge, nearly equal float32 magnitudes
- *   (~6.37e6 m), so it MUST run in the vertex stage (wrapped in `varying`);
- *   done per fragment, the cancellation error changes with camera distance and
- *   the terrain colours flicker by altitude.
- * - Skirt vertices hang `skirtScale` metres below the edge vertex they extend
- *   from; add the drop back so the skirt wall is painted with the same colour
- *   as the surface above it, whatever its depth.
- */
-function skirtAwareElevation(rawElevation: Node, skirtScale: number, innerTileSegments: number) {
-  return varying(
-    select(isSkirtVertex(innerTileSegments), rawElevation.add(float(skirtScale)), rawElevation),
-  );
+
+
+/** Direct scaled terrain elevation, before skirt extrusion, in local metres. */
+export function createEarthPlanetColorNode(params: { elevation?: ReturnType<typeof float> }) {
+  return getColorForElevation((params.elevation ?? float(0))).rgb;
 }
 
-/**
- * NOAA colour node for a cube-sphere planet. The displaced vertex sits at
- * `radius + elevationMetres` from the planet centre, so the elevation is
- * recovered by subtracting the radius from the world-position length.
- */
-export function createEarthPlanetColorNode(params: {
-  radius: number;
-  skirtScale: number;
-  innerTileSegments: number;
-}) {
-  const rawElevation = positionWorld.length().sub(float(params.radius));
-  const elevationMetres = skirtAwareElevation(
-    rawElevation,
-    params.skirtScale,
-    params.innerTileSegments,
-  );
-  return getColorForElevation(float(elevationMetres)).rgb;
-}
-
-/**
- * NOAA colour node for a torus world. Elevation is recovered as the distance
- * from the tube's centre circle minus the minor radius.
- */
-export function createEarthTorusColorNode(params: {
-  majorRadius: number;
-  minorRadius: number;
-  skirtScale: number;
-  innerTileSegments: number;
-}) {
-  const rho = sqrt(positionWorld.x.mul(positionWorld.x).add(positionWorld.z.mul(positionWorld.z)));
-  const tubeX = rho.sub(float(params.majorRadius));
-  const tubeDistance = sqrt(tubeX.mul(tubeX).add(positionWorld.y.mul(positionWorld.y)));
-  const rawElevation = tubeDistance.sub(float(params.minorRadius));
-  const elevationMetres = skirtAwareElevation(
-    rawElevation,
-    params.skirtScale,
-    params.innerTileSegments,
-  );
-  return getColorForElevation(float(elevationMetres)).rgb;
-}
+/** The same material ramp works on every projection without radial recovery. */
+export const createEarthTorusColorNode = createEarthPlanetColorNode;
 
 /** Piecewise-linear NOAA elevation colour ramp over metres of elevation. */
 export const getColorForElevation = Fn(([elevation]: [ReturnType<typeof float>]) => {

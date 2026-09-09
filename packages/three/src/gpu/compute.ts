@@ -39,7 +39,7 @@ export function compileComputePipeline(
   stages: ComputePipeline,
   width: number,
   options?: CompileComputePipelineOptions,
-): { execute: (renderer: WebGPURenderer, instanceCount: number) => void } {
+): { execute: (renderer: WebGPURenderer, instanceCount: number) => void; dispose(): void } {
   const bindings = options?.bindings;
   const preferredWorkgroup = options?.workgroupSize ?? [
     WORKGROUP_X,
@@ -205,5 +205,9 @@ export function compileComputePipeline(
     }
   }
 
-  return { execute };
+  return { execute, dispose() {
+    singleKernel?.dispose();
+    for (const kernels of stagedKernelCache.values()) for (const kernel of kernels) kernel.dispose();
+    stagedKernelCache.clear(); singleKernel = undefined;
+  } };
 }

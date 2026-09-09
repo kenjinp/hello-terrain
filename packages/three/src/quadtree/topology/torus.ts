@@ -26,7 +26,7 @@ export type TorusTopologyConfig = {
 export function createTorusTopology(cfg: TorusTopologyConfig): Topology {
   const majorRadius = cfg.majorRadius;
   const minorRadius = cfg.minorRadius;
-  const center = cfg.center ?? { x: 0, y: 0, z: 0 };
+  const center = Object.freeze({ ...(cfg.center ?? { x: 0, y: 0, z: 0 }) });
   const invert = cfg.invert ?? false;
   const baseU = Math.max(1, Math.round(majorRadius / minorRadius));
   const baseV = 1;

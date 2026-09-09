@@ -1,0 +1,122 @@
+---
+title: Terrain validation gym
+description: Repeatable terrain correctness checks, performance experiments, and agent-readable failure reports.
+---
+
+The private workspace gym drives the production `useTerrain` and `<Terrain>` integration in a small browser app. It runs analytic terrain scenarios, checks real GPU and CPU output, and saves JSON reports with replay commands. It is development tooling, not a published terrain API.
+
+## Setup
+
+From the repository root:
+
+```sh
+pnpm install
+pnpm --filter @hello-terrain/gym browser:install
+pnpm gym --mode cpu
+pnpm gym --mode probe --software
+pnpm gym --scenario flat-edit --software
+```
+
+The browser installer downloads the Chromium build matching the pinned Playwright version. On Linux CI images that need browser system libraries, use `pnpm --filter @hello-terrain/gym exec playwright install --with-deps chromium --no-shell`. See [Playwright browser installation](https://playwright.dev/docs/browsers).
+
+`--software` explicitly selects software Vulkan for correctness validation on Linux machines without a GPU. Omit it to use the browser's default adapter. The result records the detected adapter; requesting hardware does not establish that hardware was obtained. The Linux flags follow [Chromium's SwiftShader configuration](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/gpu/swiftshader.md) and [Chrome's headless WebGPU guidance](https://developer.chrome.com/blog/supercharge-web-ai-testing).
+
+## Modes and scenarios
+
+| Mode    | What it checks                                                                                                                                                                        |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cpu`   | The actual scenario quadtree across scripted poses: chart coverage, non-overlap, valid addresses, capacity, and within-chart neighbor balance. No GPU or query validation is claimed. |
+| `probe` | Adapter capabilities and the initial analytic checkpoint through the production React driver, compute, rendering, and CPU queries.                                                    |
+| `check` | Fixed camera inputs and bounded completion conditions, including stationary elevation replacement and subsequent motion.                                                              |
+| `perf`  | Correctness checkpoints plus a continuous render loop with normal asynchronous scheduling. Three fresh browser contexts by default.                                                   |
+
+Use `pnpm gym --list` for the registry:
+
+- `flat-edit`: a linear elevation function, a stationary replacement, and camera motion.
+- `flat-lod`: the same field checks over a longer LOD flyover and camera teleport.
+- `flat-nearest`: exercises nearest-filtered terrain-field sampling at mesh texel centers.
+- `instance-isolation`: two terrains with distinct origins and fields; checks independent uniforms and queries, then unmounts the peer and validates the survivor.
+- `sphere-seams`: constant sphere displacement, surface queries on both sides of cube-face seams and at poles, and numeric curved rendering.
+- `torus-wrap`: constant torus displacement, surface queries across periodic coordinates, and numeric curved rendering.
+
+CPU mode runs the scenario's topology and checks each chart independently; it does not assert cross-chart edge balance. Browser-only behavior is not inferred from a CPU pass. Isolation covers a quiescent peer unmount. Controlled unit tests cover delayed readback, disposal before completion, and retry after rejection. Repeated GPU ownership accounting remains outside the current coverage.
+
+## Agent iteration
+
+```sh
+# Run the shared fast checks, then a relevant browser scenario.
+pnpm gym --mode cpu --scenario flat-lod
+pnpm gym --scenario flat-edit --seed 7 --software
+
+# Reproduce the initial or stationary-edit prefix.
+pnpm gym --scenario flat-edit --checkpoint stationary-edit --seed 7 --software
+
+# Inspect the same scenario interactively.
+pnpm --filter @hello-terrain/gym dev
+# Open http://127.0.0.1:5173/?scenario=flat-edit&seed=7
+```
+
+Each run prints paths to `summary.md` and `run.json` under `.gym/runs/`. The summary names the failing checkpoint, sample coordinates, actual value, expected value, tolerance, and replay command. Later checkpoints replay the full input prefix; jumping directly to a frame would lose the asynchronous history being tested.
+
+Exit codes are **0** for pass, **1** for behavior/assertion failure, and **2** for unsupported execution, harness errors, or refused comparison. A required GPU job must fail when the adapter is unavailable. There is no automatic CPU fallback that turns an unexecuted GPU check green.
+
+Run the shared smoke scenarios after a component change, even when its targeted scenario passes. Correctness is required before accepting a performance improvement.
+
+## Performance comparisons
+
+Run on a known hardware GPU, with a stable working tree and other GPU workloads stopped:
+
+```sh
+pnpm gym --mode perf --scenario flat-edit --duration 5000 --warmup 1000 --repeat 3
+# Make the renderer change, then use the printed absolute baseline path.
+pnpm gym --mode perf --scenario flat-edit --duration 5000 --warmup 1000 --repeat 3 \
+  --baseline /absolute/path/to/baseline/run.json
+```
+
+Runs use a production Vite build against workspace source, so a stale library `dist` cannot mask edits. Reports record the commit, source-content hash, lockfile and harness hashes, scenario/configuration, browser, OS/CPU, adapter information, and viewport settings. Source changes during a run invalidate it. Comparisons refuse mismatched settings or environment fingerprints, unsuccessful correctness, and software/unknown hardware performance. Baseline files are ordinary saved reports; running a candidate never rewrites them.
+
+The report includes frame median/p95/p99, skipped graph submissions, graph task elapsed time, active leaf counts and per-frame level histograms, and stationary-edit query latency. Repeated runs retain individual measurements and the range between runs. Compare achieved detail and freshness alongside time; reducing required detail or retaining old results does not count as an improvement.
+
+`snapshotPublicationAgeMs` is time since an observed query-generation change. It is **not** a complete content-revision age: unchanged terrain can validly retain a snapshot. The analytic stationary-edit checkpoint separately measures elapsed time until the new expected values appear. `coldFirstResultMs` includes diagnostic validation overhead and is not a pure shader compilation measurement.
+
+GPU timestamp availability is probed, but GPU compute/render duration currently reports `null`: per-window attribution is not implemented. CPU task duration must not be relabeled GPU time, and overlapping task durations must not be summed into frame latency. Software timings remain diagnostic and are never accepted as hardware baselines. No universal percentage threshold or composite score is imposed.
+
+## Evidence and extending coverage
+
+`run.json` contains all assertions, per-repeat raw samples, applied poses, graph events, leaf snapshots, and query generations. Individual `repeat-N.json` reports and GPU-readback PNGs sit beside it. Small elevation images use a fixed display range; numeric checks use the original float pixels. The saved render image comes from a GPU render target because some headless compositors omit WebGPU canvases in ordinary screenshots.
+
+The analytic fixtures provide independently calculated elevations and normals. Raw GPU elevation, CPU queries, bounds, rendered world positions, and rendered normals are checked separately. Tolerances account for float32 operations, half-float field packing, raster subpixel precision, and curved-surface discretization. Sphere and torus references use independent implicit-surface equations. Existing erroneous output is never used to choose a tolerance.
+
+Shared scenario factories, pure oracles, report comparison, and CPU checks live in `packages/three/gym/`. The browser adapter and command runner live in `apps/gym/`. Add scenario data/tags and an independent oracle there; keep clocks, collectors, and mutable terrain data owned by each run. Arbitrary TSL callbacks do not have an automatic CPU evaluator. New shapes need shape-specific reference mathematics.
+
+Renderer memory counters are captured for diagnosis. They are not measured VRAM or a proof of owned-resource cleanup. Fresh contexts contain each run's resources, but that containment is not counted as a library lifecycle assertion.
+
+The harness itself has fault checks:
+
+```sh
+pnpm gym --mode probe --software --fault render      # Must exit 1
+pnpm gym --mode probe --software --fault unsupported # Must exit 2
+pnpm --filter @hello-terrain/gym test
+```
+
+Fault runs are fingerprinted and must never become ordinary baselines.
+
+## Renderer corrections covered by the gym
+
+Array-texture writes specify their layer separately, and explicit texel loads preserve nearest/linear sampling across shader stages with Three r182. CPU queries invert texel-center UVs consistently with the GPU. Replacing the elevation callback invalidates CPU readback even when the tile layout is unchanged; each terrain retains its own origin uniform vector.
+
+Disposed query caches suppress late readback publication. Rejected readbacks retain the previous snapshot and allow the next update to retry unchanged content.
+
+Changes to arbitrary external uniforms captured by an unchanged elevation callback are not automatically revision-tracked. The gym's stationary edit uses the shared runtime's configure transaction; the React driver uses the same runtime as vanilla. Managed sources declare elevation and/or appearance dependencies explicitly.
+
+## Precision and authoring diagnostics
+
+`earth-precision` requires WebGPU. It measures constant-Earth normals through L20 on all faces, edge and corner charts, then renders skirt-free Earth views across all face edges/corners and an affine scene placement. A stationary LOD/grid reconfiguration measures temporal depth change. CPU binary64 sphere/ellipsoid oracles are independent of the render offset implementation. A separate finite flat fixture exercises actual Three shadow casting and receiving; it does not establish planetary world-space shadow precision.
+
+The same run compares analytic small residuals with cached CPU datum offsets at identical points. It reports accuracy beside CPU cache-build cost, storage bytes, and warmed submission-plus-queue-completion timing. These timings are not GPU timestamps or full-frame performance claims. The kernel explicitly guards surplus dispatch invocations.
+
+`material-authoring` uses two terrains with independent mappings of one painted texture, procedural elevation/slope masks, and a mapped detail normal. It checks appearance-only work counts, compatible texture replacement, borrowed-resource retirement, a map shared by geometry/appearance consumers, zero-height query refresh, and capacity/field-resolution replacement without material remounts. CPU mode returns unsupported for these GPU diagnostics.
+
+## Skirt extrusion
+
+Run `pnpm gym --software --scenario terrain-skirts` to check the precision vertex paths on flat, sphere, and torus terrain. The fixture renders only skirt triangles: zero depth must cover no pixels, while positive depth must produce visible walls. This catches skirt detection based on already-clamped geometry positions. CPU mode reports unsupported for this rasterization check.

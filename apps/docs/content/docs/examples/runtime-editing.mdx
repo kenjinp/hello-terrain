@@ -1,0 +1,39 @@
+---
+title: Edit and Query
+description: Apply stationary edits and place probes from one coherent CPU snapshot
+---
+
+import RuntimeEditingScene from "@/examples/runtime/RuntimeEditingScene"
+
+<RuntimeEditingScene />
+
+## Try it
+
+Change the elevation scale and choose **Apply elevation** without moving the camera. The four gold probes move together after the accepted edit reaches a CPU snapshot. **Flatten terrain** demonstrates that zero elevation still produces valid query results.
+
+## API pattern
+
+```ts
+const edit = terrain.controller.configure({ elevationScale: nextScale });
+await terrain.controller.requestSnapshot({ minEditVersion: edit, signal });
+const lease = terrain.controller.query.acquireSnapshot();
+if (lease) {
+  try {
+    const samples = lease.sampleBatch(new Float64Array([
+      -60, 0, -30,
+      -20, 0, 10,
+       20, 0, -10,
+       60, 0, 30,
+    ]));
+    // Check samples.valid[i] before consuming each position/normal/elevation.
+  } finally {
+    lease.release();
+  }
+}
+```
+
+The snapshot request resolves at the requested edit or newer. The lease pins a coherent record for the batch. Query positions are terrain-local; use a binding for scene-space scalar samples. This scene displays sampled-surface positions, not exact rendered-triangle intersections.
+
+The example aborts pending waits on effect cleanup, releases each lease in `finally`, and reports failures in the control panel. The hook supplies the first view and keeps production running while the camera is stationary.
+
+[Runtime API](/docs/core/runtime) · [Snapshot queries](/docs/core/query/terrain-query)

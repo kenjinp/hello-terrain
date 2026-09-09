@@ -12,6 +12,9 @@ export interface ElevationParams {
   tileSize: Node;
   tileOriginVec2: Node;
   nodeIndex: Node;
+  /** Inner-grid coordinate including the halo; supplied by production compute. */
+  tileLocalUV?: Node;
+  sourceFace?: Node;
 }
 
 export type ElevationReturn = ShaderNodeFn<[ProxiedObject<ElevationParams>]>;
@@ -29,6 +32,8 @@ export function createElevationFunction(callback: ElevationCallback): ElevationR
       tileSize: args.tileSize,
       tileOriginVec2: args.tileOriginVec2,
       nodeIndex: args.nodeIndex,
+      tileLocalUV: args.tileLocalUV,
+      sourceFace: args.sourceFace,
     };
 
     return callback(params);

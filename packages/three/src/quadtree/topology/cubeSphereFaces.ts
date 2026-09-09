@@ -17,7 +17,8 @@
  * Space indices: 0:+X 1:-X 2:+Y 3:-Y 4:+Z 5:-Z.
  */
 
-export type Vec3 = readonly [number, number, number];
+import type { Vec3 } from "math";
+export type { Vec3 } from "math";
 
 export type CubeFace = {
   forward: Vec3;

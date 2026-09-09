@@ -74,7 +74,7 @@ describe("torus CPU sampling", () => {
       1,
     );
     await new Promise((resolve) => setTimeout(resolve, 0));
-    return { cache, surfaceQuery };
+    return { cache, surfaceQuery, renderer, index };
   }
 
   it("samples displaced elevation and position for a world point", async () => {
@@ -102,10 +102,10 @@ describe("torus CPU sampling", () => {
     expect(cache.hasSurface).toBe(true);
   });
 
-  it("setSurfaceOps re-targets queries when major/minor radius changes", async () => {
+  it("publishes changed torus geometry only with its next snapshot", async () => {
     // Regression: like the cube-sphere, changing the torus geometry must rebuild
     // the surface ops or picks/markers keep using the old major/minor radii.
-    const { cache } = await seededCache();
+    const { cache, renderer, index } = await seededCache();
 
     const before = projection.cpu
       .createRuntimeQueries(cache)
@@ -124,12 +124,19 @@ describe("torus CPU sampling", () => {
       baseV,
     });
     cache.setSurfaceOps(grown.cpu.createSurfaceOps());
+    const frozen = cache.capture();
+    const stillPublished = grown.cpu.createRuntimeQueries(cache).surfaceQuery!.sampleTerrainByPosition(new Vector3(0, 0, 3000));
+    expect(stillPublished.position.z).toBeCloseTo(before.position.z, 2);
+    cache.triggerReadback(renderer, {} as StorageBufferAttribute, index, undefined, 1, {});
+    await cache.pending;
     const after = grown.cpu
       .createRuntimeQueries(cache)
       .surfaceQuery!.sampleTerrainByPosition(new Vector3(0, 0, 3000));
 
     expect(after.valid).toBe(true);
     expect(after.position.z).toBeCloseTo(nextMajor + nextMinor + height * elevationScale, 2);
+    expect(frozen.sampleSurfaceByPosition(0, 0, 3000).position[2]).toBeCloseTo(before.position.z, 2);
+    frozen.dispose(); cache.dispose();
   });
 
   it("raycasts onto the displaced torus surface", async () => {

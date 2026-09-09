@@ -12,10 +12,11 @@ import {
   ivec2,
   ivec3,
   max,
+  mix,
+  storageTexture,
   texture,
   textureLoad,
   textureStore,
-  uvec3,
   vec2,
   vec3,
   vec4,
@@ -23,21 +24,11 @@ import {
 import type { Node, StorageBufferNode, WebGPURenderer } from "three/webgpu";
 import { StorageArrayTexture, StorageTexture } from "three/webgpu";
 
-export type TerrainFieldStorageBackendType =
-  | "array-texture"
-  | "atlas"
-  | "texture-3d";
+export type TerrainFieldStorageBackendType = "array-texture" | "atlas" | "texture-3d";
 export type TerrainFieldStorageFormat = "rgba16float" | "rgba32float";
 
-/** Floats stored per tile in the tile bounds GPU buffer. */
-export const TILE_BOUNDS_FLOATS_PER_TILE = 4;
-export const TILE_BOUNDS_LOD_MIN_OFFSET = 0;
-export const TILE_BOUNDS_LOD_MAX_OFFSET = 1;
-export const TILE_BOUNDS_PACK_MIN_OFFSET = 2;
-export const TILE_BOUNDS_PACK_MAX_OFFSET = 3;
-
-/** Minimum elevation span (meters) when normalizing flat tiles. */
-export const TERRAIN_FIELD_PACK_EPSILON = 1e-4;
+import { TILE_BOUNDS_FLOATS_PER_TILE, TILE_BOUNDS_LOD_MIN_OFFSET, TILE_BOUNDS_LOD_MAX_OFFSET, TILE_BOUNDS_PACK_MIN_OFFSET, TILE_BOUNDS_PACK_MAX_OFFSET, TERRAIN_FIELD_PACK_EPSILON } from "../runtime/fieldLayout";
+export { TILE_BOUNDS_FLOATS_PER_TILE, TILE_BOUNDS_LOD_MIN_OFFSET, TILE_BOUNDS_LOD_MAX_OFFSET, TILE_BOUNDS_PACK_MIN_OFFSET, TILE_BOUNDS_PACK_MAX_OFFSET, TERRAIN_FIELD_PACK_EPSILON } from "../runtime/fieldLayout";
 
 export type TerrainFieldStorageOptions = {
   backend?: TerrainFieldStorageBackendType;
@@ -90,11 +81,7 @@ export function ArrayTextureBackend(
 ): TerrainFieldStorage {
   let currentEdgeVertexCount = edgeVertexCount;
   let currentTileCount = tileCount;
-  const tex = new StorageArrayTexture(
-    edgeVertexCount,
-    edgeVertexCount,
-    tileCount,
-  );
+  const tex = new StorageArrayTexture(edgeVertexCount, edgeVertexCount, tileCount);
   tex.name = "terrainField";
   configureStorageTexture(tex, options.format, options.filter);
 
@@ -114,7 +101,27 @@ export function ArrayTextureBackend(
       return ivec3(ix, iy, tileIndex);
     },
     sample(u: Node, v: Node, tileIndex: Node): Node {
-      return texture(tex, vec2(u, v)).depth(int(tileIndex));
+      // Three r182 omits the layer in vertex-stage textureSampleLevel for
+      // array textures. Explicit texel loads also make filtering consistent
+      // across vertex, fragment and compute stages without patching Three.
+      const read = (x: Node, y: Node) =>
+        textureLoad(
+          tex,
+          ivec2(x.clamp(0, currentEdgeVertexCount - 1), y.clamp(0, currentEdgeVertexCount - 1)),
+          int(0),
+        ).depth(int(tileIndex));
+      const x = u.mul(currentEdgeVertexCount);
+      const y = v.mul(currentEdgeVertexCount);
+      if (options.filter === "nearest") return read(x.floor().toInt(), y.floor().toInt());
+      const px = x.sub(0.5);
+      const py = y.sub(0.5);
+      const ix = px.floor().toInt();
+      const iy = py.floor().toInt();
+      return mix(
+        mix(read(ix, iy), read(ix.add(1), iy), px.fract()),
+        mix(read(ix, iy.add(1)), read(ix.add(1), iy.add(1)), px.fract()),
+        py.fract(),
+      );
     },
     resize(width: number, height: number, nextTileCount: number): void {
       currentEdgeVertexCount = width;
@@ -165,13 +172,7 @@ export function AtlasBackend(
     },
     texture: tex,
     uv(ix: Node, iy: Node, tileIndex: Node): Node {
-      const { atlasX, atlasY } = atlasCoord(
-        tilesPerRow,
-        currentEdgeVertexCount,
-        ix,
-        iy,
-        tileIndex,
-      );
+      const { atlasX, atlasY } = atlasCoord(tilesPerRow, currentEdgeVertexCount, ix, iy, tileIndex);
       const currentAtlasSize = float(tilesPerRow * currentEdgeVertexCount);
       return vec2(
         atlasX.toFloat().add(0.5).div(currentAtlasSize),
@@ -179,13 +180,7 @@ export function AtlasBackend(
       );
     },
     texel(ix: Node, iy: Node, tileIndex: Node): Node {
-      const { atlasX, atlasY } = atlasCoord(
-        tilesPerRow,
-        currentEdgeVertexCount,
-        ix,
-        iy,
-        tileIndex,
-      );
+      const { atlasX, atlasY } = atlasCoord(tilesPerRow, currentEdgeVertexCount, ix, iy, tileIndex);
       return ivec2(atlasX, atlasY);
     },
     sample(u: Node, v: Node, tileIndex: Node): Node {
@@ -279,15 +274,13 @@ export function storeTerrainField(
   tileIndex: Node,
   value: Node,
 ): Node {
-  if (
-    storage.backendType === "array-texture" ||
-    storage.backendType === "texture-3d"
-  ) {
-    return textureStore(
-      storage.texture,
-      uvec3(int(ix), int(iy), int(tileIndex)),
-      value,
-    );
+  if (storage.backendType === "array-texture" || storage.backendType === "texture-3d") {
+    // Array layers are a separate operand in WGSL. Set depth before adding the
+    // write to the stack: textureStore() appends immediately, while depth()
+    // clones the node and would leave the original layerless write behind.
+    return storageTexture(storage.texture, ivec2(int(ix), int(iy)), value)
+      .depth(int(tileIndex))
+      .toStack();
   }
   return textureStore(storage.texture, storage.texel(ix, iy, tileIndex), value);
 }
@@ -298,13 +291,8 @@ export function loadTerrainField(
   iy: Node,
   tileIndex: Node,
 ): Node {
-  if (
-    storage.backendType === "array-texture" ||
-    storage.backendType === "texture-3d"
-  ) {
-    return textureLoad(storage.texture, ivec2(int(ix), int(iy)), int(0)).depth(
-      int(tileIndex),
-    );
+  if (storage.backendType === "array-texture" || storage.backendType === "texture-3d") {
+    return textureLoad(storage.texture, ivec2(int(ix), int(iy)), int(0)).depth(int(tileIndex));
   }
   return textureLoad(storage.texture, storage.texel(ix, iy, tileIndex), int(0));
 }

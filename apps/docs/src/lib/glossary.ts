@@ -14,13 +14,13 @@ export const glossary: GlossaryEntry[] = [
   {
     term: "Heightmap",
     definition:
-      "A grayscale image where pixel brightness represents elevation data, used to generate terrain geometry.",
+      "An image encoding elevation samples. Its channel layout and decoding depend on the source.",
     aliases: ["height map", "heightmaps"],
   },
   {
     term: "Quadtree",
     definition:
-      "A tree data structure where each node has exactly four children, used to efficiently partition 2D space for terrain LOD management.",
+      "A tree data structure where each internal node has four children, used to efficiently partition 2D space for terrain LOD management.",
   },
   {
     term: "Frustum Culling",
@@ -30,8 +30,7 @@ export const glossary: GlossaryEntry[] = [
   },
   {
     term: "Occlusion Culling",
-    definition:
-      "A rendering optimization that skips drawing objects hidden behind other geometry.",
+    definition: "A rendering optimization that skips drawing objects hidden behind other geometry.",
     aliases: ["occlusion culling", "OC"],
   },
   {
@@ -65,14 +64,12 @@ export const glossary: GlossaryEntry[] = [
   },
   {
     term: "Mesh",
-    definition:
-      "A collection of vertices, edges, and faces that define the shape of a 3D object.",
+    definition: "A collection of vertices, edges, and faces that define the shape of a 3D object.",
     aliases: ["meshes"],
   },
   {
     term: "Vertex",
-    definition:
-      "A point in 3D space that defines the corners of polygons in a mesh.",
+    definition: "A point in 3D space that defines the corners of polygons in a mesh.",
     aliases: ["vertices"],
   },
   {
@@ -97,7 +94,7 @@ export const glossary: GlossaryEntry[] = [
 
 // Build lookup maps for efficient term matching
 export const glossaryByTerm = new Map<string, GlossaryEntry>(
-  glossary.map((entry) => [entry.term.toLowerCase(), entry])
+  glossary.map((entry) => [entry.term.toLowerCase(), entry]),
 );
 
 export const glossaryByAlias = new Map<string, GlossaryEntry>();

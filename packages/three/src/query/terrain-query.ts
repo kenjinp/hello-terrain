@@ -8,6 +8,7 @@ import type {
   TerrainTileBounds,
 } from "./types";
 import type { CpuTerrainCache } from "./cpu-terrain-cache";
+import { Vector3 } from "three";
 
 /** Flat (heightfield) query, keyed on world XZ. */
 export function createTerrainQuery(cache: CpuTerrainCache): TerrainQuery {
@@ -19,7 +20,8 @@ export function createTerrainQuery(cache: CpuTerrainCache): TerrainQuery {
       return cache.getElevation(worldX, worldZ);
     },
     getNormal(worldX: number, worldZ: number) {
-      return cache.getNormal(worldX, worldZ);
+      const normal = cache.getNormal(worldX, worldZ);
+      return normal && new Vector3().fromArray(normal);
     },
     getTile(worldX: number, worldZ: number): TerrainTile | null {
       return cache.getTile(worldX, worldZ);
@@ -31,9 +33,10 @@ export function createTerrainQuery(cache: CpuTerrainCache): TerrainQuery {
       return cache.getGlobalElevationRange();
     },
     sampleTerrain(worldX: number, worldZ: number): TerrainSample {
-      return cache.sampleTerrain(worldX, worldZ);
+      const sample = cache.sampleTerrain(worldX, worldZ);
+      return { ...sample, normal: new Vector3().fromArray(sample.normal) };
     },
-    sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch {
+    sampleTerrainBatch(positions: Float32Array | Float64Array): TerrainSampleBatch {
       return cache.sampleTerrainBatch(positions);
     },
   };
@@ -52,10 +55,13 @@ export function createTerrainSurfaceQuery(cache: CpuTerrainCache): TerrainSurfac
       return cache.getElevationBySurfacePosition(position.x, position.y, position.z);
     },
     getNormalByPosition(position) {
-      return cache.getNormalBySurfacePosition(position.x, position.y, position.z);
+      const normal = cache.getNormalBySurfacePosition(position.x, position.y, position.z);
+      return normal && new Vector3().fromArray(normal);
     },
     sampleTerrainByPosition(position) {
-      return cache.sampleSurfaceByPosition(position.x, position.y, position.z);
+      const sample = cache.sampleSurfaceByPosition(position.x, position.y, position.z);
+      return { ...sample, position: new Vector3().fromArray(sample.position),
+        normal: new Vector3().fromArray(sample.normal), direction: new Vector3().fromArray(sample.direction) };
     },
     getTileByPosition(position) {
       return cache.getTileBySurfacePosition(position.x, position.y, position.z);

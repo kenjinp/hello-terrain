@@ -1,12 +1,20 @@
 ---
 title: Examples
-description: Interactive demos of Hello Terrain
+description: Explore the runtime API through interactive terrain scenes
 ---
 
-import TerrainMeshScene from "@/examples/TerrainMeshScene"
+## Runtime API showcase
 
-<div className="h-[600px] rounded overflow-hidden">
-<TerrainMeshScene />
-</div>
+Start with these examples of the current application API:
 
-Explore the examples in the sidebar to see different features of `@hello-terrain/three` in action.
+- [Multiple large planets](/examples/multiple-planets): three independently editable worlds, distant scene placement, and world-space surface probes.
+- [Edit and query](/examples/runtime-editing): stationary configuration edits, snapshot freshness, and coherent Float64 query batches.
+- [Shared control maps](/examples/material-maps): independent texture mappings, ordinary TSL materials, and appearance-only managed edits.
+
+Each scene includes interactive controls and an API walkthrough. Source files are in `apps/docs/src/examples/runtime/`. They use `useTerrain`, `Terrain`, runtime controllers, and bindings.
+
+## Topology and rendering examples
+
+Explore [infinite flat terrain](/examples/infinite-flat), [cube spheres](/examples/cube-sphere), [toruses](/examples/torus), and the Earth-scale scenes in the sidebar.
+
+Interactive terrain scenes need WebGPU. If initialization fails, the new showcase scenes display an explanation in place of the canvas.

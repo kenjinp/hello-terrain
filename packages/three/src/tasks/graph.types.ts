@@ -11,6 +11,7 @@ import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type { SurfaceProjection } from "../projection/types";
+import type { TerrainMaterialContext } from "../tsl/terrainMaterial";
 import type {
   GpuSpatialIndexContext,
   TerrainQuery,
@@ -67,6 +68,7 @@ export interface TerrainTasks {
   createUniforms: TaskRef<TerrainUniformsContext>;
   updateUniforms: TaskRef<TerrainUniformsContext>;
   positionNode: TaskRef<ShaderCallNodeInternal>;
+  materialContext: TaskRef<TerrainMaterialContext>;
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
   createTerrainFieldTexture: TaskRef<TerrainFieldStorage>;
@@ -75,6 +77,7 @@ export interface TerrainTasks {
   terrainFieldStage: TaskRef<ComputePipeline>;
   compileCompute: TaskRef<{
     execute: (renderer: WebGPURenderer, instanceCount: number) => void;
+    dispose(): void;
   }>;
   executeCompute: TaskRef<void | (() => void)>;
   tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;

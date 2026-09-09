@@ -1,104 +1,47 @@
 ---
 title: Installation
-description: How to install Hello Terrain in your project
+description: Set up the WebGPU terrain runtime for Three.js or React
 ---
 
-## Prerequisites
+These guides describe the APIs in this repository checkout. Use matching builds of the terrain packages; a previously published package may not contain the checkout's runtime exports.
 
-Hello Terrain requires [three.js](https://threejs.org/) as a peer dependency. Make sure you have it installed in your project.
+## Requirements
 
-## Packages
+Use a WebGPU-capable browser and an initialized `WebGPURenderer` from `three/webgpu`. The repository currently validates against Three 0.182.0 and React Three Fiber 9. Ordinary WebGL materials are not the terrain runtime's rendering path.
 
-Hello Terrain provides two packages depending on your setup:
-
-| Package | Description |
-|---------|-------------|
-| `@hello-terrain/three` | Core terrain system for vanilla three.js projects |
-| `@hello-terrain/react` | React bindings for react-three/fiber projects |
-
-## Installing for Three.js
-
-If you're using vanilla three.js, install the core package:
+## Three.js
 
 ```bash
-# npm
-npm install @hello-terrain/three three
-
-# pnpm
 pnpm add @hello-terrain/three three
-
-# yarn
-yarn add @hello-terrain/three three
+pnpm add -D @types/three
 ```
 
-### Basic Usage
+The package includes its own declarations. TypeScript applications also need the matching Three declarations.
 
 ```ts
-import * as THREE from "three";
-import { TerrainGeometry } from "@hello-terrain/three";
+import { createTerrain, createTerrainBinding } from "@hello-terrain/three";
 
-const geometry = new TerrainGeometry(16, true);
-const material = new THREE.MeshStandardMaterial();
-const mesh = new THREE.Mesh(geometry, material);
-
-scene.add(mesh);
+const terrain = createTerrain({ renderer }); // initialized WebGPURenderer
+const binding = createTerrainBinding(terrain);
+scene.add(binding.mesh);
+await terrain.update(binding.viewFromCamera(camera, viewportHeight));
 ```
 
-## Installing for React Three Fiber
+The default source is zero elevation. The binding creates a node material if none is supplied. Follow the [runtime guide](/docs/core/runtime) for frame updates, configuration, queries, and asynchronous disposal.
 
-If you're using [react-three/fiber](https://r3f.docs.pmnd.rs/), install the React package along with its peer dependencies:
+## React Three Fiber
 
 ```bash
-# npm
-npm install @hello-terrain/react @react-three/fiber three react react-dom
-
-# pnpm
-pnpm add @hello-terrain/react @react-three/fiber three react react-dom
-
-# yarn
-yarn add @hello-terrain/react @react-three/fiber three react react-dom
+pnpm add @hello-terrain/react @hello-terrain/three @react-three/fiber three react react-dom
+pnpm add -D @types/three @types/react @types/react-dom
 ```
 
-The `@hello-terrain/react` package includes `@hello-terrain/three` as a dependency, so you can use both packages in your React project.
+Create the WebGPU renderer in the Canvas `gl` callback and await `renderer.init()`. Render a node material using the terrain's `positionNode`. The complete setup is in [React getting started](/docs/react/getting-started).
 
-### Basic Usage
+If your application directly imports `Vec3` or operations from `math`, declare the same pinned dependency used by this checkout:
 
-```tsx
-import { Terrain } from "@hello-terrain/react";
-import { Canvas } from "@react-three/fiber";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import { float } from "three/tsl";
-import * as THREE from "three/webgpu";
-
-const elevation = () => float(0);
-
-function App() {
-  return (
-    <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer(
-          props as WebGPURendererParameters,
-        );
-        await renderer.init();
-        return renderer;
-      }}
-    >
-      <Terrain rootSize={128} maxLevel={10} elevation={elevation}>
-        {({ positionNode }) => (
-          <meshStandardNodeMaterial positionNode={positionNode} />
-        )}
-      </Terrain>
-    </Canvas>
-  );
-}
+```bash
+pnpm add math@1.0.0-canary-37519dcd-20260903
 ```
 
-`@hello-terrain/react` expects a WebGPU renderer and a node material that accepts the `positionNode` provided by the terrain render prop.
-
-## TypeScript Support
-
-Both packages ship with TypeScript definitions out of the box. No additional `@types` packages are required.
-
-## Next Steps
-
-Once installed, start with the [React overview](/docs/react) for the React bindings, or jump to the [Terrain Geometry](/docs/core/terrain-geometry) docs if you're using the lower-level Three.js API directly.
+CPU positions use number tuples and Float64 batches; adopting this package does not change TSL shader precision.

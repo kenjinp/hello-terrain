@@ -2,6 +2,7 @@ import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
 import type { Topology, UpdateParams } from "../quadtree";
 import type { ElevationCallback } from "../tsl/elevation";
+import type { TerrainMaterialContext } from "../tsl/terrainMaterial";
 
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
@@ -51,3 +52,7 @@ export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayN
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));
+/** Float32 is useful for separating storage quantization from projection error. */
+export const terrainFieldFormat = param<"rgba16float" | "rgba32float">("rgba16float").displayName("terrainFieldFormat");
+/** Backend-owned shared shader interface, independently allocated per runtime. */
+export const materialContext = param<TerrainMaterialContext | null>(null).displayName("materialContext");

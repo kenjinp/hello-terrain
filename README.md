@@ -2,8 +2,6 @@
 
 [![Three.js](https://img.shields.io/badge/Three.js-000000?style=for-the-badge&logo=three.js&logoColor=white)](https://threejs.org/docs/) [![React-Three-Fiber](https://img.shields.io/badge/React--Three--Fiber-000000?style=for-the-badge&logo=react&logoColor=61DAFB)](https://docs.pmnd.rs/react-three-fiber) [![WebGPU](https://img.shields.io/badge/WebGPU-F34B7D?style=for-the-badge&logo=webgpu&logoColor=white&colorA=000000&colorB=000000)](https://threejs.org/docs/) [![npm version](https://img.shields.io/npm/v/@hello-terrain/three?style=for-the-badge&colorA=000000&colorB=000000&logo=hello-terrain/three&label=hello-terrain/three)](https://www.npmjs.com/package/@hello-terrain/three) [![npm version](https://img.shields.io/npm/v/@hello-terrain/react?style=for-the-badge&colorA=000000&colorB=000000&logo=hello-terrain/react&label=hello-terrain/react)](https://www.npmjs.com/package/@hello-terrain/react)
 
-
-
 ![A Quadtree Debug Scene using Hello-Terrain](https://kenny.wtf/hello-terrain.webp)
 
 # hello-terrain
@@ -12,18 +10,20 @@ Realtime web terrain engine, for vast virtual worlds. Built for [three.js](https
 
 ## Features
 
-- Performant variable LOD system for huge (earth-scale!) open worlds
-- Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
-- TSL-based elevation and texture assignment nodes
-- Composable compute stage plugins
+- Adaptive LOD for bounded planes, infinite planes, cube spheres, and toruses
+- Ordinary TSL elevation and material composition
+- Instance-owned configuration, resources, coherent CPU snapshots, and query leases
+- Source mappings, control-texture helpers, and ordered managed edits
+
+These guides describe the implementation in this checkout. Planetary precision is validated against finite fixtures; source arithmetic and shadow paths have separate limits.
 
 ## Getting Started
 
-1. Read the [Introduction](http://hello-terrain.kenny.wtf/docs) to understand the architecture and see how it's used.
+1. Read the [Introduction](https://hello-terrain.kenny.wtf/docs) to understand the architecture and see how it's used.
 
-2. Read the [Installation](http://hello-terrain.kenny.wtf/docs/installation) instructions.
+2. Read the [Installation](https://hello-terrain.kenny.wtf/docs/installation) instructions.
 
-3. Review the [Examples](http://hello-terrain.kenny.wtf/examples) to get an idea of how to do things.
+3. Review the [Examples](https://hello-terrain.kenny.wtf/examples) to get an idea of how to do things.
 
 4. For support, join the [Discord server](https://discord.gg/HgTd2B828n).
 
@@ -61,7 +61,7 @@ export function App() {
 }
 ```
 
-See the [React overview](http://hello-terrain.kenny.wtf/docs/react) and the package readme at [`packages/react/README.md`](packages/react/README.md) for the full API and runtime patterns.
+See the [React overview](https://hello-terrain.kenny.wtf/docs/react) and the package readme at [`packages/react/README.md`](packages/react/README.md) for the full API and runtime patterns.
 
 ## Shoutouts
 

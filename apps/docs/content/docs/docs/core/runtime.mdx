@@ -1,0 +1,94 @@
+---
+title: Terrain runtime
+description: One owner for configuration, production, snapshots and resources
+---
+
+Create a terrain once, configure it through transactions, and dispose it when finished. React and vanilla Three use the same runtime. The task graph remains the backend's scheduler; ordinary consumers do not coordinate tasks.
+
+```ts
+import { createTerrain, createTerrainBinding, createCubeSphereTopology } from "@hello-terrain/three";
+import { float } from "three/tsl";
+
+const terrain = createTerrain({
+  renderer, // initialized WebGPURenderer; borrowed
+  topology: createCubeSphereTopology({ radius: 1000 }),
+  elevation: () => float(0),
+  elevationRange: { min: 0, max: 0 }, // unscaled source range
+  elevationScale: 1,
+  innerTileSegments: 61,
+  maxNodes: 1024,
+  maxLevel: 16,
+  lod: { mode: "distance", distanceFactor: 1.5 },
+  queries: { readback: "on-change", maxRetainedSnapshots: 3 },
+});
+const binding = createTerrainBinding(terrain, { material });
+scene.add(binding.mesh);
+
+await terrain.update(binding.viewFromCamera(camera, viewportHeight));
+const sample = binding.sampleWorld(player.position);
+if (sample.status === "available") player.position.fromArray(sample.position);
+
+const edit = terrain.configure({ elevation: newElevation, elevationRange: { min: -2, max: 8 } });
+await terrain.requestSnapshot({ minEditVersion: edit });
+
+await binding.dispose();
+await terrain.dispose();
+```
+
+`configure` copies and validates data settings, returning the accepted edit version. Topology factories copy their geometry inputs. Radius and center come from the topology's projection; flat root size and origin come from its topology. Do not supply a second radius to GPU parameters. `elevationRange` must conservatively bound the authored callback before scale, including initial production before measured bounds exist. The zero-source default is `[0,0]`.
+
+`maxNodes` is the existing internal quadtree/storage capacity, **not a guaranteed active-leaf count**. Required roots must fit. `innerTileSegments` controls both geometry and field resolution. Distance LOD remains the measured default; screen LOD is available as `{ mode: "screen", targetPixels: 8 }` with the view's projection factor. Numeric defaults are not performance promises.
+
+## Publication and freshness
+
+`update` serializes candidate production and publishes a complete render record only after successful submission. A failed candidate leaves the previous render record available. Superseded queued configurations are skipped. The backend reuses retired graph/resource slots; it does not rebuild the library's task scheduler.
+
+`getStatus()` and `subscribe()` expose referentially stable status snapshots. `renderRevision` and `queryRevision` are separate. Revisions identify the runtime instance, production, accepted configuration, source content, and accepted edit. Appearance-only changes advance `presentationVersion` while reusing geometry. A render revision does not prove CPU availability or coverage at a point.
+
+Use `invalidateElevation()` after an explicitly ordered content change. Use `invalidateAppearance()` for live appearance changes that do not influence terrain geometry. There is no introspection of arbitrary captured textures or uniforms. `requestSnapshot({minEditVersion, signal})` can target an accepted edit not yet rendered; after a view has been supplied it schedules the needed update even without camera movement. It resolves at that edit or a newer one, rather than promising an exact historical revision.
+
+Readback policies are `on-change`, `manual`, and `disabled`. GPU elevation and bounds copies are submitted before either mapping awaits. Their tile index and query configuration are captured together. Zero elevation is valid. A failed readback preserves the previous CPU snapshot and can be retried.
+
+## Queries and placement
+
+`terrain.query.sample([x,y,z])` uses terrain-local coordinates and returns `available` or an explicit unavailable reason. Positions/normals use `Vec3` tuples from the pinned `math` package. Elevation is signed scaled displacement along the datum direction in local units; it is not necessarily world Y.
+
+For scene coordinates use `binding.sampleWorld()` and `binding.raycastWorld()`. Affine placement is applied exactly once; normals use the inverse transpose. Singular transforms throw. Nonuniform scale leaves the reported local elevation unchanged; consume the world position for placement.
+
+```ts
+const lease = terrain.query.acquireSnapshot();
+if (lease) {
+  try {
+    const batch = lease.sampleBatch(new Float64Array([1000, 0, 0]));
+    const hit = lease.raycast([0, 1100, 0], [0, -1, 0], { far: 200 });
+  } finally {
+    lease.release();
+  }
+}
+```
+
+Leases pin independent CPU records, including through runtime disposal. Release is idempotent; sampling a released lease throws. Binding leases also pin the scene transform. Retention is bounded and requests report backpressure when all retained slots are pinned.
+
+Raycasts reconstruct the sampled surface. They return a hit on the original ray within tolerance, or `incomplete` for missing coverage/work budget. Unsampled intervals do not become authoritative misses. These are not exact rendered-triangle picks. CPU reconstruction reads raw f32 elevation; production may render normalized f16 elevation and packed normals. Quantization and derivative approximation therefore have explicit tolerances, rather than bit-for-bit parity. GPU resident sampling includes elevation scale; source evaluation remains a distinct operation with no automatic CPU evaluator for arbitrary TSL.
+
+## Ownership
+
+The runtime owns its graph slots, compute kernels, GPU fields, transfer buffers and snapshot records. The binding owns its mesh/geometry and any default material it creates. Supplied renderer, material and source textures are borrowed. Binding teardown restores its position attachment and does not dispose a borrowed material. A borrowed material must be dedicated while attached; an existing position attachment is a conflict. Color, roughness, opacity and detail normals remain user-owned. Material identity survives compatible updates; shader recompilation can still occur.
+
+`holdProduction()` is the advanced synchronous-edit boundary. Prefer [managed sources and material helpers](/docs/core/nodes/materials) when replacing shared inputs. Retired borrowed inputs may be disposed only after the returned retirement acknowledgement; metadata alone cannot freeze externally mutated pixels.
+
+## Precision scope
+
+CPU coordinates, batch positions and stable datum anchors retain binary64 precision. Flat, cube-sphere and torus rendering transform anchors in CPU binary64 before rounding small view offsets. GPU residual projection retains curvature; sphere and torus normals use datum derivatives and local height differences.
+
+The `earth-precision` software WebGPU diagnostic measures constant-Earth normals through L20 and local rendered depth from non-axis cameras against a CPU f64 oracle. The expanded fixture measured about 0.000022 degrees maximum normal error, 5.6 micrometers local depth error in untransformed views, and 4.93 millimeters in the tested translated/rotated/nonuniformly scaled scene. Reconfiguring LOD and grid resolution in that affine scene changed depth by up to 6.87 millimeters, including raster/mesh approximation. Run the gym for the current checkout's results; these are finite fixtures, not universal guarantees.
+
+`worldPosition` uses absolute datum coordinates and its f32 limits. Use direct material elevation, datum-relative slope and optional fixed regional mappings for fine detail. Absolute world-dependent source expressions, Three's world-space shadow-receiving matrix path, source filtering, normalized-f16 border quantization and depth-buffer precision have separate error limits. A main-camera precision test does not establish centimeter accuracy for those paths. `terrainFieldFormat: "rgba32float"` is a diagnostic option; production defaults to `rgba16float`.
+
+A matched datum-offset experiment measured 0.12 mm maximum analytic residual error versus 0.021 mm for CPU-cached offsets. For 24 tiles the cache needed 1,476,096 bytes versus 576 bytes of CPU anchors, plus about 5.6 ms CPU cache construction. Warm software-backend submission times were similar (roughly 2.5–2.8 ms), not evidence of a hardware GPU or whole-frame speedup. The implementation retains analytic residuals because they meet the tested accuracy target with much smaller additional storage.
+
+The full streaming engine, generic public field graph, terrain editor, owned PBR stack and automatic arbitrary-TSL CPU translation remain outside this runtime.
+
+## Camera updates and cached work
+
+Camera movement runs CPU tile selection through the retained work graph. When the selected tiles and accepted edit are unchanged, the runtime keeps the current render nodes, GPU fields, and query snapshot. It does not rebuild terrain just because the camera moved. Edits and actual LOD changes still produce a new candidate publication. Camera-relative placement continues to update for rendering independently of terrain production.

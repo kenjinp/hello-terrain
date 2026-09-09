@@ -43,6 +43,7 @@
     "vitest": "^4.0.16"
   },
   "dependencies": {
-    "@hello-terrain/work": "workspace:*"
+    "@hello-terrain/work": "workspace:*",
+    "math": "1.0.0-canary-37519dcd-20260903"
   }
 }

@@ -10,6 +10,7 @@ export type InfiniteFlatTopologyConfig = {
 };
 
 export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Topology {
+  cfg = { ...cfg, origin: { ...cfg.origin } };
   const halfRoot = 0.5 * cfg.rootSize;
   const rootGridRadius = Math.max(0, Math.floor(cfg.rootGridRadius ?? 1));
   const rootWidth = rootGridRadius * 2 + 1;
@@ -19,6 +20,8 @@ export function createInfiniteFlatTopology(cfg: InfiniteFlatTopologyConfig): Top
   const pz = new Float64Array(8);
 
   return {
+    rootSize: cfg.rootSize,
+    origin: Object.freeze({ ...cfg.origin }),
     spaceCount: 1,
     maxRootCount: rootWidth * rootWidth,
     projection: createFlatProjection(),

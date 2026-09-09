@@ -6,14 +6,8 @@ import type { LeafStorageState, TerrainUniformsContext } from "../types";
 /** A cube face (and a torus) spans ~PI/2 of arc per root subdivision. */
 export const HALF_PI = Math.PI * 0.5;
 
-/**
- * Offset (in texels) from the field edge to the first inner texel center:
- * 1-texel skirt border + 0.5 texel centering.
- */
-export const FIELD_INNER_TEXEL_OFFSET = 1.5;
-
-/** Extra texels per edge beyond `innerTileSegments`: 2 skirt border + 1 closing vertex. */
-export const FIELD_EDGE_EXTRA_TEXELS = 3;
+import { FIELD_INNER_TEXEL_OFFSET, FIELD_EDGE_EXTRA_TEXELS } from "../runtime/fieldLayout";
+export { FIELD_INNER_TEXEL_OFFSET, FIELD_EDGE_EXTRA_TEXELS, tileLocalToFieldUVNumber } from "../runtime/fieldLayout";
 
 /**
  * Approximate arc length of a tile edge on a sphere, used to scale elevation
@@ -146,10 +140,4 @@ export function tileLocalToFieldUV(localCoord: Node, innerSegments: Node): Node 
     .mul(float(innerSegments))
     .add(float(FIELD_INNER_TEXEL_OFFSET))
     .div(edge);
-}
-
-/** CPU variant of {@link tileLocalToFieldUV} for snapshot-based queries. */
-export function tileLocalToFieldUVNumber(localCoord: number, innerSegments: number): number {
-  const edge = innerSegments + FIELD_EDGE_EXTRA_TEXELS;
-  return (localCoord * innerSegments + FIELD_INNER_TEXEL_OFFSET) / edge;
 }

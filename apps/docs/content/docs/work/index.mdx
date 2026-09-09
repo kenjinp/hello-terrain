@@ -7,6 +7,7 @@ import WorkHero from "@/examples/WorkHero";
 import Link from "next/link";
 
 # @hello-terrain/work
+
 <Link
   className="shadow-md"
   href="https://www.npmjs.com/package/@hello-terrain/work"
@@ -23,24 +24,24 @@ import Link from "next/link";
 <WorkHero />
 </div>
 
-
 ## Overview
 
 `@hello-terrain/work` is a small library for building **reactive computation graphs**.
-You define **inputs** ([`param`](./work/param)), **computations** [(`task`)](./work/task), and run them in an **engine** [(`graph`)](./work/graph).
+You define **inputs** ([`param`](/work/param)), **computations** [(`task`)](/work/task), and run them in an **engine** [(`graph`)](/work/graph).
 
-It's designed to run in a hot loop (such as your render update loop), with minimal overhead. 
-That's because it will bake the graph topology on the first call, and memoize (cache) unchanged dependencies. 
+It's designed to run in a hot loop (such as your render update loop), with minimal overhead.
+That's because it will bake the graph topology on the first call, and memoize (cache) unchanged dependencies.
 
 Dependencies are marked dirty when you change them by calling `myParam.set(newValue)` on the param handler.
 
-The graph won't be executed until you explicitly call `.run()`, but it will automatically sort out dirty dependencies and mark downstream tasks for re-computation. 
+The graph won't be executed until you explicitly call `.run()`, but it will automatically sort out dirty dependencies and mark downstream tasks for re-computation.
 
 You can set tasks to a "lane" (a simple string tag) and optionally enable **per-lane concurrency limits**
 by passing `laneConcurrency` to `graph.run()`. This is useful when you want to cap access to constrained
 resources (e.g. GPU work, rate-limited APIs, small DB pools).
 
 ### Key features:
+
 - **Typed dependency graphs** (params + tasks)
 - **Memoized recomputation** when inputs change
 - **Optional lane-based concurrency** via `laneConcurrency`
@@ -49,10 +50,10 @@ resources (e.g. GPU work, rate-limited APIs, small DB pools).
 
 ## Key Concepts
 
-| Concept | Description |
-|---------|-------------|
-| **Param** | A reactive value that can be read, updated, and subscribed to |
-| **Task** | A computation node that depends on params or other tasks |
+| Concept   | Description                                                                |
+| --------- | -------------------------------------------------------------------------- |
+| **Param** | A reactive value that can be read, updated, and subscribed to              |
+| **Task**  | A computation node that depends on params or other tasks                   |
 | **Graph** | An execution engine that runs tasks with dependency resolution and caching |
 
 ## Installation
@@ -67,7 +68,6 @@ pnpm add @hello-terrain/work
 # yarn
 yarn add @hello-terrain/work
 ```
-
 
 ## Quick start
 
@@ -92,6 +92,7 @@ value.set(4);
 await calcGraph.run();
 calcGraph.get(calcSquare); // 16
 ```
+
 ## Features
 
 ### Automatic Dependency Tracking
@@ -128,10 +129,10 @@ const alwaysFresh = task((get, work) => {
 All tasks receive an abort signal for cooperative cancellation.
 
 ```ts
-const fetchTask = task(async (get, work, ctx) => {
-  return work(() => {
+const fetchTask = task((get, work, ctx) => {
+  return work(async () => {
     const response = await fetch(url, { signal: ctx.signal });
-    response.json()
+    return response.json();
   });
 });
 

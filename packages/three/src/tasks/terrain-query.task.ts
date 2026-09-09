@@ -13,7 +13,7 @@ import {
   rootSize,
 } from "./params";
 import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
-import { tileBoundsReductionTask } from "./compute.task";
+import { compileComputeTask, tileBoundsReductionTask } from "./compute.task";
 
 export const terrainQueryTask = task((get, work) => {
   const maxNodesValue = get(maxNodes);
@@ -25,15 +25,16 @@ export const terrainQueryTask = task((get, work) => {
   const radiusValue = get(radius);
   const topologyValue = get(topologyTask);
   const projection = topologyValue.projection;
+  const datumOrigin = topologyValue.origin ?? projection.center ?? originValue;
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
     const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
     const resolvedRadius = projection.radius ?? radiusValue;
     const configValues = {
-      rootSize: rootSizeValue,
-      originX: originValue.x,
-      originY: originValue.y,
-      originZ: originValue.z,
+      rootSize: topologyValue.rootSize ?? rootSizeValue,
+      originX: datumOrigin.x,
+      originY: datumOrigin.y,
+      originZ: datumOrigin.z,
       innerTileSegments: innerTileSegmentsValue,
       elevationScale: elevationScaleValue,
       maxLevel: maxLevelValue,
@@ -75,6 +76,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
     const quadtreeConfig = get(quadtreeConfigTask);
     const leafState = get(leafGpuBufferTask);
     const { cache } = get(terrainQueryTask);
+    const contentKey = get(compileComputeTask);
 
     return work((): void => {
       if (!resources?.renderer) return;
@@ -85,6 +87,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
         quadtreeConfig.state.leafIndex,
         boundsContext.attribute,
         leafState.count,
+        contentKey,
       );
     });
   },

@@ -5,7 +5,7 @@ import { Github, Info, Rss } from "lucide-react";
 export const sharedLinkItems: LinkItemType[] = [
   {
     on: "menu",
-    text: "Blog",
+    text: "Guides",
     url: "/blog",
     active: "url",
     icon: <Rss />,

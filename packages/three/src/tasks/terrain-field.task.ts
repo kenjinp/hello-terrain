@@ -14,7 +14,7 @@ import {
   tileNodesTask,
 } from "./elevation-field.task";
 import { topologyTask } from "./quadtree.task";
-import { innerTileSegments, maxNodes, terrainFieldFilter } from "./params";
+import { innerTileSegments, maxNodes, terrainFieldFilter, terrainFieldFormat } from "./params";
 import { tileBoundsContextTask } from "./tile-bounds.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
 
@@ -25,12 +25,13 @@ export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
     const edgeVertexCount = get(innerTileSegments) + 3;
     const maxNodesValue = get(maxNodes);
     const filter = get(terrainFieldFilter);
+    const format = get(terrainFieldFormat);
     return work(() =>
       createTerrainFieldStorage(
         edgeVertexCount,
         maxNodesValue,
         resources?.renderer,
-        { filter },
+        { filter, format },
       ),
     );
   },

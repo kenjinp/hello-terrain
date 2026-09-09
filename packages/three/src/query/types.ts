@@ -77,7 +77,7 @@ export interface TerrainSurfaceSample {
 }
 
 export interface TerrainSurfaceSampleBatch {
-  positions: Float32Array;
+  positions: Float32Array | Float64Array;
   normals: Float32Array;
   elevations: Float32Array;
   valid: Uint8Array;
@@ -114,7 +114,7 @@ export interface TerrainQuery {
   getTileBounds(worldX: number, worldZ: number): TerrainTileBounds | null;
   getGlobalElevationRange(): ElevationRange | null;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
-  sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
+  sampleTerrainBatch(positions: Float32Array | Float64Array): TerrainSampleBatch;
   readonly generation: number;
 }
 
@@ -135,7 +135,7 @@ export interface TerrainSurfaceQuery {
   getTileBoundsByPosition(position: Vector3): TerrainTileBounds | null;
 
   /** Batch sample; `positions` is a Float32Array of xyz triples. */
-  sampleTerrainBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
+  sampleTerrainBatchByPosition(positions: Float32Array | Float64Array): TerrainSurfaceSampleBatch;
 }
 
 /**

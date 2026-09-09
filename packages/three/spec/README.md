@@ -10,6 +10,10 @@ This folder is the canonical architecture/spec reference for `@hello-terrain/thr
 - [`concepts.md`](./concepts.md): core domain concepts used across code and docs.
 - [`patterns.md`](./patterns.md): recurring task-graph implementation patterns and pitfalls.
 
+## Runtime design
+
+- [`terrain-runtime-proposal.md`](./terrain-runtime-proposal.md): implemented runtime, precision, ownership, and authoring contracts. Current APIs are documented in the runtime guide.
+
 ## Intent
 
 - Keep API and internal terminology consistent.

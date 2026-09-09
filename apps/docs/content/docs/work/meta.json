@@ -2,12 +2,5 @@
   "title": "Work",
   "description": "A small reactive task graph for typed async computations",
   "root": true,
-  "pages": [
-    "index",
-    "param",
-    "task",
-    "graph",
-    "benchmarks",
-    "semaphore"
-  ]
+  "pages": ["index", "param", "task", "graph", "benchmarks"]
 }

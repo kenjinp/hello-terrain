@@ -1,228 +1,174 @@
-import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
-import { useFrame } from "@react-three/fiber";
-import { cloneElement, isValidElement, useEffect, useState } from "react";
-import { TerrainProvider } from "./TerrainContext";
+import { createTerrainBinding, type TerrainBinding } from '@hello-terrain/three';
+import { useFrame } from '@react-three/fiber';
+import { cloneElement, isValidElement, useEffect, useState, useRef } from 'react';
+import { TerrainProvider } from './TerrainContext';
 import type {
-  TerrainHandle,
-  TerrainPrimitiveProps,
-  TerrainProps,
-  TerrainPropsWithoutHandle,
-  TerrainRenderProps,
-} from "./types";
-import { useTerrain } from "./useTerrain";
+    TerrainHandle,
+    TerrainPrimitiveProps,
+    TerrainProps,
+    TerrainPropsWithoutHandle,
+    TerrainRenderProps,
+} from './types';
+import { useTerrain } from './useTerrain';
 
-function useTerrainMesh(
-  innerTileSegments: number | undefined,
-  maxNodes: number | undefined,
-  flipWinding: boolean,
-) {
-  const [mesh] = useState(
-    () =>
-      new TerrainMesh({
-        ...(innerTileSegments !== undefined ? { innerTileSegments } : {}),
-        maxNodes: maxNodes ?? 1024,
-        flipWinding,
-      }),
-  );
+function attachTerrainMaterial(node: ReturnType<TerrainRenderProps['children']>) {
+    if (!isValidElement<{ attach?: unknown }>(node)) return node;
 
-  useEffect(() => {
-    mesh.maxNodes = maxNodes ?? 1024;
-  }, [mesh, maxNodes]);
-
-  useEffect(() => {
-    mesh.flipWinding = flipWinding;
-  }, [mesh, flipWinding]);
-
-  useEffect(() => {
-    return () => {
-      mesh.geometry.dispose();
-    };
-  }, [mesh]);
-
-  return mesh;
-}
-
-function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
-  const leaves = terrain.graph.peek(terrainTasks.quadtreeUpdate);
-  if (leaves && mesh.count !== leaves.count) {
-    mesh.count = leaves.count;
-    mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  // Keep the tile geometry resolution in sync with the effective
-  // `innerTileSegments` param (prop-driven or set directly via `graph.set`).
-  // The setter rebuilds the geometry only when the value actually changes.
-  const uniforms = terrain.graph.peek(terrainTasks.updateUniforms);
-  if (uniforms) {
-    const segments = uniforms.uInnerTileSegments.value;
-    if (typeof segments === "number") {
-      mesh.innerTileSegments = segments;
+    if ('attach' in node.props && node.props.attach != null) {
+        return node;
     }
-  }
-
-  const raycast = terrain.runtime.raycast;
-  if (mesh.terrainRaycast !== raycast) {
-    mesh.terrainRaycast = raycast;
-  }
-}
-
-function attachTerrainMaterial(
-  node: ReturnType<TerrainRenderProps["children"]>,
-  terrainNodes: Pick<TerrainHandle, "positionNode">,
-) {
-  if (!isValidElement<{ attach?: unknown }>(node)) return node;
-  const nextKey = `terrain-material-${terrainNodes.positionNode?.id ?? "null"}`;
-  if ("attach" in node.props && node.props.attach != null) {
-    return cloneElement(node, { key: nextKey });
-  }
-  return cloneElement(node, { attach: "material", key: nextKey });
+    return cloneElement(node, { attach: 'material' });
 }
 
 function TerrainWithHandle({
-  terrain,
-  children,
-  innerTileSegments,
-  maxNodes,
-  ...primitiveProps
+    terrain,
+    children,
+    ...primitiveProps
 }: {
-  terrain: TerrainHandle;
-  children: TerrainRenderProps["children"];
-  innerTileSegments?: number;
-  maxNodes?: number;
+    terrain: TerrainHandle;
+    children: TerrainRenderProps['children'];
 } & TerrainPrimitiveProps) {
-  const flipWinding = terrain.topology?.projection?.faceOutward ?? false;
-  const mesh = useTerrainMesh(innerTileSegments, maxNodes, flipWinding);
-  const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
+    const latestTerrain = useRef(terrain);
+    latestTerrain.current = terrain;
+    const [binding, setBinding] = useState<TerrainBinding | null>(null);
+    useEffect(() => {
+        const binding = createTerrainBinding(terrain.controller, { externalMaterialAttachment: true });
+        setBinding(binding);
+        latestTerrain.current.binding = binding;
+        return () => {
+            if (latestTerrain.current.binding === binding) latestTerrain.current.binding = null;
+            void binding.dispose();
+        };
+    }, [terrain.controller]);
+    const { visible: primitiveVisible = true, ...restPrimitiveProps } = primitiveProps;
 
-  useFrame(() => {
-    syncTerrainMesh(mesh, terrain);
-  });
+    useFrame(() => {
+        if (binding) binding.mesh.terrainRaycast = terrain.runtime.raycast;
+    });
 
-  return (
-    <TerrainProvider value={terrain}>
-      <primitive object={mesh} visible={terrain.ready && primitiveVisible} {...restPrimitiveProps}>
-        {terrain.ready
-          ? attachTerrainMaterial(
-              children({
-                positionNode: terrain.positionNode,
-              }),
-              terrain,
-            )
-          : null}
-      </primitive>
-    </TerrainProvider>
-  );
+    if (!binding) return null;
+    const mesh = binding.mesh;
+    return (
+        <TerrainProvider value={terrain}>
+            <primitive
+                object={mesh}
+                visible={terrain.ready && primitiveVisible}
+                {...restPrimitiveProps}
+            >
+                {terrain.ready
+                    ? attachTerrainMaterial(
+                          children({
+                              positionNode: terrain.positionNode,
+                              materialContext: terrain.materialContext,
+                          })
+                      )
+                    : null}
+            </primitive>
+        </TerrainProvider>
+    );
 }
 
 function InternalTerrain(props: TerrainPropsWithoutHandle) {
-  const {
-    children,
-    rootSize,
-    origin,
-    maxLevel,
-    innerTileSegments,
-    skirtScale,
-    elevationScale,
-    radius,
-    elevation,
-    topology,
-    terrainFieldFilter,
-    getCameraOrigin,
-    cameraHysteresis,
-    tasks,
-    maxNodes,
-    ...primitiveProps
-  } = props;
+    const {
+        children,
+        rootSize,
+        origin,
+        maxLevel,
+        innerTileSegments,
+        skirtScale,
+        elevationScale,
+        elevation,
+        elevationRange,
+        lod,
+        queries,
+        topology,
+        terrainFieldFilter,
+        terrainFieldFormat,
+        getCameraOrigin,
+        cameraHysteresis,
+        maxNodes,
+        ...primitiveProps
+    } = props;
 
-  const terrain = useTerrain({
-    rootSize,
-    origin,
-    maxLevel,
-    innerTileSegments,
-    skirtScale,
-    elevationScale,
-    radius,
-    elevation,
-    topology,
-    terrainFieldFilter,
-    getCameraOrigin,
-    cameraHysteresis,
-    tasks,
-    maxNodes,
-  });
+    const terrain = useTerrain({
+        rootSize,
+        origin,
+        maxLevel,
+        innerTileSegments,
+        skirtScale,
+        elevationScale,
+        elevation,
+        elevationRange,
+        lod,
+        queries,
+        topology,
+        terrainFieldFilter,
+        terrainFieldFormat,
+        getCameraOrigin,
+        cameraHysteresis,
+        maxNodes,
+    });
 
-  return (
-    <TerrainWithHandle
-      terrain={terrain}
-      innerTileSegments={innerTileSegments}
-      maxNodes={maxNodes}
-      {...primitiveProps}
-    >
-      {children}
-    </TerrainWithHandle>
-  );
+    return (
+        <TerrainWithHandle terrain={terrain} {...primitiveProps}>
+            {children}
+        </TerrainWithHandle>
+    );
 }
 
 export function Terrain(props: TerrainProps) {
-  const { terrain: providedTerrain, children } = props;
+    const { terrain: providedTerrain, children } = props;
 
-  if (providedTerrain) {
+    if (providedTerrain) {
+        const { terrain: _terrain, children: _children, ...primitiveProps } = props;
+        return (
+            <TerrainWithHandle terrain={providedTerrain} {...primitiveProps}>
+                {children}
+            </TerrainWithHandle>
+        );
+    }
+
     const {
-      terrain: _terrain,
-      children: _children,
-      innerTileSegments,
-      maxNodes,
-      ...primitiveProps
+        rootSize,
+        origin,
+        maxLevel,
+        innerTileSegments,
+        skirtScale,
+        elevationScale,
+        elevation,
+        elevationRange,
+        lod,
+        queries,
+        topology,
+        terrainFieldFilter,
+        terrainFieldFormat,
+        getCameraOrigin,
+        cameraHysteresis,
+        maxNodes,
+        ...primitiveProps
     } = props;
+
     return (
-      <TerrainWithHandle
-        terrain={providedTerrain}
-        innerTileSegments={innerTileSegments}
-        maxNodes={maxNodes}
-        {...primitiveProps}
-      >
-        {children}
-      </TerrainWithHandle>
+        <InternalTerrain
+            rootSize={rootSize}
+            origin={origin}
+            maxLevel={maxLevel}
+            innerTileSegments={innerTileSegments}
+            skirtScale={skirtScale}
+            elevationScale={elevationScale}
+            elevation={elevation}
+            elevationRange={elevationRange}
+            lod={lod}
+            queries={queries}
+            topology={topology}
+            terrainFieldFilter={terrainFieldFilter}
+            terrainFieldFormat={terrainFieldFormat}
+            getCameraOrigin={getCameraOrigin}
+            cameraHysteresis={cameraHysteresis}
+            maxNodes={maxNodes}
+            {...primitiveProps}
+        >
+            {children}
+        </InternalTerrain>
     );
-  }
-
-  const {
-    rootSize,
-    origin,
-    maxLevel,
-    innerTileSegments,
-    skirtScale,
-    elevationScale,
-    radius,
-    elevation,
-    topology,
-    terrainFieldFilter,
-    getCameraOrigin,
-    cameraHysteresis,
-    tasks,
-    maxNodes,
-    ...primitiveProps
-  } = props;
-
-  return (
-    <InternalTerrain
-      rootSize={rootSize}
-      origin={origin}
-      maxLevel={maxLevel}
-      innerTileSegments={innerTileSegments}
-      skirtScale={skirtScale}
-      elevationScale={elevationScale}
-      radius={radius}
-      elevation={elevation}
-      topology={topology}
-      terrainFieldFilter={terrainFieldFilter}
-      getCameraOrigin={getCameraOrigin}
-      cameraHysteresis={cameraHysteresis}
-      tasks={tasks}
-      maxNodes={maxNodes}
-      {...primitiveProps}
-    >
-      {children}
-    </InternalTerrain>
-  );
 }

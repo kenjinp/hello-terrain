@@ -2,6 +2,7 @@
   "title": "Core",
   "description": "Core utilities and building blocks",
   "pages": [
+    "runtime",
     "params",
     "elevation-function",
     "topology",

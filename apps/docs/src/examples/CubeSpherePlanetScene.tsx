@@ -178,8 +178,8 @@ function CubeSpherePlanetSceneImpl({ store }: { store: LevaStore }) {
   );
 
   const terrain = useTerrain({
+    elevationRange: { min: 0, max: 1 },
     topology,
-    radius: controls.radius,
     maxLevel: controls.maxLevel,
     maxNodes: controls.maxNodes,
     skirtScale: controls.skirtScale,

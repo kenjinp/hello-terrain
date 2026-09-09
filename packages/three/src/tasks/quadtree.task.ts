@@ -1,7 +1,6 @@
 import { task } from "@hello-terrain/work";
 import { createLeafStorage } from "../gpu/leafStorage";
-import type { LeafSet } from "../quadtree";
-import { createFlatTopology, createState, update } from "../quadtree";
+import { allocLeafSet, createFlatTopology, createState, update } from "../quadtree";
 import type { QuadtreeConfigState } from "./graph.types";
 import { elevationScale, maxLevel, maxNodes, origin, quadtreeUpdate, rootSize, topology } from "./params";
 import { terrainQueryTask } from "./terrain-query.task";
@@ -36,13 +35,20 @@ export const quadtreeConfigTask = task((get, work) => {
   });
 }).displayName("quadtreeConfigTask");
 
+// Allocation depends on capacity, not the view. Let the graph retain it.
+export const quadtreeLeavesTask = task((get, work) => {
+  const capacity = get(maxNodes);
+  return work(() => allocLeafSet(capacity));
+}).displayName("quadtreeLeavesTask");
+
 export const quadtreeUpdateTask = task((get, work) => {
+  const leaves = get(quadtreeLeavesTask);
   const quadtreeConfig = get(quadtreeConfigTask);
-  const quadtreeUpdateConfig = get(quadtreeUpdate);
+  const suppliedUpdateConfig = get(quadtreeUpdate);
+  const quadtreeUpdateConfig = { ...suppliedUpdateConfig, cameraOrigin: { ...suppliedUpdateConfig.cameraOrigin } };
   const { cache } = get(terrainQueryTask);
   const elevationScaleValue = get(elevationScale);
 
-  let outLeaves: LeafSet | undefined = undefined;
   const elevationRangeScratch = { min: 0, max: 0 };
 
   // Build the provider once: `cache` and `elevationScaleValue` are stable for
@@ -51,6 +57,9 @@ export const quadtreeUpdateTask = task((get, work) => {
   // places each tile's bounding sphere at its own readback elevation range,
   // so no global camera offset is needed.
   quadtreeUpdateConfig.tileElevationRange = (tile, out) => {
+    // An explicit provider is the bounds authority. Runtime selection uses its
+    // declared conservative range equally on CPU and candidate graphs.
+    if (suppliedUpdateConfig.tileElevationRange?.(tile, out)) return true;
     if (!cache.getTileElevationRange(tile.space, tile.level, tile.x, tile.y, elevationRangeScratch)) {
       return false;
     }
@@ -60,13 +69,12 @@ export const quadtreeUpdateTask = task((get, work) => {
   };
 
   return work(() => {
-    outLeaves = update(
+    return update(
       quadtreeConfig.state,
       quadtreeConfig.topology,
       quadtreeUpdateConfig,
-      outLeaves,
+      leaves,
     );
-    return outLeaves;
   });
 }).displayName("quadtreeUpdateTask");
 

@@ -19,14 +19,7 @@ export function getPageImage(page: DocsPage) {
 }
 
 export function getBlogImage(page: DocsPage) {
-  // Page slugs are like ["blog", "posts", "hello-world"]
-  // OG route is at /og/blog/posts/[...slug], so strip "blog" and "posts" for the param
-  const postSlug = page.slugs.slice(2);
-  const segments = [...postSlug, "image.webp"];
-  return {
-    segments,
-    url: `/og/blog/posts/${segments.join("/")}`,
-  };
+  return getPageImage(page);
 }
 
 /**

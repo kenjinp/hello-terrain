@@ -1,0 +1,37 @@
+---
+title: Shared Control Maps
+description: One managed texture, independent source mappings, and appearance-only edits
+---
+
+import MaterialMapsScene from "@/examples/runtime/MaterialMapsScene"
+
+<MaterialMapsScene />
+
+## Try it
+
+Choose **Repaint shared map**. Both terrains use the same generated texture, with independent mapping scales and offsets. Appearance counters advance while accepted geometry edit counters remain unchanged. Orbiting may independently produce a new LOD layout.
+
+Red and green encode grass and sand weights. Ordinary TSL adds a rock mask using `materialContext.slopeCosine`. No image downloads are needed.
+
+## API pattern
+
+```ts
+const source = createManagedTerrainTexture(weightMap);
+const detach = bindTerrainSource(terrain.controller, source, ['appearance']);
+const mapping = createSourceMapping({ scale: [3, 2], offset: [0.2, 0] });
+const paint = source.sample(mapping.uv(materialContext.sourceUV));
+const [grass, sand] = terrainWeights([paint.r, paint.g]);
+
+const receipt = await source.edit(texture => {
+  // Synchronous pixel mutation inside the managed edit boundary.
+  texture.image.data.set(nextPixels);
+  texture.needsUpdate = true;
+});
+await receipt.retired;
+```
+
+Attach the same source to both runtimes. Mapping belongs to each material, so shared `Texture.offset` and `repeat` remain untouched. The source declares only appearance consumers; it does not invalidate elevation or request new CPU terrain data. Weights are normalized explicitly; independent masks and categorical IDs need different interpretation.
+
+Detach consumers during cleanup. Managed sources borrow textures; the example owns and disposes its generated texture and sampler subscription. This is a control-map authoring example, not a streaming texture system.
+
+[Material authoring](/docs/core/nodes/materials) · [Elevation authoring](/docs/core/elevation-function)

@@ -25,10 +25,10 @@ const double = task((get, work) => {
 
 Creates a new task node.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter | Type                                  | Description              |
+| --------- | ------------------------------------- | ------------------------ |
 | `compute` | `(get, work, ctx) => T \| Promise<T>` | The computation function |
-| `options` | `TaskOptions` | Optional configuration |
+| `options` | `TaskOptions`                         | Optional configuration   |
 
 **Returns:** `Task<T>`
 
@@ -56,7 +56,6 @@ const sum = task((get, work) => {
 
 Executes a “work unit”. This boundary ensures the dependancies are up to date when the callback is executed.
 
-
 ```ts
 const processed = task((get, work) => {
   const data = get(rawData);
@@ -66,8 +65,9 @@ const processed = task((get, work) => {
   });
 });
 ```
+
 Any value returned in the task callback function will be stored, but it is recommended to return work() with a callback
-to ensure your dependencies are not stale. 
+to ensure your dependencies are not stale.
 
 ```ts
 
@@ -86,22 +86,22 @@ const processed = task(async () => {
 
 Provides execution context including lane info, abort signal, and timing utilities.
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `lane` | `string` | The lane this task is executing in |
-| `signal` | `AbortSignal` | Abort signal for cancellation |
-| `now()` | `() => number` | High-precision time in milliseconds |
-| `resources` | `unknown` | User-supplied resources (if provided to run) |
+| Property    | Type           | Description                                  |
+| ----------- | -------------- | -------------------------------------------- |
+| `lane`      | `string`       | The lane this task is executing in           |
+| `signal`    | `AbortSignal`  | Abort signal for cancellation                |
+| `now()`     | `() => number` | High-precision time in milliseconds          |
+| `resources` | `unknown`      | User-supplied resources (if provided to run) |
 
 ```ts
 const fetchData = task(async (get, work, ctx) => {
   const url = get(apiUrl);
-  
+
   // Check for cancellation
   if (ctx.signal.aborted) {
     throw new Error("Cancelled");
   }
-  
+
   return work(() => {
     // Pass signal to fetch for automatic cancellation
     // this will cancel propogation to downstream tasks
@@ -149,11 +149,11 @@ const ioBound = task(async (get, work, ctx) => {
 
 Sets the caching strategy for the task.
 
-| Strategy | Description |
-|----------|-------------|
+| Strategy | Description                                                      |
+| -------- | ---------------------------------------------------------------- |
 | `"memo"` | Cache results; only recompute when dependencies change (default) |
-| `"once"` | Compute once, then cache forever (ignores upstream changes) |
-| `"none"` | Always recompute on every run |
+| `"once"` | Compute once, then cache forever (ignores upstream changes)      |
+| `"none"` | Always recompute on every run                                    |
 
 ```ts
 // Default: memoized
@@ -354,12 +354,12 @@ Tasks can be asynchronous:
 const userId = param("user-123");
 
 const userData = task(async (get, work, ctx) => {
-  const id = get(userId);  
+  const id = get(userId);
   return work(async () => {
     const response = await fetch(`/api/users/${id}`, {
       signal: ctx.signal,
     });
-    
+
     if (!response.ok) {
       throw new Error(`Failed to fetch user: ${response.status}`);
     }
@@ -383,7 +383,7 @@ const processedImage = task((get, work) => {
   const image = get(rawImage);
   const filters = get(filterSettings);
   const quality = get(outputQuality);
-  
+
   // Then do the heavy work
   return work(() => {
     let result = image;
@@ -413,7 +413,7 @@ const userRecord = task(async (get, work, ctx) => {
     // Check cache first
     const cached = await cache.get(`user:${id}`);
     if (cached) return cached;
-    
+
     // Fetch from database
     const record = await db.users.findById(id);
     await cache.set(`user:${id}`, record);
@@ -431,12 +431,12 @@ await g.run({
 
 During execution, tasks transition through states:
 
-| State | Description |
-|-------|-------------|
-| `idle` | Not started or waiting to be scheduled |
-| `running` | Currently executing |
-| `ready` | Completed successfully; result is cached |
-| `error` | Failed with an error |
+| State     | Description                              |
+| --------- | ---------------------------------------- |
+| `idle`    | Not started or waiting to be scheduled   |
+| `running` | Currently executing                      |
+| `ready`   | Completed successfully; result is cached |
+| `error`   | Failed with an error                     |
 
 ## Type Inference
 

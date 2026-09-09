@@ -1,45 +1,22 @@
-# docs
+# Hello Terrain documentation
 
-This is a Next.js application generated with
-[Create Fumadocs](https://github.com/fuma-nama/fumadocs).
+The Next.js/Fumadocs application serves current terrain and Work API guides plus interactive examples.
 
-Run development server:
+From the repository root:
 
-```bash
-npm run dev
-# or
-pnpm dev
-# or
-yarn dev
+```sh
+pnpm --filter @hello-terrain/work build
+pnpm --filter @hello-terrain/three build
+pnpm --filter @hello-terrain/react build
+pnpm --filter @hello-terrain/docs dev
 ```
 
-Open http://localhost:3000 with your browser to see the result.
+Content lives in `content/docs/`; navigation is defined by adjacent `meta.json` files. Interactive scenes live in `src/examples/`. `src/lib/source.ts` loads MDX and `source.config.ts` configures compilation.
 
-## Explore
+Validate changes with `pnpm --filter @hello-terrain/docs typecheck` and `pnpm --filter @hello-terrain/docs build`. Builds fetch configured web fonts; on hosts with broken IPv6 routing, `NODE_OPTIONS=--dns-result-order=ipv4first` selects IPv4 first.
 
-In the project, you can see:
+Document implemented APIs, preserve explicit coverage/precision limits, and keep examples consistent with exported package types. Terrain application examples use the runtime and binding APIs. The independent Work package has its own graph reference under `/work`.
 
-- `lib/source.ts`: Code for content source adapter, [`loader()`](https://fumadocs.dev/docs/headless/source-api) provides the interface to access your content.
-- `lib/layout.shared.tsx`: Shared options for layouts, optional but preferred to keep.
+See `content/docs/docs/terrain-gym.mdx` for browser and CPU terrain validation.
 
-| Route                     | Description                                            |
-| ------------------------- | ------------------------------------------------------ |
-| `app/(home)`              | The route group for your landing page and other pages. |
-| `app/docs`                | The documentation layout and pages.                    |
-| `app/api/search/route.ts` | The Route Handler for search.                          |
-
-### Fumadocs MDX
-
-A `source.config.ts` config file has been included, you can customise different options like frontmatter schema.
-
-Read the [Introduction](https://fumadocs.dev/docs/mdx) for further details.
-
-## Learn More
-
-To learn more about Next.js and Fumadocs, take a look at the following
-resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js
-  features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [Fumadocs](https://fumadocs.vercel.app) - learn about Fumadocs
+The runtime API showcase lives in `src/examples/runtime/`: multiple large planets, stationary edits with snapshot queries, and shared material control maps. With the docs served locally, run `node scripts/check-runtime-examples.mjs http://127.0.0.1:3100` from the repository root. The check uses the gym's installed Chromium and software WebGPU, exercises the controls, checks instance isolation and appearance-only edits, and saves screenshots under `.gym/runs/`. Prefer the production export for this check; development hot reload can trigger unrelated docs-shell hydration diagnostics.

@@ -1,109 +1,41 @@
 ---
 title: useTerrain
-description: Create and manage a Hello Terrain handle in React
+description: Own and drive the shared terrain runtime from React
 ---
 
-## Overview
-
-`useTerrain(options)` creates a `TerrainHandle` and keeps the underlying terrain graph running from React.
-
-Use it when you want to:
-
-- reuse the same terrain handle across multiple components
-- inspect the graph or tasks directly
-- access `runtime.query` or `runtime.raycast`
-- control quadtree tracking with a custom `getCameraOrigin`
-
-## Return Value
-
-`useTerrain()` returns a `TerrainHandle`:
-
-```tsx
-type TerrainHandle = {
-  graph: TerrainGraph;
-  tasks: TerrainTasks;
-  runtime: TerrainRuntime;
-  ready: boolean;
-  positionNode: ShaderCallNodeInternal | null;
-};
-```
-
-### `graph`
-
-The underlying `@hello-terrain/work` graph instance. This is mainly useful for advanced integrations, inspection, and tooling.
-
-### `tasks`
-
-The standard terrain task refs exported from `@hello-terrain/three`.
-
-### `runtime`
-
-Imperative runtime helpers that update with the graph:
-
-- `runtime.query`
-- `runtime.raycast`
-
-### `ready`
-
-Signals that the terrain nodes needed for rendering are available. Before `ready` is `true`, the terrain mesh stays hidden and render-prop materials do not mount.
-
-### `positionNode`
-
-The generated node material input used to displace the terrain surface.
-
-## Basic Pattern
-
-```tsx
-import { Terrain, useTerrain } from "@hello-terrain/react";
-
-function Scene() {
-  const terrain = useTerrain({
-    rootSize: 512,
-    maxLevel: 12,
-    elevation,
-  });
-
-  return (
-    <Terrain terrain={terrain}>
-      {({ positionNode }) => (
-        <meshStandardNodeMaterial positionNode={positionNode} />
-      )}
-    </Terrain>
-  );
-}
-```
-
-## Following A Custom Origin
-
-By default the runner uses the active R3F camera position. If you want the quadtree to follow a player or another tracked point, provide `getCameraOrigin`.
+`useTerrain(options)` creates a stable runtime controller and applies data changes after commit. Recreating an options object does not recreate the runtime. The hook drives the same `createTerrain` implementation used by vanilla Three and releases its exact lifecycle generation on cleanup, including Strict Mode replay.
 
 ```tsx
 const terrain = useTerrain({
-  rootSize: 4096,
-  maxLevel: 6,
+  rootSize: 256,
   elevation,
-  getCameraOrigin: () => playerPositionRef.current,
-  cameraHysteresis: 0.25,
+  elevationRange: { min: -1, max: 1 },
+  elevationScale: 20,
+  maxNodes: 1024,
+  innerTileSegments: 61,
 });
+return <Terrain terrain={terrain}>
+  {({ positionNode, materialContext }) => (
+    <meshStandardNodeMaterial positionNode={positionNode}
+      colorNode={materialContext?.elevation.smoothstep(0, 20)} />
+  )}
+</Terrain>;
 ```
 
-## Custom Tasks
+The handle exposes:
 
-You can add extra graph tasks with the `tasks` option:
+| Member            | Contract                                                                           |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| `controller`      | Shared runtime: configuration, updates, queries, managed invalidation and disposal |
+| `status`          | Subscribed render/query revisions, pending work, lifecycle and last error          |
+| `binding`         | Scene transform/query binding while mounted; otherwise null                        |
+| `positionNode`    | Published terrain position node, or null before publication                        |
+| `materialContext` | Direct elevation, datum/base normals and source mapping nodes                      |
 
-```tsx
-const terrain = useTerrain({
-  elevation,
-  tasks: [myDebugTask, myAnalysisTask],
-});
-```
+Configure through `terrain.controller.configure(patch)`. The hook owns frame driving and applies configuration after commit.
 
-Custom tasks are added to the terrain graph and included in the targeted run list.
+Topology is the geometry authority. `rootSize`/`origin` are conveniences for the default flat topology; explicit topologies supply their own dimensions. `lod`, `elevationRange`, `queries`, `maxNodes`, `maxLevel`, `innerTileSegments`, `skirtScale`, `elevationScale`, `elevation` and `terrainFieldFilter`/`terrainFieldFormat` follow the [runtime contract](/docs/core/runtime). `getCameraOrigin` is an optional local residency camera override. A mounted binding converts the scene camera to terrain-local coordinates by default.
 
-## Caveats
+Render-prop materials keep their React identity when node resources change. Do not add a key based on a position node ID. User callback identity changes may rebuild shaders; this is not an HMR/no-recompilation guarantee.
 
-- `useTerrain()` expects to be used inside a WebGPU-backed R3F canvas.
-- `runtime.query` and `runtime.raycast` may be `null` until the graph has produced them.
-- `ready` is the safest guard for terrain-driven render and gameplay code.
-
-If you need to share the handle with sibling systems, continue to [Context and Runtime](./context-and-runtime).
+Query policy changes recreate the runtime; data configuration changes transact on the existing controller. Changed props update only their corresponding settings, so an unchanged elevation prop does not undo an imperative accepted edit. `cameraHysteresis` optionally suppresses small residency-camera movements; accepted edits still run while stationary.

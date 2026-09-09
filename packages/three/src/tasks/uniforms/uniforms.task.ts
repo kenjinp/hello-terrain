@@ -1,11 +1,9 @@
 import { task } from "@hello-terrain/work";
-import { Vector3 } from "three";
 import { createTerrainUniforms } from "../../gpu/uniforms";
 import type { TerrainUniformsParams } from "../../types";
 import { instanceIdTask } from "../instanceId.task";
 import { elevationScale, innerTileSegments, origin, radius, rootSize, skirtScale } from "../params";
-
-const scratchVector3 = new Vector3();
+import { topologyTask } from "../quadtree.task";
 
 /**
  * Creates the terrain uniform nodes once. Downstream tasks capture
@@ -39,18 +37,16 @@ export const updateUniformsTask = task((get, work) => {
   const skirtScaleVal = get(skirtScale);
   const elevationScaleVal = get(elevationScale);
   const radiusVal = get(radius);
+  const resolvedTopology = get(topologyTask);
 
   return work(() => {
-    terrainUniformsContext.uRootSize.value = rootSizeVal;
-    terrainUniformsContext.uRootOrigin.value = scratchVector3.set(
-      rootOrigin.x,
-      rootOrigin.y,
-      rootOrigin.z,
-    );
+    terrainUniformsContext.uRootSize.value = resolvedTopology.rootSize ?? rootSizeVal;
+    const datumOrigin = resolvedTopology.origin ?? resolvedTopology.projection.center ?? rootOrigin;
+    terrainUniformsContext.uRootOrigin.value.set(datumOrigin.x, datumOrigin.y, datumOrigin.z);
     terrainUniformsContext.uInnerTileSegments.value = innerTileSegmentsVal;
     terrainUniformsContext.uSkirtScale.value = skirtScaleVal;
     terrainUniformsContext.uElevationScale.value = elevationScaleVal;
-    terrainUniformsContext.uRadius.value = radiusVal;
+    terrainUniformsContext.uRadius.value = resolvedTopology.projection.radius ?? radiusVal;
 
     return terrainUniformsContext;
   });

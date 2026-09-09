@@ -124,7 +124,7 @@ describe("cube-sphere CPU sampling", () => {
     );
     // Allow the fire-and-forget readback promise chain to resolve.
     await new Promise((resolve) => setTimeout(resolve, 0));
-    return { cache, sphereQuery };
+    return { cache, sphereQuery, renderer, index };
   }
 
   it("samples radial elevation and position for a direction", async () => {
@@ -183,10 +183,10 @@ describe("cube-sphere CPU sampling", () => {
     expect(hit?.normal.z).toBeGreaterThan(0.99);
   });
 
-  it("setSurfaceOps re-targets queries when the radius changes", async () => {
+  it("publishes changed sphere geometry only with its next snapshot", async () => {
     // Regression: changing the cube-sphere radius left the CPU surface ops
     // bound to the old radius, so picks/markers landed at the wrong distance.
-    const { cache } = await seededCache();
+    const { cache, renderer, index } = await seededCache();
 
     const before = projection.cpu
       .createRuntimeQueries(cache)
@@ -198,12 +198,19 @@ describe("cube-sphere CPU sampling", () => {
     const grownRadius = radius * 2;
     const grown = createCubeSphereProjection({ radius: grownRadius, center: { x: 0, y: 0, z: 0 } });
     cache.setSurfaceOps(grown.cpu.createSurfaceOps());
+    const frozen = cache.capture();
+    const stillPublished = grown.cpu.createRuntimeQueries(cache).sphereQuery!.sampleTerrainByDirection(new Vector3(0, 0, 1));
+    expect(stillPublished.position.z).toBeCloseTo(before.position.z, 2);
+    cache.triggerReadback(renderer, {} as StorageBufferAttribute, index, undefined, 1, {});
+    await cache.pending;
     const after = grown.cpu
       .createRuntimeQueries(cache)
       .sphereQuery!.sampleTerrainByDirection(new Vector3(0, 0, 1));
 
     expect(after.valid).toBe(true);
     expect(after.position.z).toBeCloseTo(grownRadius + height * elevationScale, 2);
+    expect(frozen.sampleSurfaceByPosition(0, 0, 3000).position[2]).toBeCloseTo(before.position.z, 2);
+    frozen.dispose(); cache.dispose();
   });
 
   it("inverted: raycasts onto the SAME-side inward surface (not mirrored)", async () => {

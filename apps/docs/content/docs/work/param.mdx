@@ -4,6 +4,7 @@ description: Reactive parameters for the task graph
 ---
 
 A `Param` is a small reactive container you can:
+
 - read (`get()`)
 - update (`set(valueOrCb)`)
 - reset (`reset()`)
@@ -29,9 +30,9 @@ const config = param({ debug: true, maxRetries: 3 });
 
 Creates a new reactive parameter.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `initial` | `T` | The initial value of the parameter |
+| Parameter | Type | Description                        |
+| --------- | ---- | ---------------------------------- |
+| `initial` | `T`  | The initial value of the parameter |
 
 **Returns:** `ParamRef<T>`
 
@@ -68,8 +69,8 @@ count
   .set((prev) => prev * 2);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter         | Type                    | Description                      |
+| ----------------- | ----------------------- | -------------------------------- |
 | `valueOrCallback` | `T \| ((prev: T) => T)` | Direct value or updater callback |
 
 **Returns:** `ParamRef<T>` (for chaining)
@@ -108,8 +109,8 @@ theme.set("dark");
 unsubscribe();
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter  | Type                         | Description                          |
+| ---------- | ---------------------------- | ------------------------------------ |
 | `callback` | `(next: T, prev: T) => void` | Function called on each value change |
 
 **Returns:** `() => void` - Unsubscribe function
@@ -123,19 +124,19 @@ const playerHealth = param(100).displayName("playerHealth");
 console.log(playerHealth.name); // "playerHealth"
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `name` | `string` | Display name for the parameter |
+| Parameter | Type     | Description                    |
+| --------- | -------- | ------------------------------ |
+| `name`    | `string` | Display name for the parameter |
 
 **Returns:** `ParamRef<T>` (for chaining)
 
 ### Properties
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `kind` | `"param"` | Type discriminator for distinguishing params from tasks |
-| `id` | `string` | Unique identifier (UUID) |
-| `name` | `string \| undefined` | Display name if set |
+| Property | Type                  | Description                                             |
+| -------- | --------------------- | ------------------------------------------------------- |
+| `kind`   | `"param"`             | Type discriminator for distinguishing params from tasks |
+| `id`     | `string`              | Unique identifier (UUID)                                |
+| `name`   | `string \| undefined` | Display name if set                                     |
 
 ## Examples
 
@@ -220,7 +221,7 @@ shared value and the graph subscribes to changes via `param.set()`.
 
 For **multi-instance** use cases (e.g. two terrain meshes in the same scene), you need each graph
 to have its own copy of a param's value. `graph.set()` does exactly this — it takes **graph-local
-ownership** of a param, storing an isolated value that only that graph sees.
+ownership** of a param, storing a value that only that graph sees. Object values must be copied by the caller when independent mutable contents are required.
 
 ### Declaring params at module scope
 
@@ -267,7 +268,7 @@ console.log(g2.get(configTask)); // { size: 512, level: 20 }
 
 ### How ownership works
 
-- Before `graph.set()` is called, the graph subscribes to `param.subscribe()` — exactly like today.
+- Before `graph.set()` is called, the graph subscribes to `param.subscribe()` .
 - The first `graph.set(param, valueOrCb)` call **detaches** the external subscription and stores a graph-local value.
 - Subsequent `graph.set()` calls update the graph-local value and mark downstream tasks dirty.
 - External `param.set()` calls no longer affect a graph that has taken ownership.

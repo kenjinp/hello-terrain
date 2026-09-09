@@ -1,128 +1,185 @@
-import { terrainGraph, terrainTasks } from "@hello-terrain/three";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createSyncTerrainNodesTask, createSyncTerrainRuntimeTask } from "./runtimeTasks";
-import type {
-  TerrainHandle,
-  TerrainNodes,
-  TerrainOptions,
-  TerrainRuntime,
-  TerrainTask,
-} from "./types";
-import { useTerrainParams } from "./useTerrainParams";
-import { useTerrainRunner } from "./useTerrainRunner";
+import {
+    createTerrain,
+    createFlatTopology,
+    terrainGraph,
+    terrainTasks,
+    type TerrainGraph,
+    type TerrainConfig,
+} from '@hello-terrain/three';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from 'react';
+import type { WebGPURenderer } from 'three/webgpu';
+import type { TerrainHandle, TerrainOptions, TerrainRuntime } from './types';
 
+/** React owns a runtime lease; production is the same as vanilla Three. */
 export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
-  const runtime = useMemo<TerrainRuntime>(
-    () => ({
-      query: null,
-      surfaceQuery: null,
-      sphereQuery: null,
-      raycast: null,
-    }),
-    [],
-  );
-  const isMountedRef = useRef(true);
-  const graphLifecycleRef = useRef(0);
-  const terrainNodesRef = useRef<TerrainNodes>({
-    positionNode: null,
-  });
-  const [terrainNodes, setTerrainNodes] = useState<TerrainNodes>(terrainNodesRef.current);
-  const readyRef = useRef(false);
-  const [ready, setReady] = useState(false);
-  const emitTerrainNodes = useCallback((nextTerrainNodes: TerrainNodes) => {
-    if (!isMountedRef.current) return;
-    setTerrainNodes((prevTerrainNodes) => {
-      if (prevTerrainNodes.positionNode === nextTerrainNodes.positionNode) {
-        terrainNodesRef.current = prevTerrainNodes;
-        return prevTerrainNodes;
-      }
-      terrainNodesRef.current = nextTerrainNodes;
-      return nextTerrainNodes;
+    const renderer = useThree((state) => state.gl) as unknown as WebGPURenderer;
+    const topology = useMemo(
+        () =>
+            options.topology ??
+            createFlatTopology({
+                rootSize: options.rootSize ?? 256,
+                origin: {
+                    x: options.origin?.x ?? 0,
+                    y: options.origin?.y ?? 0,
+                    z: options.origin?.z ?? 0,
+                },
+            }),
+        [options.topology, options.rootSize, options.origin?.x, options.origin?.y, options.origin?.z]
+    );
+    const readback = options.queries?.readback,
+        maxRetainedSnapshots = options.queries?.maxRetainedSnapshots;
+    const controller = useMemo(
+        () => createTerrain({ renderer, queries: { readback, maxRetainedSnapshots } }),
+        [renderer, readback, maxRetainedSnapshots]
+    );
+    const status = useSyncExternalStore(
+        controller.subscribe,
+        controller.getStatus,
+        controller.getStatus
+    );
+    const lifecycle = useMemo(() => ({ controller, generation: 0 }), [controller]);
+    const defaults = useMemo(() => controller.getConfig(), [controller]);
+    const appliedProps = useRef<{
+        controller: typeof controller;
+        config: Partial<TerrainConfig>;
+    } | null>(null);
+    useEffect(() => {
+        const generation = ++lifecycle.generation;
+        return () => {
+            queueMicrotask(() => {
+                if (lifecycle.generation === generation) void controller.dispose();
+            });
+        };
+    }, [controller, lifecycle]);
+    useLayoutEffect(() => {
+        const config: Partial<TerrainConfig> = { topology };
+        for (const key of [
+            'maxLevel',
+            'maxNodes',
+            'innerTileSegments',
+            'skirtScale',
+            'elevationScale',
+            'elevation',
+            'elevationRange',
+            'terrainFieldFilter',
+            'terrainFieldFormat',
+            'lod',
+        ] as const) {
+            const value = options[key] ?? defaults[key];
+            Object.assign(config, { [key]: value });
+        }
+        const previous =
+            appliedProps.current?.controller === controller ? appliedProps.current.config : null;
+        const patch: Partial<TerrainConfig> = {};
+        for (const key of Object.keys(config) as (keyof TerrainConfig)[]) {
+            const a = previous?.[key],
+                b = config[key];
+            const same =
+                key === 'lod' || key === 'elevationRange'
+                    ? JSON.stringify(a) === JSON.stringify(b)
+                    : a === b;
+            if (!same) Object.assign(patch, { [key]: b });
+        }
+        appliedProps.current = { controller, config };
+        if (Object.keys(patch).length) controller.configure(patch);
+    }); // resolve/equality make equivalent data props a no-op after every commit.
+
+    const latest = useRef(options);
+    latest.current = options;
+    const viewBinding = useRef<TerrainHandle['binding']>(null);
+    const submitted = useRef<{
+        controller: typeof controller;
+        position: number[];
+        projectionFactor?: number;
+        edit: number;
+    } | null>(null);
+    useFrame((state) => {
+        if (controller.getStatus().productionPending) return;
+        const custom = latest.current.getCameraOrigin?.(state);
+        const view = custom
+            ? { position: [custom.x, custom.y, custom.z] as [number, number, number] }
+            : viewBinding.current
+              ? viewBinding.current.viewFromCamera(state.camera, state.size.height)
+              : {
+                    position: state.camera.position.toArray(),
+                    projectionFactor:
+                        (state.size.height * Math.abs(state.camera.projectionMatrix.elements[5]!)) /
+                        2,
+                };
+        const previous = submitted.current,
+            edit = controller.getStatus().acceptedEditVersion;
+        const threshold = Math.max(0, latest.current.cameraHysteresis ?? 0);
+        if (
+            previous?.controller === controller &&
+            previous.edit === edit &&
+            previous.projectionFactor === view.projectionFactor &&
+            Math.hypot(...view.position.map((value, i) => value - previous.position[i]!)) < threshold
+        )
+            return;
+        submitted.current = { controller, ...view, edit };
+        void controller.update(view);
     });
-  }, []);
-  const getTerrainNodes = useCallback(() => terrainNodesRef.current, []);
-  const emitReady = useCallback((nextReady: boolean) => {
-    if (!isMountedRef.current) return;
-    readyRef.current = nextReady;
-    setReady((prevReady) => (prevReady === nextReady ? prevReady : nextReady));
-  }, []);
-  const getReady = useCallback(() => readyRef.current, []);
-  const syncTerrainRuntimeTask = useMemo(() => createSyncTerrainRuntimeTask(runtime), [runtime]);
-  const syncTerrainNodesTask = useMemo(
-    () => createSyncTerrainNodesTask(getTerrainNodes, emitTerrainNodes, getReady, emitReady),
-    [emitReady, emitTerrainNodes, getReady, getTerrainNodes],
-  );
-  const graph = useMemo(() => {
-    const nextGraph = terrainGraph();
-
-    for (const task of options.tasks ?? []) {
-      nextGraph.add(task);
-    }
-
-    nextGraph.add(syncTerrainRuntimeTask);
-    nextGraph.add(syncTerrainNodesTask);
-
-    return nextGraph;
-  }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
-  const runnerTargets = useMemo(() => {
-    const userTasks = options.tasks ?? [];
-    return [
-      ...userTasks,
-      terrainTasks.executeCompute,
-      terrainTasks.terrainReadback,
-      terrainTasks.gpuSpatialIndexUpload,
-      syncTerrainRuntimeTask,
-      syncTerrainNodesTask,
-    ] satisfies readonly TerrainTask[];
-  }, [options.tasks, syncTerrainNodesTask, syncTerrainRuntimeTask]);
-  const stopTerrainRunner = useTerrainRunner({
-    graph,
-    targets: runnerTargets,
-    getCameraOrigin: options.getCameraOrigin,
-    cameraHysteresis: options.cameraHysteresis,
-  });
-
-  useEffect(() => {
-    graphLifecycleRef.current += 1;
-    const lifecycle = graphLifecycleRef.current;
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      queueMicrotask(() => {
-        if (graphLifecycleRef.current !== lifecycle) return;
-        void stopTerrainRunner().finally(() => {
-          if (graphLifecycleRef.current !== lifecycle) return;
-          graph.dispose();
-        });
-      });
-    };
-  }, [graph, stopTerrainRunner]);
-
-  useLayoutEffect(() => {
-    runtime.query = null;
-    runtime.raycast = null;
-    const nextTerrainNodes = {
-      positionNode: null,
-    } satisfies TerrainNodes;
-    terrainNodesRef.current = nextTerrainNodes;
-    readyRef.current = false;
-    setTerrainNodes(nextTerrainNodes);
-    setReady(false);
-  }, [graph, runtime]);
-
-  useTerrainParams(graph, options);
-
-  const topology = options.topology ?? null;
-
-  return useMemo(
-    () => ({
-      graph,
-      tasks: terrainTasks,
-      runtime,
-      ready,
-      topology,
-      ...terrainNodes,
-    }),
-    [graph, ready, runtime, topology, terrainNodes],
-  );
+    // Inspection only: the simple API never needs graph tasks. Kept for existing
+    // debug panels; edits use configure/invalidate methods on the controller.
+    const graph = useMemo(() => {
+        const empty = terrainGraph();
+        return new Proxy(empty, {
+            get(_target, key) {
+                if (key === 'on') return controller.onGraphEvent;
+                if (
+                    key === 'set' ||
+                    key === 'reset' ||
+                    key === 'add' ||
+                    key === 'run' ||
+                    key === 'dispose'
+                )
+                    return () => {
+                        throw new Error(
+                            'Runtime owns the graph; use terrain.controller.configure/update/dispose'
+                        );
+                    };
+                const current = controller.getRender()?.graph ?? empty;
+                const value = Reflect.get(current, key);
+                return typeof value === 'function' ? value.bind(current) : value;
+            },
+        }) as TerrainGraph;
+    }, [controller]);
+    const runtime = useMemo<TerrainRuntime>(
+        () => ({
+            get query() {
+                return controller.getLegacyQueries()?.query ?? null;
+            },
+            get surfaceQuery() {
+                return controller.getLegacyQueries()?.surfaceQuery ?? null;
+            },
+            get sphereQuery() {
+                return controller.getLegacyQueries()?.sphereQuery ?? null;
+            },
+            get raycast() {
+                return controller.getLegacyQueries()?.raycast ?? null;
+            },
+        }),
+        [controller]
+    );
+    return useMemo(
+        () => ({
+            graph,
+            tasks: terrainTasks,
+            runtime,
+            controller,
+            status,
+            get binding() {
+                return viewBinding.current;
+            },
+            set binding(value) {
+                viewBinding.current = value;
+            },
+            topology,
+            ready: status.renderRevision !== null,
+            positionNode: controller.getRender()?.positionNode ?? null,
+            materialContext: controller.getRender()?.materialContext,
+        }),
+        [graph, runtime, controller, status, topology]
+    );
 }

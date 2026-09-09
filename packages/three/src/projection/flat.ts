@@ -3,6 +3,7 @@ import type { Node } from "three/webgpu";
 import { createFlatNormalFromElevationField } from "../gpu/normalField";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createFlatRenderVertexPosition } from "../gpu/worldPosition";
+import { createFlatPrecisionPosition } from "../gpu/precision";
 import { cpuRaycast } from "../query/cpu-raycast";
 import { createTerrainQuery } from "../query/terrain-query";
 import type {
@@ -77,12 +78,14 @@ export function createFlatProjection(): SurfaceProjection {
     faceOutward: false,
 
     gpu: {
+      createRenderPrecision: createFlatPrecisionPosition,
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
         return createFlatRenderVertexPosition(
           ctx.leafStorage,
           ctx.uniforms,
           ctx.terrainFieldStorage,
           ctx.tileBoundsNode,
+          ctx.materialContext,
         );
       },
       createTileComputeParts: createFlatTileComputeParts,

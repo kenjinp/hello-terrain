@@ -4,7 +4,11 @@
   "root": true,
   "pages": [
     "index",
-    "quadtree-2d",
+    "---Runtime API---",
+    "multiple-planets",
+    "runtime-editing",
+    "material-maps",
+    "---Topologies---",
     "infinite-flat",
     "cube-sphere",
     "torus",

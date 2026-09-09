@@ -1,12 +1,13 @@
 import { CUBE_FACES, type Vec3 } from "./cubeSphereFaces";
 
-export type Vec3Mutable = [number, number, number];
+import { vec3, type Vec3 as Vec3Mutable } from "math";
+export type { Vec3 as Vec3Mutable } from "math";
 
 const DEG_TO_RAD = Math.PI / 180;
 const RAD_TO_DEG = 180 / Math.PI;
 
 function dot(a: Vec3, b: Vec3): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  return vec3.dot(a, b);
 }
 
 /**

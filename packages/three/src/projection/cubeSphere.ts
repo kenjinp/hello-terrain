@@ -1,11 +1,12 @@
+import { vec3 as cpuVec3, type Vec3 } from "math";
 import { Vector3 } from "three";
-import { Fn, float, pow } from "three/tsl";
+import { Fn, float, pow, int, cross } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { HALF_PI } from "../gpu/tile";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
-import { createDisplacedSurfaceNormalFromElevationField } from "../gpu/normalField";
 import { createCurvedRenderVertexPosition } from "../gpu/worldPosition";
-import { cubeFaceBasis, cubeFaceDirection } from "../tsl/cubeSphere";
+import { createSpherePrecisionPosition } from "../gpu/precision";
+import { cubeFaceBasis, cubeFaceDirection, cubeFacePoint } from "../tsl/cubeSphere";
 import {
   type Vec3Mutable,
   directionToFace,
@@ -77,7 +78,7 @@ export function createCubeSphereProjection(
   config: CubeSphereProjectionConfig,
 ): SurfaceProjection {
   const radius = config.radius;
-  const center: Vec3Like = config.center ?? { x: 0, y: 0, z: 0 };
+  const center: Vec3Like = Object.freeze({ ...(config.center ?? { x: 0, y: 0, z: 0 }) });
   const invert = config.invert ?? false;
 
   // Per-instance CPU scratch (no module-scope state).
@@ -128,9 +129,9 @@ export function createCubeSphereProjection(
     },
     surfacePosition(key, elevation, outVec) {
       const r = invert ? radius - elevation : radius + elevation;
-      outVec.set(center.x + key.dirX * r, center.y + key.dirY * r, center.z + key.dirZ * r);
+      cpuVec3.set(outVec, center.x + key.dirX * r, center.y + key.dirY * r, center.z + key.dirZ * r);
     },
-    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
+    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vec3 {
       const scale = ctx.elevationScale;
       const duv = 1 / (ctx.innerTileSegments * 2 ** ctx.level);
       dirScratch[0] = key.dirX;
@@ -168,7 +169,7 @@ export function createCubeSphereProjection(
         ny = -ny;
         nz = -nz;
       }
-      return new Vector3(nx, ny, nz).normalize();
+      return cpuVec3.normalize(cpuVec3.create(), [nx, ny, nz]);
     },
   };
 
@@ -179,6 +180,7 @@ export function createCubeSphereProjection(
     faceOutward: !invert,
 
     gpu: {
+      createRenderPrecision(ctx) { return createSpherePrecisionPosition({ ...ctx, radius, center, invert }); },
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
         return createCurvedRenderVertexPosition(
           ctx.leafStorage,
@@ -187,38 +189,44 @@ export function createCubeSphereProjection(
           (tile, faceUV, displacement) => {
             const basis = cubeFaceBasis(tile.face);
             const dir = cubeFaceDirection(basis, faceUV.x, faceUV.y);
+            ctx.materialContext?.datumNormalLocal.assign(invert ? dir.negate() : dir);
             const r = invert
               ? ctx.uniforms.uRadius.toVar().sub(displacement)
               : ctx.uniforms.uRadius.toVar().add(displacement);
             return ctx.uniforms.uRootOrigin.toVar().add(dir.mul(r));
           },
           ctx.tileBoundsNode,
+          1, 1, ctx.materialContext,
         );
       },
       createTileComputeParts: createSphereTileComputeParts,
       createFieldNormal(ctx: FieldNormalContext): FieldNormalFn {
-        const computeNormal = createDisplacedSurfaceNormalFromElevationField(
-          ctx.elevationFieldNode,
-          ctx.edgeVertexCount,
-          (nodeIndex) => {
-            const basis = cubeFaceBasis(ctx.tile.tileFace(nodeIndex));
-            const r = ctx.uniforms.uRadius.toVar();
-            return {
-              positionAt: (gx, gy, height) => {
-                const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-                const dir = cubeFaceDirection(basis, uv.x, uv.y);
-                return invert ? dir.mul(r.sub(height)) : dir.mul(r.add(height));
-              },
-              dirAt: (gx, gy) => {
-                const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-                const dir = cubeFaceDirection(basis, uv.x, uv.y);
-                return invert ? dir.negate() : dir;
-              },
-            };
-          },
-        );
-        return (nodeIndex, ix, iy) =>
-          computeNormal(nodeIndex, ix, iy, ctx.uniforms.uElevationScale);
+        return Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
+          const edge = int(ctx.edgeVertexCount);
+          // Clamp the outer halo's derivative stencil; render samples use the
+          // inner vertices. Never read another tile's row or outside storage.
+          const x = int(ix).clamp(1, ctx.edgeVertexCount - 2);
+          const y = int(iy).clamp(1, ctx.edgeVertexCount - 2);
+          const base = int(nodeIndex).mul(ctx.edgeVertexCount ** 2);
+          const height = (gx: Node, gy: Node) => ctx.elevationFieldNode.element(base.add(gy.mul(edge)).add(gx)).mul(ctx.uniforms.uElevationScale);
+          const h = height(x, y);
+          const dhU = height(x.add(1), y).sub(height(x.sub(1), y));
+          const dhV = height(x, y.add(1)).sub(height(x, y.sub(1)));
+          const basis = cubeFaceBasis(ctx.tile.tileFace(nodeIndex));
+          const uv = ctx.tile.tileFaceUV(nodeIndex, x, y);
+          const cube = cubeFacePoint(basis, uv.x, uv.y);
+          const length = cube.length();
+          const direction = cube.div(length);
+          const sign = invert ? -1 : 1;
+          const shell = ctx.uniforms.uRadius.add(h.mul(sign));
+          // d(normalize(c))/du = (dc/du - n dot(n,dc/du))/|c|.
+          // Multiply by the small stencil span before any large position exists.
+          const span = float(4).div(ctx.uniforms.uInnerTileSegments.toFloat().mul(pow(2, ctx.tile.tileLevel(nodeIndex).toFloat())));
+          const metric = shell.mul(span).div(length);
+          const tangentU = basis.right.sub(direction.mul(direction.dot(basis.right))).mul(metric).add(direction.mul(dhU.mul(sign)));
+          const tangentV = basis.up.sub(direction.mul(direction.dot(basis.up))).mul(metric).add(direction.mul(dhV.mul(sign)));
+          return cross(tangentU, tangentV).normalize().mul(sign);
+        });
       },
       augmentSampler: augmentCubeSphereSampler,
     },
@@ -310,7 +318,7 @@ function createCubeSphereQuery(
 
     sampleTerrainBatchByDirection: (directions) => {
       const count = Math.floor(directions.length / 3);
-      const positions = new Float32Array(count * 3);
+      const positions = new Float64Array(count * 3);
       for (let i = 0; i < count; i += 1) {
         positions[i * 3] = center.x + (directions[i * 3] ?? 0);
         positions[i * 3 + 1] = center.y + (directions[i * 3 + 1] ?? 0);

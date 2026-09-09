@@ -37,9 +37,9 @@ function packedSampleFromTileResult(
     safeTileIndex,
   ).toVar();
   const { packMin, packMax } = loadTilePackBounds(params.tileBoundsNode, safeTileIndex);
-  const elevation = denormalizeTerrainFieldElevation(sampled.r, packMin, packMax);
+  const elevation = denormalizeTerrainFieldElevation(sampled.r, packMin, packMax).mul(params.uniforms.uElevationScale);
   // The terrain field stores the unit world-space normal in (g, b, a).
-  const normal = vec3(sampled.g, sampled.b, sampled.a);
+  const normal = vec3(sampled.g, sampled.b, sampled.a).normalize();
 
   const valid = found.select(float(1), float(0)).toVar();
   return vec4(elevation, normal.x, normal.y, normal.z).mul(valid);

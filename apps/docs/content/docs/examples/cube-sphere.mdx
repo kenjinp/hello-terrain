@@ -1,6 +1,6 @@
 ---
 title: Cube-Sphere Planet
-description: Interactive demo of a planet-scale cube-sphere terrain surface with seamless LOD across faces
+description: Interactive demo of a planet-scale cube-sphere terrain surface with adaptive LOD across faces
 ---
 
 import CubeSpherePlanetScene from "@/examples/CubeSpherePlanetScene"
@@ -11,7 +11,6 @@ import CubeSpherePlanetScene from "@/examples/CubeSpherePlanetScene"
 
 ## Overview
 
-This example demonstrates the `createCubeSphereTopology` API, which wraps six quadtree faces around a sphere to produce a full planet. Each face refines independently with the same LOD machinery used by the flat topologies, and the topology stitches faces together so the planet behaves as one continuous surface.
+This example uses `createCubeSphereTopology` to refine six cube-face charts around a sphere. The projection displaces the spherical datum along its radial direction. The runtime publishes geometry and query snapshots; applications sample every topology through the same query API.
 
-Unlike the flat topologies, the GPU position pipeline runs in `cubeSphere` projection mode: each tile vertex is mapped from its face-local `(u, v)` coordinate onto the cube, normalized onto the unit sphere, scaled by the planet `radius`, and then displaced radially by the elevation function. Surface normals are reconstructed in the per-vertex sphere tangent frame so lighting follows the curvature of the planet.
-
+Face connectivity does not by itself guarantee seamless source maps or mixed-LOD geometry. See [topology](/docs/core/topology) and [precision validation](/docs/terrain-gym).

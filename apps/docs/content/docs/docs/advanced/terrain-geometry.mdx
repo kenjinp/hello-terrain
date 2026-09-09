@@ -14,29 +14,32 @@ import Scene from "@/examples/TerrainGeometryScene"
 This is the basic geometry unit of the Hello Terrain system. It will be instanced and duplicated to render the terrain scene, as many terrain tiles.
 
 It's slightly different from the [`PlaneGeometry`](https://threejs.org/docs/#PlaneGeometry) native to three.js, in that it handles skirt geometry correctly, by using rotational symmetry.
-This way, if we pull down the edge vertices to make a box-like terrain skirt, the corners will not be distorted on opposing sides of the tile. 
+This way, if we pull down the edge vertices to make a box-like terrain skirt, the corners will not be distorted on opposing sides of the tile.
 
-The number of total segments is important, as it will define the shape of the terrain data. 
+The number of total segments is important, as it will define the shape of the terrain data.
 If you want to render a terrain with a 16x16 grid, you would use a `TerrainGeometry` with `innerSegments` set to `14`.
 This is because the total number of segments is `innerSegments + 2`, for the outer skirt ring.
 
+The runtime binding creates and sizes this geometry automatically. Construct it directly only for standalone geometry inspection or custom rendering.
 
 ## Constructor Parameters
 
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `innerSegments` | `number` | `14` | Number of subdivisions for the inner grid. Must be a positive integer. |
-| `extendUV` | `boolean` | `true` | When `true`, UVs extend to cover skirt vertices. When `false`, skirt UVs are clamped to the border of the inner grid. Toggling this may be useful for when you want to texture the skirts for a terrarium effect. |
+| Parameter       | Type      | Default | Description                                                                                                                                                                                                       |
+| --------------- | --------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `innerSegments` | `number`  | `14`    | Number of subdivisions for the inner grid. Must be a positive integer.                                                                                                                                            |
+| `extendUV`      | `boolean` | `false` | When `true`, UVs extend to cover skirt vertices. When `false`, skirt UVs are clamped to the border of the inner grid. Toggling this may be useful for when you want to texture the skirts for a terrarium effect. |
+| `flipWinding`   | `boolean` | `false` | Reverse triangle winding; runtime bindings derive it from the topology.                                                                                                                                           |
 
-## Instance Properties 
+## Instance Properties
+
 inherited from [`BufferGeometry`](https://threejs.org/docs/#BufferGeometry)
 
-| Property | Type | Description |
-|----------|------|-------------|
-| `index` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) | Triangle indices defining face connectivity with quadrant-based diagonal flipping for proper skirt corners. |
-| `attributes.position` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 3) | Vertex positions normalized to `[-0.5, 0.5]` range. Includes duplicated outer ring for skirt geometry. |
-| `attributes.normal` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 3) | Vertex normals. Inner vertices point upward `(0, 1, 0)`. Skirt edge vertices point outward horizontally. |
-| `attributes.uv` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 2) | UV coordinates in `[0, 1]` range with flipped V coordinate. Behavior depends on `extendUV` constructor parameter. |
+| Property              | Type                                                                             | Description                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `index`               | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute)                   | Triangle indices defining face connectivity with quadrant-based diagonal flipping for proper skirt corners.       |
+| `attributes.position` | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 3) | Vertex positions normalized to `[-0.5, 0.5]` range. Includes duplicated outer ring for skirt geometry.            |
+| `attributes.normal`   | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 3) | Vertex normals. Inner vertices point upward `(0, 1, 0)`. Skirt edge vertices point outward horizontally.          |
+| `attributes.uv`       | [`BufferAttribute`](https://threejs.org/docs/#BufferAttribute) (Float32Array, 2) | UV coordinates in `[0, 1]` range with flipped V coordinate. Behavior depends on `extendUV` constructor parameter. |
 
 ## Usage
 
@@ -84,8 +87,8 @@ The `@hello-terrain/three` package exports two TSL (Three.js Shading Language) h
 
 Returns a boolean node indicating whether the current vertex belongs to the skirt (outermost ring of the grid).
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter  | Type             | Description                                       |
+| ---------- | ---------------- | ------------------------------------------------- |
 | `segments` | `number \| Node` | The number of inner segments in the terrain grid. |
 
 **Usage:** Vertex shader only. Use this to transform skirt vertices differently, such as pulling them downward to create the skirt drop.
@@ -108,8 +111,8 @@ const positionNode = Fn(() => {
 
 Returns a boolean node indicating whether the current fragment's UV coordinates fall within the skirt region.
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
+| Parameter  | Type             | Description                                       |
+| ---------- | ---------------- | ------------------------------------------------- |
 | `segments` | `number \| Node` | The number of inner segments in the terrain grid. |
 
 **Usage:** Fragment shader. Use this to apply different colors or textures to skirt faces, such as painting them a solid color or applying a "terrarium side" texture.

@@ -1,9 +1,6 @@
 {
-  "title": "Blog",
-  "description": "Development updates and notes",
+  "title": "Guides",
+  "description": "Current project guides",
   "root": true,
-  "pages": [
-    "index",
-    "...posts"
-  ]
+  "pages": ["index"]
 }

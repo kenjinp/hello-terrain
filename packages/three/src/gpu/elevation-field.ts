@@ -30,6 +30,8 @@ export const createElevation = (
       tileLevel: tile.tileLevel(nodeIndex),
       nodeIndex: int(nodeIndex),
       tileUV,
+      tileLocalUV: localCoordinates.toFloat().sub(1).div(uniforms.uInnerTileSegments.toFloat()),
+      sourceFace: tile.tileFace(nodeIndex),
     });
   };
 };

@@ -1,0 +1,39 @@
+---
+title: Multiple Large Planets
+description: Three independent terrain runtimes, Earth-scale dimensions, and distant scene placement
+---
+
+import MultiplePlanetsScene from "@/examples/runtime/MultiplePlanetsScene"
+
+<MultiplePlanetsScene />
+
+## Try it
+
+Focus a planet, change its relief, and watch its render and query edit counters. The other planets retain their accepted configuration. Return to **Whole system** to see all three together. Each planet has its own runtime, topology, fields, and query snapshot; they share a renderer.
+
+Pelagos has Earth's authalic radius, Ember has a 3,390 km radius, and Selene has a 1,737.4 km radius. The system sits one billion metres from the scene origin. Relief is intentionally exaggerated so edits are visible from orbit. The probe samples a fixed datum direction on each planet through its binding in scene coordinates.
+
+## API pattern
+
+```tsx
+const topology = useMemo(() => createCubeSphereTopology({ radius }), [radius]);
+const elevation = useMemo(() => ({ worldPosition }) => {
+  const p = worldPosition.div(radius);
+  return p.x.mul(11).sin().mul(p.y.mul(7).cos()).mul(p.z.mul(9).add(1).sin());
+}, [radius]);
+const terrain = useTerrain({
+  topology, elevation, elevationRange: { min: -1, max: 1 },
+  elevationScale: relief,
+});
+return <Terrain terrain={terrain} position={scenePosition}>
+  {({ positionNode, materialContext }) => (
+    <meshStandardNodeMaterial positionNode={positionNode} />
+  )}
+</Terrain>;
+```
+
+Repeat the component for each planet. Topology dimensions stay terrain-local; `position` belongs to scene placement. Use `terrain.binding.sampleWorld(scenePosition)` for scene queries and inspect `sample.status` before reading its tuple position or elevation. React owns update and disposal lifecycles.
+
+The ordinary TSL callback uses dimensionless datum coordinates for broad features. Tile-relative rendering preserves small placement offsets, but this demo does not establish a universal ground-level precision guarantee for arbitrary elevation sources, shadows, or mixed-LOD borders. See [precision validation](/docs/terrain-gym).
+
+[Runtime API](/docs/core/runtime) · [Queries](/docs/core/query/terrain-query)

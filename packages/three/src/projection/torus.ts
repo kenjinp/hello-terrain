@@ -1,8 +1,8 @@
-import { Vector3 } from "three";
-import { Fn, float, pow } from "three/tsl";
+import { vec3 as cpuVec3, type Vec3 } from "math";
+import { createTorusPrecisionPosition } from "../gpu/precision";
+import { Fn, float, pow, int, sin, cos, cross, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
-import { createDisplacedSurfaceNormalFromElevationField } from "../gpu/normalField";
 import { createCurvedRenderVertexPosition } from "../gpu/worldPosition";
 import { torusOutwardNormal as torusOutwardNormalNode, torusPosition } from "../tsl/torus";
 import {
@@ -42,7 +42,6 @@ export interface TorusProjectionConfig {
 
 const TWO_PI = Math.PI * 2;
 const RAYCAST_PADDING = 1;
-const ZERO_CENTER = { x: 0, y: 0, z: 0 };
 
 function createTorusTileComputeParts(
   ctx: TileComputePartsContext,
@@ -80,10 +79,11 @@ function createTorusTileComputeParts(
 export function createTorusProjection(config: TorusProjectionConfig): SurfaceProjection {
   const majorRadius = config.majorRadius;
   const minorRadius = config.minorRadius;
-  const center: Vec3Like = config.center ?? { x: 0, y: 0, z: 0 };
+  const center: Vec3Like = Object.freeze({ ...(config.center ?? { x: 0, y: 0, z: 0 }) });
   const invert = config.invert ?? false;
   const baseU = config.baseU ?? 1;
   const baseV = config.baseV ?? 1;
+  const zeroCenter = { x: 0, y: 0, z: 0 };
   const geometry = { majorRadius, minorRadius, center, invert, baseU, baseV };
 
   // Per-instance CPU scratch (no module-scope state).
@@ -117,9 +117,9 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         normalScratch,
         invert,
       );
-      outVec.set(normalScratch[0], normalScratch[1], normalScratch[2]);
+      cpuVec3.set(outVec, normalScratch[0], normalScratch[1], normalScratch[2]);
     },
-    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3 {
+    surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vec3 {
       const scale = ctx.elevationScale;
       const levelScale = 2 ** ctx.level;
       const duvU = 1 / (ctx.innerTileSegments * baseU * levelScale);
@@ -133,10 +133,10 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
       const hDown = sampleGridBilinear(ctx.elevation, ctx.shape, ctx.leafIndex, ctx.gx, ctx.gy + 1) * scale;
 
       // Translation-invariant; use a zero center to keep the math simple.
-      torusUVToPoint(u - duvU, v, majorRadius, minorRadius, hLeft, ZERO_CENTER, posLeft, invert);
-      torusUVToPoint(u + duvU, v, majorRadius, minorRadius, hRight, ZERO_CENTER, posRight, invert);
-      torusUVToPoint(u, v - duvV, majorRadius, minorRadius, hUp, ZERO_CENTER, posUp, invert);
-      torusUVToPoint(u, v + duvV, majorRadius, minorRadius, hDown, ZERO_CENTER, posDown, invert);
+      torusUVToPoint(u - duvU, v, majorRadius, minorRadius, hLeft, zeroCenter, posLeft, invert);
+      torusUVToPoint(u + duvU, v, majorRadius, minorRadius, hRight, zeroCenter, posRight, invert);
+      torusUVToPoint(u, v - duvV, majorRadius, minorRadius, hUp, zeroCenter, posUp, invert);
+      torusUVToPoint(u, v + duvV, majorRadius, minorRadius, hDown, zeroCenter, posDown, invert);
 
       const tux = posRight[0] - posLeft[0];
       const tuy = posRight[1] - posLeft[1];
@@ -153,7 +153,7 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         ny = -ny;
         nz = -nz;
       }
-      return new Vector3(nx, ny, nz).normalize();
+      return cpuVec3.normalize(cpuVec3.create(), [nx, ny, nz]);
     },
   };
 
@@ -165,35 +165,42 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     baseResolution: { u: baseU, v: baseV },
 
     gpu: {
+      createRenderPrecision(ctx) { return createTorusPrecisionPosition({ ...ctx, ...geometry }); },
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
         return createCurvedRenderVertexPosition(
           ctx.leafStorage,
           ctx.uniforms,
           ctx.terrainFieldStorage,
-          (_tile, faceUV, displacement) => torusPosition(geometry, faceUV.x, faceUV.y, displacement),
+          (_tile, faceUV, displacement) => {
+            ctx.materialContext?.datumNormalLocal.assign(torusOutwardNormalNode(faceUV.x, faceUV.y, invert));
+            return torusPosition(geometry, faceUV.x, faceUV.y, displacement);
+          },
           ctx.tileBoundsNode,
           baseU,
           baseV,
+          ctx.materialContext,
         );
       },
       createTileComputeParts: (ctx) => createTorusTileComputeParts(ctx, geometry),
       createFieldNormal(ctx: FieldNormalContext): FieldNormalFn {
-        const computeNormal = createDisplacedSurfaceNormalFromElevationField(
-          ctx.elevationFieldNode,
-          ctx.edgeVertexCount,
-          (nodeIndex) => ({
-            positionAt: (gx, gy, height) => {
-              const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-              return torusPosition(geometry, uv.x, uv.y, height);
-            },
-            dirAt: (gx, gy) => {
-              const uv = ctx.tile.tileFaceUV(nodeIndex, gx, gy);
-              return torusOutwardNormalNode(uv.x, uv.y, invert);
-            },
-          }),
-        );
-        return (nodeIndex, ix, iy) =>
-          computeNormal(nodeIndex, ix, iy, ctx.uniforms.uElevationScale);
+        return Fn(([nodeIndex, ix, iy]: [Node, Node, Node]) => {
+          const edge = int(ctx.edgeVertexCount), x = int(ix).clamp(1, ctx.edgeVertexCount - 2), y = int(iy).clamp(1, ctx.edgeVertexCount - 2);
+          const base = int(nodeIndex).mul(ctx.edgeVertexCount ** 2);
+          const height = (gx: Node, gy: Node) => ctx.elevationFieldNode.element(base.add(gy.mul(edge)).add(gx)).mul(ctx.uniforms.uElevationScale);
+          const sign = invert ? -1 : 1;
+          const h = height(x, y).mul(sign);
+          const dhU = height(x.add(1), y).sub(height(x.sub(1), y)).mul(sign);
+          const dhV = height(x, y.add(1)).sub(height(x, y.sub(1))).mul(sign);
+          const uv = ctx.tile.tileFaceUV(nodeIndex, x, y);
+          const theta = uv.x.mul(2 * Math.PI), phi = uv.y.mul(2 * Math.PI);
+          const sT = sin(theta), cT = cos(theta), sP = sin(phi), cP = cos(phi);
+          const direction = vec3(cP.mul(sT), sP, cP.mul(cT));
+          const span = float(4 * Math.PI).div(ctx.uniforms.uInnerTileSegments.toFloat().mul(pow(2, ctx.tile.tileLevel(nodeIndex).toFloat())));
+          const tube = h.add(minorRadius);
+          const tangentU = vec3(cT, 0, sT.negate()).mul(tube.mul(cP).add(majorRadius).mul(span).div(baseU)).add(direction.mul(dhU));
+          const tangentV = vec3(sP.negate().mul(sT), cP, sP.negate().mul(cT)).mul(tube.mul(span).div(baseV)).add(direction.mul(dhV));
+          return cross(tangentU, tangentV).normalize().mul(sign);
+        });
       },
     },
 

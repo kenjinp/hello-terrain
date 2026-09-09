@@ -37,7 +37,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
           },
           {
             on: "nav",
-            text: "Blog",
+            text: "Guides",
             url: "/blog",
             secondary: false,
           },

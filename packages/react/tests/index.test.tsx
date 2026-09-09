@@ -39,6 +39,7 @@ vi.mock("@hello-terrain/three", () => {
 
   return {
     TerrainMesh,
+    createTerrainBinding: vi.fn(() => ({ mesh: new TerrainMesh(), dispose: vi.fn() })),
     terrainGraph: vi.fn(() => graph),
     terrainTasks,
     quadtreeUpdate: "quadtreeUpdateParam",
@@ -60,6 +61,9 @@ import { Terrain, TerrainProvider, useTerrainContext } from "../src/index.js";
 
 function createTerrainHandle(overrides: Partial<TerrainHandle> = {}): TerrainHandle {
   return {
+    controller: {} as TerrainHandle["controller"],
+    binding: null,
+    status: {} as TerrainHandle["status"],
     graph: {
       on: vi.fn(),
       run: vi.fn(),

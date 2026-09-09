@@ -4,6 +4,7 @@ description: Execution engine for running task graphs
 ---
 
 The `Graph` is the runtime that:
+
 - executes tasks
 - tracks dependencies
 - memoizes results
@@ -42,9 +43,9 @@ const myTask = task((get, work) => {
 g.add(myTask);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `task` | `Task<T>` | The task to register |
+| Parameter | Type      | Description          |
+| --------- | --------- | -------------------- |
+| `task`    | `Task<T>` | The task to register |
 
 **Returns:** `TaskRef<T>` - The same task reference (for chaining)
 
@@ -62,12 +63,12 @@ const report = await g.run();
 console.log(report.status); // "ok", "error", or "cancelled"
 ```
 
-| Option | Type | Description |
-|--------|------|-------------|
-| `targets` | `TaskRef[]` | Specific tasks to run (defaults to all) |
-| `laneConcurrency` | `Record<string, number>` | Max concurrent tasks per lane |
-| `signal` | `AbortSignal` | Abort signal for cancellation |
-| `resources` | `unknown` | Resources passed to task contexts |
+| Option            | Type                     | Description                             |
+| ----------------- | ------------------------ | --------------------------------------- |
+| `targets`         | `TaskRef[]`              | Specific tasks to run (defaults to all) |
+| `laneConcurrency` | `Record<string, number>` | Max concurrent tasks per lane           |
+| `signal`          | `AbortSignal`            | Abort signal for cancellation           |
+| `resources`       | `unknown`                | Resources passed to task contexts       |
 
 **Returns:** `Promise<RunReport>`
 
@@ -89,9 +90,9 @@ await g.run();
 const result = g.get(myTask);
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `task` | `TaskRef<T>` | The task to get the value for |
+| Parameter | Type         | Description                   |
+| --------- | ------------ | ----------------------------- |
+| `task`    | `TaskRef<T>` | The task to get the value for |
 
 **Returns:** `T` - The computed value
 
@@ -108,9 +109,9 @@ if (maybeResult !== undefined) {
 }
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `task` | `TaskRef<T>` | The task to peek at |
+| Parameter | Type         | Description         |
+| --------- | ------------ | ------------------- |
+| `task`    | `TaskRef<T>` | The task to peek at |
 
 **Returns:** `T | undefined`
 
@@ -133,9 +134,9 @@ const g = graph()
 g.set(rootSize, (prev) => prev * 2);  // graph-local value: 256
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `param` | `ParamRef<T>` | The param to take ownership of |
+| Parameter  | Type             | Description                                                |
+| ---------- | ---------------- | ---------------------------------------------------------- |
+| `param`    | `ParamRef<T>`    | The param to take ownership of                             |
 | `callback` | `(prev: T) => T` | Function that receives current value and returns new value |
 
 **Returns:** `Graph` (for chaining)
@@ -150,11 +151,6 @@ g.set(rootSize, (prev) => prev * 2);  // graph-local value: 256
 Subscribes to graph events for monitoring, logging, or debugging.
 
 ```ts
-// Subscribe to all events (legacy)
-const unsubAll = g.on((event) => {
-  console.log(event.type, event);
-});
-
 // Subscribe to a group of events
 const unsubTasks = g.on("task:*", (event) => {
   console.log(event.type, event.taskId);
@@ -166,11 +162,10 @@ const unsubCacheHit = g.on("task:cacheHit", (event) => {
 });
 ```
 
-| Signature | Description |
-|----------|-------------|
-| `on(cb)` | Subscribe to all events (legacy) |
-| `on("task:*", cb)` | Subscribe to all task events |
-| `on("run:*", cb)` | Subscribe to all run events |
+| Signature                 | Description                      |
+| ------------------------- | -------------------------------- |
+| `on("task:*", cb)`        | Subscribe to all task events     |
+| `on("run:*", cb)`         | Subscribe to all run events      |
 | `on("task:cacheHit", cb)` | Subscribe to a single event type |
 
 **Returns:** `() => void` - Unsubscribe function
@@ -205,6 +200,7 @@ await g.run({
 If `laneConcurrency` is omitted (or `{}`), the graph does **not** throttle task concurrency by lane.
 
 When `laneConcurrency` is provided and non-empty:
+
 - Tasks without an explicit lane default to `"cpu"`.
 - Lanes not listed in `laneConcurrency` default to **1 permit**.
 
@@ -273,15 +269,15 @@ console.log(`Tasks: ${report.taskCount} executed, ${report.cacheHits} cached`);
 
 Subscribe to events for observability:
 
-| Event Type | Properties | Description |
-|------------|------------|-------------|
-| `run:start` | `runId`, `at` | Run begins |
-| `run:finish` | `runId`, `at`, `status` | Run completes |
-| `task:start` | `runId`, `taskId`, `at`, `lane` | Task begins |
-| `task:finish` | `runId`, `taskId`, `at`, `durationMs` | Task completes |
-| `task:cacheHit` | `runId`, `taskId`, `at` | Task served from cache |
-| `task:error` | `runId`, `taskId`, `at`, `durationMs`, `error` | Task failed |
-| `param:set` | `paramId`, `at` | Param value set via `graph.set()` |
+| Event Type      | Properties                                     | Description                       |
+| --------------- | ---------------------------------------------- | --------------------------------- |
+| `run:start`     | `runId`, `at`                                  | Run begins                        |
+| `run:finish`    | `runId`, `at`, `status`                        | Run completes                     |
+| `task:start`    | `runId`, `taskId`, `at`, `lane`                | Task begins                       |
+| `task:finish`   | `runId`, `taskId`, `at`, `durationMs`          | Task completes                    |
+| `task:cacheHit` | `runId`, `taskId`, `at`                        | Task served from cache            |
+| `task:error`    | `runId`, `taskId`, `at`, `durationMs`, `error` | Task failed                       |
+| `param:set`     | `paramId`, `at`                                | Param value set via `graph.set()` |
 
 ```ts
 g.on("run:*", (event) => console.log(`[${event.runId}]`, event.type));
@@ -514,6 +510,7 @@ console.log(snapshot.meta?.topoOrder);
 ```
 
 The returned shape is:
+
 - `nodes`: params + tasks (optionally includes `state`, `dirty`, `version`)
 - `edges`: `from -> to` dependencies (`kind: "param" | "task"`)
 - `meta`: internal counters like `compileCount` and optional `topoOrder`

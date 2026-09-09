@@ -112,18 +112,8 @@ function EarthTorusSceneImpl({ store, cameraMode }: { store: LevaStore; cameraMo
     ],
   );
 
-  const colorNode = useMemo(
-    () =>
-      createEarthTorusColorNode({
-        majorRadius: EARTH_AREA_TORUS_MAJOR_RADIUS,
-        minorRadius: EARTH_AREA_TORUS_MINOR_RADIUS,
-        skirtScale: controls.skirtScale,
-        innerTileSegments: INNER_TILE_SEGMENTS,
-      }),
-    [controls.skirtScale],
-  );
-
   const terrain = useTerrain({
+    elevationRange: { min: -0.85, max: 1 },
     topology,
     maxLevel: controls.maxLevel,
     maxNodes: controls.maxNodes,
@@ -132,6 +122,11 @@ function EarthTorusSceneImpl({ store, cameraMode }: { store: LevaStore; cameraMo
     elevationScale: controls.elevationScale,
     elevation,
   });
+
+  const colorNode = useMemo(
+    () => createEarthTorusColorNode({ elevation: terrain.materialContext?.elevation }),
+    [terrain.materialContext],
+  );
 
   const viewportHeight = useThree((state) => state.size.height);
   const camera = useThree((state) => state.camera);
@@ -151,11 +146,10 @@ function EarthTorusSceneImpl({ store, cameraMode }: { store: LevaStore; cameraMo
   // The runner only writes `cameraOrigin` into this param each frame, so the
   // LOD criteria merged here persist until the controls change them again.
   useEffect(() => {
-    terrain.graph.set(quadtreeUpdate, (prev: UpdateParams) => ({
-      ...prev,
-      ...lod,
-    }));
-  }, [terrain.graph, lod]);
+    terrain.controller.configure({ lod: lod.mode === "screen"
+      ? { mode: "screen", targetPixels: lod.targetPixels }
+      : { mode: "distance", distanceFactor: lod.distanceFactor ?? 1.5 } });
+  }, [terrain.controller, lod]);
 
   return (
     <>

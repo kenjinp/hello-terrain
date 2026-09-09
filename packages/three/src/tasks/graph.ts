@@ -17,7 +17,7 @@ import {
   terrainFieldStageTask,
 } from "./terrain-field.task";
 import { createTerrainSamplerTask } from "./terrain-sampler.task";
-import { positionNodeTask } from "./positions.task";
+import { positionNodeTask, terrainMaterialContextTask } from "./positions.task";
 import {
   leafGpuBufferTask,
   leafStorageTask,
@@ -34,6 +34,7 @@ import { terrainRaycastTask } from "./terrain-raycast.task";
 import {
   tileBoundsContextTask,
 } from "./tile-bounds.task";
+import { origin, quadtreeUpdate } from "./params";
 
 export { instanceIdTask } from "./instanceId.task";
 
@@ -50,6 +51,7 @@ export const terrainTasks = {
   createUniforms: createUniformsTask,
   updateUniforms: updateUniformsTask,
   positionNode: positionNodeTask,
+  materialContext: terrainMaterialContextTask,
   createElevationFieldContext: createElevationFieldContextTask,
   createTileNodes: tileNodesTask,
   createTerrainFieldTexture: createTerrainFieldTextureTask,
@@ -67,6 +69,9 @@ export const terrainTasks = {
 
 export function terrainGraph(): TerrainGraph {
   const g = graph<{ renderer: WebGPURenderer }>();
+  // Bind independent mutable values before any task can see shared defaults.
+  g.set(origin, { x: 0, y: 0, z: 0 });
+  g.set(quadtreeUpdate, { cameraOrigin: { x: 0, y: 0, z: 0 }, mode: "distance", distanceFactor: 1.5 });
   for (const t of Object.values(terrainTasks)) {
     g.add(t as Parameters<typeof g.add>[0]);
   }

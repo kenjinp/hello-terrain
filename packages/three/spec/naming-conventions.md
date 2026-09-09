@@ -46,9 +46,7 @@ Prefer names that reflect **what data is** and **how it is stored**.
   - `FlatTopologyConfig`, `InfiniteFlatTopologyConfig`, `CubeSphereTopologyConfig`,
     `TorusTopologyConfig`
   - the `topology` param and `topologyTask`
-- Use `TerrainSurfaceQuery` for the generic closed-surface query (position-keyed)
-  and `TerrainSphereQuery` (which extends it) for the cube-sphere direction/lat-long
-  keys.
+- Use `TerrainQuery` for the common terrain-local position query across shapes.
 - Reserve `surface` wording for the actual displaced terrain surface, e.g.
   geometric query results (`TerrainSurfaceSample`) and "surface normal".
 
@@ -73,3 +71,10 @@ Prefer names that reflect **what data is** and **how it is stored**.
 
 - Keep file names aligned with primary export name.
 - For multi-concept files, prefer domain grouping by folder and specific file names.
+
+## Runtime Queries and Materials
+
+- `TerrainQuery` is the common terrain-local runtime query (`sample`, leases, raycast).
+- `TerrainRevision` describes production/config/content/edit identity; `TerrainRuntimeStatus` describes publication and pending work.
+- `TerrainMaterialContext` distinguishes `datumNormalLocal`, `baseNormalLocal`, direct pre-skirt `elevation`, and source mappings. User detail shading normals are not the geometric field.
+- `SourceMapping`/regional helpers describe coordinate mapping, not texture ownership or residency. `ManagedTerrainSource` describes explicit edit/version/retirement ordering. A source may drive several consumers.

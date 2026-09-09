@@ -3,6 +3,14 @@ import { createTerrainFieldTextureTask } from "./terrain-field.task";
 import { tileBoundsContextTask } from "./tile-bounds.task";
 import { leafStorageTask, topologyTask } from "./quadtree.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
+import { createTerrainMaterialContext } from "../tsl/terrainMaterial";
+import { materialContext } from "./params";
+
+export const terrainMaterialContextTask = task((get, work) => {
+  const supplied = get(materialContext);
+  return work(() => supplied ?? createTerrainMaterialContext());
+})
+  .displayName("terrainMaterialContextTask").cache("once");
 
 /**
  * Builds the TSL position node for the terrain shader.
@@ -25,12 +33,14 @@ export const positionNodeTask = task((get, work) => {
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
   const tileBoundsContext = get(tileBoundsContextTask);
   const topology = get(topologyTask);
+  const materialContext = get(terrainMaterialContextTask);
   return work(() =>
     topology.projection.gpu.renderVertexPosition({
       leafStorage,
       uniforms: terrainUniforms,
       terrainFieldStorage,
       tileBoundsNode: tileBoundsContext.node,
+      materialContext,
     }),
   );
 }).displayName("positionNodeTask");

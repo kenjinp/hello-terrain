@@ -1,4 +1,6 @@
-import type { Ray, Vector3 } from "three";
+import type { Vec3 } from "math";
+import type { TerrainMaterialContext } from "../tsl/terrainMaterial";
+import type { Ray } from "three";
 import type { Node, StorageBufferNode } from "three/webgpu";
 import type {
   LeafTileNodes,
@@ -33,6 +35,7 @@ export interface Vec3Like {
 // ── GPU (TSL) ────────────────────────────────────────────────────────────
 
 export interface RenderVertexPositionContext {
+  materialContext?: TerrainMaterialContext;
   leafStorage: LeafStorageState;
   uniforms: TerrainUniformsContext;
   terrainFieldStorage?: TerrainFieldStorage;
@@ -50,6 +53,11 @@ export interface FieldNormalContext {
 export type FieldNormalFn = (nodeIndex: Node, ix: Node, iy: Node) => Node;
 
 export interface SurfaceProjectionGpu {
+  createRenderPrecision?(ctx: RenderVertexPositionContext & { positionNode: Node; materialContext: TerrainMaterialContext }): {
+    positionNode: Node;
+    attribute: import("three/webgpu").StorageBufferAttribute;
+    update(count: number): void;
+  };
   /** Render-path world position; also assigns the vertex normal varying. */
   renderVertexPosition(ctx: RenderVertexPositionContext): Node;
   /** Projection-specific compute-stage tile builders (size / uv / position). */
@@ -98,9 +106,9 @@ export interface CpuSurfaceOps {
   /** Map a world position to a surface key; `false` if it has no projection. */
   positionToKey(px: number, py: number, pz: number, out: SurfaceKey): boolean;
   /** Displaced world position from a key + scaled elevation (writes `out`). */
-  surfacePosition(key: SurfaceKey, elevation: number, out: Vector3): void;
+  surfacePosition(key: SurfaceKey, elevation: number, out: Vec3): void;
   /** Unit world-space surface normal from a key + grid neighborhood. */
-  surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vector3;
+  surfaceNormal(key: SurfaceKey, ctx: SurfaceNormalContext): Vec3;
 }
 
 // ── CPU (query / raycast / LOD) ────────────────────────────────────────────

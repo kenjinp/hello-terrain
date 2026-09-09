@@ -1,21 +1,26 @@
 ---
-title: Hello World
-description: Introduction to Hello Terrain
+title: Hello Terrain
+description: Instance-owned WebGPU terrain for Three.js and React
 ---
 
-<Callout title="Pardon our dust" type="warn">
-  This is all a work in progress. Please contribute!
-</Callout>
+Hello Terrain renders adaptive terrain with ordinary Three TSL elevation functions. Choose a bounded plane, an infinite plane, a cube sphere, or a torus. The runtime owns terrain production, configuration, CPU snapshots, and resource retirement; scene bindings own placement and material attachment.
 
-## Overview
+Start with [installation](/docs/installation), then follow the [Three runtime guide](/docs/core/runtime) or the [React setup](/docs/react/getting-started).
 
-Hello Terrain is a library for rendering large open world terrains in real time, using browser technologies. 
+## Author terrain
 
-It's an engine for terrain rendering in Threejs's WebgpuRenderer, with some tools to help with procedural terrain authoring. 
+An elevation callback returns displacement from the topology's datum. Declare its conservative range and apply `elevationScale` once. Use [material inputs](/docs/core/nodes/materials) for elevation, slope, mapped textures, and detail normals.
 
-It the core, it's an extensible work graph that executes and outputs data and shaders to render one or more Threejs Instanced Mesh, in the shape of your terrain. 
-The work graph can be amended via custom nodes or plugins to tweak the behavior for your game or world's use-case. 
+Control textures can remain ordinary live Three inputs. [Managed sources](/docs/core/nodes/materials#managed-edits-when-needed) add ordered edits and dependency invalidation when the same data affects terrain production.
 
-Each core component, such as the normals calculation stage, just to pick an example, can be swapped out and easily replaced with your own implementation. 
+## Query terrain
 
-{/* Example Goes here */}
+[CPU queries](/docs/core/query/terrain-query) sample a published snapshot. Results include availability, revision, and sampling resolution. A rendered terrain does not imply that CPU data is current or that an off-camera location is resident.
+
+Use a binding for scene-space sampling and [raycasting](/docs/core/query/raycasting). Queries reconstruct a sampled surface; they do not promise exact rendered-triangle intersections.
+
+## Validate your scene
+
+The [terrain gym](/docs/terrain-gym) exercises CPU and WebGPU behavior. Planetary geometry, source arithmetic, texture filtering, storage quantization, and shadows have separate precision limits; see the [runtime precision scope](/docs/core/runtime#precision-scope).
+
+An editor, automatic virtual-texture streaming, and a built-in PBR layer stack are not included.

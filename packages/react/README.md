@@ -2,12 +2,12 @@
 
 React bindings for Hello Terrain, built for [react-three/fiber](https://r3f.docs.pmnd.rs/) and WebGPU.
 
-`@hello-terrain/react` wraps the core terrain graph from `@hello-terrain/three` with a React-first API:
+`@hello-terrain/react` uses the instance-owned terrain runtime from `@hello-terrain/three` with a React-first API:
 
 - `Terrain` renders the terrain mesh and connects node materials
 - `useTerrain()` creates and owns a `TerrainHandle`
 - `TerrainProvider` and `useTerrainContext()` share terrain state with sibling systems
-- `terrain.ready` and `terrain.runtime` make it easier to coordinate rendering, queries, and raycasts
+- `terrain.controller`, `terrain.status`, and `terrain.binding` expose configuration, publication, and scene queries
 
 ## Installation
 
@@ -58,9 +58,9 @@ export function App() {
 Use `Terrain` by itself for the smallest setup. Reach for `useTerrain()` when you want to:
 
 - reuse the same terrain handle across multiple components
-- access `terrain.runtime.query` or `terrain.runtime.raycast`
+- sample through `terrain.controller.query` or `terrain.binding.sampleWorld`
 - share terrain state with sibling systems like controllers or cameras
-- inspect the underlying graph or provide custom graph tasks
+- observe render/query revisions and coordinate managed input edits
 
 ## Public API
 
@@ -70,15 +70,14 @@ Use `Terrain` by itself for the smallest setup. Reach for `useTerrain()` when yo
 - `useTerrainContext`
 - `TerrainHandle`
 - `TerrainOptions`
-- `TerrainRuntime`
-- `TerrainTask`
+- `TerrainMaterialContext` (from `@hello-terrain/three`)
 
 ## Docs
 
-- [Introduction](http://hello-terrain.kenny.wtf/docs)
-- [Installation](http://hello-terrain.kenny.wtf/docs/installation)
-- [React Overview](http://hello-terrain.kenny.wtf/docs/react)
-- [Examples](http://hello-terrain.kenny.wtf/examples)
+- [Introduction](https://hello-terrain.kenny.wtf/docs)
+- [Installation](https://hello-terrain.kenny.wtf/docs/installation)
+- [React Overview](https://hello-terrain.kenny.wtf/docs/react)
+- [Examples](https://hello-terrain.kenny.wtf/examples)
 
 ## Support
 

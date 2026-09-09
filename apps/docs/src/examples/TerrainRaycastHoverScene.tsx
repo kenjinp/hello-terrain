@@ -25,7 +25,7 @@ import {
   type ElevationCallback,
   type LeafSet,
   type TerrainGraph,
-  type TerrainQuery,
+  type LegacyTerrainQuery as TerrainQuery,
   type TerrainTile,
   type UpdateParams,
 } from "@hello-terrain/three";

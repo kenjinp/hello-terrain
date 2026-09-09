@@ -11,11 +11,6 @@ import RaycastCharacterControllerScene from "@/examples/RaycastCharacterControll
 
 ## Overview
 
-This example uses a character controller inspired from Sketchbook's third-person controller, and uses their iconic boxman model.  
+This example grounds a third-person character using the runtime binding. `binding.sampleWorld(position)` returns elevation, position, and normal with availability metadata. `binding.raycastWorld({ origin, direction }, options)` searches the sampled surface and returns `hit` or `incomplete`.
 
-### How it works?
-
-- `terrainQuery.sampleTerrain(x, z)` for synchronous elevation and normal sampling
-- `terrainRaycast.pick(ray)` for downward terrain hit testing
-
-That keeps the character grounded on the terrain. 
+Movement must handle missing coverage and pending CPU snapshots. A rendered terrain is not sufficient evidence that a synchronous query is available. See [terrain queries](/docs/core/query/terrain-query) and [raycasting](/docs/core/query/raycasting).

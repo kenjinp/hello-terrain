@@ -3,9 +3,9 @@ import {
   TILE_BOUNDS_FLOATS_PER_TILE,
   TILE_BOUNDS_LOD_MAX_OFFSET,
   TILE_BOUNDS_LOD_MIN_OFFSET,
-} from "../gpu/terrainFieldStorage";
+} from "../runtime/fieldLayout";
 import type { SpatialIndex } from "../quadtree";
-import { createSpatialIndex } from "../quadtree";
+import { createSpatialIndex } from "../quadtree/spatialIndex";
 import {
   type ReadbackSlot,
   canDeviceReadback,
@@ -44,8 +44,12 @@ export interface TerrainSnapshotState {
   globalRange: ElevationRange | null;
   hasSnapshot: boolean;
   readbackPending: boolean;
+  disposed: boolean;
   generation: number;
+  pending: Promise<void> | null;
+  lastError: unknown;
   lastScheduledStampGen: number;
+  lastScheduledContentKey?: object;
   elevationReadback: ReadbackSlot;
   boundsReadback: ReadbackSlot;
   /** Conservative per-tile elevation range pyramid for LOD bounds. */
@@ -53,9 +57,7 @@ export interface TerrainSnapshotState {
 }
 
 type RendererReadback = WebGPURenderer & {
-  getArrayBufferAsync?: (
-    attribute: StorageBufferAttribute,
-  ) => Promise<ArrayBuffer>;
+  getArrayBufferAsync?: (attribute: StorageBufferAttribute) => Promise<ArrayBuffer>;
 };
 
 export function createTerrainSnapshotState(
@@ -74,7 +76,10 @@ export function createTerrainSnapshotState(
     globalRange: null,
     hasSnapshot: false,
     readbackPending: false,
+    disposed: false,
     generation: 0,
+    pending: null,
+    lastError: null,
     lastScheduledStampGen: -1,
     elevationReadback: createReadbackSlot(),
     boundsReadback: createReadbackSlot(),
@@ -82,11 +87,9 @@ export function createTerrainSnapshotState(
   };
 }
 
-function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
+export function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
   if (target.size !== source.size) {
-    throw new Error(
-      `SpatialIndex size mismatch (target=${target.size}, source=${source.size}).`,
-    );
+    throw new Error(`SpatialIndex size mismatch (target=${target.size}, source=${source.size}).`);
   }
   target.mask = source.mask;
   target.stampGen = source.stampGen;
@@ -103,7 +106,7 @@ function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
  * bounds) into the snapshot back-buffers, then swap front/back on completion.
  *
  * No-ops when a readback is already pending, the renderer does not support
- * readback, or the spatial index has not advanced since the last schedule.
+ * readback, or neither the spatial index nor production content has changed.
  * `captured` values are pinned at schedule time so the swapped-in snapshot is
  * internally consistent even if the config mutates while the readback flies.
  */
@@ -119,36 +122,34 @@ export function triggerSnapshotReadback(
     verticesPerNode: number;
     elevationScale: number;
     originY: number;
+    contentKey?: object;
+    onPublish?: () => void;
   },
 ): void {
-  if (state.readbackPending) return;
+  if (state.disposed || state.readbackPending) return;
   const withReadback = renderer as RendererReadback;
   const useDeviceReadback = canDeviceReadback(renderer);
   if (!useDeviceReadback && !withReadback.getArrayBufferAsync) return;
-  if (spatialIndex.stampGen === state.lastScheduledStampGen) return;
+  if (
+    spatialIndex.stampGen === state.lastScheduledStampGen &&
+    captured.contentKey === state.lastScheduledContentKey
+  )
+    return;
 
   cloneSpatialIndex(state.backIndex, spatialIndex);
   state.lastScheduledStampGen = spatialIndex.stampGen;
+  state.lastScheduledContentKey = captured.contentKey;
 
-  const { activeLeafCount, totalElements, verticesPerNode, elevationScale, originY } =
-    captured;
+  const { activeLeafCount, totalElements, verticesPerNode, elevationScale, originY } = captured;
 
   state.readbackPending = true;
+  state.lastError = null;
 
   /** Promote the (already-populated) back buffers to front and recompute range. */
   const applySnapshot = (boundsFilled: boolean) => {
-    let boundsValid = activeLeafCount === 0;
-    if (boundsFilled) {
-      for (let i = 0; i < activeLeafCount; i += 1) {
-        if (
-          (state.backTileBounds[i * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MAX_OFFSET] ??
-            0) !== 0
-        ) {
-          boundsValid = true;
-          break;
-        }
-      }
-    }
+    if (state.disposed) return;
+    // Zero is valid terrain data. Completion, never payload magnitude, is validity.
+    const boundsValid = boundsFilled;
 
     const oldFrontElevation = state.frontElevation;
     const oldFrontIndex = state.frontIndex;
@@ -162,6 +163,7 @@ export function triggerSnapshotReadback(
       state.frontTileBounds = state.backTileBounds;
       state.backTileBounds = oldFrontBounds;
     }
+    if (!boundsFilled || activeLeafCount === 0) state.globalRange = null;
 
     if (boundsFilled && boundsValid && activeLeafCount > 0) {
       let gMin = Infinity;
@@ -187,12 +189,16 @@ export function triggerSnapshotReadback(
 
     state.hasSnapshot = true;
     state.generation += 1;
+    captured.onPublish?.();
   };
 
   if (useDeviceReadback) {
     const runDeviceReadback = async (): Promise<void> => {
       state.backElevation.fill(0);
-      await readStorageBufferInto(
+      state.backTileBounds.fill(0);
+      // Both calls submit their copies synchronously before either map awaits.
+      // A subsequent compute submission therefore cannot split this pair.
+      const elevationCopy = readStorageBufferInto(
         renderer,
         attribute,
         state.elevationReadback,
@@ -200,35 +206,35 @@ export function triggerSnapshotReadback(
         activeLeafCount * verticesPerNode,
         "terrainElevationReadback",
       );
-
-      let boundsFilled = false;
-      if (boundsAttribute) {
-        state.backTileBounds.fill(0);
-        boundsFilled = await readStorageBufferInto(
+      const boundsCopy = boundsAttribute
+        ? readStorageBufferInto(
           renderer,
           boundsAttribute,
           state.boundsReadback,
           state.backTileBounds,
           activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE,
           "terrainBoundsReadback",
-        );
+        )
+        : Promise.resolve(false);
+      const [elevationFilled, boundsFilled] = await Promise.all([elevationCopy, boundsCopy]);
+      if (!elevationFilled || (boundsAttribute && !boundsFilled)) {
+        throw new Error("Terrain snapshot source buffer is unavailable");
       }
-
       applySnapshot(boundsFilled);
     };
 
-    runDeviceReadback().finally(() => {
-      state.readbackPending = false;
-    });
+    state.pending = runDeviceReadback()
+      .catch(onFailure)
+      .finally(() => {
+        state.readbackPending = false;
+      });
     return;
   }
 
   // Fallback: Three.js' allocating readback (used when no WebGPU backend is
   // available, e.g. in unit tests). Reads the full buffers.
-  const onComplete = (
-    elevResult: ArrayBuffer,
-    boundsResult: ArrayBuffer | null,
-  ) => {
+  const onComplete = (elevResult: ArrayBuffer, boundsResult: ArrayBuffer | null) => {
+    if (state.disposed) return;
     const data = new Float32Array(elevResult);
     state.backElevation.fill(0);
     state.backElevation.set(data.subarray(0, totalElements));
@@ -247,27 +253,36 @@ export function triggerSnapshotReadback(
   };
 
   const elevationPromise = withReadback.getArrayBufferAsync!(attribute);
-  const boundsPromise = boundsAttribute
-    ? withReadback.getArrayBufferAsync!(boundsAttribute)
-    : null;
+  const boundsPromise = boundsAttribute ? withReadback.getArrayBufferAsync!(boundsAttribute) : null;
 
   if (boundsPromise) {
-    Promise.all([elevationPromise, boundsPromise])
+    state.pending = Promise.all([elevationPromise, boundsPromise])
       .then(([elev, bounds]) => onComplete(elev, bounds))
+      .catch(onFailure)
       .finally(() => {
         state.readbackPending = false;
       });
   } else {
-    elevationPromise
+    state.pending = elevationPromise
       .then((elev) => onComplete(elev, null))
+      .catch(onFailure)
       .finally(() => {
         state.readbackPending = false;
       });
+  }
+
+  function onFailure(error: unknown): void {
+    // Mapping may reject during disposal or device loss. Retain the last
+    // published snapshot and allow a later update to retry the same content.
+    state.lastScheduledStampGen = -1;
+    state.lastScheduledContentKey = undefined;
+    state.lastError = error;
   }
 }
 
 /** Destroy the GPU staging buffers held by the snapshot state. */
 export function disposeSnapshotReadback(state: TerrainSnapshotState): void {
+  state.disposed = true;
   disposeReadbackSlot(state.elevationReadback);
   disposeReadbackSlot(state.boundsReadback);
 }

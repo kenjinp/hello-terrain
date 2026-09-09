@@ -60,12 +60,12 @@ export function App() {
 
 ## Customizing The Terrain
 
-`Terrain` accepts the same terrain options as `useTerrain()`. See the [Params](/docs/core/params) reference for a table that explains each option in detail.
+`Terrain` accepts the same terrain options as `useTerrain()`. See the [Configuration](/docs/core/params) reference for a table that explains each option in detail.
 
 It also accepts R3F primitive props such as `castShadow`, `receiveShadow`, `position`, and `visible`.
 
 ## When To Reach For `useTerrain()`
 
-The inline `Terrain` form is great for simple scenes. If you need to reuse the same terrain handle across siblings, inspect the graph, or share runtime access with cameras or gameplay systems, use `useTerrain()` and pass the handle into `Terrain`.
+The inline `Terrain` form is great for simple scenes. If you need to reuse the same terrain handle across siblings, observe publication status, or share runtime access with cameras or gameplay systems, use `useTerrain()` and pass the handle into `Terrain`.
 
-Continue to [useTerrain](./use-terrain) for that pattern.
+Continue to [useTerrain](/docs/react/use-terrain) for that pattern.

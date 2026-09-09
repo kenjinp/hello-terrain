@@ -1,22 +1,20 @@
-import { Vector3 } from "three";
+import { vec3, type Vec3 } from "math";
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import type { SpatialIndex } from "../quadtree/spatialIndex";
 import {
   TILE_BOUNDS_FLOATS_PER_TILE,
   TILE_BOUNDS_LOD_MAX_OFFSET,
   TILE_BOUNDS_LOD_MIN_OFFSET,
-} from "../gpu/terrainFieldStorage";
+} from "../runtime/fieldLayout";
 import type { CpuSurfaceOps, SurfaceKey } from "../projection/types";
-import { tileLocalToFieldUVNumber } from "../gpu/tile";
+import { tileLocalToFieldUVNumber } from "../runtime/fieldLayout";
 import {
   type ElevationGradient,
   type ElevationGridShape,
   elevationGradientAt,
   sampleGridBilinear,
 } from "./elevation-field-sampling";
-import {
-  lookupTileElevationRange,
-} from "./tile-elevation-pyramid";
+import { lookupTileElevationRange } from "./tile-elevation-pyramid";
 import {
   type TileLookupConfig,
   type TileLookupResult,
@@ -26,18 +24,22 @@ import {
 import {
   type TerrainSnapshotState,
   createTerrainSnapshotState,
+  cloneSpatialIndex,
   disposeSnapshotReadback,
   triggerSnapshotReadback,
 } from "./terrain-snapshot";
 import type {
   ElevationRange,
-  TerrainSample,
+  TerrainSample as ThreeTerrainSample,
   TerrainSampleBatch,
-  TerrainSurfaceSample,
+  TerrainSurfaceSample as ThreeTerrainSurfaceSample,
   TerrainSurfaceSampleBatch,
   TerrainTile,
   TerrainTileBounds,
 } from "./types";
+
+type TerrainSample = Omit<ThreeTerrainSample, "normal"> & { normal: Vec3 };
+type TerrainSurfaceSample = Omit<ThreeTerrainSurfaceSample, "normal" | "position" | "direction"> & { normal: Vec3; position: Vec3; direction: Vec3 };
 
 type TerrainElevationSample = {
   elevation: number;
@@ -63,6 +65,10 @@ export type TerrainQueryConfig = {
 export interface CpuTerrainCache {
   readonly generation: number;
   readonly ready: boolean;
+  readonly pending: Promise<void> | null;
+  readonly lastError: unknown;
+  /** Independent CPU copy; never reused by subsequent GPU readback. */
+  capture(): CpuTerrainCache;
   updateConfig(config: TerrainQueryConfig): void;
   triggerReadback(
     renderer: WebGPURenderer,
@@ -70,17 +76,19 @@ export interface CpuTerrainCache {
     spatialIndex: SpatialIndex,
     boundsAttribute?: StorageBufferAttribute,
     activeLeafCount?: number,
+    /** Identity of the producer; replace to refresh content with unchanged tiles. */
+    contentKey?: object,
   ): void;
   /** Release GPU readback staging buffers owned by this cache. */
   dispose(): void;
 
   // ── Flat (heightfield) sampling, keyed on world XZ ──────────────────────
   getElevation(worldX: number, worldZ: number): number | null;
-  getNormal(worldX: number, worldZ: number): Vector3 | null;
+  getNormal(worldX: number, worldZ: number): Vec3 | null;
   getTile(worldX: number, worldZ: number): TerrainTile | null;
   getTileBounds(worldX: number, worldZ: number): TerrainTileBounds | null;
   getGlobalElevationRange(): ElevationRange | null;
-  sampleTerrainBatch(positions: Float32Array): TerrainSampleBatch;
+  sampleTerrainBatch(positions: Float32Array | Float64Array): TerrainSampleBatch;
   sampleTerrain(worldX: number, worldZ: number): TerrainSample;
 
   // ── Generic closed-surface sampling, keyed on a world position ──────────
@@ -94,10 +102,10 @@ export interface CpuTerrainCache {
   setSurfaceOps(surfaceOps: CpuSurfaceOps | null): void;
   sampleSurfaceByPosition(px: number, py: number, pz: number): TerrainSurfaceSample;
   getElevationBySurfacePosition(px: number, py: number, pz: number): number | null;
-  getNormalBySurfacePosition(px: number, py: number, pz: number): Vector3 | null;
+  getNormalBySurfacePosition(px: number, py: number, pz: number): Vec3 | null;
   getTileBySurfacePosition(px: number, py: number, pz: number): TerrainTile | null;
   getTileBoundsBySurfacePosition(px: number, py: number, pz: number): TerrainTileBounds | null;
-  sampleSurfaceBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
+  sampleSurfaceBatchByPosition(positions: Float32Array | Float64Array): TerrainSurfaceSampleBatch;
 
   /**
    * Previous-frame raw elevation min/max for a tile (unscaled field values).
@@ -115,9 +123,12 @@ export interface CpuTerrainCache {
 export function createCpuTerrainCache(
   maxNodes: number,
   initialConfig: TerrainQueryConfig,
-  surfaceOps: CpuSurfaceOps | null,
+  surfaceOps: CpuSurfaceOps | null = null,
+  capturedState?: TerrainSnapshotState,
 ): CpuTerrainCache {
-  let config = initialConfig;
+  let config = { ...initialConfig };
+  let pendingConfig = config;
+  let pendingSurfaceOps = surfaceOps;
   const shape: ElevationGridShape = {
     edgeVertexCount: config.innerTileSegments + 3,
     verticesPerNode: 0,
@@ -130,6 +141,15 @@ export function createCpuTerrainCache(
     initialConfig.maxLevel,
     totalElements,
   );
+  if (capturedState) {
+    state.frontElevation.set(capturedState.frontElevation);
+    state.frontTileBounds.set(capturedState.frontTileBounds);
+    cloneSpatialIndex(state.frontIndex, capturedState.frontIndex);
+    state.frontLeafCount = capturedState.frontLeafCount;
+    state.globalRange = capturedState.globalRange && { ...capturedState.globalRange };
+    state.hasSnapshot = capturedState.hasSnapshot;
+    state.generation = capturedState.generation;
+  }
 
   // Per-cache scratch (no module-scope state; the terrain may have many instances).
   const gridScratch = { gx: 0, gy: 0 };
@@ -150,8 +170,10 @@ export function createCpuTerrainCache(
   const gridCoordsFromLookup = (lookup: TileLookupResult) => {
     const fieldU = tileLocalToFieldUVNumber(lookup.localU, config.innerTileSegments);
     const fieldV = tileLocalToFieldUVNumber(lookup.localV, config.innerTileSegments);
-    gridScratch.gx = fieldU * (shape.edgeVertexCount - 1);
-    gridScratch.gy = fieldV * (shape.edgeVertexCount - 1);
+    // Normalized texture UVs address texel centers, not the endpoints of the
+    // index interval. Invert (grid + 0.5) / edge to match GPU sampling.
+    gridScratch.gx = fieldU * shape.edgeVertexCount - 0.5;
+    gridScratch.gy = fieldV * shape.edgeVertexCount - 0.5;
     return gridScratch;
   };
 
@@ -161,12 +183,7 @@ export function createCpuTerrainCache(
     return sampleGridBilinear(state.frontElevation, shape, lookup.leafIndex, g.gx, g.gy);
   };
 
-  const computeNormal = (
-    leafIndex: number,
-    gx: number,
-    gy: number,
-    tileSize: number,
-  ): Vector3 => {
+  const computeNormal = (leafIndex: number, gx: number, gy: number, tileSize: number): Vec3 => {
     const stepWorld = tileSize / config.innerTileSegments;
     const { dhdu, dhdv } = elevationGradientAt(
       state.frontElevation,
@@ -178,7 +195,7 @@ export function createCpuTerrainCache(
       config.elevationScale,
       gradientScratch,
     );
-    return new Vector3(-dhdu, 1, -dhdv).normalize();
+    return vec3.normalize(vec3.create(), [-dhdu, 1, -dhdv]);
   };
 
   const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
@@ -190,11 +207,11 @@ export function createCpuTerrainCache(
 
   const sampleTerrain = (worldX: number, worldZ: number): TerrainSample => {
     if (!state.hasSnapshot) {
-      return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false };
+      return { elevation: 0, normal: [0, 1, 0], valid: false };
     }
     const lookup = lookupTile(state.frontIndex, config, worldX, worldZ);
     if (!lookup.found) {
-      return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false };
+      return { elevation: 0, normal: [0, 1, 0], valid: false };
     }
     return sampleFromLookup(lookup);
   };
@@ -254,9 +271,9 @@ export function createCpuTerrainCache(
   // ── Generic surface sampling ──────────────────────────────────────────
 
   const invalidSurfaceSample = (dx: number, dy: number, dz: number): TerrainSurfaceSample => ({
-    position: new Vector3(),
-    normal: new Vector3(0, 1, 0),
-    direction: new Vector3(dx, dy, dz),
+    position: vec3.create(),
+    normal: [0, 1, 0],
+    direction: [dx, dy, dz],
     elevation: 0,
     valid: false,
   });
@@ -274,11 +291,7 @@ export function createCpuTerrainCache(
     );
   };
 
-  const sampleSurfaceByPosition = (
-    px: number,
-    py: number,
-    pz: number,
-  ): TerrainSurfaceSample => {
+  const sampleSurfaceByPosition = (px: number, py: number, pz: number): TerrainSurfaceSample => {
     if (!state.hasSnapshot || !surfaceOps) return invalidSurfaceSample(0, 1, 0);
     if (!surfaceOps.positionToKey(px, py, pz, keyScratch)) {
       return invalidSurfaceSample(0, 1, 0);
@@ -295,7 +308,7 @@ export function createCpuTerrainCache(
 
     const height = rawHeightFromLookup(lookup);
     const elevation = height * config.elevationScale;
-    const position = new Vector3();
+    const position = vec3.create();
     surfaceOps.surfacePosition(key, elevation, position);
     const normal = surfaceOps.surfaceNormal(key, {
       elevation: state.frontElevation,
@@ -310,7 +323,7 @@ export function createCpuTerrainCache(
     return {
       position,
       normal,
-      direction: new Vector3(key.dirX, key.dirY, key.dirZ),
+      direction: [key.dirX, key.dirY, key.dirZ],
       elevation,
       valid: true,
     };
@@ -323,25 +336,44 @@ export function createCpuTerrainCache(
     get ready() {
       return state.hasSnapshot;
     },
+    get pending() { return state.pending; },
+    get lastError() { return state.lastError; },
+    capture() {
+      return createCpuTerrainCache(maxNodes, config, surfaceOps, state);
+    },
     get hasSurface() {
       return surfaceOps !== null;
     },
     setSurfaceOps(nextSurfaceOps) {
-      surfaceOps = nextSurfaceOps;
+      pendingSurfaceOps = nextSurfaceOps;
     },
     updateConfig(nextConfig) {
-      config = nextConfig;
-      shape.edgeVertexCount = config.innerTileSegments + 3;
-      shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
-      totalElements = maxNodes * shape.verticesPerNode;
+      if (nextConfig.innerTileSegments !== initialConfig.innerTileSegments) {
+        throw new Error("Terrain cache resolution changes require a new cache");
+      }
+      pendingConfig = { ...nextConfig };
     },
-    triggerReadback(renderer, attribute, spatialIndex, boundsAttribute, activeLeafCount) {
+    triggerReadback(
+      renderer,
+      attribute,
+      spatialIndex,
+      boundsAttribute,
+      activeLeafCount,
+      contentKey,
+    ) {
+      const capturedConfig = pendingConfig;
+      const capturedSurfaceOps = pendingSurfaceOps;
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
         verticesPerNode: shape.verticesPerNode,
-        elevationScale: config.elevationScale,
-        originY: config.originY,
+        elevationScale: capturedConfig.elevationScale,
+        originY: capturedConfig.originY,
+        contentKey,
+        onPublish() {
+          config = capturedConfig;
+          surfaceOps = capturedSurfaceOps;
+        },
       });
     },
     dispose() {
@@ -352,7 +384,8 @@ export function createCpuTerrainCache(
       return sample.valid ? sample.elevation : null;
     },
     getNormal(worldX, worldZ) {
-      return sampleTerrain(worldX, worldZ).normal;
+      const sample = sampleTerrain(worldX, worldZ);
+      return sample.valid ? sample.normal : null;
     },
     getTile(worldX, worldZ) {
       if (!state.hasSnapshot) return null;
@@ -434,9 +467,9 @@ export function createCpuTerrainCache(
 
         const sample = sampleFromLookup(lookup);
         elevations[i] = sample.elevation;
-        normals[i * 3] = sample.normal.x;
-        normals[i * 3 + 1] = sample.normal.y;
-        normals[i * 3 + 2] = sample.normal.z;
+        normals[i * 3] = sample.normal[0];
+        normals[i * 3 + 1] = sample.normal[1];
+        normals[i * 3 + 2] = sample.normal[2];
         valid[i] = 1;
       }
 
@@ -464,12 +497,18 @@ export function createCpuTerrainCache(
     },
     sampleSurfaceBatchByPosition(positions) {
       const count = Math.floor(positions.length / 3);
-      const outPositions = new Float32Array(count * 3);
+      const outPositions = new Float64Array(count * 3);
       const normals = new Float32Array(count * 3);
       const elevations = new Float32Array(count);
       const valid = new Uint8Array(count);
       if (!state.hasSnapshot || !surfaceOps) {
-        return { positions: outPositions, normals, elevations, valid, generation: state.generation };
+        return {
+          positions: outPositions,
+          normals,
+          elevations,
+          valid,
+          generation: state.generation,
+        };
       }
       for (let i = 0; i < count; i += 1) {
         const sample = sampleSurfaceByPosition(
@@ -481,12 +520,12 @@ export function createCpuTerrainCache(
           normals[i * 3 + 1] = 1;
           continue;
         }
-        outPositions[i * 3] = sample.position.x;
-        outPositions[i * 3 + 1] = sample.position.y;
-        outPositions[i * 3 + 2] = sample.position.z;
-        normals[i * 3] = sample.normal.x;
-        normals[i * 3 + 1] = sample.normal.y;
-        normals[i * 3 + 2] = sample.normal.z;
+        outPositions[i * 3] = sample.position[0];
+        outPositions[i * 3 + 1] = sample.position[1];
+        outPositions[i * 3 + 2] = sample.position[2];
+        normals[i * 3] = sample.normal[0];
+        normals[i * 3 + 1] = sample.normal[1];
+        normals[i * 3 + 2] = sample.normal[2];
         elevations[i] = sample.elevation;
         valid[i] = 1;
       }

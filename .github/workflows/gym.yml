@@ -1,0 +1,41 @@
+name: Terrain gym
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "packages/three/**"
+      - "packages/react/**"
+      - "packages/work/**"
+      - "apps/gym/**"
+      - "pnpm-lock.yaml"
+      - ".github/workflows/gym.yml"
+
+jobs:
+  correctness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [flat-edit, flat-lod, flat-nearest, instance-isolation, sphere-seams, torus-wrap]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: pnpm/action-setup@v4
+        with:
+          version: "10.27.0"
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @hello-terrain/gym exec playwright install --with-deps chromium --no-shell
+      - run: pnpm gym --mode cpu --scenario ${{ matrix.scenario }}
+      # Required GPU correctness: unsupported must fail, never silently skip.
+      # Software timings are diagnostic only; this workflow has no perf gate.
+      - run: pnpm gym --software --scenario ${{ matrix.scenario }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gym-${{ matrix.scenario }}
+          path: .gym/runs/
