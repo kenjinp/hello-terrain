@@ -12,10 +12,11 @@ import {
   ivec2,
   ivec3,
   max,
+  storageTexture,
   texture,
   textureLoad,
   textureStore,
-  uvec3,
+  uvec2,
   vec2,
   vec3,
   vec4,
@@ -283,11 +284,14 @@ export function storeTerrainField(
     storage.backendType === "array-texture" ||
     storage.backendType === "texture-3d"
   ) {
-    return textureStore(
-      storage.texture,
-      uvec3(int(ix), int(iy), int(tileIndex)),
-      value,
-    );
+    // The array layer must be the store node's `depthNode`, set before the
+    // node is pushed to the stack: `textureStore()` stacks immediately, so a
+    // trailing `.depth()` would only touch an unstacked clone, and a `uvec3`
+    // coordinate is truncated to `.xy`. Either way the layer argument goes
+    // missing and the WGSL fails to validate.
+    return storageTexture(storage.texture, uvec2(int(ix), int(iy)), value)
+      .depth(int(tileIndex))
+      .toStack();
   }
   return textureStore(storage.texture, storage.texel(ix, iy, tileIndex), value);
 }
