@@ -20,7 +20,7 @@ import {
 import { Terrain, TerrainProvider, useTerrain } from "@hello-terrain/react";
 import type { TerrainGraph } from "@hello-terrain/three";
 import { Environment } from "@react-three/drei";
-import { Canvas, extend } from "@react-three/fiber";
+import { Canvas } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import {
   Suspense,
@@ -30,12 +30,8 @@ import {
   useRef,
   useState,
 } from "react";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
-import * as THREE from "three/webgpu";
 
 type LevaStore = ReturnType<typeof useCreateStore>;
-
-extend(THREE as any);
 
 const QUADTREE_ORIGIN_HYSTERESIS = 0.35;
 const QUADTREE_ORIGIN_SNAP = 0.25;
@@ -390,23 +386,12 @@ export default function RaycastCharacterControllerScene() {
       ) : null}
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
-          renderer.shadowMap.enabled = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, shadows: true }}
+        background="#34A8CD"
         camera={{ position: [0, 10, 10], fov: 60, near: 0.01, far: 4000 }}
         // dpr={[1.5, 1.5]}
         performance={{ min: 0.5 }}
       >
-        <color attach="background" args={["#34A8CD"]} />
         <fog attach="fog" args={["#34A8CD", 90, 4000]} />
         <ambientLight intensity={0.45} />
         <hemisphereLight intensity={0.45} groundColor="#334433" />

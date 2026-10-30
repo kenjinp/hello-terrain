@@ -32,7 +32,7 @@ export function useThirdPersonCamera({
   enabled = true,
   zoomEnabled = false,
 }: UseThirdPersonCameraParams) {
-  const { camera, gl } = useThree();
+  const { camera, renderer } = useThree();
 
   const thetaRef = useRef(205);
   const phiRef = useRef(-12);
@@ -70,7 +70,7 @@ export function useThirdPersonCamera({
   useEffect(() => {
     if (!enabled) return;
 
-    const element = gl.domElement;
+    const element = renderer.domElement;
 
     const onMouseMove = (event: MouseEvent) => {
       if (document.pointerLockElement !== element) return;
@@ -101,12 +101,12 @@ export function useThirdPersonCamera({
       document.removeEventListener("pointerlockchange", onPointerLockChange);
       element.removeEventListener("click", onCanvasClick);
     };
-  }, [enabled, gl, sensitivityX, sensitivityY]);
+  }, [enabled, renderer, sensitivityX, sensitivityY]);
 
   useEffect(() => {
     if (!enabled) return;
 
-    const element = gl.domElement;
+    const element = renderer.domElement;
 
     const onWheel = (event: WheelEvent) => {
       if (!zoomEnabled) return;
@@ -122,7 +122,7 @@ export function useThirdPersonCamera({
     return () => {
       element.removeEventListener("wheel", onWheel);
     };
-  }, [enabled, gl, maxRadius, minRadius, zoomEnabled]);
+  }, [enabled, renderer, maxRadius, minRadius, zoomEnabled]);
 
   useFrame((_state, dt) => {
     if (!enabled) return;

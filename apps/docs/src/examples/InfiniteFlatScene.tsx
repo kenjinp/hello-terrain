@@ -35,7 +35,6 @@ import {
   resolveTerrainMaterialAppearance,
   tileColorsLevaControl,
 } from "@/examples/terrain/tileInstanceColor";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   float,
   Fn,
@@ -45,7 +44,6 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
-extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
 type InfiniteFlatSceneImplProps = {
@@ -112,8 +110,8 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
   }, { store });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
-  const meshRef = useRef<THREE.InstancedMesh | null>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const meshRef = useRef<TerrainMesh | null>(null);
+  const materialRef = useRef<THREE.MeshStandardNodeMaterial | null>(null);
 
   useEffect(() => {
     g.add(
@@ -185,7 +183,7 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
     });
   }, []);
 
-  useFrame(async ({ camera, gl }) => {
+  useFrame(async ({ camera, renderer }) => {
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -202,7 +200,7 @@ const InfiniteFlatSceneImpl = ({ g, store }: InfiniteFlatSceneImplProps) => {
 
     await g.run({
       resources: {
-        renderer: gl,
+        renderer,
       },
     });
   });
@@ -249,19 +247,7 @@ const InfiniteFlatScene = () => {
       </div>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
-          renderer.logarithmicDepthBuffer = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.shadowMap.enabled = true;
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, logarithmicDepthBuffer: true, shadows: true }}
         camera={{
           near: 0.001,
           far: Number.MAX_SAFE_INTEGER,

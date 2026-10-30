@@ -4,18 +4,14 @@ import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { Terrain, useTerrain } from "@hello-terrain/react";
 import { type ElevationCallback } from "@hello-terrain/three";
 import { OrbitControls } from "@react-three/drei";
-import { Canvas, extend } from "@react-three/fiber";
+import { Canvas } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useMemo } from "react";
 import {
   resolveTerrainMaterialAppearance,
   tileColorsLevaControl,
 } from "@/examples/terrain/tileInstanceColor";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { cos, dot, float, floor, Fn, fract, Loop, mix, sin, vec2 } from "three/tsl";
-import * as THREE from "three/webgpu";
-
-extend({ MeshStandardNodeMaterial: THREE.MeshStandardNodeMaterial });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 
@@ -165,13 +161,7 @@ export default function FbmTerrainScene() {
     <ExamplesCanvas store={store}>
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true }}
         camera={{
           position: [0, 30, 60],
         }}

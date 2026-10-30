@@ -32,7 +32,6 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useEffect, useMemo, useRef } from "react";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   cos,
   dot,
@@ -52,7 +51,6 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
-extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
@@ -276,7 +274,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
 
   const colorNode = controls.tileColors ? tileInstanceColorNode : terrainColorNode;
 
-  useFrame(async ({ camera, gl }) => {
+  useFrame(async ({ camera, renderer }) => {
     if (lastCameraRef.current.distanceToSquared(camera.position) >= 0.05 * 0.05) {
       g.set(quadtreeUpdate, (prev: UpdateParams) => {
         prev.cameraOrigin.x = camera.position.x;
@@ -288,7 +286,7 @@ function TileBoundsSceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }
     }
 
     await g.run({
-      resources: { renderer: gl as unknown as THREE.WebGPURenderer },
+      resources: { renderer },
     });
 
     const mesh = meshRef.current;
@@ -334,13 +332,7 @@ export default function TileBoundsScene() {
       </div>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true }}
         camera={{ position: [0, 38, 70], near: 0.1, far: 4096 * 2 }}
         dpr={[1, 1]}
         performance={{ min: 0.5 }}

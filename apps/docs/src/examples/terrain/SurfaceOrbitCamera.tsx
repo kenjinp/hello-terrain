@@ -3,7 +3,7 @@ import { OrbitControls } from "@react-three/drei";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as React from "react";
 import { MathUtils, Vector3 } from "three";
-import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
+import type { OrbitControls as OrbitControlsImpl } from "three/addons/controls/OrbitControls.js";
 
 export interface SurfaceOrbitCameraProps {
   terrain?: TerrainHandle;

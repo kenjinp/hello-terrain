@@ -139,8 +139,8 @@ export function useTerrainRunner({
 
     // R3F 10 exposes the renderer as `state.renderer` and deprecates
     // `state.gl` (reading it in WebGPU mode logs a notice); R3F 8/9 only
-    // have `state.gl`.
-    const renderer = "renderer" in state ? state.renderer : state.gl;
+    // have `state.gl`. Written to typecheck against either version's types.
+    const renderer = ("renderer" in state ? state.renderer : undefined) ?? state.gl;
     if (!isWebGpuRenderer(renderer)) {
       reportError(
         new Error(WEBGPU_RENDERER_ERROR),

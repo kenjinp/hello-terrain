@@ -100,7 +100,11 @@ function TerrainWithHandle({
 
   return (
     <TerrainProvider value={terrain}>
-      <primitive object={mesh} visible={terrain.ready && primitiveVisible} {...restPrimitiveProps}>
+      <primitive
+        object={mesh}
+        visible={terrain.ready && primitiveVisible !== false}
+        {...restPrimitiveProps}
+      >
         {terrain.ready
           ? attachTerrainMaterial(
               children({

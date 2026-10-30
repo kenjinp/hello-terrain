@@ -2,13 +2,12 @@
 
 import { ExamplesCanvas } from "@/components/ExamplesCanvas";
 import { isSkirtUV, isSkirtVertex, TerrainGeometry } from "@hello-terrain/three";
-import { Bounds, Html, OrbitControls, useTexture } from "@react-three/drei";
-import { Canvas, extend, useFrame } from "@react-three/fiber";
+import { Bounds, Html, OrbitControls } from "@react-three/drei";
+import { Canvas, extend, useFrame, useLoader } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 import { useMemo } from "react";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   float,
   Fn,
@@ -23,7 +22,6 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
-extend(THREE as any);
 extend({ TerrainGeometry });
 
 const TerrainPlane = ({ store }: { store: LevaStore }) => {
@@ -56,7 +54,8 @@ const TerrainPlane = ({ store }: { store: LevaStore }) => {
     },
   }, { store });
 
-  const uvMap = useTexture("/assets/uv-12x12.png");
+  // R3F's loader rather than drei's useTexture, which still reads the deprecated state.gl.
+  const uvMap = useLoader(THREE.TextureLoader, "/assets/uv-12x12.png");
   uvMap.wrapS = THREE.RepeatWrapping;
   uvMap.wrapT = THREE.RepeatWrapping;
 
@@ -193,20 +192,7 @@ const TerrainGeometryScene = () => {
     <ExamplesCanvas store={store}>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          // soft shadows
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-
-          renderer.logarithmicDepthBuffer = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.shadowMap.enabled = true;
-
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, logarithmicDepthBuffer: true, shadows: true }}
         camera={{
           near: 0.1,
           far: Number.MAX_SAFE_INTEGER,

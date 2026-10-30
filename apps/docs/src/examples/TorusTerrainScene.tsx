@@ -9,17 +9,14 @@ import {
 import { Terrain, useTerrain, type TerrainHandle } from "@hello-terrain/react";
 import { createTorusTopology } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
-import { Canvas, extend, useFrame, type ThreeEvent } from "@react-three/fiber";
+import { Canvas, useFrame, type ThreeEvent } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   resolveTerrainMaterialAppearance,
   tileColorsLevaControl,
 } from "@/examples/terrain/tileInstanceColor";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
-
-extend({ MeshStandardNodeMaterial: THREE.MeshStandardNodeMaterial });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 
@@ -48,7 +45,7 @@ function QueryDemo({
   angle: number;
   markerHeight: number;
 }) {
-  const markerRef = useRef<THREE.Object3D>(null);
+  const markerRef = useRef<THREE.Mesh>(null);
   const upAxis = useMemo(() => new THREE.Vector3(0, 1, 0), []);
   const probe = useMemo(() => new THREE.Vector3(), []);
 
@@ -273,16 +270,7 @@ export default function TorusTerrainScene() {
       </div>
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
-          renderer.logarithmicDepthBuffer = true;
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, logarithmicDepthBuffer: true }}
         camera={{
           near: 1,
           far: 100000,
