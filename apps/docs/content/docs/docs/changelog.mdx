@@ -13,11 +13,17 @@ When `maxNodes` fits within the device's `maxTextureArrayLayers` (256 by default
 
 ### React Three Fiber 10
 
-`@hello-terrain/react` now supports React Three Fiber 10, including apps that render with `@react-three/fiber/webgpu`. The peer range is `^8.0.0 || ^9.0.0 || ^10.0.0-0`. The terrain runner reads the renderer from `state.renderer` when it exists (R3F 10) and falls back to `state.gl` (R3F 8/9), so R3F 10 no longer logs the `state.gl` deprecation notice.
+`@hello-terrain/react` now supports React Three Fiber 10, both the default `@react-three/fiber` entry (WebGPU in `10.0.0-alpha.6` and later) and the deprecated `@react-three/fiber/webgpu` entry. The peer range is `^8.0.0 || ^9.0.0 || ^10.0.0-0`. The terrain runner reads the renderer from `state.renderer` when it exists (R3F 10) and falls back to `state.gl` (R3F 8/9), so R3F 10 no longer logs the `state.gl` deprecation notice.
+
+The docs site and its examples now run on React Three Fiber `10.0.0-alpha.6` and drei `11.0.0-alpha.7`. Canvases pass renderer options through `renderer={{ … }}` instead of building a `WebGPURenderer` in a `gl` factory. The README and React docs show that setup first, with the R3F 8/9 `gl` factory as the alternative. The live-editable Sandpack examples stay on React Three Fiber 9 with three.js `0.182`: CodeSandbox's bundler cannot run the three.js `0.185`+ that React Three Fiber 10 requires.
 
 ### three.js 0.183 minimum
 
 The `three` peer range is now `>=0.183.0`. three.js `0.182` drops the array layer when sampling array textures in WGSL, so the `array-texture` backend cannot render there. React Three Fiber 10 needs `0.185.0` or newer on its own.
+
+### Disposal during a terrain readback
+
+Unmounting a terrain (or disposing its renderer, which React Three Fiber 10 now does when a `Canvas` unmounts) while a CPU readback was in flight destroyed the staging buffer under a pending `mapAsync`, surfacing as an unhandled `AbortError`. An aborted readback is now treated as an expected outcome.
 
 ## 0.0.0-alpha.14 — Jupiter Stable Orbit
 

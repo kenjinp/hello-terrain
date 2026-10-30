@@ -17,11 +17,12 @@ Realtime web terrain engine for vast virtual worlds. Built for [three.js](https:
 
 ### React Three Fiber
 
+React Three Fiber 10 (the default `Canvas` renders with `WebGPURenderer`):
+
 ```jsx
 import { useRef, useMemo, useEffect } from "react";
-import { Canvas, extend, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
-import * as THREE from "three/webgpu";
 import { float, Fn, vec2 } from "three/tsl";
 import {
   terrainGraph,
@@ -37,7 +38,6 @@ import {
 } from "@hello-terrain/three";
 import { task } from "@hello-terrain/work";
 
-extend(THREE);
 extend({ TerrainGeometry, TerrainMesh });
 
 function Terrain({ graph }) {
@@ -77,14 +77,14 @@ function Terrain({ graph }) {
   }, [graph]);
 
   // Update camera and run the graph each frame
-  useFrame(async ({ camera, gl }) => {
+  useFrame(async ({ camera, renderer }) => {
     graph.set(quadtreeUpdate, (prev) => {
       prev.cameraOrigin.x = camera.position.x;
       prev.cameraOrigin.y = camera.position.y;
       prev.cameraOrigin.z = camera.position.z;
       return prev;
     });
-    await graph.run({ resources: { renderer: gl } });
+    await graph.run({ resources: { renderer } });
   });
 
   return (
@@ -97,14 +97,7 @@ function Terrain({ graph }) {
 export default function App() {
   const graph = useMemo(() => terrainGraph(), []);
   return (
-    <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer({ ...props, antialias: true });
-        await renderer.init();
-        return renderer;
-      }}
-      camera={{ position: [0, 30, 60] }}
-    >
+    <Canvas renderer={{ antialias: true }} camera={{ position: [0, 30, 60] }}>
       <ambientLight intensity={0.5} />
       <directionalLight position={[1, 1, 1]} />
       <Terrain graph={graph} />

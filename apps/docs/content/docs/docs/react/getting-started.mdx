@@ -12,7 +12,7 @@ The React bindings require:
 - `three` `0.183.0` or newer (React Three Fiber 10 needs `0.185.0` or newer)
 - `react`
 - `react-dom`
-- a WebGPU renderer created from `three/webgpu`
+- a WebGPU renderer: the default `Canvas` on React Three Fiber 10, or a `WebGPURenderer` from `three/webgpu` on 8 / 9
 
 ## Smallest Working Setup
 
@@ -21,24 +21,13 @@ This is the smallest complete example using `Terrain` directly inside a WebGPU `
 ```tsx
 import { Terrain } from "@hello-terrain/react";
 import { Canvas } from "@react-three/fiber";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { float } from "three/tsl";
-import * as THREE from "three/webgpu";
 
 const elevation = () => float(0);
 
 export function App() {
   return (
-    <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer(
-          props as WebGPURendererParameters,
-        );
-        await renderer.init();
-        return renderer;
-      }}
-      camera={{ position: [0, 30, 60] }}
-    >
+    <Canvas renderer={{ antialias: true }} camera={{ position: [0, 30, 60] }}>
       <ambientLight intensity={0.15} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
 
@@ -54,7 +43,7 @@ export function App() {
 
 ## What This Does
 
-- The `Canvas` uses `THREE.WebGPURenderer`. On React Three Fiber 10 that is the default: drop the `gl` factory and import `Canvas` from `@react-three/fiber/webgpu` (or `@react-three/fiber`). See [Installation](/docs/installation) for the R3F 10 version of this example.
+- The `Canvas` renders with `THREE.WebGPURenderer`, the React Three Fiber 10 default. Renderer options go on the `renderer` prop. On React Three Fiber 8 or 9, pass an async `gl` factory that returns an initialized `WebGPURenderer` instead; see [Installation](/docs/installation).
 - `Terrain` creates and manages its own terrain handle internally.
 - The render prop receives `positionNode`, which displaces the terrain mesh through a node material.
 

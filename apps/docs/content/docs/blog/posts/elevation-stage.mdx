@@ -39,7 +39,7 @@ Also, because position floats are noisy, it's likely that position would not be 
 
 I recommend adding some hysteresis factor or checking in your animation frame, and only `set()`-ing the `quadtreeUpdate` param when there are large changes. 
 ```ts
-useFrame(async ({ camera, gl }) => {
+useFrame(async ({ camera }) => {
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
