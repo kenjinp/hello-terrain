@@ -9,6 +9,10 @@ Realtime web terrain engine for vast virtual worlds. Built for [three.js](https:
 - TSL-based elevation and texture assignment nodes
 - Composable compute stage plugins
 
+## Requirements
+
+`three` `0.183.0` or newer, rendered with `WebGPURenderer` from `three/webgpu`.
+
 ## Quick Start
 
 ### React Three Fiber

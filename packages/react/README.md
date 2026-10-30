@@ -17,6 +17,10 @@ pnpm add @hello-terrain/react @react-three/fiber three react react-dom
 
 `@hello-terrain/react` depends on WebGPU and expects a `three/webgpu` renderer.
 
+Supported versions: `@react-three/fiber` 8, 9, or 10 (including the 10 alpha), `three` `0.183.0` or newer (R3F 10 itself needs `0.185.0`+), and React 18 or 19.
+
+On React Three Fiber 10, `WebGPURenderer` is the default: import `Canvas` from `@react-three/fiber/webgpu` (or `@react-three/fiber`) and leave out the `gl` factory shown below. Renderer options go on the `renderer` prop.
+
 ## Basic Example
 
 ```tsx

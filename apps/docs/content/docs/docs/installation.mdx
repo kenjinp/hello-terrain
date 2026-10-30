@@ -7,6 +7,18 @@ description: How to install Hello Terrain in your project
 
 Hello Terrain requires [three.js](https://threejs.org/) as a peer dependency. Make sure you have it installed in your project.
 
+### Supported versions
+
+| Package | Supported range |
+|---------|-----------------|
+| `three` | `>=0.183.0` |
+| `@react-three/fiber` (for `@hello-terrain/react`) | 8, 9, or 10 (including the 10 alpha) |
+| `react` / `react-dom` | 18 or 19 |
+
+three.js `0.183.0` is the minimum because earlier releases drop the array layer when sampling array textures in WGSL, which breaks the `array-texture` terrain-field backend (used when `maxNodes` fits within the device's `maxTextureArrayLayers`, 256 by default).
+
+React Three Fiber 10 itself requires three.js `0.185.0` or newer.
+
 ## Packages
 
 Hello Terrain provides two packages depending on your setup:
@@ -61,7 +73,7 @@ yarn add @hello-terrain/react @react-three/fiber three react react-dom
 
 The `@hello-terrain/react` package includes `@hello-terrain/three` as a dependency, so you can use both packages in your React project.
 
-### Basic Usage
+### Basic Usage (React Three Fiber 8 / 9)
 
 ```tsx
 import { Terrain } from "@hello-terrain/react";
@@ -94,6 +106,30 @@ function App() {
 ```
 
 `@hello-terrain/react` expects a WebGPU renderer and a node material that accepts the `positionNode` provided by the terrain render prop.
+
+### Basic Usage (React Three Fiber 10)
+
+React Three Fiber 10 renders with `WebGPURenderer` by default, so no `gl` factory is needed. Import `Canvas` from `@react-three/fiber/webgpu` (or `@react-three/fiber`) and pass renderer options through the `renderer` prop:
+
+```tsx
+import { Terrain } from "@hello-terrain/react";
+import { Canvas } from "@react-three/fiber/webgpu";
+import { float } from "three/tsl";
+
+const elevation = () => float(0);
+
+function App() {
+  return (
+    <Canvas>
+      <Terrain rootSize={128} maxLevel={10} elevation={elevation}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
+    </Canvas>
+  );
+}
+```
 
 ## TypeScript Support
 
