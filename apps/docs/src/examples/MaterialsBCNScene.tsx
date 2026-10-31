@@ -7,10 +7,9 @@ import {
   vectorSpaceToTextureSpace,
 } from "@hello-terrain/three";
 import { Environment, OrbitControls } from "@react-three/drei";
-import { Canvas, extend, useFrame, useLoader, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader, useThree } from "@react-three/fiber";
 import { Suspense, useRef, useState } from "react";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { Fn, normalLocal, normalMap, positionLocal, texture, uv, vec2, vec3 } from "three/tsl";
 import * as THREE from "three/webgpu";
 import { Mesh } from "three/webgpu";
@@ -25,8 +24,6 @@ const DEBUG_VIEW_OPTIONS: { value: DebugView; label: string }[] = [
   { value: "height", label: "Height" },
   { value: "normals", label: "Normals" },
 ];
-
-extend(THREE as any);
 
 const SPHERES = [
   {
@@ -80,7 +77,7 @@ const MaterialSphere = ({
   debugView,
   heightEnabled,
 }: SphereProps) => {
-  const { gl } = useThree();
+  const { renderer } = useThree();
   const meshRef = useRef<Mesh | null>(null);
 
   // Load KTX2 textures using the pre-configured loader
@@ -91,7 +88,7 @@ const MaterialSphere = ({
       loader.setTranscoderPath(
         "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/",
       );
-      loader.detectSupport(gl);
+      loader.detectSupport(renderer);
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) {
         const hasBCCompression = adapter.features.has("texture-compression-bc");
@@ -432,18 +429,7 @@ const MaterialsBCNScene = () => {
       >
         <Canvas
           className="touch-none relative top-0 left-0 w-full h-full"
-          shadows
-          gl={async (props) => {
-            props.alpha = true;
-            props.antialias = true;
-            const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            renderer.shadowMap.enabled = true;
-
-            await renderer.init();
-            return renderer;
-          }}
+          renderer={{ alpha: true, antialias: true, shadows: true }}
           camera={{
             near: 0.1,
             far: 1000,

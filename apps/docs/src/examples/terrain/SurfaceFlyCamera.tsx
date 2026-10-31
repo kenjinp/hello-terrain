@@ -43,7 +43,7 @@ export const SurfaceFlyCamera: React.FC<SurfaceFlyCameraProps> = ({
   maxMoveSpeed = worldRadius * 0.5,
   rollSpeed = 1.5,
 }) => {
-  const { camera, gl } = useThree();
+  const { camera, renderer } = useThree();
   const keys = React.useRef<Set<string>>(new Set());
   const isLocked = React.useRef(false);
   const boost = React.useRef(1);
@@ -73,7 +73,7 @@ export const SurfaceFlyCamera: React.FC<SurfaceFlyCameraProps> = ({
   );
 
   React.useEffect(() => {
-    const canvas = gl.domElement;
+    const canvas = renderer.domElement;
 
     const requestLock = () => {
       if (!isLocked.current) canvas.requestPointerLock();
@@ -100,7 +100,7 @@ export const SurfaceFlyCamera: React.FC<SurfaceFlyCameraProps> = ({
       document.removeEventListener("mousemove", handleMouseMove);
       if (document.pointerLockElement === canvas) document.exitPointerLock();
     };
-  }, [camera, gl, lookSensitivity, sampleUp]);
+  }, [camera, renderer, lookSensitivity, sampleUp]);
 
   React.useEffect(() => {
     const activeKeys = keys.current;

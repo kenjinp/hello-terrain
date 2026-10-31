@@ -217,9 +217,16 @@ export function triggerSnapshotReadback(
       applySnapshot(boundsFilled);
     };
 
-    runDeviceReadback().finally(() => {
-      state.readbackPending = false;
-    });
+    runDeviceReadback()
+      .catch((error: unknown) => {
+        // Disposing the terrain (or its renderer) destroys the staging buffer
+        // while `mapAsync` is pending; that aborted read is expected, not an error.
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        throw error;
+      })
+      .finally(() => {
+        state.readbackPending = false;
+      });
     return;
   }
 

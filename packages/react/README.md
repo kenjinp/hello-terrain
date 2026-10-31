@@ -17,29 +17,22 @@ pnpm add @hello-terrain/react @react-three/fiber three react react-dom
 
 `@hello-terrain/react` depends on WebGPU and expects a `three/webgpu` renderer.
 
+Supported versions: `@react-three/fiber` 8, 9, or 10 (including the 10 alpha), `three` `0.183.0` or newer (R3F 10 itself needs `0.185.0`+), and React 18 or 19.
+
+The example below uses React Three Fiber 10, where the default `Canvas` from `@react-three/fiber` renders with `WebGPURenderer` and renderer options go on the `renderer` prop. On React Three Fiber 8 or 9, pass an async `gl` factory that returns an initialized `WebGPURenderer` from `three/webgpu` instead.
+
 ## Basic Example
 
 ```tsx
 import { Terrain } from "@hello-terrain/react";
 import { Canvas } from "@react-three/fiber";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { float } from "three/tsl";
-import * as THREE from "three/webgpu";
 
 const elevation = () => float(0);
 
 export function App() {
   return (
-    <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer(
-          props as WebGPURendererParameters,
-        );
-        await renderer.init();
-        return renderer;
-      }}
-      camera={{ position: [0, 30, 60] }}
-    >
+    <Canvas renderer={{ antialias: true }} camera={{ position: [0, 30, 60] }}>
       <ambientLight intensity={0.15} />
       <directionalLight intensity={1} position={[1, 1, 1]} />
 

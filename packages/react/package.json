@@ -6,7 +6,7 @@
     "type": "git",
     "url": "https://github.com/kenjinp/hello-terrain.git"
   },
-  "version": "0.0.0-alpha.14",
+  "version": "0.0.0-alpha.15",
   "type": "module",
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -37,6 +37,7 @@
     "@config/oxfmt": "workspace:*",
     "@config/oxlint": "workspace:*",
     "@config/typescript": "workspace:*",
+    "@react-three/fiber": "catalog:",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",
     "@types/react": "catalog:",
@@ -47,7 +48,7 @@
     "vitest": "^4.0.17"
   },
   "peerDependencies": {
-    "@react-three/fiber": "catalog:",
+    "@react-three/fiber": "^8.0.0 || ^9.0.0 || ^10.0.0-0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "three": "catalog:"

@@ -17,13 +17,10 @@ import {
   type LodCriteria,
   type UpdateParams,
 } from "@hello-terrain/three";
-import { Canvas, extend, useThree } from "@react-three/fiber";
+import { Canvas, useThree } from "@react-three/fiber";
 import { folder, useControls, useCreateStore } from "leva";
 import { useEffect, useMemo, useState } from "react";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import * as THREE from "three/webgpu";
-
-extend({ MeshStandardNodeMaterial: THREE.MeshStandardNodeMaterial });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
 
@@ -196,14 +193,7 @@ export default function EarthPlanetScene() {
       </div>
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-          renderer.logarithmicDepthBuffer = true;
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, logarithmicDepthBuffer: true }}
         camera={{
           near: 0.1,
           far: Number.MAX_SAFE_INTEGER,

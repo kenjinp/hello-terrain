@@ -33,7 +33,6 @@ import { OrbitControls } from "@react-three/drei";
 import { Canvas, extend, useFrame } from "@react-three/fiber";
 import { useControls, useCreateStore } from "leva";
 import { useEffect, useMemo, useRef } from "react";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   cos,
   dot,
@@ -51,7 +50,6 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
-extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
 type LevaStore = ReturnType<typeof useCreateStore>;
@@ -216,7 +214,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
   );
 
   const lastCameraRef = useRef(new THREE.Vector3());
-  const terrainMeshRef = useRef<THREE.InstancedMesh | null>(null);
+  const terrainMeshRef = useRef<TerrainMesh | null>(null);
   const terrainMaterialRef = useRef<THREE.MeshStandardNodeMaterial | null>(
     null,
   );
@@ -368,7 +366,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
     g.set(scatterScaleParam, () => controls.scatterScale);
   }, [g, controls.scatterScale, scatterScaleParam]);
 
-  useFrame(async ({ camera, gl }) => {
+  useFrame(async ({ camera, renderer }) => {
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >
       0.05 * 0.05
@@ -383,7 +381,7 @@ function SceneImpl({ g, store }: { g: TerrainGraph; store: LevaStore }) {
     }
 
     await g.run({
-      resources: { renderer: gl as unknown as THREE.WebGPURenderer },
+      resources: { renderer },
     });
   });
 
@@ -437,19 +435,7 @@ export default function TerrainSamplerScatterScene() {
       </div>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
-          renderer.logarithmicDepthBuffer = true;
-          renderer.shadowMap.enabled = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, logarithmicDepthBuffer: true, shadows: true }}
         camera={{
           near: 0.001,
           far: Number.MAX_SAFE_INTEGER,

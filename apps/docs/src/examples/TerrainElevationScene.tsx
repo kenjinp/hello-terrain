@@ -44,7 +44,6 @@ type LevaStore = ReturnType<typeof useCreateStore>;
 import { useEffect, useMemo, useRef } from "react";
 import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { KTX2Loader } from "three/examples/jsm/loaders/KTX2Loader.js";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import {
   float,
   Fn,
@@ -57,7 +56,6 @@ import {
 } from "three/tsl";
 import * as THREE from "three/webgpu";
 
-extend(THREE as any);
 extend({ TerrainGeometry, TerrainMesh });
 
 type TerrainMeshSceneImplProps = {
@@ -115,7 +113,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
     },
   }, { store });
 
-  const { gl } = useThree();
+  const { renderer } = useThree();
 
   const heightmapTexture = useLoader(
     EXRLoader,
@@ -136,7 +134,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
       loader.setTranscoderPath(
         "https://cdn.jsdelivr.net/npm/three@0.174.0/examples/jsm/libs/basis/",
       );
-      loader.detectSupport(gl);
+      loader.detectSupport(renderer);
       const adapter = await navigator.gpu.requestAdapter();
       if (adapter) {
         const hasBCCompression = adapter.features.has("texture-compression-bc");
@@ -170,8 +168,8 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
   });
 
   const lastCameraRef = useRef<THREE.Vector3>(new THREE.Vector3());
-  const meshRef = useRef<THREE.InstancedMesh | null>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial | null>(null);
+  const meshRef = useRef<TerrainMesh | null>(null);
+  const materialRef = useRef<THREE.MeshStandardNodeMaterial | null>(null);
 
   useEffect(() => {
     const bboxMin = new THREE.Vector3();
@@ -315,7 +313,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
     g.set(elevationFn, () => elevation);
   }, [heightmapTexture, controls.heightmapStrength]);
 
-  useFrame(async ({ camera, gl }) => {
+  useFrame(async ({ camera, renderer }) => {
     const cameraHysteresis = 0.05;
     if (
       lastCameraRef.current.distanceToSquared(camera.position) >=
@@ -332,7 +330,7 @@ const TerrainMeshSceneImpl = ({ g, store }: TerrainMeshSceneImplProps) => {
 
     await g.run({
       resources: {
-        renderer: gl,
+        renderer,
       },
     });
   });
@@ -388,19 +386,7 @@ const TerrainElevationScene = () => {
       </div>
       <Canvas
         className="touch-none relative w-full h-full top-0 left-0"
-        shadows
-        gl={async (props) => {
-          props.alpha = true;
-          props.antialias = true;
-          const renderer = new THREE.WebGPURenderer(
-            props as WebGPURendererParameters,
-          );
-          renderer.logarithmicDepthBuffer = true;
-          renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-          renderer.shadowMap.enabled = true;
-          await renderer.init();
-          return renderer;
-        }}
+        renderer={{ alpha: true, antialias: true, logarithmicDepthBuffer: true, shadows: true }}
         camera={{
           near: 0.001,
           far: Number.MAX_SAFE_INTEGER,

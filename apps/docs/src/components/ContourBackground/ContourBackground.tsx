@@ -1,6 +1,7 @@
 "use client";
 
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+// GLSL ShaderMaterial: needs WebGLRenderer, which R3F 10 only provides on /legacy.
+import { Canvas, useFrame, useThree } from "@react-three/fiber/legacy";
 import { createContext, useContext, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
@@ -299,17 +300,17 @@ function ContourPlane() {
     [options],
   );
 
-  useFrame(({ clock, gl }) => {
+  useFrame(({ elapsed, renderer }) => {
     if (meshRef.current) {
       const material = meshRef.current.material as THREE.ShaderMaterial;
-      material.uniforms.uTime.value = clock.getElapsedTime();
+      material.uniforms.uTime.value = elapsed;
 
       // Check dark mode
       const isDarkMode = document.documentElement.classList.contains("dark");
       material.uniforms.uDarkMode.value = isDarkMode ? 1 : 0;
 
       // Update resolution with actual pixel dimensions
-      const pixelRatio = gl.getPixelRatio();
+      const pixelRatio = renderer.getPixelRatio();
       material.uniforms.uResolution.value.set(size.width * pixelRatio, size.height * pixelRatio);
       material.uniforms.uPixelRatio.value = pixelRatio;
 

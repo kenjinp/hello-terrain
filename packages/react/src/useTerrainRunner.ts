@@ -6,7 +6,7 @@ import type { WebGPURenderer } from "three/webgpu";
 import type { TerrainOptions, TerrainTask, TerrainVector3Like } from "./types";
 
 const WEBGPU_RENDERER_ERROR =
-  "@hello-terrain/react requires a WebGPURenderer on <Canvas gl={...}>.";
+  "@hello-terrain/react requires a WebGPURenderer (R3F 10: the default <Canvas> or `@react-three/fiber/webgpu`; R3F 8/9: <Canvas gl={...}>).";
 const GRAPH_RUN_ERROR = "@hello-terrain/react terrain graph run failed.";
 
 export interface UseTerrainRunnerParams {
@@ -137,7 +137,10 @@ export function useTerrainRunner({
   useFrame((state) => {
     if (runningRef.current) return;
 
-    const renderer = state.gl;
+    // R3F 10 exposes the renderer as `state.renderer` and deprecates
+    // `state.gl` (reading it in WebGPU mode logs a notice); R3F 8/9 only
+    // have `state.gl`. Written to typecheck against either version's types.
+    const renderer = ("renderer" in state ? state.renderer : undefined) ?? state.gl;
     if (!isWebGpuRenderer(renderer)) {
       reportError(
         new Error(WEBGPU_RENDERER_ERROR),

@@ -207,8 +207,6 @@ import { createCubeSphereTopology } from "@hello-terrain/three";
 import { Canvas } from "@react-three/fiber";
 import { useMemo } from "react";
 import { float } from "three/tsl";
-import * as THREE from "three/webgpu";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 
 const elevation = () => float(0);
 
@@ -220,11 +218,7 @@ export function Planet() {
 
   return (
     <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer(props as WebGPURendererParameters);
-        await renderer.init();
-        return renderer;
-      }}
+      renderer={{ logarithmicDepthBuffer: true }}
       camera={{ position: [0, 0, 3000], near: 0.1, far: Number.MAX_SAFE_INTEGER }}
     >
       <ambientLight intensity={0.15} />

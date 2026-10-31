@@ -29,28 +29,18 @@ Realtime web terrain engine, for vast virtual worlds. Built for [three.js](https
 
 ## React Example
 
-If you're using `@hello-terrain/react`, the smallest setup is a WebGPU `Canvas` plus a `Terrain` render prop:
+If you're using `@hello-terrain/react`, the smallest setup is a `Canvas` plus a `Terrain` render prop. With React Three Fiber 10 the default `Canvas` already renders with `WebGPURenderer`:
 
 ```tsx
 import { Terrain } from "@hello-terrain/react";
 import { Canvas } from "@react-three/fiber";
-import type { WebGPURendererParameters } from "three/src/renderers/webgpu/WebGPURenderer.js";
 import { float } from "three/tsl";
-import * as THREE from "three/webgpu";
 
 const elevation = () => float(0);
 
 export function App() {
   return (
-    <Canvas
-      gl={async (props) => {
-        const renderer = new THREE.WebGPURenderer(
-          props as WebGPURendererParameters,
-        );
-        await renderer.init();
-        return renderer;
-      }}
-    >
+    <Canvas renderer={{ antialias: true }}>
       <Terrain rootSize={1024} maxLevel={6} elevation={elevation}>
         {({ positionNode }) => (
           <meshStandardNodeMaterial positionNode={positionNode} />
@@ -60,6 +50,8 @@ export function App() {
   );
 }
 ```
+
+On React Three Fiber 8 or 9, build the renderer yourself with an async `gl` factory that returns an initialized `WebGPURenderer` from `three/webgpu`; see [Installation](http://hello-terrain.kenny.wtf/docs/installation).
 
 See the [React overview](http://hello-terrain.kenny.wtf/docs/react) and the package readme at [`packages/react/README.md`](packages/react/README.md) for the full API and runtime patterns.
 

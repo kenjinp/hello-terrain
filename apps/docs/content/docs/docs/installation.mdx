@@ -7,6 +7,18 @@ description: How to install Hello Terrain in your project
 
 Hello Terrain requires [three.js](https://threejs.org/) as a peer dependency. Make sure you have it installed in your project.
 
+### Supported versions
+
+| Package | Supported range |
+|---------|-----------------|
+| `three` | `>=0.183.0` |
+| `@react-three/fiber` (for `@hello-terrain/react`) | 8, 9, or 10 (including the 10 alpha) |
+| `react` / `react-dom` | 18 or 19 |
+
+three.js `0.183.0` is the minimum because earlier releases drop the array layer when sampling array textures in WGSL, which breaks the `array-texture` terrain-field backend (used when `maxNodes` fits within the device's `maxTextureArrayLayers`, 256 by default).
+
+React Three Fiber 10 itself requires three.js `0.185.0` or newer.
+
 ## Packages
 
 Hello Terrain provides two packages depending on your setup:
@@ -61,7 +73,35 @@ yarn add @hello-terrain/react @react-three/fiber three react react-dom
 
 The `@hello-terrain/react` package includes `@hello-terrain/three` as a dependency, so you can use both packages in your React project.
 
-### Basic Usage
+### Basic Usage (React Three Fiber 10)
+
+React Three Fiber 10 renders every `Canvas` from `@react-three/fiber` with `WebGPURenderer` and initializes it for you, so no renderer setup is needed. Pass renderer options (`antialias`, `logarithmicDepthBuffer`, `shadows`, …) through the `renderer` prop:
+
+```tsx
+import { Terrain } from "@hello-terrain/react";
+import { Canvas } from "@react-three/fiber";
+import { float } from "three/tsl";
+
+const elevation = () => float(0);
+
+function App() {
+  return (
+    <Canvas renderer={{ antialias: true }}>
+      <Terrain rootSize={128} maxLevel={10} elevation={elevation}>
+        {({ positionNode }) => (
+          <meshStandardNodeMaterial positionNode={positionNode} />
+        )}
+      </Terrain>
+    </Canvas>
+  );
+}
+```
+
+Use the default `@react-three/fiber` import. The `@react-three/fiber/webgpu` entry is deprecated as of `10.0.0-alpha.6`, and the `gl` prop throws on a WebGPU canvas. `@react-three/fiber/legacy` is WebGL-only, so Hello Terrain cannot render there.
+
+### Basic Usage (React Three Fiber 8 / 9)
+
+React Three Fiber 8 and 9 default to `WebGLRenderer`, so create and initialize a `WebGPURenderer` in an async `gl` factory:
 
 ```tsx
 import { Terrain } from "@hello-terrain/react";
