@@ -7,7 +7,7 @@ import type {
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import type { Topology, LeafSet, QuadtreeState } from "../quadtree";
 import type { ComputePipeline } from "../gpu/compute";
-import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { TileFieldStorage } from "../gpu/tileFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type { SurfaceProjection } from "../projection/types";
@@ -69,7 +69,7 @@ export interface TerrainTasks {
   positionNode: TaskRef<ShaderCallNodeInternal>;
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
-  createTerrainFieldTexture: TaskRef<TerrainFieldStorage>;
+  createTerrainFieldTexture: TaskRef<TileFieldStorage>;
   createTerrainSampler: TaskRef<TerrainSampler>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   terrainFieldStage: TaskRef<ComputePipeline>;

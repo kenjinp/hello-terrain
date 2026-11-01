@@ -4,10 +4,12 @@ Realtime web terrain engine for vast virtual worlds. Built for [three.js](https:
 
 ## Features
 
-- Performant variable LOD system for huge (earth-scale!) open worlds
-- Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
-- TSL-based elevation and texture assignment nodes
+- Quadtree-based variable LOD for flat, infinite-flat, cube-sphere, and torus terrain
+- GPU-evaluated TSL elevation functions and derived terrain normals
+- Custom appearance through three.js node materials
 - Composable compute stage plugins
+
+Terrain texturing, holes, painting, overlays, and wetness are planned, not shipped features. Phase 0 provides shared tile-field storage and compute ordering only; no texture assignment callback or material system is enabled yet.
 
 ## Requirements
 

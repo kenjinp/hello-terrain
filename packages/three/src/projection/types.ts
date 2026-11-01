@@ -6,7 +6,7 @@ import type {
   TileComputeParts,
   TileComputePartsContext,
 } from "../gpu/tile";
-import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { TileFieldStorage } from "../gpu/tileFieldStorage";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type { ElevationGridShape } from "../query/elevation-field-sampling";
 import type {
@@ -35,7 +35,7 @@ export interface Vec3Like {
 export interface RenderVertexPositionContext {
   leafStorage: LeafStorageState;
   uniforms: TerrainUniformsContext;
-  terrainFieldStorage?: TerrainFieldStorage;
+  terrainFieldStorage?: TileFieldStorage;
   tileBoundsNode?: StorageBufferNode;
 }
 

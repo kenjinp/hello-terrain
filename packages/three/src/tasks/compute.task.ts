@@ -25,9 +25,10 @@ export const { compile: compileComputeTask, execute: executeComputeTask } =
  * the accumulation pattern (`get()` predecessor, spread, append), then pass
  * their leaf stage to this helper to get compile + execute tasks.
  *
- * When the pipeline has multiple stages, elevation (and any custom upstream
- * stages) run first, tile bounds are reduced, then the final stage (typically
- * terrain-field pack) runs. Keep terrain-field pack as the last stage.
+ * Elevation and custom upstream stages run first. Bounds are reduced once,
+ * immediately before the first callback with `needsTileBounds` (terrain-field
+ * pack sets this flag). Appending non-geometric stages cannot move this boundary.
+ * An elevation-only pipeline reduces bounds after its final callback.
  *
  * @example
  * ```ts

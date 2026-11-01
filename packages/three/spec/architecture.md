@@ -64,3 +64,12 @@ The terrain library is organized in layers from pure logic to runtime integratio
   - individual task refs
   - custom compute stages
   - low-level helpers in `gpu/` and `tsl/`
+
+## Compute and fragment contracts
+
+- A `ComputePipeline` remains an ordered array of callable stages. The optional `needsTileBounds` property identifies a consumer, not a separate dispatch stage.
+- `createComputePipelineTasks` reduces bounds once before the first marked callback (or after the whole pipeline if none is marked). The reduction requires separate GPU submissions; small tiles cannot fuse across this host hook.
+- Custom elevation/erosion stages belong before terrain-field pack. Later field stages may read geometry without moving the reduction or running elevation again.
+- `tileIndex()` produces a signed integer leaf/storage index from `instanceIndex`, passed to fragments with flat interpolation only when consumed. It is not a persistent quadtree ID, nor does flat interpolation make a branch derivative-uniform.
+- The unassigned `vGlobalVertexIndex` and `vElevation` exports are removed. There is no elevation varying without a consumer contract.
+

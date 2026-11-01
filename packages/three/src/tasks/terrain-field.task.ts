@@ -1,13 +1,9 @@
 import { task } from "@hello-terrain/work";
 import { int } from "three/tsl";
 import type { WebGPURenderer } from "three/webgpu";
-import type { ComputePipeline } from "../gpu/compute";
-import {
-  createTerrainFieldStorage,
-  loadTilePackBounds,
-  packNormalizedTerrainFieldSample,
-  storeTerrainField,
-} from "../gpu/terrainFieldStorage";
+import type { ComputePipeline, ComputeStageCallback } from "../gpu/compute";
+import { createTileFieldStorage, storeTileField } from "../gpu/tileFieldStorage";
+import { loadTilePackBounds, packNormalizedTerrainFieldSample } from "../gpu/terrainFieldStorage";
 import {
   elevationFieldStageTask,
   createElevationFieldContextTask,
@@ -26,12 +22,7 @@ export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
     const maxNodesValue = get(maxNodes);
     const filter = get(terrainFieldFilter);
     return work(() =>
-      createTerrainFieldStorage(
-        edgeVertexCount,
-        maxNodesValue,
-        resources?.renderer,
-        { filter },
-      ),
+      createTileFieldStorage(edgeVertexCount, maxNodesValue, resources?.renderer, { filter }),
     );
   },
 ).displayName("createTerrainFieldTextureTask");
@@ -39,10 +30,9 @@ export const createTerrainFieldTextureTask = task<{ renderer: WebGPURenderer }>(
 // ── Compute stage ───────────────────────────────────────────────────────
 
 /**
- * Normal field compute stage — reads height neighbors from the elevation field
- * buffer, computes surface normals via central differences, packs XZ
- * components into a u32 via `packHalf2x16`, and writes to the normal field
- * storage buffer.
+ * Terrain-field pack stage — reads elevation neighbors, reconstructs unit
+ * world-space normals, and stores [normalizedHeight, Nx, Ny, Nz] in RGBA16F.
+ * Bounds must include all upstream elevation edits before this stage runs.
  *
  * Accumulates the upstream elevation pipeline via `get(elevationFieldStageTask)`.
  */
@@ -64,26 +54,25 @@ export const terrainFieldStageTask = task((get, work) => {
       tile,
       uniforms,
     });
-    return [
-      ...upstream,
-      (nodeIndex, globalVertexIndex, _uv, localCoordinates) => {
-        const ix = int(localCoordinates.x);
-        const iy = int(localCoordinates.y);
-        const height = elevationFieldContext.node.element(globalVertexIndex);
+    const pack: ComputeStageCallback = (nodeIndex, globalVertexIndex, _uv, localCoordinates) => {
+      const ix = int(localCoordinates.x);
+      const iy = int(localCoordinates.y);
+      const height = elevationFieldContext.node.element(globalVertexIndex);
 
-        // Compute the world-space normal from the elevation field and pack the
-        // full normal (Nx, Ny, Nz) alongside the height into RGBA.
-        const normal = computeNormal(nodeIndex, ix, iy);
-        const { packMin, packMax } = loadTilePackBounds(boundsContext.node, nodeIndex);
+      // Compute the world-space normal from the elevation field and pack the
+      // full normal (Nx, Ny, Nz) alongside the height into RGBA.
+      const normal = computeNormal(nodeIndex, ix, iy);
+      const { packMin, packMax } = loadTilePackBounds(boundsContext.node, nodeIndex);
 
-        storeTerrainField(
-          terrainFieldStorage,
-          ix,
-          iy,
-          nodeIndex,
-          packNormalizedTerrainFieldSample(height, normal, packMin, packMax),
-        );
-      },
-    ];
+      storeTileField(
+        terrainFieldStorage,
+        ix,
+        iy,
+        nodeIndex,
+        packNormalizedTerrainFieldSample(height, normal, packMin, packMax),
+      );
+    };
+    pack.needsTileBounds = true;
+    return [...upstream, pack];
   });
 }).displayName("terrainFieldStageTask");

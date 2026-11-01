@@ -5,6 +5,20 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
+## Unreleased — Texturing phase 0
+
+### Shared tile fields and explicit bounds ordering
+
+- One tile-field storage implementation supports `rgba16float`, `rgba32float`, `r32uint`, and `rgba8unorm`, with array and atlas backends. Existing terrain-field exports remain available; internal callers use `createTileFieldStorage`, `storeTileField`, and `loadTileField`. The default terrain graph still allocates only its elevation/normal field.
+- Integer stores preserve all 32 bits, and reads use exact mip-zero loads. Integer filtering is rejected. The alpha.15 array-layer store fix is retained.
+- Terrain-field pack marks `needsTileBounds` on its callback. Bounds run once before the first consumer, so later non-geometric stages cannot move the reduction. Elevation-only custom pipelines reduce after their last callback. Keep all elevation edits before pack.
+- `tileIndex()` supplies a lazily emitted flat integer varying for fragment tile addressing. Flat does not imply derivative-uniform branching.
+- Removed `vElevation` and `vGlobalVertexIndex`, which were exported but never assigned. `elevationFn`, `positionNode`, callback invocation signatures, React nodes, and CPU query semantics are unchanged.
+- Corrected README claims: texturing, holes, painting, overlays, and wetness are not shipped yet. Runnable texturing examples begin in phase 1.
+
+Validated with three.js 0.186.1 on Apple/Metal WebGPU: compute stores and fragment loads for RGBA16F, uint32, and RGBA8 on arrays and an automatically selected 257-tile atlas (device array limit: 256); flat and cube-sphere terrain with custom elevation edits, post-pack reads, and teardown/recreation. This is correctness evidence, not a performance or Terrain3D file-compatibility claim.
+
+
 ## 0.0.0-alpha.15 — Gallóglach
 
 ### Array-texture terrain field fixed

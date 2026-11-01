@@ -1,4 +1,4 @@
-import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { TileFieldStorage } from "../gpu/tileFieldStorage";
 import type { SurfaceProjection } from "../projection/types";
 import type { ElevationCallback } from "../tsl/elevation";
 import type { TerrainUniformsContext } from "../types";
@@ -38,7 +38,7 @@ export interface TerrainSampler {
 }
 
 export interface CreateTerrainSamplerParams {
-  terrainFieldStorage: TerrainFieldStorage;
+  terrainFieldStorage: TileFieldStorage;
   tileBoundsNode: StorageBufferNode;
   spatialIndex: GpuSpatialIndexContext;
   uniforms: TerrainUniformsContext;

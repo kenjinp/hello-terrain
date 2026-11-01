@@ -12,8 +12,7 @@ import { updateUniformsTask } from "./uniforms/uniforms.task";
  * and tileBoundsContextTask (per-tile pack bounds for denormalization).
  *
  * The position node reads packed terrain samples (normalized height + normal)
- * per-vertex and assigns them to the vNormal
- * varying for use in the fragment shader.
+ * per vertex and assigns the world-space normal to normalLocal.
  *
  * These only change when their GPU resources are recreated
  * (e.g. buffer resize), so this task stays cached during normal quadtree
