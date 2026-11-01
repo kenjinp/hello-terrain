@@ -25,6 +25,7 @@ type TerrainHandle = {
   runtime: TerrainRuntime;
   ready: boolean;
   positionNode: ShaderCallNodeInternal | null;
+  texture: TerrainTextureNodes | null;
 };
 ```
 
@@ -50,6 +51,26 @@ Signals that the terrain nodes needed for rendering are available. Before `ready
 ### `positionNode`
 
 The generated node material input used to displace the terrain surface.
+
+### `texture`
+
+Generated material nodes, available when `texture` and `textureSet` options are supplied. This is the same `texture` value passed to `<Terrain>` render-prop children. Untextured callers still receive `null` and keep using `positionNode` alone.
+
+```tsx
+import { Terrain, TerrainStandardMaterial, useTerrain } from "@hello-terrain/react";
+
+const terrain = useTerrain({
+  elevation,
+  texture, // TextureCallback; maps to the core textureFn param
+  textureSet,
+  textureRender: { corners: 4, heightBlend: true, holes: "discard" },
+  textureReadback: true,
+});
+// Inside the scene:
+<Terrain terrain={terrain}><TerrainStandardMaterial /></Terrain>;
+```
+
+`TerrainStandardMaterial` binds the generated position and texture nodes and disposes its own material on replacement/unmount. Texture sets remain caller-owned and may be shared; release them only after all consumers stop using them. `textureReadback` is opt-in: without it, CPU queries/rays ignore rendered holes and report unknown hole/material metadata. See the [runnable React example](/examples/materials/react-texturing) and [texturing contract](/docs/core/nodes/texturing).
 
 ## Basic Pattern
 

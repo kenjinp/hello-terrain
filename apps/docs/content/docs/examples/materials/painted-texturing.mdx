@@ -1,0 +1,31 @@
+---
+title: Painted control and weight maps
+description: Import a native r32 control map or an RGBA PNG weight map into the same terrain field.
+---
+
+import TexturingScene from "@/examples/TexturingScene"
+
+<div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="painted" /></div>
+
+The default input is a committed 64×64 little-endian `.r32` source map. It paints a sand road, snow, and a rock blend. Toggle **Import PNG weights** to use the committed RGBA image instead. Both paths use public APIs; neither is a painting tool or a Terrain3D importer.
+
+```ts
+import { controlMapSample, type TextureCallback } from "@hello-terrain/three";
+import { DataTexture, NearestFilter, RedFormat, UnsignedIntType } from "three";
+
+async function loadPaintedControl(): Promise<{ map: DataTexture; texture: TextureCallback }> {
+  const response = await fetch("/assets/texturing/painted-control.r32");
+  if (!response.ok) throw new Error(`Control map HTTP ${response.status}`);
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength !== 64 * 64 * 4) throw new Error("Expected a 64×64 r32 map");
+  const map = new DataTexture(new Uint32Array(bytes), 64, 64, RedFormat, UnsignedIntType);
+  map.minFilter = map.magFilter = NearestFilter;
+  map.generateMipmaps = false;
+  map.needsUpdate = true;
+  return { map, texture: ({ rootUV }) => controlMapSample(map, rootUV) };
+}
+```
+
+The caller owns `map` and calls `map.dispose()` after its terrain no longer uses it. Control maps use exact integer loads, never filtering or sRGB conversion.
+
+For weights, load an RGBA texture with `NoColorSpace` and return `weightMapsToControl([weightMap], rootUV)`. Channels R/G/B/A address four consecutive slots; two maps address eight. The converter discards all but the largest two weights and renormalizes those two. Preserve the original weight maps if authoring needs all layers.

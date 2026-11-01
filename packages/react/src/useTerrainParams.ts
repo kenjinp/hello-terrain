@@ -10,6 +10,10 @@ import {
   skirtScale,
   terrainFieldFilter,
   topology,
+  textureFn,
+  textureSet,
+  textureRender,
+  textureReadback,
   type TerrainGraph,
 } from "@hello-terrain/three";
 import type { ParamRef } from "@hello-terrain/work";
@@ -48,6 +52,10 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     topology: nextTopology,
     terrainFieldFilter: nextTerrainFieldFilter,
+    texture: nextTexture,
+    textureSet: nextTextureSet,
+    textureRender: nextTextureRender,
+    textureReadback: nextTextureReadback,
   } = options;
 
   useLayoutEffect(() => {
@@ -125,6 +133,10 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
       nextTerrainFieldFilter,
       () => nextTerrainFieldFilter as "nearest" | "linear",
     );
+    resetOrSet(graph, ownedParamIds, textureFn, nextTexture, () => nextTexture ?? null);
+    resetOrSet(graph, ownedParamIds, textureSet, nextTextureSet, () => nextTextureSet ?? null);
+    resetOrSet(graph, ownedParamIds, textureRender, nextTextureRender, () => nextTextureRender ?? {});
+    resetOrSet(graph, ownedParamIds, textureReadback, nextTextureReadback, () => nextTextureReadback ?? false);
 
     if (elevation === undefined) {
       if (ownedParamIds.has(elevationFn.id)) {
@@ -148,5 +160,9 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     nextTopology,
     nextTerrainFieldFilter,
+    nextTexture,
+    nextTextureSet,
+    nextTextureRender,
+    nextTextureReadback,
   ]);
 }

@@ -1,0 +1,28 @@
+---
+title: Terrain holes and queries
+description: Compare fragment holes, collapsed triangles, CPU readback, and ray pass-through.
+---
+
+import TexturingScene from "@/examples/TexturingScene"
+
+<div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="holes" /></div>
+
+The center hole exposes the floor below the flat terrain. The orange marker is placed by a separate ray onto solid terrain. The live readout distinguishes the center sample from the ray result: on the cube sphere a ray entering the top hole can reach the solid rear surface.
+
+```ts
+import { textureControl, type TextureCallback } from "@hello-terrain/three";
+
+const texture: TextureCallback = ({ worldPosition }) => textureControl({
+  base: 0,
+  hole: worldPosition.x.mul(worldPosition.x)
+    .add(worldPosition.z.mul(worldPosition.z)).lessThan(22 * 22),
+});
+```
+
+- `holes: "discard"` uses the nearest control texel. `nodes.albedo` carries the discard, including the standard shadow path. The remaining fragments write normal depth.
+- `holes: "collapse"` removes triangles touching a hole vertex. Its coarser footprint follows the terrain grid's actual triangle diagonals; CPU and GPU queries use that same expanded footprint.
+- `holes: "none"` ignores the hole bit for geometry/validity; the raw bit remains available in decoded control data.
+
+With `textureReadback: true`, CPU samples expose `hole`, `textureControl`, `textureBase`, `textureOverlay`, and `textureBlend`. A known hole has `valid: false`; `getElevation()` and `getNormal()` return `null`. Raycasts reject that surface and continue searching rather than treating it as a solid hit.
+
+Disable **CPU control readback** to see the explicit fallback contract: `hole: null` and material fields `null`, with geometric-only CPU samples/raycasts. GPU rendering and `TerrainSampler.sampleHole()` remain hole-aware. Readback is asynchronous and reports the latest complete paired snapshot, not an immediate edit acknowledgment.

@@ -1,5 +1,5 @@
 import { Vector3 } from "three";
-import { Fn, float, pow } from "three/tsl";
+import { Fn, atan, cos, float, pow, sin, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createDisplacedSurfaceNormalFromElevationField } from "../gpu/normalField";
@@ -165,6 +165,29 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
     baseResolution: { u: baseU, v: baseV },
 
     gpu: {
+      textureFrame(position) {
+        const p = position.sub(vec3(center.x, center.y, center.z));
+        const phi = atan(p.z, p.x);
+        const radial = p.xz.length().sub(majorRadius);
+        const theta = atan(p.y, radial);
+        const c = cos(phi), s = sin(phi), ct = cos(theta), st = sin(theta);
+        const up = vec3(c.mul(ct), st, s.mul(ct));
+        return {
+          uv: vec2(phi.mul(majorRadius), theta.mul(minorRadius)),
+          uvGradient(derivative) {
+            const rho = p.xz.length();
+            const dRadial = p.xz.dot(derivative.xz).div(rho);
+            return vec2(
+              p.x.mul(derivative.z).sub(p.z.mul(derivative.x)).div(rho.mul(rho)).mul(majorRadius),
+              radial.mul(derivative.y).sub(p.y.mul(dRadial)).div(radial.mul(radial).add(p.y.mul(p.y))).mul(minorRadius),
+            );
+          },
+          height: vec2(radial, p.y).length().sub(minorRadius).mul(invert ? -1 : 1),
+          up: invert ? up.negate() : up,
+          tangentU: vec3(s.negate(), 0, c),
+          tangentV: vec3(c.mul(st).negate(), ct, s.mul(st).negate()),
+        };
+      },
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
         return createCurvedRenderVertexPosition(
           ctx.leafStorage,

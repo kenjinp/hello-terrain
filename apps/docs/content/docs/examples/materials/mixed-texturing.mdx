@@ -1,0 +1,29 @@
+---
+title: Mixed painted and procedural inputs
+description: Artist-authored road and snow regions override procedural material selection.
+---
+
+import TexturingScene from "@/examples/TexturingScene"
+
+<div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="mixed" /></div>
+
+The native source map marks unpainted texels with its `auto` bit. The callback decides what that bit means: here it selects procedural elevation/slope weights, while the road and snow remain artist-authored. There is no hidden automatic-material pass.
+
+```ts
+import { controlMapSample, decodeTextureControl, textureWeights, type TextureCallback } from "@hello-terrain/three";
+import { Fn, select } from "three/tsl";
+import type { Texture } from "three";
+
+function mixedTexture(controlMap: Texture): TextureCallback {
+  return ({ rootUV, elevation, slope }) => Fn(() => {
+    const painted = controlMapSample(controlMap, rootUV).toVar();
+    const procedural = textureWeights([
+      slope.mul(3).oneMinus().clamp(), slope.mul(3).clamp(),
+      elevation.negate().mul(0.12).clamp(), elevation.sub(6).mul(0.16).clamp(),
+    ]);
+    return select(decodeTextureControl(painted).auto, procedural, painted);
+  })();
+}
+```
+
+Source UVs follow `rootUV`: flat terrain uses the documented flipped V coordinate, while cube-sphere inputs repeat per face. Imported controls, procedural controls, and mixed controls all use the same per-tile `r32uint` field and two material arrays.

@@ -1,0 +1,27 @@
+---
+title: Procedural four-slot texturing
+description: Elevation and slope assign grass, rock, sand, and snow through textureFn.
+---
+
+import TexturingScene from "@/examples/TexturingScene"
+
+<div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="procedural" /></div>
+
+The scene builds a runtime texture set, then produces native uint controls from elevation and slope. Four-corner shading interpolates the field; the one-corner toggle exposes the quality tradeoff without introducing an automatic distance policy. Move the LOD focus to regenerate differently sized tiles while keeping the camera fixed.
+
+```ts
+import { textureWeights, type TextureCallback } from "@hello-terrain/three";
+
+const texture: TextureCallback = ({ elevation, slope }) => textureWeights([
+  slope.mul(3).oneMinus().clamp(),
+  slope.mul(3).clamp(),
+  elevation.negate().mul(0.12).clamp(),
+  elevation.sub(6).mul(0.16).clamp(),
+]);
+```
+
+Weights are nonnegative. Only the largest two survive; ties prefer the lower slot index, and their blend is quantized to eight bits. This is not a lossless four-layer splat map.
+
+The grass slot uses deterministic per-field-corner rotation/shift detiling. The rock slot uses the single-plane vertical projection on steep slopes. UV mapping on a cube sphere is face-local; this phase does not promise seamless triplanar mapping across cube faces.
+
+See [the texturing contract](/docs/core/nodes/texturing) for storage, ownership, and material binding.

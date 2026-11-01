@@ -12,6 +12,8 @@ import {
   radius,
   rootSize,
 } from "./params";
+import { textureFn, textureReadback, textureRender } from "./params";
+import { createTextureFieldContextTask } from "./texture-field.task";
 import { leafGpuBufferTask, quadtreeConfigTask, topologyTask } from "./quadtree.task";
 import { tileBoundsReductionTask } from "./compute.task";
 
@@ -25,9 +27,12 @@ export const terrainQueryTask = task((get, work) => {
   const radiusValue = get(radius);
   const topologyValue = get(topologyTask);
   const projection = topologyValue.projection;
+  const textureEnabled = get(textureFn) !== null;
+  const readback = get(textureReadback) && textureEnabled;
+  const holes = get(textureRender).holes ?? "discard";
 
   return work((prev?: TerrainQueryContext): TerrainQueryContext => {
-    const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}`;
+    const shapeKey = `${maxNodesValue}:${innerTileSegmentsValue}:${projection.kind}:${textureEnabled}:${readback}`;
     const resolvedRadius = projection.radius ?? radiusValue;
     const configValues = {
       rootSize: rootSizeValue,
@@ -40,6 +45,9 @@ export const terrainQueryTask = task((get, work) => {
       radius: resolvedRadius,
       baseU: projection.baseResolution?.u ?? 1,
       baseV: projection.baseResolution?.v ?? 1,
+      textureEnabled,
+      textureReadback: readback,
+      holes,
     };
 
     let cache = prev?.cache;
@@ -75,6 +83,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
     const quadtreeConfig = get(quadtreeConfigTask);
     const leafState = get(leafGpuBufferTask);
     const { cache } = get(terrainQueryTask);
+    const textureContext = get(createTextureFieldContextTask);
 
     return work((): void => {
       if (!resources?.renderer) return;
@@ -85,6 +94,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
         quadtreeConfig.state.leafIndex,
         boundsContext.attribute,
         leafState.count,
+        textureContext?.attribute ?? undefined,
       );
     });
   },

@@ -8,8 +8,9 @@ Realtime web terrain engine for vast virtual worlds. Built for [three.js](https:
 - GPU-evaluated TSL elevation functions and derived terrain normals
 - Custom appearance through three.js node materials
 - Composable compute stage plugins
+- Procedural/authored uint material controls, packed texture arrays, and hole-aware rendering
 
-Terrain texturing, holes, painting, overlays, and wetness are planned, not shipped features. Phase 0 provides shared tile-field storage and compute ordering only; no texture assignment callback or material system is enabled yet.
+Core texturing provides `textureFn`, runtime/prepacked texture sets, UV/vertical projection, detiling, and height blending. CPU hole/material queries require opt-in `textureReadback`; without it, CPU queries and rays remain geometric. See the [texturing contract](https://hello-terrain.kenny.wtf/docs/core/nodes/texturing) and [runnable examples](https://hello-terrain.kenny.wtf/examples/materials/procedural-texturing). Triplanar/hex/bombing quality methods, painting tools, overlays, caches, and wetness remain planned. No Terrain3D file compatibility or physics-collision integration is implied.
 
 ## Requirements
 

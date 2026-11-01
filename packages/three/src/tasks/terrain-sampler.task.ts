@@ -1,11 +1,12 @@
 import { task } from "@hello-terrain/work";
 import { createTerrainSampler } from "../query/terrain-sampler";
-import { elevationFn, maxLevel } from "./params";
+import { elevationFn, maxLevel, textureRender } from "./params";
 import { gpuSpatialIndexStorageTask } from "./gpuSpatialIndex.task";
 import { topologyTask } from "./quadtree.task";
 import { createTerrainFieldTextureTask } from "./terrain-field.task";
 import { tileBoundsContextTask } from "./tile-bounds.task";
 import { updateUniformsTask } from "./uniforms/uniforms.task";
+import { createTextureFieldContextTask } from "./texture-field.task";
 
 export const createTerrainSamplerTask = task((get, work) => {
   const terrainFieldStorage = get(createTerrainFieldTextureTask);
@@ -15,6 +16,8 @@ export const createTerrainSamplerTask = task((get, work) => {
   const elevationCallback = get(elevationFn);
   const maxLevelValue = get(maxLevel);
   const projection = get(topologyTask).projection;
+  const textureContext = get(createTextureFieldContextTask);
+  const holes = get(textureRender).holes ?? "discard";
 
   return work(() =>
     createTerrainSampler({
@@ -25,6 +28,8 @@ export const createTerrainSamplerTask = task((get, work) => {
       elevationCallback,
       maxLevel: maxLevelValue,
       projection,
+      textureFieldStorage: textureContext?.storage,
+      holes,
     }),
   );
 }).displayName("createTerrainSamplerTask");

@@ -5,18 +5,32 @@ description: Release notes for the Hello Terrain packages
 
 Release notes for [`@hello-terrain/three`](https://www.npmjs.com/package/@hello-terrain/three) and [`@hello-terrain/react`](https://www.npmjs.com/package/@hello-terrain/react). These two ship together, so they share a version.
 
-## Unreleased — Texturing phase 0
+## Unreleased — Texturing phases 0 and 1
 
 ### Shared tile fields and explicit bounds ordering
 
-- One tile-field storage implementation supports `rgba16float`, `rgba32float`, `r32uint`, and `rgba8unorm`, with array and atlas backends. Existing terrain-field exports remain available; internal callers use `createTileFieldStorage`, `storeTileField`, and `loadTileField`. The default terrain graph still allocates only its elevation/normal field.
+- One tile-field storage implementation supports `rgba16float`, `rgba32float`, `r32uint`, and `rgba8unorm`, with array and atlas backends. Existing terrain-field exports remain available; internal callers use `createTileFieldStorage`, `storeTileField`, and `loadTileField`. Untextured graphs allocate only their elevation/normal field.
 - Integer stores preserve all 32 bits, and reads use exact mip-zero loads. Integer filtering is rejected. The alpha.15 array-layer store fix is retained.
 - Terrain-field pack marks `needsTileBounds` on its callback. Bounds run once before the first consumer, so later non-geometric stages cannot move the reduction. Elevation-only custom pipelines reduce after their last callback. Keep all elevation edits before pack.
 - `tileIndex()` supplies a lazily emitted flat integer varying for fragment tile addressing. Flat does not imply derivative-uniform branching.
-- Removed `vElevation` and `vGlobalVertexIndex`, which were exported but never assigned. `elevationFn`, `positionNode`, callback invocation signatures, React nodes, and CPU query semantics are unchanged.
-- Corrected README claims: texturing, holes, painting, overlays, and wetness are not shipped yet. Runnable texturing examples begin in phase 1.
+- Removed `vElevation` and `vGlobalVertexIndex`, which were exported but never assigned. Existing untextured elevation callbacks, position nodes, and CPU geometric queries retain their behavior.
+- Corrected README feature claims; shipped core texturing is now distinguished from later painting, quality, caching, overlay, and wetness work.
 
 Validated with three.js 0.186.1 on Apple/Metal WebGPU: compute stores and fragment loads for RGBA16F, uint32, and RGBA8 on arrays and an automatically selected 257-tile atlas (device array limit: 256); flat and cube-sphere terrain with custom elevation edits, post-pack reads, and teardown/recreation. This is correctness evidence, not a performance or Terrain3D file-compatibility claim.
+
+### Core texturing, holes, and runnable examples
+
+- Added `textureFn` beside `elevationFn`, with final elevation, normal, and slope inputs. Native uint control helpers support two slot IDs, quantized blend/UV transform, and hole/nav/auto bits. CPU/GPU half-step quantization agrees; this is not a Terrain3D file importer.
+- Added native control-map loads and lossy top-two conversion from one/two linear RGBA weight maps. The optional control-field stage runs after terrain-field pack; custom elevation/erosion stages keep their existing bounds boundary.
+- Added caller-owned runtime/prepacked texture sets: albedo+height and normal-XY+AO+roughness arrays. Runtime packing resizes color in linear space, generates mips, and does not retain or dispose source images. Prepacked compressed arrays retain their mip payloads.
+- Added four-corner (or explicit one-corner) shading, stable height blending, per-slot parameters, UV/eight-direction vertical mapping, and per-corner detiling with normal counter-rotation. Material reads use explicit gradients; uint controls use exact loads. Shared projection frames/gradients are emitted before divergent slot branches.
+- Added discard, whole-triangle collapse, and disabled hole modes across color, shadow, and depth. GPU sampling exposes controls/holes. Optional `textureReadback` adds CPU metadata and hole-aware query/raycast snapshots; without it, metadata is unknown and CPU hits remain geometric. Rays can continue through a front hole to a solid rear surface.
+- React exposes nullable `nodes.texture` and `<TerrainStandardMaterial>`. Materials are component-owned; texture sets remain caller-owned and shareable. Graph-owned control resources and default compiled pipelines are disposed on replacement/teardown.
+- Added runnable [procedural](/examples/materials/procedural-texturing), [painted](/examples/materials/painted-texturing), [mixed](/examples/materials/mixed-texturing), [holes](/examples/materials/terrain-holes), and [React replacement](/examples/materials/react-texturing) examples. The [BCn example](/examples/materials/materials-bcn) now renders terrain with two real four-layer BC3 arrays and ten mip levels, rather than detached material previews.
+
+Phase-one browser proof used three.js 0.186.1 and Apple/Metal WebGPU: flat/cube-sphere, array/atlas, color/depth/shadow hole masks, CPU/GPU control parity, custom stage order, moving LOD, finite seam normals, compressed layer/mip decoding, palette replacement, and exact-once destruction of new control/material resources. This is correctness evidence on that device, not a cross-vendor, performance, seamless material-mapping, or physics-collision guarantee. Triplanar/hex/bombing methods, automatic LOD sample budgets, painting/authoring tools, and caches remain later phases.
+
+See [Terrain Texturing](/docs/core/nodes/texturing) for quantization, ownership, nullable readback, projection, and compatibility contracts.
 
 
 ## 0.0.0-alpha.15 — Gallóglach

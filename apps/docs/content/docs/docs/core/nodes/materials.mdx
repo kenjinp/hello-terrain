@@ -13,7 +13,7 @@ The `@hello-terrain/three` package provides a set of TSL (Three.js Shading Langu
 
 Flat interpolation does **not** guarantee uniform control flow across fragment quads. Use `loadTileField` for exact mip-zero field reads (required for `r32uint`), or take gradients in uniform flow before using `.grad(dx, dy)` for filtered texture samples inside a varying branch. Integer fields cannot be filtered.
 
-The previously exported `vElevation` and `vGlobalVertexIndex` were never assigned and are removed. Use `tileIndex()` for tile addressing; there is no raw elevation varying. Existing custom materials and `positionNode` remain the appearance path—this plumbing does not add the planned terrain texturing system.
+The previously exported `vElevation` and `vGlobalVertexIndex` were never assigned and are removed. Use `tileIndex()` for tile addressing; there is no raw elevation varying. Existing custom materials and `positionNode` remain supported. The [terrain texturing nodes](/docs/core/nodes/texturing) add packed material arrays and hole-aware shading without replacing that path.
 
 
 ## Space Conversion Functions
