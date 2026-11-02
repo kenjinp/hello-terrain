@@ -7,23 +7,33 @@ import TexturingScene from "@/examples/TexturingScene"
 
 <div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="mixed" /></div>
 
-The native source map marks unpainted texels with its `auto` bit. The callback decides what that bit means: here it selects procedural elevation/slope weights, while the road and snow remain artist-authored. There is no hidden automatic-material pass.
+The native source map's `auto` bit selects a procedural **background** outside the authored snow region. Sand coverage from slot 2 remains artist-authored, including its feathered edge. Mixing that coverage into the procedural weights avoids a grass-colored border where the surrounding procedural material is rock or snow. Texels with `auto` unset keep their complete authored control. There is no hidden automatic-material pass.
 
 ```ts
 import { controlMapSample, decodeTextureControl, textureWeights, type TextureCallback } from "@hello-terrain/three";
-import { Fn, select } from "three/tsl";
+import { Fn, float, select } from "three/tsl";
 import type { Texture } from "three";
 
 function mixedTexture(controlMap: Texture): TextureCallback {
   return ({ rootUV, elevation, slope }) => Fn(() => {
     const painted = controlMapSample(controlMap, rootUV).toVar();
-    const procedural = textureWeights([
-      slope.mul(3).oneMinus().clamp(), slope.mul(3).clamp(),
-      elevation.negate().mul(0.12).clamp(), elevation.sub(6).mul(0.16).clamp(),
-    ]);
-    return select(decodeTextureControl(painted).auto, procedural, painted);
+    const source = decodeTextureControl(painted);
+    const grass = slope.mul(3).oneMinus().clamp(), rock = slope.mul(3).clamp();
+    const sand = elevation.negate().mul(0.12).clamp(), snow = elevation.sub(6).mul(0.16).clamp();
+    const path = select(source.base.equal(2), source.blend.oneMinus(),
+      select(source.overlay.equal(2), source.blend, float(0)));
+    const background = path.oneMinus();
+    const total = grass.add(rock).add(sand).add(snow);
+    const mixed = textureWeights([
+      grass.mul(background), rock.mul(background),
+      sand.mul(background).add(path.mul(total)), snow.mul(background),
+    ], { hole: source.hole, nav: source.nav, auto: source.auto,
+      uvRotation: source.uvRotation, uvScale: source.uvScale });
+    return select(source.auto, mixed, painted);
   })();
 }
 ```
 
 Source UVs follow `rootUV`: flat terrain uses the documented flipped V coordinate, while cube-sphere inputs repeat per face. Imported controls, procedural controls, and mixed controls all use the same per-tile `r32uint` field and two material arrays.
+
+The total rescales the authored sand coverage into the procedural weights' units before top-two selection. The example uses `blendSharpness: 0` with height blending enabled, just like the [painted example](/examples/materials/painted-texturing). This adds weight arithmetic in the compute callback, not another source-map load or a new fragment sampling path. Top-two conversion remains lossy; the original authored source is retained.

@@ -117,8 +117,8 @@ export async function loadTexturingExampleAssets(
       const response = await fetch("/assets/texturing/painted-control.r32");
       if (!response.ok) throw new Error(`Control map HTTP ${response.status}`);
       const bytes = await response.arrayBuffer();
-      if (bytes.byteLength !== 64 * 64 * 4) throw new Error("Expected a 64×64 native little-endian r32 control map");
-      controlMap = new DataTexture(new Uint32Array(bytes), 64, 64, RedFormat, UnsignedIntType);
+      if (bytes.byteLength !== 256 * 256 * 4) throw new Error("Expected a 256×256 native little-endian r32 control map");
+      controlMap = new DataTexture(new Uint32Array(bytes), 256, 256, RedFormat, UnsignedIntType);
       controlMap.minFilter = controlMap.magFilter = NearestFilter;
       controlMap.generateMipmaps = false; controlMap.needsUpdate = true;
       owned.push(controlMap);

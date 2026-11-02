@@ -32,6 +32,12 @@ Phase-one browser proof used three.js 0.186.1 and Apple/Metal WebGPU: flat/cube-
 
 See [Terrain Texturing](/docs/core/nodes/texturing) for quantization, ownership, nullable readback, projection, and compatibility contracts.
 
+### Example lighting, authored transitions, and snapshot bounds
+
+- Tuned the six focused examples' shared directional light: a fitted 350×350 footprint, 2048² shadow map, and `0.2` normal bias replace zero-bias self-shadow bands without disabling terrain casting or reception. These are example-scale settings, not universal terrain constants.
+- Feathered the existing painted path at 256×256 source resolution and reduced its height-blend sharpness. Its course and solid center remain intact. Mixed inputs now combine authored sand coverage with the procedural background instead of leaving a hard painted border. Packed controls still use exact integer loads; no IDs or hole bits are filtered.
+- Flat raycasting now reads bounds from the latest completed query snapshot at pick time. Cached raycasters therefore reach negative elevations and later changed elevation ranges without requiring their graph task to rebuild.
+
 
 ## 0.0.0-alpha.15 — Gallóglach
 

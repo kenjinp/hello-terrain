@@ -61,7 +61,18 @@ function TexturedTerrain({ assets, options, onReport }: {
     if (options.mode === "mixed") {
       return Fn(() => {
         const painted = controlMapSample(controlMap!, p.rootUV).toVar();
-        return select(decodeTextureControl(painted).auto, procedural, painted);
+        const source = decodeTextureControl(painted);
+        const path = select(source.base.equal(2), source.blend.oneMinus(),
+          select(source.overlay.equal(2), source.blend, float(0)));
+        const background = path.oneMinus();
+        const total = grass.add(rock).add(sand).add(snow);
+        // Auto selects the procedural underlay, not a hard switch at the feather's edge.
+        const mixed = textureWeights([
+          grass.mul(background), rock.mul(background),
+          sand.mul(background).add(path.mul(total)), snow.mul(background),
+        ], { hole: source.hole, nav: source.nav, auto: source.auto,
+          uvRotation: source.uvRotation, uvScale: source.uvScale });
+        return select(source.auto, mixed, painted);
       })();
     }
     // BCn uses the same callback/field contract, with its four prepacked source layers.
@@ -142,8 +153,8 @@ function Scene({ options, onReport, onError }: {
     <color attach="background" args={["#1b2630"]} />
     <hemisphereLight args={["#e7f1ff", "#786b49", 2]} />
     <directionalLight position={[-70, 180, 90]} intensity={3} castShadow
-      shadow-mapSize={[1024, 1024]} shadow-camera-left={-160} shadow-camera-right={160}
-      shadow-camera-top={160} shadow-camera-bottom={-160} shadow-camera-far={500} />
+      shadow-mapSize={[2048, 2048]} shadow-normalBias={0.2} shadow-camera-left={-175} shadow-camera-right={175}
+      shadow-camera-top={175} shadow-camera-bottom={-175} shadow-camera-far={500} />
     {assets && <TexturedTerrain assets={assets} options={options} onReport={onReport} />}
     <OrbitControls makeDefault minDistance={35} maxDistance={550} target={[0, 0, 0]} />
   </>;
@@ -166,7 +177,9 @@ export default function TexturingScene({ mode = "procedural" }: { mode?: Texturi
   const [heightBlend, setHeightBlend] = useState(true);
   const [report, setReport] = useState<DemoReport | null>(null);
   const [error, setError] = useState("");
-  const render = useMemo<TerrainTextureRenderOptions>(() => ({ corners: fourCorners ? 4 : 1, heightBlend, holes: collapse ? "collapse" : "discard" }), [fourCorners, heightBlend, collapse]);
+  const render = useMemo<TerrainTextureRenderOptions>(() => ({ corners: fourCorners ? 4 : 1, heightBlend,
+    blendSharpness: mode === "painted" || mode === "mixed" ? 0 : 0.5,
+    holes: collapse ? "collapse" : "discard" }), [fourCorners, heightBlend, collapse, mode]);
   const options = useMemo<DemoOptions>(() => ({ mode, cube, capacity: atlasCapacity ? 1024 : 128, alternate, focusRight, weights, readback, render }),
     [mode, cube, atlasCapacity, alternate, focusRight, weights, readback, render]);
   return <ExamplesCanvas><div className="relative h-full w-full">
