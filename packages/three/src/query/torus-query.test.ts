@@ -70,6 +70,7 @@ describe("torus CPU sampling", () => {
       renderer,
       {} as unknown as StorageBufferAttribute,
       index,
+      1,
       undefined,
       1,
     );

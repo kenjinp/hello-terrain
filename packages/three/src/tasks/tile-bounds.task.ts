@@ -17,6 +17,8 @@ export interface TileBoundsContext {
   data: Float32Array<ArrayBuffer>;
   attribute: StorageBufferAttribute;
   node: StorageBufferNode;
+  /** Completed compute submissions using this field/bounds context. */
+  productionGeneration: number;
 }
 
 const WGSIZE = 64;
@@ -128,6 +130,6 @@ export const tileBoundsContextTask = task((get, work) => {
       verticesPerNode,
       edgeVertexCount,
     );
-    return { data, attribute, node, kernel };
+    return { data, attribute, node, kernel, productionGeneration: 0 };
   });
 }).displayName("tileBoundsContextTask");

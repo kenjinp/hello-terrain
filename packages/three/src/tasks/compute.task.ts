@@ -64,7 +64,13 @@ export function createComputePipelineTasks(leafStageTask: TaskRef<ComputePipelin
   const execute = task<{ renderer: WebGPURenderer }>((get, work, { resources }) => {
     const { execute: run } = get(compile);
     const leafState = get(leafGpuBufferTask);
-    return work(() => (resources?.renderer ? run(resources.renderer, leafState.count) : () => {}));
+    const boundsContext = get(tileBoundsContextTask);
+    return work(() => {
+      if (!resources?.renderer) return () => {};
+      const result = run(resources.renderer, leafState.count);
+      boundsContext.productionGeneration += 1;
+      return result;
+    });
   })
     .displayName("executeComputeTask")
     .lane("gpu");

@@ -92,6 +92,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
         resources.renderer,
         elevationFieldContext.attribute,
         quadtreeConfig.state.leafIndex,
+        boundsContext.productionGeneration,
         boundsContext.attribute,
         leafState.count,
         textureContext?.attribute ?? undefined,
@@ -100,4 +101,7 @@ export const terrainReadbackTask = task<{ renderer: WebGPURenderer }>(
   },
 )
   .displayName("terrainReadbackTask")
-  .lane("gpu");
+  .lane("gpu")
+  // A newer production can arrive while the previous snapshot is still mapping.
+  // Revisit scheduling without rerunning compute; the cache deduplicates production.
+  .cache("none");

@@ -67,12 +67,15 @@ export type TerrainQueryConfig = {
 
 export interface CpuTerrainCache {
   readonly generation: number;
+  /** Published tile-range changes that require another LOD evaluation. */
+  readonly boundsGeneration: number;
   readonly ready: boolean;
   updateConfig(config: TerrainQueryConfig): void;
   triggerReadback(
     renderer: WebGPURenderer,
     attribute: StorageBufferAttribute,
     spatialIndex: SpatialIndex,
+    productionGeneration: number,
     boundsAttribute?: StorageBufferAttribute,
     activeLeafCount?: number,
     controlAttribute?: StorageBufferAttribute,
@@ -353,6 +356,9 @@ export function createCpuTerrainCache(
     get generation() {
       return state.generation;
     },
+    get boundsGeneration() {
+      return state.boundsGeneration;
+    },
     get ready() {
       return state.hasSnapshot;
     },
@@ -368,8 +374,9 @@ export function createCpuTerrainCache(
       shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
       totalElements = maxNodes * shape.verticesPerNode;
     },
-    triggerReadback(renderer, attribute, spatialIndex, boundsAttribute, activeLeafCount, controlAttribute) {
+    triggerReadback(renderer, attribute, spatialIndex, productionGeneration, boundsAttribute, activeLeafCount, controlAttribute) {
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
+        productionGeneration,
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
         verticesPerNode: shape.verticesPerNode,

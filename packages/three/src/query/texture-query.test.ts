@@ -30,7 +30,7 @@ async function terrain(sphere: boolean, readback = true, holes: TerrainHoleMode 
   words.fill(packTextureControl({ base: 31, hole: true }), sphere ? 4 * edge * edge : 0, sphere ? 5 * edge * edge : edge * edge);
   const controls = new StorageBufferAttribute(words, 1);
   const renderer = { getArrayBufferAsync: async (attribute: StorageBufferAttribute) => attribute.array.buffer } as unknown as WebGPURenderer;
-  cache.triggerReadback(renderer, elevation, index, undefined, count, readback ? controls : undefined);
+  cache.triggerReadback(renderer, elevation, index, 1, undefined, count, readback ? controls : undefined);
   await settleReadback();
   return { cache, runtime: projection.cpu.createRuntimeQueries(cache), words, controls, elevation, renderer, index, count };
 }
@@ -65,7 +65,7 @@ describe("texture control query snapshots", () => {
   it("refreshes authored control changes without requiring a quadtree generation change", async () => {
     const state = await terrain(false);
     state.words.fill(packTextureControl({ base: 2 }));
-    state.cache.triggerReadback(state.renderer, state.elevation, state.index, undefined, state.count, state.controls);
+    state.cache.triggerReadback(state.renderer, state.elevation, state.index, 2, undefined, state.count, state.controls);
     await settleReadback();
     expect(state.cache.sampleTerrain(0, 0)).toMatchObject({ valid: true, hole: false, textureBase: 2 });
     state.cache.dispose();
