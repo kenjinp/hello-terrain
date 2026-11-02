@@ -19,9 +19,15 @@ export {
 } from "./tasks/params";
 
 export type { ElevationCallback, ElevationParams } from "./tsl/elevation";
+export * from "./tsl/texture";
+export * from "./texture/control";
+export * from "./texture/texture-set";
+export * from "./texture/texture-nodes";
+export type { TerrainHoleMode } from "./texture/texture-hole";
 export type { ComputeStageCallback, ComputePipeline } from "./gpu/compute";
 export { getDeviceComputeLimits } from "./gpu/deviceLimits";
 export * from "./gpu/terrainFieldStorage";
+export * from "./gpu/tileFieldStorage";
 export * from "./query/terrain-sampler";
 export * from "./query/terrain-query";
 export * from "./query/terrain-raycast";

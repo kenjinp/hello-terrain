@@ -31,13 +31,15 @@ export function createSyncTerrainNodesTask(
 ) {
   return task<{ renderer: WebGPURenderer }>((get, work) => {
     const positionNode = get(terrainTasks.positionNode);
+    const texture = get(terrainTasks.textureNodes);
 
     return work(() => {
       const nextReady = positionNode != null;
       const terrainNodes = getTerrainNodes();
-      if (terrainNodes.positionNode !== positionNode) {
+      if (terrainNodes.positionNode !== positionNode || terrainNodes.texture !== texture) {
         setTerrainNodes({
           positionNode,
+          texture,
         });
       }
       if (getReady() !== nextReady) {
@@ -46,6 +48,7 @@ export function createSyncTerrainNodesTask(
 
       return {
         positionNode,
+        texture,
         ready: nextReady,
       };
     });

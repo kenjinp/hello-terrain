@@ -38,6 +38,7 @@ interface SurfaceProjection {
 | `createTileComputeParts(ctx)` | Projection-specific compute-stage builders: tile size, root UV, and the tile vertex world position. |
 | `createFieldNormal(ctx)` | The field-stage surface-normal reconstruction. |
 | `augmentSampler?(sampler, params)` | Optional extra GPU samplers (e.g. the cube-sphere's `ByDirection` samplers). |
+| `textureFrame?(position, face)` | Required when enabling `textureFn`: terrain-scale UV, analytic `uvGradient(dPosition)`, height, up, and tangent U/V nodes. Optional for existing untextured custom projections. |
 
 ### CPU hooks (`cpu`)
 
@@ -56,6 +57,8 @@ interface SurfaceProjection {
 | `createTorusProjection({ majorRadius, minorRadius, center, invert, baseU, baseV })` | `torus` | Closed donut; exposes `surfaceQuery`. `baseU`/`baseV` default to `1`; the topology auto-sets `baseU = round(major/minor)`. |
 
 You normally never construct these directly — the topology factories (`createFlatTopology`, `createCubeSphereTopology`, `createTorusTopology`, …) wire the matching projection for you.
+
+Texturing consumes this injected frame instead of branching on `kind`. Built-in flat, cube-sphere, and torus projections supply it. Cube-sphere UVs remain face-local: continuous displaced geometric normals do not promise seamless material-image or normal-detail mapping across faces. The shader takes position derivatives before divergent material selection and projects them through `uvGradient`; do not differentiate a dynamically selected face UV and assume the face is derivative-uniform.
 
 ## Adding a new surface shape
 

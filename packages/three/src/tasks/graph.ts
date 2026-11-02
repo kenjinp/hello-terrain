@@ -34,6 +34,8 @@ import { terrainRaycastTask } from "./terrain-raycast.task";
 import {
   tileBoundsContextTask,
 } from "./tile-bounds.task";
+import { createTextureFieldContextTask, textureFieldStageTask } from "./texture-field.task";
+import { textureNodesTask } from "./texture-nodes.task";
 
 export { instanceIdTask } from "./instanceId.task";
 
@@ -56,6 +58,9 @@ export const terrainTasks = {
   createTerrainSampler: createTerrainSamplerTask,
   elevationFieldStage: elevationFieldStageTask,
   terrainFieldStage: terrainFieldStageTask,
+  createTextureFieldContext: createTextureFieldContextTask,
+  textureFieldStage: textureFieldStageTask,
+  textureNodes: textureNodesTask,
   compileCompute: compileComputeTask,
   executeCompute: executeComputeTask,
   tileBoundsContext: tileBoundsContextTask,
@@ -70,5 +75,12 @@ export function terrainGraph(): TerrainGraph {
   for (const t of Object.values(terrainTasks)) {
     g.add(t as Parameters<typeof g.add>[0]);
   }
+  const disposeGraph = g.dispose;
+  g.dispose = () => {
+    g.peek(compileComputeTask)?.dispose();
+    g.peek(createTextureFieldContextTask)?.dispose();
+    g.peek(terrainQueryTask)?.cache.dispose();
+    disposeGraph();
+  };
   return g;
 }

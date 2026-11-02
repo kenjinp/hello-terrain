@@ -1,4 +1,4 @@
-import { Fn, float, int, vec2, vec3, vec4 } from "three/tsl";
+import { Fn, bool, float, int, ivec2, select, uint, vec2, vec3, vec4 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { sampleTerrainField, denormalizeTerrainFieldElevation, loadTilePackBounds } from "../gpu/terrainFieldStorage";
 import { createElevationFunction } from "../tsl/elevation";
@@ -8,6 +8,23 @@ import {
 } from "./gpuSpatialIndex";
 import type { CreateTerrainSamplerParams, TerrainSampler } from "./types";
 import { tileLocalToFieldUV } from "../gpu/tile";
+import { loadTileField } from "../gpu/tileFieldStorage";
+import { textureHoleNode } from "../texture/texture-hole";
+
+function controlFromTileResult(params: CreateTerrainSamplerParams, result: Node): Node {
+  if (!params.textureFieldStorage) return uint(0);
+  const grid = ivec2(result.yz.mul(params.uniforms.uInnerTileSegments).add(1).round());
+  const control = loadTileField(params.textureFieldStorage, grid.x, grid.y, int(result.x).max(0)).r;
+  return select(result.x.greaterThanEqual(0), control, uint(0));
+}
+
+function holeFromTileResult(params: CreateTerrainSamplerParams, result: Node): Node {
+  if (!params.textureFieldStorage) return bool(false);
+  const grid = result.yz.mul(params.uniforms.uInnerTileSegments).add(1);
+  return result.x.greaterThanEqual(0).and(textureHoleNode(
+    params.textureFieldStorage, grid, int(result.x).max(0), params.holes ?? "discard",
+  ));
+}
 
 /**
  * Shared sample body: turns a tile-lookup result `vec3(tileIndex, u, v)` into
@@ -41,7 +58,7 @@ function packedSampleFromTileResult(
   // The terrain field stores the unit world-space normal in (g, b, a).
   const normal = vec3(sampled.g, sampled.b, sampled.a);
 
-  const valid = found.select(float(1), float(0)).toVar();
+  const valid = found.and(holeFromTileResult(params, tileResult).not()).select(float(1), float(0)).toVar();
   return vec4(elevation, normal.x, normal.y, normal.z).mul(valid);
 }
 
@@ -74,6 +91,9 @@ export function augmentCubeSphereSampler(
   params: CreateTerrainSamplerParams,
 ): void {
   const terrainSampleByDir = createTerrainSampleNodeByDirection(params);
+  const lookup = createTileIndexFromDirection(params.spatialIndex, params.maxLevel);
+  sampler.sampleControlByDirection = Fn(([direction]: [Node]) => controlFromTileResult(params, lookup(direction)));
+  sampler.sampleHoleByDirection = Fn(([direction]: [Node]) => float(holeFromTileResult(params, lookup(direction))));
   sampler.sampleTerrainByDirection = Fn(([direction]: [Node]) => terrainSampleByDir(direction));
   sampler.sampleElevationByDirection = Fn(
     ([direction]: [Node]) => terrainSampleByDir(direction).x,
@@ -98,6 +118,9 @@ export function createTerrainSampler(
 ): TerrainSampler {
   const elevationNode = createElevationFunction(params.elevationCallback);
   const terrainSampleAt = createTerrainSampleNode(params);
+  const lookup = createTileIndexFromWorldPosition(params.spatialIndex, params.uniforms, params.maxLevel);
+  const sampleControl = Fn(([x, z]: [Node, Node]) => controlFromTileResult(params, lookup(x, z)));
+  const sampleHole = Fn(([x, z]: [Node, Node]) => float(holeFromTileResult(params, lookup(x, z))));
   const evaluateElevationAt = Fn(([worldX, worldZ]: [Node, Node]) => {
     const rootOrigin = params.uniforms.uRootOrigin.toVar();
     const rootSize = params.uniforms.uRootSize.toVar();
@@ -172,6 +195,8 @@ export function createTerrainSampler(
     sampleNormal,
     sampleTerrain,
     sampleValidity,
+    sampleControl,
+    sampleHole,
     evaluateElevation,
     evaluateNormal,
   };

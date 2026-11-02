@@ -1,24 +1,17 @@
-import {
-  Fn,
-  If,
-  float,
-  globalId,
-  int,
-  uint,
-  uniform,
-  vec2,
-  workgroupBarrier,
-} from "three/tsl";
+import { Fn, If, float, globalId, int, uint, uniform, vec2, workgroupBarrier } from "three/tsl";
 import type { Node, WebGPURenderer } from "three/webgpu";
 import { getDeviceComputeLimits } from "./deviceLimits";
 
-export type ComputeStageCallback = (
+export type ComputeStageCallback = ((
   nodeIndex: Node,
   globalVertexIndex: Node,
   uv: Node,
   localCoordinates: Node,
   texelSize: Node,
-) => void;
+) => void) & {
+  /** Reduce bounds before the first consumer; elevation writers must precede it. */
+  needsTileBounds?: boolean;
+};
 
 export type ComputePipeline = ComputeStageCallback[];
 
@@ -29,9 +22,14 @@ export type CompileComputePipelineOptions = {
   bindings?: Node[];
   workgroupSize?: [number, number];
   preferSingleKernelWhenPossible?: boolean;
-  /** Runs after all but the last stage when using staged kernels. */
+  /** Runs before the first needsTileBounds stage, or after all stages if none need bounds. */
   midPipelineExecute?: (renderer: WebGPURenderer, instanceCount: number) => void;
 };
+
+export interface CompiledComputePipeline {
+  execute(renderer: WebGPURenderer, instanceCount: number): void;
+  dispose(): void;
+}
 
 type CompiledKernel = any;
 
@@ -39,15 +37,13 @@ export function compileComputePipeline(
   stages: ComputePipeline,
   width: number,
   options?: CompileComputePipelineOptions,
-): { execute: (renderer: WebGPURenderer, instanceCount: number) => void } {
+): CompiledComputePipeline {
   const bindings = options?.bindings;
-  const preferredWorkgroup = options?.workgroupSize ?? [
-    WORKGROUP_X,
-    WORKGROUP_Y,
-  ];
-  const preferSingleKernelWhenPossible =
-    options?.preferSingleKernelWhenPossible ?? true;
+  const preferredWorkgroup = options?.workgroupSize ?? [WORKGROUP_X, WORKGROUP_Y];
+  const preferSingleKernelWhenPossible = options?.preferSingleKernelWhenPossible ?? true;
   const midPipelineExecute = options?.midPipelineExecute;
+  const firstBoundsConsumer = stages.findIndex((stage) => stage.needsTileBounds);
+  const boundsBoundary = firstBoundsConsumer < 0 ? stages.length : firstBoundsConsumer;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   let singleKernel: CompiledKernel | undefined;
   const stagedKernelCache = new Map<string, CompiledKernel[]>();
@@ -73,14 +69,8 @@ export function compileComputePipeline(
     x = Math.min(x, limits.maxWorkgroupSizeX);
     y = Math.min(y, limits.maxWorkgroupSizeY);
 
-    y = Math.min(
-      y,
-      Math.max(1, Math.floor(limits.maxWorkgroupInvocations / x)),
-    );
-    x = Math.min(
-      x,
-      Math.max(1, Math.floor(limits.maxWorkgroupInvocations / y)),
-    );
+    y = Math.min(y, Math.max(1, Math.floor(limits.maxWorkgroupInvocations / x)));
+    x = Math.min(x, Math.max(1, Math.floor(limits.maxWorkgroupInvocations / y)));
 
     return [x, y];
   }
@@ -100,9 +90,7 @@ export function compileComputePipeline(
       const localCoordinates = vec2(globalId.x, globalId.y);
       const localUVCoords = localCoordinates.div(fWidth);
       const verticesPerNode = iWidth.mul(iWidth);
-      const globalIndex = int(nodeIndex)
-        .mul(verticesPerNode)
-        .add(iy.mul(iWidth).add(ix));
+      const globalIndex = int(nodeIndex).mul(verticesPerNode).add(iy.mul(iWidth).add(ix));
 
       const inBounds = ix
         .lessThan(iWidth)
@@ -115,13 +103,7 @@ export function compileComputePipeline(
           workgroupBarrier();
         }
         If(inBounds, () => {
-          stages[i](
-            nodeIndex,
-            globalIndex,
-            localUVCoords,
-            localCoordinates,
-            texelSize,
-          );
+          stages[i](nodeIndex, globalIndex, localUVCoords, localCoordinates, texelSize);
         });
       }
     })().computeKernel(workgroupSize);
@@ -143,9 +125,7 @@ export function compileComputePipeline(
         const localCoordinates = vec2(globalId.x, globalId.y);
         const localUVCoords = localCoordinates.div(fWidth);
         const verticesPerNode = iWidth.mul(iWidth);
-        const globalIndex = int(nodeIndex)
-          .mul(verticesPerNode)
-          .add(iy.mul(iWidth).add(ix));
+        const globalIndex = int(nodeIndex).mul(verticesPerNode).add(iy.mul(iWidth).add(ix));
 
         const inBounds = ix
           .lessThan(iWidth)
@@ -154,13 +134,7 @@ export function compileComputePipeline(
           .toVar();
 
         If(inBounds, () => {
-          stage(
-            nodeIndex,
-            globalIndex,
-            localUVCoords,
-            localCoordinates,
-            texelSize,
-          );
+          stage(nodeIndex, globalIndex, localUVCoords, localCoordinates, texelSize);
         });
       })().computeKernel(workgroupSize),
     );
@@ -169,7 +143,7 @@ export function compileComputePipeline(
   function execute(renderer: WebGPURenderer, instanceCount: number) {
     const limits = getDeviceComputeLimits(renderer);
     const canUseSingleKernel =
-      preferSingleKernelWhenPossible && canRunSingleKernel(width, limits);
+      !midPipelineExecute && preferSingleKernelWhenPossible && canRunSingleKernel(width, limits);
     uInstanceCount.value = instanceCount;
 
     if (canUseSingleKernel) {
@@ -180,10 +154,7 @@ export function compileComputePipeline(
       return;
     }
 
-    const [workgroupX, workgroupY] = clampWorkgroupToLimits(
-      preferredWorkgroup,
-      limits,
-    );
+    const [workgroupX, workgroupY] = clampWorkgroupToLimits(preferredWorkgroup, limits);
     const cacheKey = `${workgroupX}x${workgroupY}`;
     let stagedKernels = stagedKernelCache.get(cacheKey);
     if (!stagedKernels) {
@@ -194,16 +165,23 @@ export function compileComputePipeline(
     const dispatchX = Math.ceil(width / workgroupX);
     const dispatchY = Math.ceil(width / workgroupY);
     for (let stageIndex = 0; stageIndex < stagedKernels.length; stageIndex += 1) {
-      renderer.compute(stagedKernels[stageIndex], [dispatchX, dispatchY, instanceCount]);
-      if (
-        midPipelineExecute &&
-        stagedKernels.length > 1 &&
-        stageIndex === stagedKernels.length - 2
-      ) {
+      if (midPipelineExecute && stageIndex === boundsBoundary) {
         midPipelineExecute(renderer, instanceCount);
       }
+      renderer.compute(stagedKernels[stageIndex], [dispatchX, dispatchY, instanceCount]);
+    }
+    if (midPipelineExecute && boundsBoundary === stagedKernels.length) {
+      midPipelineExecute(renderer, instanceCount);
     }
   }
 
-  return { execute };
+  return {
+    execute,
+    dispose() {
+      singleKernel?.dispose();
+      singleKernel = undefined;
+      for (const kernels of stagedKernelCache.values()) for (const kernel of kernels) kernel.dispose();
+      stagedKernelCache.clear();
+    },
+  };
 }

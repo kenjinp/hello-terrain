@@ -1,6 +1,6 @@
 ---
 title: Terrain Raycasting API
-description: High-performance terrain picking with CPU raycasting
+description: Terrain picking from completed CPU terrain snapshots
 ---
 
 import TerrainRaycastHoverScene from "@/examples/TerrainRaycastHoverScene"
@@ -11,7 +11,13 @@ import TerrainRaycastHoverScene from "@/examples/TerrainRaycastHoverScene"
 
 ## Overview
 
-`terrainTasks.terrainRaycast` provides terrain hit testing via `pick(ray, options?)` — a synchronous CPU raycast built on the terrain query foundation, so elevation sampling and ray intersections stay consistent.
+`terrainTasks.terrainRaycast` provides terrain hit testing via `pick(ray, options?)` — a synchronous CPU raycast built on the latest completed terrain-query snapshot.
+
+### Textured holes
+
+Enable `textureReadback` for hole-aware CPU hits. Once controls are available, the marcher rejects intersections in the active discard/collapse footprint and continues searching; a ray through a sphere's front hole can hit its solid rear surface. `textureRender.holes: "none"` ignores the mask.
+
+With readback disabled or unavailable, CPU rays remain geometric even if rendering has a hole. Snapshots are asynchronous and marching/refinement uses finite steps; this API is not synchronous GPU picking or physics-engine collision integration.
 
 ## Get the raycast context
 
@@ -79,18 +85,17 @@ After this, default raycasting pipelines can hit the terrain mesh and receive te
 
 ## React: pointer events on `<Terrain>`
 
-Because the terrain mesh raycasts against the real surface, you can attach R3F
-pointer handlers (`onPointerDown`, `onPointerMove`, …) **directly** to the
-`<Terrain>` component — no invisible proxy mesh required. The handler fires only
-when the ray meets the actual terrain, and `event.point` is the precise world-space
-hit (`event.ray` is also available if you want to re-pick with custom options).
+You can attach R3F pointer handlers (`onPointerDown`, `onPointerMove`, …)
+**directly** to `<Terrain>` — no proxy mesh is required. Hits follow the latest CPU
+terrain snapshot and, with ready `textureReadback`, its hole mask. `event.point`
+is the resulting world-space hit; `event.ray` is available for custom re-picking.
 
 ```tsx
 <Terrain
   terrain={terrain}
   onPointerDown={(event) => {
     event.stopPropagation();
-    // Only fires on a real surface hit; clicks that miss the terrain do nothing.
+    // Enable textureReadback for hole-aware hits; misses emit no hit event.
     dropMarker(event.point);
   }}
 >
@@ -98,9 +103,8 @@ hit (`event.ray` is also available if you want to re-pick with custom options).
 </Terrain>
 ```
 
-`pick` is precise: it intersects the actual displaced surface and returns `null`
-when the ray misses (or before the query snapshot is ready), so clicks/hovers off
-the terrain report nothing.
+`pick` returns `null` when the ray misses or before the query snapshot is ready.
+Use its options to choose the search/refinement bounds appropriate to your scene.
 
 ## Options
 

@@ -1,6 +1,6 @@
 import { TerrainMesh, terrainTasks } from "@hello-terrain/three";
 import { useFrame } from "@react-three/fiber";
-import { cloneElement, isValidElement, useEffect, useState } from "react";
+import { cloneElement, isValidElement, useEffect, useState, type ReactNode } from "react";
 import { TerrainProvider } from "./TerrainContext";
 import type {
   TerrainHandle,
@@ -67,11 +67,11 @@ function syncTerrainMesh(mesh: TerrainMesh, terrain: TerrainHandle) {
 }
 
 function attachTerrainMaterial(
-  node: ReturnType<TerrainRenderProps["children"]>,
-  terrainNodes: Pick<TerrainHandle, "positionNode">,
+  node: ReactNode,
+  terrainNodes: Pick<TerrainHandle, "positionNode" | "texture">,
 ) {
   if (!isValidElement<{ attach?: unknown }>(node)) return node;
-  const nextKey = `terrain-material-${terrainNodes.positionNode?.id ?? "null"}`;
+  const nextKey = `terrain-material-${terrainNodes.positionNode?.id ?? "null"}-${terrainNodes.texture?.albedo.id ?? "null"}`;
   if ("attach" in node.props && node.props.attach != null) {
     return cloneElement(node, { key: nextKey });
   }
@@ -107,9 +107,10 @@ function TerrainWithHandle({
       >
         {terrain.ready
           ? attachTerrainMaterial(
-              children({
+              typeof children === "function" ? children({
                 positionNode: terrain.positionNode,
-              }),
+                texture: terrain.texture,
+              }) : children,
               terrain,
             )
           : null}
@@ -129,6 +130,10 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
     elevationScale,
     radius,
     elevation,
+    texture,
+    textureSet,
+    textureRender,
+    textureReadback,
     topology,
     terrainFieldFilter,
     getCameraOrigin,
@@ -147,6 +152,10 @@ function InternalTerrain(props: TerrainPropsWithoutHandle) {
     elevationScale,
     radius,
     elevation,
+    texture,
+    textureSet,
+    textureRender,
+    textureReadback,
     topology,
     terrainFieldFilter,
     getCameraOrigin,
@@ -199,6 +208,10 @@ export function Terrain(props: TerrainProps) {
     elevationScale,
     radius,
     elevation,
+    texture,
+    textureSet,
+    textureRender,
+    textureReadback,
     topology,
     terrainFieldFilter,
     getCameraOrigin,
@@ -218,6 +231,10 @@ export function Terrain(props: TerrainProps) {
       elevationScale={elevationScale}
       radius={radius}
       elevation={elevation}
+      texture={texture}
+      textureSet={textureSet}
+      textureRender={textureRender}
+      textureReadback={textureReadback}
       topology={topology}
       terrainFieldFilter={terrainFieldFilter}
       getCameraOrigin={getCameraOrigin}

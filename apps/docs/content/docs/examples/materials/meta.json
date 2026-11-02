@@ -1,6 +1,11 @@
 {
   "title": "Materials",
   "pages": [
+    "procedural-texturing",
+    "painted-texturing",
+    "mixed-texturing",
+    "terrain-holes",
+    "react-texturing",
     "materials-bcn"
   ]
 }

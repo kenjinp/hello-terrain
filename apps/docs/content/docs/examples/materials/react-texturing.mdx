@@ -1,0 +1,27 @@
+---
+title: React texturing and replacement
+description: TerrainStandardMaterial binds nodes.texture and follows texture-set replacement.
+---
+
+import TexturingScene from "@/examples/TexturingScene"
+
+<div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="react" /></div>
+
+**Replace texture set** swaps between two example-owned palettes without recreating the computed control field. The terrain's material binding updates with `nodes.texture`, and the retired material is disposed. The example keeps both sets alive while mounted and releases both on unmount, so no in-flight material loses its textures. The displayed control-field ID stays stable while the material-array ID changes. Change capacity to recreate field storage, or switch projection to rebuild its material frame.
+
+```tsx
+import { Terrain, TerrainStandardMaterial, useTerrain } from "@hello-terrain/react";
+import { textureWeights, type TerrainTextureSet, type TextureCallback } from "@hello-terrain/three";
+import { useMemo } from "react";
+
+function TexturedTerrain({ textureSet }: { textureSet: TerrainTextureSet }) {
+  const texture = useMemo<TextureCallback>(() => ({ slope }) =>
+    textureWeights([slope.oneMinus(), slope]), []);
+  const terrain = useTerrain({ texture, textureSet });
+  return <Terrain terrain={terrain}><TerrainStandardMaterial /></Terrain>;
+}
+```
+
+The caller owns `textureSet`; neither `useTerrain` nor `TerrainStandardMaterial` disposes a supplied set. This allows two terrains to share it. Dispose it only after all consumers stop using it. The component owns its material, and the terrain graph owns its computed control field/readback mirror.
+
+Custom materials retain the render-prop path: `children({ positionNode, texture })`. Bind `texture.albedo`, `normal`, `roughness`, and `ao` to the corresponding node material properties. `positionNode` remains available for untextured materials.

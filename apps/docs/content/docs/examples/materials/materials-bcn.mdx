@@ -1,60 +1,59 @@
 ---
-title: BCn Terrain Materials 
-description: Interactive demo showcasing BCN texture materials with meshStandardNodeMaterial
+title: BCn Terrain Materials
+description: Four terrain materials in two real BC3 texture arrays, with explicit mip levels and height blending.
 ---
 
 import MaterialsBCNScene from "@/examples/MaterialsBCNScene"
 
-<div className="h-[600px] rounded overflow-hidden">
-<MaterialsBCNScene />
-</div>
+<div className="h-[700px] rounded overflow-hidden"><MaterialsBCNScene /></div>
 
-## Overview
+This example renders the terrain texturing API, not detached material spheres. Four slots—rocky ground, cliff, moss, and forest stone—share the phase-one fast packing. Switch flat/cube-sphere projection, control-field array/atlas capacity, one/four corners, height blending, and LOD focus using the scene controls. The HUD reports actual array layers, mip count, compression, and field backend.
 
-Physically based (PBR) materials using channel-packed textures compressed via [Block Compression (BCn)](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/). 
+## Two packed arrays
 
-BCn is an industry standard compression format commonly used by major game engines, and a now it's my side quest for the weekend. Using this we can squeeze more texture per Megabyte.
+| Asset | Channels | Native GPU format | Dimensions | Layers | Mips | File bytes |
+|---|---|---|---|---|---|---|
+| `albedo-height.ktx2` | RGB albedo, A height | `bc3-rgba-unorm-srgb` | 512×512 | 4 | 10 | 1,398,656 |
+| `normal-ao-roughness.ktx2` | RG normal XY, B AO, A roughness | `bc3-rgba-unorm` | 512×512 | 4 | 10 | 1,398,656 |
 
-## Texture format example
+Files live under `/assets/materials/terrain-fast/`. Alpha carries material data, not transparency. Albedo RGB is sRGB; height alpha and the entire second array remain linear. Normal Z is reconstructed from XY. Both files include the complete 512-to-1 mip chain; their listed download sizes include KTX2 headers and are not a memory/performance benchmark.
 
-Each terrain material will have 3 textures/maps.
+These are **native BC3 KTX2 assets**, not Basis Universal payloads. The example requires WebGPU's `texture-compression-bc` feature and reports an explicit unsupported-device error if absent. It does not claim universal device support or silently replace compressed materials with an unrelated fallback.
 
-Special properties such as `Metalicity` or `Emission` can be excluded, as they are rare for terrain textures. 
-For making cool special materials such as ore veins or lava, custom shaders should be sufficient.
+## Loading and ownership
 
-| **Texture Type**                          | **Channels** | **Compression Format**                                                                                                                                                     |
-|:------------------------------------------|:------------:|:-------------------------------------------------------------------------------------------------------------------------------------|
-| Albedo                                   | RGB          | [BC1](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc1)                                             |
-| Normal                                   | RG     | [BC5](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc2-bc3-and-bc5)                                 |
-| Ambient Occlusion, Roughness, Height   | RGB          | [BC1](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc1)                                             |
+The example loader validates the KTX2 header, layers, and per-level byte lengths. In three.js r186, the native KTX2 path does not construct an array texture from `layerCount`, so the loader explicitly constructs `CompressedArrayTexture` from the loaded mip payloads. Passing the loader's ordinary `CompressedTexture` directly to the terrain API is not sufficient.
 
-Another choice would be to add another map in place of `Height`, and have `Height` be its own texture in [BC4](https://www.reedbeta.com/blog/understanding-bcn-texture-compression-formats/#bc4)
+Once the two matching arrays are loaded, the public binding is:
 
-## Texture costs, `.ktx2` compared to `.png`
+```ts
+import { terrainTextureSetFromArrays } from "@hello-terrain/three";
 
-I use the BCn file format `.ktx2` which is available on more platforms than it's popular native alternative `.dds`. 
+const textureSet = terrainTextureSetFromArrays(
+  { albedoHeight, normalRoughAo },
+  [
+    { name: "Rocky ground", uvScale: 14, antiTiling: "detile" },
+    { name: "Cliff", uvScale: 20, projection: "vertical" },
+    { name: "Moss", uvScale: 12, antiTiling: "detile" },
+    { name: "Forest stone", uvScale: 16 },
+  ],
+);
+// Supply textureSet with a texture callback to useTerrain or the core graph.
+// After every consumer has detached:
+textureSet.dispose();
+```
 
-**Rocky Ground example** (4K textures)
+The set takes ownership of these arrays, keeps their compressed mip data, and disposes them idempotently. The React scene releases its owned assets on unmount. Runtime packing from ordinary loaded maps is a separate path; see [Terrain Texturing](/docs/core/nodes/texturing).
 
-| **Texture**              | **PNG**  | **KTX2** | **Savings** | **Reduction** |
-|:-------------------------|:--------:|:--------:|:-----------:|:-------------:|
-| Albedo                   | 8.53 MB  | 2.19 MB  | 6.34 MB     | 74%           |
-| Normal                   | 22.4 MB  | 5.31 MB  | 17.09 MB    | 76%           |
-| AO + Roughness + Height  | 11.4 MB  | 1.79 MB  | 9.61 MB     | 84%           |
-| **Total**                | **42.33 MB** | **9.29 MB** | **33.04 MB** | **78%**   |
+## What was checked
 
-The combined AO, Roughness, and Height textures (2.6 + 2.4 + 6.4 MB as separate PNGs) are channel-packed into a single `aorh.ktx2` file. 
-
-## Tools
-
-I used [Nvidia's Texture Tools Exporter](https://developer.nvidia.com/texture-tools-exporter) to create the `.ktx2` files.
+On Apple/Metal WebGPU with three.js 0.186.1, all four layers and all ten mip levels of both arrays were sampled and compared with an independent CPU BC3 decode. The actual GPU formats were the two formats listed above. The terrain scene also exercised the atlas backend, cube-sphere, moving LOD, and both corner counts. This demonstrates decoded content and working bindings on that device, not throughput, cross-vendor quality, or seamless cube-face material mapping.
 
 ## Sources
 
-Downloaded from ambientcg with CCO license
+The new arrays are repacked from the repository's existing AmbientCG CC0 material assets. Original attribution links:
 
 - [Rocky ground](https://ambientcg.com/view?id=Ground063)
 - [Cliff](https://ambientcg.com/view?id=Ground063)
 - [Moss](https://ambientcg.com/view?id=Rock052)
 - [Ground forest stone](https://ambientcg.com/view?id=Ground068)
-

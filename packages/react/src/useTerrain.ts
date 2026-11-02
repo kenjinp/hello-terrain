@@ -25,6 +25,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   const graphLifecycleRef = useRef(0);
   const terrainNodesRef = useRef<TerrainNodes>({
     positionNode: null,
+    texture: null,
   });
   const [terrainNodes, setTerrainNodes] = useState<TerrainNodes>(terrainNodesRef.current);
   const readyRef = useRef(false);
@@ -32,7 +33,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
   const emitTerrainNodes = useCallback((nextTerrainNodes: TerrainNodes) => {
     if (!isMountedRef.current) return;
     setTerrainNodes((prevTerrainNodes) => {
-      if (prevTerrainNodes.positionNode === nextTerrainNodes.positionNode) {
+      if (prevTerrainNodes.positionNode === nextTerrainNodes.positionNode && prevTerrainNodes.texture === nextTerrainNodes.texture) {
         terrainNodesRef.current = prevTerrainNodes;
         return prevTerrainNodes;
       }
@@ -103,6 +104,7 @@ export function useTerrain(options: TerrainOptions = {}): TerrainHandle {
     runtime.raycast = null;
     const nextTerrainNodes = {
       positionNode: null,
+      texture: null,
     } satisfies TerrainNodes;
     terrainNodesRef.current = nextTerrainNodes;
     readyRef.current = false;
