@@ -64,6 +64,34 @@ Computed terrain elevation dataset derived from the elevation function.
 - Used to build world positions.
 - Used as input for derived data (for example normals).
 
+## Texture Function and Control Field
+
+`TextureCallback` runs after elevation edits, bounds reduction, and terrain-field pack.
+It receives the elevation callback coordinates plus final raw elevation, displaced
+surface normal, slope, and field texel. It produces a native uint32 word containing
+base/overlay slots, quantized blend and UV transform, and hole/nav/auto flags.
+
+- `textureFn: null` preserves the untextured path without control storage.
+- `textureControl` constructs words; `textureWeights` keeps the top two of up to
+  32 weights. Native control maps use exact integer loads; one/two RGBA weight
+  maps use explicit mip-zero sampling and the same lossy reduction.
+- Control storage selects array or atlas using device limits, never float
+  reinterpretation. This native schema is not Terrain3D file compatibility.
+
+## Texture Set and Material Nodes
+
+A caller-owned texture set contains slot parameters and two material arrays:
+albedo RGB + height A, and tangent normal XY + AO + roughness. Runtime packing
+owns its output arrays, not its source maps; prepacked arrays transfer ownership.
+Material nodes provide height-adjusted weights, normal, color, roughness, AO,
+height, decoded control, and the active hole mask.
+
+UV/vertical projection and per-corner detiling are phase-one modes. Four corners
+is the default; one corner is an explicit quality choice. Projection frames and
+gradients are evaluated before divergent sampling. Cube UVs remain face-local;
+this does not promise seamless material details, triplanar, or automatic LOD
+budgets.
+
 ## Normal Derivation
 
 Normals are generated from neighbor sampling over the elevation field. For flat
@@ -77,7 +105,7 @@ back as-is by both the render path and the CPU query mirror.
 
 ## Terrain Query
 
-Synchronous CPU sampling backed by an async readback of the elevation field.
+Synchronous CPU sampling backed by an async readback of the elevation field and optional native texture controls.
 
 - `flat`: keyed on world `(x, z)`; elevation is a world-`Y` value, exposed via
   the flat `TerrainQuery`.
@@ -92,6 +120,13 @@ Synchronous CPU sampling backed by an async readback of the elevation field.
   `TerrainSurfaceQuery`) with `ByDirection` / `ByLatLong` keys. Raycasts
   (`cpu.raycast`) intersect the surface's bounding shell and march in signed
   distance (radial for the sphere, tube-relative for the torus).
+
+- `textureReadback` defaults to false. Textured samples without ready controls
+  expose nullable hole/material metadata and retain geometric query/ray behavior.
+  With ready controls, discard/collapse holes invalidate samples and raycasts
+  continue past rejected hole intersections. Disabled holes remain known false.
+- Elevation, bounds, spatial lookup, and controls are swapped as one completed
+  snapshot. Queries do not claim synchronous GPU visibility or physics integration.
 
 ## Task Graph
 

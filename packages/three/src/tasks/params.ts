@@ -2,6 +2,9 @@ import { param } from "@hello-terrain/work";
 import { float } from "three/tsl";
 import type { Topology, UpdateParams } from "../quadtree";
 import type { ElevationCallback } from "../tsl/elevation";
+import type { TextureCallback } from "../tsl/texture";
+import type { TerrainTextureSet } from "../texture/texture-set";
+import type { TerrainTextureRenderOptions } from "../texture/texture-nodes";
 
 /** Root tile size in world units. */
 export const rootSize = param(256).displayName("rootSize");
@@ -51,3 +54,10 @@ export const terrainFieldFilter = param<"nearest" | "linear">("linear").displayN
 
 /** Terrain elevation control function (per vertex, in gpu compute) */
 export const elevationFn = param<ElevationCallback>(() => float(0));
+
+/** Packed material assignment per field texel; null keeps the untextured pipeline unchanged. */
+export const textureFn = param<TextureCallback | null>(null).displayName("textureFn");
+export const textureSet = param<TerrainTextureSet | null>(null).displayName("textureSet");
+export const textureRender = param<TerrainTextureRenderOptions>({}).displayName("textureRender");
+/** Opt-in uint control snapshot. Disabled CPU queries explicitly report unknown hole/material data. */
+export const textureReadback = param(false).displayName("textureReadback");

@@ -30,9 +30,11 @@ The sampler object provides:
 - `sampleElevation(worldX, worldZ)`
 - `sampleNormal(worldX, worldZ)`
 - `sampleTerrain(worldX, worldZ)` // packed `(elevation, nx, ny, nz)`
-- `sampleValidity(worldX, worldZ)` // `1` if hit, else `0`
-- `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation (full accuracy, slow)
-- `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from evaluated elevation (slowest)
+- `sampleValidity(worldX, worldZ)` // `1` for an active, non-hole sample, else `0`
+- `sampleControl(worldX, worldZ)` // native uint word; exact load, never filtered
+- `sampleHole(worldX, worldZ)` // float `0` or `1`, honoring the active hole mode
+- `evaluateElevation(worldX, worldZ)` // direct [`elevationFn`](/docs/core/elevation-function) evaluation, bypassing computed edits and texture holes
+- `evaluateNormal(worldX, worldZ, epsilon?)` // finite-difference normal from that direct evaluation
 
 ### Cube-sphere samplers
 
@@ -44,6 +46,10 @@ are `undefined` on flat topologies:
 - `sampleElevationByDirection(direction)`
 - `sampleNormalByDirection(direction)` // world-space normal in the sphere tangent frame
 - `sampleValidityByDirection(direction)`
+- `sampleControlByDirection(direction)`
+- `sampleHoleByDirection(direction)`
+
+GPU controls do not depend on `textureReadback`. `sampleControl` returns zero when there is no field/tile, which is also a valid slot-zero control: use validity rather than treating zero as a missing-data sentinel. `sampleHole` returns zero for disabled holes; the raw control still retains its flag. Hole samples are invalid and sampled elevation returns zero, so gate consumers with `sampleValidity`. See [Texturing](/docs/core/nodes/texturing) for discard/collapse footprints.
 
 ## Example: scatter instances aligned to terrain
 

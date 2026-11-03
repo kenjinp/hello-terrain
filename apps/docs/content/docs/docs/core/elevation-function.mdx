@@ -217,6 +217,13 @@ graph.set(elevationFn, () => ({ worldPosition, tileLevel, rootUV }) => {
   The elevation function runs entirely on the GPU via WebGPU compute shaders. All parameters are TSL nodes, not JavaScript numbers. Use TSL math functions (`float`, `sin`, `vec2`, etc.) instead of `Math.*`.
 </Callout>
 
+### Custom compute stages and bounds
+
+`ComputePipeline` remains an array of `ComputeStageCallback` functions. When extending it with erosion or other elevation edits, put those callbacks **before terrain-field pack**. The pack callback carries `needsTileBounds = true`; `createComputePipelineTasks` reduces bounds once immediately before the first callback with this flag. Appending a non-geometric field stage after pack does not move that reduction or re-run elevation. A pipeline containing only elevation-writing stages reduces bounds after its final callback.
+
+The terrain field stores per-tile normalized elevation and world-space normals in RGBA16F. Setting `textureFn` appends an `r32uint` control-field stage after pack; untextured graphs do not allocate it. `textureFieldStageTask` exposes the accumulated pipeline for custom composition. Shared RGBA8 storage remains available for lower-level field work, but there is no public painting/color-field authoring API yet. See [Texturing](/docs/core/nodes/texturing).
+
+
 ### When does the Elevation Fn run?
 
 The elevation function is part of the compute graph, which dispatches compute tasks only when their inputs change. 

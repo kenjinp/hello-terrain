@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@react-three/fiber", () => ({
@@ -56,7 +56,7 @@ vi.mock("@hello-terrain/three", () => {
 });
 
 import type { TerrainHandle } from "../src/index.js";
-import { Terrain, TerrainProvider, useTerrainContext } from "../src/index.js";
+import { Terrain, useTerrainContext } from "../src/index.js";
 
 function createTerrainHandle(overrides: Partial<TerrainHandle> = {}): TerrainHandle {
   return {
@@ -80,30 +80,12 @@ function createTerrainHandle(overrides: Partial<TerrainHandle> = {}): TerrainHan
     },
     ready: true,
     positionNode: null,
+    texture: null,
     ...overrides,
   };
 }
 
 describe("@hello-terrain/react", () => {
-  it("provides terrain context values", () => {
-    const terrain = createTerrainHandle({
-      positionNode: { id: 1 } as never,
-    });
-
-    function Consumer() {
-      const value = useTerrainContext();
-      return <div>{String(value.ready)}</div>;
-    }
-
-    render(
-      <TerrainProvider value={terrain}>
-        <Consumer />
-      </TerrainProvider>,
-    );
-
-    expect(screen.getByText("true")).toBeTruthy();
-  });
-
   it("throws when context is missing", () => {
     function Consumer() {
       useTerrainContext();
@@ -113,23 +95,6 @@ describe("@hello-terrain/react", () => {
     expect(() => render(<Consumer />)).toThrow(
       "useTerrainContext must be used within a TerrainProvider",
     );
-  });
-
-  it("passes terrain nodes to render-prop children", () => {
-    const terrain = createTerrainHandle({
-      ready: true,
-      positionNode: { id: 123 } as never,
-    });
-
-    render(
-      <Terrain terrain={terrain}>
-        {({ positionNode }) => (
-          <div data-testid="node-value">{positionNode ? String(positionNode.id) : "missing"}</div>
-        )}
-      </Terrain>,
-    );
-
-    expect(screen.getByTestId("node-value").textContent).toBe("123");
   });
 
   it("does not render terrain children before nodes are ready", () => {

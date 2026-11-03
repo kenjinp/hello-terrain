@@ -119,16 +119,16 @@ function terrainSignedDistance(
       }
     }
   }
-  const elevation = query.getElevation(worldX, worldZ);
-  if (!Number.isFinite(elevation)) return undefined;
-  return worldY - (elevation as number);
+  const sample = query.sampleTerrain(worldX, worldZ);
+  if ((!sample.valid && sample.hole !== true) || !Number.isFinite(sample.elevation)) return undefined;
+  return worldY - sample.elevation;
 }
 
 type SignedDistanceAt = (px: number, py: number, pz: number) => number | undefined;
 
 /**
- * Generic surface march: step along the ray over `[startT, endT]`, and on a
- * positive→non-positive signed-distance crossing binary-refine the crossing.
+ * March geometric distance independently of holes. Refine either crossing direction,
+ * reject hole candidates, then continue toward later surfaces instead of stopping.
  */
 function marchSignedDistance(
   ray: Ray,
@@ -138,12 +138,13 @@ function marchSignedDistance(
   refineSignedDistanceAt: SignedDistanceAt,
   options: { maxSteps: number; refinementSteps: number },
   point: Vector3,
+  accepts: (point: Vector3) => boolean,
 ): number | null {
   let prevT = startT;
   ray.at(prevT, point);
   let prevSignedDistance = stepSignedDistanceAt(point.x, point.y, point.z);
 
-  if (prevSignedDistance !== undefined && prevSignedDistance <= 0) {
+  if (prevSignedDistance !== undefined && prevSignedDistance <= 0 && accepts(point)) {
     return startT;
   }
 
@@ -157,21 +158,23 @@ function marchSignedDistance(
       continue;
     }
 
-    if (prevSignedDistance !== undefined && prevSignedDistance > 0 && signedDistance <= 0) {
+    if (prevSignedDistance !== undefined && ((prevSignedDistance > 0) !== (signedDistance > 0))) {
       let lo = prevT;
       let hi = t;
+      let continuous = true;
+      const enteredFromAbove = prevSignedDistance > 0;
       for (let r = 0; r < options.refinementSteps; r += 1) {
         const mid = (lo + hi) * 0.5;
         ray.at(mid, point);
         const midDistance = refineSignedDistanceAt(point.x, point.y, point.z);
-        if (midDistance === undefined) {
-          lo = mid;
-          continue;
-        }
-        if (midDistance > 0) lo = mid;
+        if (midDistance === undefined) { continuous = false; break; }
+        if ((midDistance > 0) === enteredFromAbove) lo = mid;
         else hi = mid;
       }
-      return hi;
+      if (continuous) {
+        ray.at(hi, point);
+        if (accepts(point)) return hi;
+      }
     }
 
     prevSignedDistance = signedDistance;
@@ -216,6 +219,7 @@ export function cpuRaycast(
       refinementSteps: Math.max(1, options?.refinementSteps ?? 8),
     },
     point,
+    (candidate) => query.sampleTerrain(candidate.x, candidate.z).valid,
   );
   if (hitT === null) return null;
 
@@ -269,10 +273,10 @@ function sphereSignedDistance(
   const dz = pz - params.centerZ;
   const dist = Math.hypot(dx, dy, dz);
   scratchDir.set(dx, dy, dz);
-  const elevation = query.getElevationByDirection(scratchDir);
-  if (elevation === null) return undefined;
+  const sample = query.sampleTerrainByDirection(scratchDir);
+  if (!sample.valid && sample.hole !== true) return undefined;
   const s = params.invert ? -1 : 1;
-  return s * (dist - (params.radius + s * elevation));
+  return s * (dist - (params.radius + s * sample.elevation));
 }
 
 export function cubeSphereRaycast(
@@ -311,6 +315,7 @@ export function cubeSphereRaycast(
       refinementSteps: Math.max(1, options?.refinementSteps ?? 12),
     },
     point,
+    (candidate) => query.sampleTerrainByPosition(candidate).valid,
   );
   if (hitT === null) return null;
 
@@ -342,10 +347,10 @@ function torusSignedDistance(
     scratchParams,
   );
   scratchPoint.set(px, py, pz);
-  const elevation = query.getElevationByPosition(scratchPoint);
-  if (elevation === null) return undefined;
+  const sample = query.sampleTerrainByPosition(scratchPoint);
+  if (!sample.valid && sample.hole !== true) return undefined;
   const s = params.invert ? -1 : 1;
-  return s * (scratchParams.tubeDistance - (params.minorRadius + s * elevation));
+  return s * (scratchParams.tubeDistance - (params.minorRadius + s * sample.elevation));
 }
 
 export function torusRaycast(
@@ -385,6 +390,7 @@ export function torusRaycast(
       refinementSteps: Math.max(1, options?.refinementSteps ?? 12),
     },
     point,
+    (candidate) => query.sampleTerrainByPosition(candidate).valid,
   );
   if (hitT === null) return null;
 

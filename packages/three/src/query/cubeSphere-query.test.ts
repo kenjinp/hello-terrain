@@ -119,6 +119,7 @@ describe("cube-sphere CPU sampling", () => {
       renderer,
       {} as unknown as StorageBufferAttribute,
       index,
+      1,
       undefined,
       1,
     );
@@ -231,7 +232,7 @@ describe("cube-sphere CPU sampling", () => {
     const renderer = {
       getArrayBufferAsync: async () => elevation.buffer,
     } as unknown as Parameters<typeof cache.triggerReadback>[0];
-    cache.triggerReadback(renderer, {} as unknown as StorageBufferAttribute, index, undefined, 1);
+    cache.triggerReadback(renderer, {} as unknown as StorageBufferAttribute, index, 1, undefined, 1);
     await new Promise((resolve) => setTimeout(resolve, 0));
 
     // Inverted surface sits at radius - elevation along the +Z radial.

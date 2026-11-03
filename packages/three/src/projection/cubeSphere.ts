@@ -1,11 +1,11 @@
 import { Vector3 } from "three";
-import { Fn, float, pow } from "three/tsl";
+import { Fn, float, pow, vec2, vec3 } from "three/tsl";
 import type { Node } from "three/webgpu";
 import { HALF_PI } from "../gpu/tile";
 import type { TileComputeParts, TileComputePartsContext } from "../gpu/tile";
 import { createDisplacedSurfaceNormalFromElevationField } from "../gpu/normalField";
 import { createCurvedRenderVertexPosition } from "../gpu/worldPosition";
-import { cubeFaceBasis, cubeFaceDirection } from "../tsl/cubeSphere";
+import { cubeFaceBasis, cubeFaceDirection, cubeFaceUVFromDirection, tangentFromAxis } from "../tsl/cubeSphere";
 import {
   type Vec3Mutable,
   directionToFace,
@@ -179,6 +179,26 @@ export function createCubeSphereProjection(
     faceOutward: !invert,
 
     gpu: {
+      textureFrame(position, face) {
+        const p = position.sub(vec3(center.x, center.y, center.z));
+        const dir = p.normalize();
+        const basis = cubeFaceBasis(face);
+        return {
+          uv: cubeFaceUVFromDirection(basis, dir).mul(radius * HALF_PI),
+          uvGradient(derivative) {
+            const denominator = p.dot(basis.forward);
+            const dDenominator = derivative.dot(basis.forward);
+            return vec2(
+              derivative.dot(basis.right).mul(denominator).sub(p.dot(basis.right).mul(dDenominator)),
+              derivative.dot(basis.up).mul(denominator).sub(p.dot(basis.up).mul(dDenominator)),
+            ).div(denominator.mul(denominator)).mul(radius * HALF_PI * 0.5);
+          },
+          height: p.length().sub(radius).mul(invert ? -1 : 1),
+          up: invert ? dir.negate() : dir,
+          tangentU: tangentFromAxis(dir, basis.right),
+          tangentV: tangentFromAxis(dir, basis.up),
+        };
+      },
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
         return createCurvedRenderVertexPosition(
           ctx.leafStorage,

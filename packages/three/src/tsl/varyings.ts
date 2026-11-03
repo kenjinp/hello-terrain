@@ -1,5 +1,10 @@
-import { varyingProperty } from "three/tsl";
+import { instanceIndex, int, varying } from "three/tsl";
 
-export const vGlobalVertexIndex = /*@__PURE__*/ varyingProperty("int", "vGlobalVertexIndex");
-
-export const vElevation = /*@__PURE__*/ varyingProperty("f32", "vElevation");
+/**
+ * Current leaf/storage index, not a persistent quadtree ID. Evaluated in the
+ * vertex stage and passed flat to fragments only when consumed. Flat does not
+ * imply derivative-uniform control flow across a fragment quad.
+ */
+export function tileIndex() {
+  return varying(int(instanceIndex), "vTileIndex").setInterpolation("flat");
+}

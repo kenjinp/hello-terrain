@@ -6,8 +6,8 @@ import type {
 } from "three/webgpu";
 import type { ShaderCallNodeInternal } from "three/src/nodes/TSL.js";
 import type { Topology, LeafSet, QuadtreeState } from "../quadtree";
-import type { ComputePipeline } from "../gpu/compute";
-import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { CompiledComputePipeline, ComputePipeline } from "../gpu/compute";
+import type { TileFieldStorage } from "../gpu/tileFieldStorage";
 import type { createTileCompute } from "../gpu/tile";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type { SurfaceProjection } from "../projection/types";
@@ -21,6 +21,8 @@ import type {
 } from "../query/types";
 import type { TileBoundsContext } from "./tile-bounds.task";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
+import type { TextureFieldContext } from "./texture-field.task";
+import type { TerrainTextureNodes } from "../texture/texture-nodes";
 
 export interface QuadtreeConfigState {
   state: QuadtreeState;
@@ -69,13 +71,14 @@ export interface TerrainTasks {
   positionNode: TaskRef<ShaderCallNodeInternal>;
   createElevationFieldContext: TaskRef<ElevationFieldContext>;
   createTileNodes: TaskRef<ReturnType<typeof createTileCompute>>;
-  createTerrainFieldTexture: TaskRef<TerrainFieldStorage>;
+  createTerrainFieldTexture: TaskRef<TileFieldStorage>;
   createTerrainSampler: TaskRef<TerrainSampler>;
   elevationFieldStage: TaskRef<ComputePipeline>;
   terrainFieldStage: TaskRef<ComputePipeline>;
-  compileCompute: TaskRef<{
-    execute: (renderer: WebGPURenderer, instanceCount: number) => void;
-  }>;
+  createTextureFieldContext: TaskRef<TextureFieldContext | null>;
+  textureFieldStage: TaskRef<ComputePipeline>;
+  textureNodes: TaskRef<TerrainTextureNodes | null>;
+  compileCompute: TaskRef<CompiledComputePipeline>;
   executeCompute: TaskRef<void | (() => void)>;
   tileBoundsContext: TaskRef<TileBoundsContext & { kernel: unknown }>;
   tileBoundsReduction: TaskRef<TileBoundsContext>;

@@ -1,5 +1,9 @@
 import type {
   ElevationCallback,
+  TextureCallback,
+  TerrainTextureNodes,
+  TerrainTextureSet,
+  TerrainTextureRenderOptions,
   TerrainGraph,
   TerrainQuery,
   TerrainRaycast,
@@ -24,6 +28,7 @@ export type TerrainTask = Task<unknown, string, { renderer: WebGPURenderer }>;
 
 export interface TerrainNodes {
   positionNode: ShaderCallNodeInternal | null;
+  texture: TerrainTextureNodes | null;
 }
 
 export interface TerrainRuntime {
@@ -53,6 +58,10 @@ export interface TerrainOptions {
   elevationScale?: number;
   radius?: number;
   elevation?: ElevationCallback;
+  texture?: TextureCallback | null;
+  textureSet?: TerrainTextureSet | null;
+  textureRender?: TerrainTextureRenderOptions;
+  textureReadback?: boolean;
   topology?: Topology | null;
   terrainFieldFilter?: "nearest" | "linear";
   getCameraOrigin?: (state: RootState) => TerrainVector3Like;
@@ -63,7 +72,7 @@ export interface TerrainOptions {
 export type TerrainPrimitiveProps = Omit<ThreeElements["primitive"], "object" | "children">;
 
 export type TerrainRenderProps = {
-  children: (nodes: TerrainNodes) => ReactNode;
+  children: ReactNode | ((nodes: TerrainNodes) => ReactNode);
 };
 
 /** Props when a pre-built terrain handle is supplied via `useTerrain`. */

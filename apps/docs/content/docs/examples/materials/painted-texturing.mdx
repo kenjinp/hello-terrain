@@ -1,0 +1,57 @@
+---
+title: Painted control and weight maps
+description: Import a native r32 control map or an RGBA PNG weight map into the same terrain field.
+---
+
+import TexturingScene from "@/examples/TexturingScene"
+
+<div className="h-[700px] rounded overflow-hidden"><TexturingScene mode="painted" /></div>
+
+The default input is a committed 256×256 little-endian `.r32` source map. It paints a feathered sand road, snow, and a rock blend. Toggle **Import PNG weights** to use the separate 64×64 RGBA weight-pattern fixture instead. Both paths use public APIs; neither is a painting tool or a Terrain3D importer.
+
+```ts
+import { controlMapSample, type TextureCallback } from "@hello-terrain/three";
+import { DataTexture, NearestFilter, RedFormat, UnsignedIntType } from "three";
+
+async function loadPaintedControl(): Promise<{ map: DataTexture; texture: TextureCallback }> {
+  const response = await fetch("/assets/texturing/painted-control.r32");
+  if (!response.ok) throw new Error(`Control map HTTP ${response.status}`);
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength !== 256 * 256 * 4) throw new Error("Expected a 256×256 r32 map");
+  const map = new DataTexture(new Uint32Array(bytes), 256, 256, RedFormat, UnsignedIntType);
+  map.minFilter = map.magFilter = NearestFilter;
+  map.generateMipmaps = false;
+  map.needsUpdate = true;
+  return { map, texture: ({ rootUV }) => controlMapSample(map, rootUV) };
+}
+```
+
+The caller owns `map` and calls `map.dispose()` after its terrain no longer uses it. Control maps use exact integer loads, never filtering or sRGB conversion.
+
+For weights, load an RGBA texture with `NoColorSpace` and return `weightMapsToControl([weightMap], rootUV)`. Channels R/G/B/A address four consecutive slots; two maps address eight. The converter discards all but the largest two weights and renormalizes those two. Preserve the original weight maps if authoring needs all layers.
+
+## Feather the material weights, not the packed words
+
+The road keeps its centerline `u = 0.5 + 0.15 * sin(2πv)`. Its solid center extends to a distance of `0.045` in source UVs; a smooth falloff reaches zero at `0.085`. The previous hard boundary was at `0.065`. Each source texel stores the largest two normalized material weights:
+
+```ts
+import { packTextureControl } from "@hello-terrain/three";
+
+const distance = Math.abs(u - (0.5 + 0.15 * Math.sin(2 * Math.PI * v)));
+const t = Math.max(0, Math.min(1, (distance - 0.045) / 0.04));
+const sand = 1 - t * t * (3 - 2 * t);
+const rock = Math.max(0, Math.min(0.7, (u - 0.65) * 2));
+const background = (1 - sand) * (1 - rock);
+const weights = [v < 0.25 ? 0 : background, rock * (1 - sand), sand, v < 0.25 ? background : 0];
+const slots = [0, 1, 2, 3].sort((a, b) => weights[b] - weights[a] || a - b);
+const [base, overlay] = slots;
+const control = packTextureControl({
+  base, overlay,
+  blend: weights[overlay] / (weights[base] + weights[overlay]),
+  auto: v > 0.25,
+});
+```
+
+The example keeps `corners: 4` and `heightBlend: true`, with `blendSharpness: 0` so height detail does not turn the authored falloff back into a nearly binary edge. The one-corner and height-blend toggles still expose their respective quality tradeoffs.
+
+The native source occupies 256 KiB. Generation still performs one exact integer source load per field texel; the fragment sampling limit is unchanged. More pixels in a fractional margin can execute the existing second-slot samples. IDs and hole bits are never interpolated. The [mixed example](/examples/materials/mixed-texturing) interprets `auto` as a procedural background underneath the authored sand coverage.

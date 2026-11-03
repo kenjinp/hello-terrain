@@ -8,6 +8,7 @@ import {
 } from "../gpu/terrainFieldStorage";
 import type { CpuSurfaceOps, SurfaceKey } from "../projection/types";
 import { tileLocalToFieldUVNumber } from "../gpu/tile";
+import { isTextureHole, type TerrainHoleMode } from "../texture/texture-hole";
 import {
   type ElevationGradient,
   type ElevationGridShape,
@@ -31,6 +32,7 @@ import {
 } from "./terrain-snapshot";
 import type {
   ElevationRange,
+  TerrainControlSample,
   TerrainSample,
   TerrainSampleBatch,
   TerrainSurfaceSample,
@@ -58,18 +60,25 @@ export type TerrainQueryConfig = {
   baseU?: number;
   /** Level-0 tile count along v before LOD subdivision (defaults to 1). */
   baseV?: number;
+  textureEnabled?: boolean;
+  textureReadback?: boolean;
+  holes?: TerrainHoleMode;
 };
 
 export interface CpuTerrainCache {
   readonly generation: number;
+  /** Published tile-range changes that require another LOD evaluation. */
+  readonly boundsGeneration: number;
   readonly ready: boolean;
   updateConfig(config: TerrainQueryConfig): void;
   triggerReadback(
     renderer: WebGPURenderer,
     attribute: StorageBufferAttribute,
     spatialIndex: SpatialIndex,
+    productionGeneration: number,
     boundsAttribute?: StorageBufferAttribute,
     activeLeafCount?: number,
+    controlAttribute?: StorageBufferAttribute,
   ): void;
   /** Release GPU readback staging buffers owned by this cache. */
   dispose(): void;
@@ -100,7 +109,7 @@ export interface CpuTerrainCache {
   sampleSurfaceBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
 
   /**
-   * Previous-frame raw elevation min/max for a tile (unscaled field values).
+   * Latest completed snapshot's raw elevation min/max (unscaled field values).
    * Returns false when no snapshot data is available for the tile.
    */
   getTileElevationRange(
@@ -129,6 +138,7 @@ export function createCpuTerrainCache(
     maxNodes,
     initialConfig.maxLevel,
     totalElements,
+    initialConfig.textureReadback,
   );
 
   // Per-cache scratch (no module-scope state; the terrain may have many instances).
@@ -181,20 +191,43 @@ export function createCpuTerrainCache(
     return new Vector3(-dhdu, 1, -dhdv).normalize();
   };
 
+  const missingControl = (): TerrainControlSample => ({
+    hole: config.textureEnabled && config.holes !== "none" ? null : false,
+    textureControl: null, textureBase: null, textureOverlay: null, textureBlend: null,
+  });
+
+  const holeFromLookup = (lookup: TileLookupResult): boolean | null => {
+    if (!config.textureEnabled || config.holes === "none") return false;
+    if (!state.controlReady || !state.frontControl) return null;
+    return isTextureHole(state.frontControl, lookup.leafIndex * shape.verticesPerNode,
+      shape.edgeVertexCount, lookup.localU * config.innerTileSegments + 1,
+      lookup.localV * config.innerTileSegments + 1, config.holes ?? "discard");
+  };
+
+  const controlFromLookup = (lookup: TileLookupResult): TerrainControlSample => {
+    if (!state.controlReady || !state.frontControl) return missingControl();
+    const x = Math.round(lookup.localU * config.innerTileSegments + 1);
+    const y = Math.round(lookup.localV * config.innerTileSegments + 1);
+    const word = state.frontControl[lookup.leafIndex * shape.verticesPerNode + y * shape.edgeVertexCount + x]!;
+    return { hole: holeFromLookup(lookup), textureControl: word, textureBase: word >>> 27,
+      textureOverlay: (word >>> 22) & 31, textureBlend: ((word >>> 14) & 255) / 255 };
+  };
+
   const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {
     const height = rawHeightFromLookup(lookup);
     const scaledHeight = config.originY + height * config.elevationScale;
     const normal = computeNormal(lookup.leafIndex, gridScratch.gx, gridScratch.gy, lookup.tileSize);
-    return { elevation: scaledHeight, normal, valid: true };
+    const control = controlFromLookup(lookup);
+    return { elevation: scaledHeight, normal, valid: control.hole !== true, ...control };
   };
 
   const sampleTerrain = (worldX: number, worldZ: number): TerrainSample => {
     if (!state.hasSnapshot) {
-      return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false };
+      return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false, ...missingControl() };
     }
     const lookup = lookupTile(state.frontIndex, config, worldX, worldZ);
     if (!lookup.found) {
-      return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false };
+      return { elevation: 0, normal: new Vector3(0, 1, 0), valid: false, ...missingControl() };
     }
     return sampleFromLookup(lookup);
   };
@@ -210,7 +243,7 @@ export function createCpuTerrainCache(
     const height = rawHeightFromLookup(lookup);
     return {
       elevation: config.originY + height * config.elevationScale,
-      valid: true,
+      valid: holeFromLookup(lookup) !== true,
     };
   };
 
@@ -259,6 +292,7 @@ export function createCpuTerrainCache(
     direction: new Vector3(dx, dy, dz),
     elevation: 0,
     valid: false,
+    ...missingControl(),
   });
 
   const surfaceLookup = (px: number, py: number, pz: number): TileLookupResult => {
@@ -307,18 +341,23 @@ export function createCpuTerrainCache(
       elevationScale: config.elevationScale,
       level: lookup.level,
     });
+    const control = controlFromLookup(lookup);
     return {
       position,
       normal,
       direction: new Vector3(key.dirX, key.dirY, key.dirZ),
       elevation,
-      valid: true,
+      valid: control.hole !== true,
+      ...control,
     };
   };
 
   const api: CpuTerrainCache = {
     get generation() {
       return state.generation;
+    },
+    get boundsGeneration() {
+      return state.boundsGeneration;
     },
     get ready() {
       return state.hasSnapshot;
@@ -335,14 +374,15 @@ export function createCpuTerrainCache(
       shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
       totalElements = maxNodes * shape.verticesPerNode;
     },
-    triggerReadback(renderer, attribute, spatialIndex, boundsAttribute, activeLeafCount) {
+    triggerReadback(renderer, attribute, spatialIndex, productionGeneration, boundsAttribute, activeLeafCount, controlAttribute) {
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {
+        productionGeneration,
         activeLeafCount: activeLeafCount ?? 0,
         totalElements,
         verticesPerNode: shape.verticesPerNode,
         elevationScale: config.elevationScale,
         originY: config.originY,
-      });
+      }, controlAttribute);
     },
     dispose() {
       disposeSnapshotReadback(state);
@@ -352,7 +392,8 @@ export function createCpuTerrainCache(
       return sample.valid ? sample.elevation : null;
     },
     getNormal(worldX, worldZ) {
-      return sampleTerrain(worldX, worldZ).normal;
+      const sample = sampleTerrain(worldX, worldZ);
+      return sample.valid ? sample.normal : null;
     },
     getTile(worldX, worldZ) {
       if (!state.hasSnapshot) return null;
@@ -373,8 +414,10 @@ export function createCpuTerrainCache(
       const elevations = new Float32Array(count);
       const normals = new Float32Array(count * 3);
       const valid = new Uint8Array(count);
+      const holes = state.controlReady ? new Uint8Array(count) : null;
+      const textureControls = state.controlReady ? new Uint32Array(count) : null;
       if (!state.hasSnapshot) {
-        return { elevations, normals, valid, generation: state.generation };
+        return { elevations, normals, valid, holes, textureControls, generation: state.generation };
       }
 
       let lastTile:
@@ -437,10 +480,12 @@ export function createCpuTerrainCache(
         normals[i * 3] = sample.normal.x;
         normals[i * 3 + 1] = sample.normal.y;
         normals[i * 3 + 2] = sample.normal.z;
-        valid[i] = 1;
+        valid[i] = Number(sample.valid);
+        if (holes) holes[i] = Number(sample.hole);
+        if (textureControls) textureControls[i] = sample.textureControl!;
       }
 
-      return { elevations, normals, valid, generation: state.generation };
+      return { elevations, normals, valid, holes, textureControls, generation: state.generation };
     },
     sampleTerrain,
 
@@ -468,8 +513,10 @@ export function createCpuTerrainCache(
       const normals = new Float32Array(count * 3);
       const elevations = new Float32Array(count);
       const valid = new Uint8Array(count);
+      const holes = state.controlReady ? new Uint8Array(count) : null;
+      const textureControls = state.controlReady ? new Uint32Array(count) : null;
       if (!state.hasSnapshot || !surfaceOps) {
-        return { positions: outPositions, normals, elevations, valid, generation: state.generation };
+        return { positions: outPositions, normals, elevations, valid, holes, textureControls, generation: state.generation };
       }
       for (let i = 0; i < count; i += 1) {
         const sample = sampleSurfaceByPosition(
@@ -477,6 +524,8 @@ export function createCpuTerrainCache(
           positions[i * 3 + 1] ?? 0,
           positions[i * 3 + 2] ?? 0,
         );
+        if (holes) holes[i] = Number(sample.hole);
+        if (textureControls) textureControls[i] = sample.textureControl ?? 0;
         if (!sample.valid) {
           normals[i * 3 + 1] = 1;
           continue;
@@ -490,7 +539,7 @@ export function createCpuTerrainCache(
         elevations[i] = sample.elevation;
         valid[i] = 1;
       }
-      return { positions: outPositions, normals, elevations, valid, generation: state.generation };
+      return { positions: outPositions, normals, elevations, valid, holes, textureControls, generation: state.generation };
     },
     getTileElevationRange(space, level, x, y, out) {
       if (!state.hasSnapshot) return false;

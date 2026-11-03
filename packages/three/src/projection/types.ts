@@ -6,7 +6,7 @@ import type {
   TileComputeParts,
   TileComputePartsContext,
 } from "../gpu/tile";
-import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { TileFieldStorage } from "../gpu/tileFieldStorage";
 import type { CpuTerrainCache } from "../query/cpu-terrain-cache";
 import type { ElevationGridShape } from "../query/elevation-field-sampling";
 import type {
@@ -35,7 +35,7 @@ export interface Vec3Like {
 export interface RenderVertexPositionContext {
   leafStorage: LeafStorageState;
   uniforms: TerrainUniformsContext;
-  terrainFieldStorage?: TerrainFieldStorage;
+  terrainFieldStorage?: TileFieldStorage;
   tileBoundsNode?: StorageBufferNode;
 }
 
@@ -49,6 +49,17 @@ export interface FieldNormalContext {
 /** Per-vertex field-stage normal: `(nodeIndex, ix, iy) => unit world normal`. */
 export type FieldNormalFn = (nodeIndex: Node, ix: Node, iy: Node) => Node;
 
+/** Projection-local material coordinates, in meters, before the mesh transform. */
+export interface TextureFrame {
+  uv: Node;
+  /** Analytic UV Jacobian applied to a continuous position derivative. */
+  uvGradient(positionDerivative: Node): Node;
+  height: Node;
+  up: Node;
+  tangentU: Node;
+  tangentV: Node;
+}
+
 export interface SurfaceProjectionGpu {
   /** Render-path world position; also assigns the vertex normal varying. */
   renderVertexPosition(ctx: RenderVertexPositionContext): Node;
@@ -56,6 +67,8 @@ export interface SurfaceProjectionGpu {
   createTileComputeParts(ctx: TileComputePartsContext): TileComputeParts;
   /** Field-stage surface normal builder. */
   createFieldNormal(ctx: FieldNormalContext): FieldNormalFn;
+  /** Required when opting into texturing; untextured custom projections are unchanged. */
+  textureFrame?(position: Node, face: Node): TextureFrame;
   /** Optional extra GPU samplers (e.g. sphere ByDirection); no-op for flat. */
   augmentSampler?(sampler: TerrainSampler, params: CreateTerrainSamplerParams): void;
 }

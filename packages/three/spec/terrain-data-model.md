@@ -86,9 +86,15 @@ Storage buffer context for per-vertex raw heights:
 
 Written by compute stage (`elevationFieldStageTask`).
 
-### 6) TerrainFieldStorage
+### 6) TileFieldStorage and the terrain field
 
-Texture-backed terrain payload (RGBA = `[normalizedHeight, Nx, Ny, Nz]`) consumed by render and GPU sampler paths. The `.r` channel stores per-tile normalized elevation in `[0, 1]` (see `TileBoundsContext` pack bounds); absolute meters are restored at sample time before `elevationScale` is applied. Normals are unit world-space vectors.
+`gpu/tileFieldStorage.ts` owns the shared tile layout, allocation, stores, and exact loads. Supported formats are `rgba16float`, `rgba32float`, `r32uint`, and `rgba8unorm`. Capacity selects an array texture when it fits `maxTextureArrayLayers`, otherwise a square tile atlas. The array store sets its layer before stacking the TSL node (the alpha.15 fix).
+
+The terrain field remains RGBA16F `[normalizedHeight, Nx, Ny, Nz]`, consumed by render and GPU sampler paths. The `.r` channel stores per-tile normalized elevation in `[0, 1]` (see `TileBoundsContext` pack bounds); absolute meters are restored at sample time before `elevationScale` is applied. Normals are unit world-space vectors. Existing `TerrainFieldStorage` entry points use the same shared implementation; internal producers use `createTileFieldStorage`, `storeTileField`, and `loadTileField`.
+
+Integer fields use nearest filtering and mip-zero `textureLoad`, never `sample`. `storeTileField` accepts a scalar uint for `r32uint` and expands it to the `vec4<u32>` required by WGSL; `loadTileField` returns the loaded vector (the control word is `.r`). Float/color stores take a vec4. No mipmaps are generated. Floating-point `sample` retains the existing filtering and tile-local UV behavior; fragment branches that vary by tile must use explicit gradients or exact loads, not implicit-derivative sampling.
+
+Storage textures are owned/disposed by the existing runtime/application lifecycle, not by a new global cache. Resize keeps the texture identity and releases its previous allocation. Format changes require creating a new field. No control or color field is allocated by the default terrain graph in phase 0.
 
 ### 7) GpuSpatialIndexContext
 
@@ -96,10 +102,12 @@ GPU spatial index representation used for shader-side world->tile lookup.
 
 ### 8) TileBoundsContext
 
-GPU elevation bounds per active tile, produced by reduction after the elevation compute stage and before terrain-field pack. Each tile occupies four floats:
+GPU elevation bounds per active tile, produced after all elevation-writing stages and immediately before the first callback marked `needsTileBounds`. Terrain-field pack carries this flag. Appended non-geometric stages cannot move the reduction; multiple bounds consumers share one reduction. An elevation-only pipeline reduces after its last stage. Elevation writers must not follow the first bounds consumer. Each tile occupies four floats:
 
 - `[0]` `lodMin`, `[1]` `lodMax` — inner vertices only (skirts excluded; used for LOD and CPU readback)
 - `[2]` `packMin`, `[3]` `packMax` — all vertices (used to normalize/denormalize terrain-field `.r`)
+
+`productionGeneration` advances after the default compute task submits the complete pipeline. Together with the source attribute identities, it identifies a production for readback even when leaf membership is unchanged or a recreated context restarts its counter. It is not a GPU-completion fence.
 
 ### 9) TerrainQueryContext
 
@@ -154,7 +162,7 @@ flowchart TD
     leafGpu[LeafGpuBufferState]
     uniforms[TerrainUniformsContext]
     elevationField[ElevationFieldContext]
-    terrainField[TerrainFieldStorage]
+    terrainField[TileFieldStorage: terrain field]
     gpuIndex[GpuSpatialIndexContext]
     tileBounds[TileBoundsContext]
   end
@@ -205,6 +213,10 @@ flowchart TD
 - later quadtree mutations do not invalidate an in-flight query snapshot.
 
 This clone is intentional correctness protection, not incidental duplication.
+
+The readback task is reconsidered on each graph run, but the cache deduplicates by production generation and source attributes. A newer production arriving during an in-flight map is reconsidered after that map completes; it is not acknowledged and lost. Disposed caches ignore late publications.
+
+Snapshot `generation` tracks published query data. The separate internal `boundsGeneration` changes only when keyed tile coverage or LOD min/max ranges change, not for slot reordering or height changes within unchanged ranges. All-zero bounds are valid. The graph consumes this revision on its next run to reevaluate LOD; unchanged bounds do not cause continuous geometry dispatches or duplicate readbacks.
 
 ### CPU Query Module Layout
 

@@ -1,0 +1,157 @@
+---
+title: Terrain Texturing
+description: Procedural and authored uint controls, packed material arrays, shading nodes, and hole-aware queries.
+---
+
+Phase 1 adds a texture assignment callback beside `elevationFn`. It produces a native `r32uint` control field; material nodes read that field and sample a caller-owned texture set. Untextured terrain does not allocate a control field.
+
+Runnable examples: [procedural four-slot terrain](/examples/materials/procedural-texturing), [painted maps](/examples/materials/painted-texturing), [mixed inputs](/examples/materials/mixed-texturing), [holes and queries](/examples/materials/terrain-holes), [React replacement](/examples/materials/react-texturing), and [compressed terrain](/examples/materials/materials-bcn).
+
+## Assign materials with a callback
+
+Given an initialized WebGPU `renderer` and a standard/physical node `material`, the core binding is:
+
+```ts
+import {
+  textureFn, textureSet, textureWeights, createTerrainTextureSet,
+  applyTerrainTextureNodes, terrainGraph, terrainTasks, type TextureCallback,
+} from "@hello-terrain/three";
+
+const materials = createTerrainTextureSet([
+  { name: "Grass", tint: "#4a6f2b", uvScale: 12, antiTiling: "detile" },
+  { name: "Rock", tint: "#6c5f53", uvScale: 18, projection: "vertical" },
+  { name: "Sand", tint: "#c6ae6e", uvScale: 12 },
+  { name: "Snow", tint: "#e3e8eb", uvScale: 12 },
+], { resolution: 64 });
+
+const assign: TextureCallback = ({ elevation, slope }) => textureWeights([
+  slope.mul(3).oneMinus().clamp(),
+  slope.mul(3).clamp(),
+  elevation.negate().mul(0.12).clamp(),
+  elevation.sub(6).mul(0.16).clamp(),
+]);
+
+const graph = terrainGraph();
+graph.set(textureFn, () => assign).set(textureSet, materials);
+await graph.run({ resources: { renderer }, targets: [
+  terrainTasks.executeCompute, terrainTasks.positionNode, terrainTasks.textureNodes,
+] });
+material.positionNode = graph.get(terrainTasks.positionNode);
+applyTerrainTextureNodes(material, graph.get(terrainTasks.textureNodes)!);
+```
+
+`TextureParams` contains all [elevation callback parameters](/docs/core/elevation-function), plus:
+
+| Input | Meaning |
+|---|---|
+| `elevation` | Final raw elevation after upstream compute edits, before `elevationScale`. |
+| `normal` | Unit terrain/world-space displaced surface normal, including `elevationScale`. |
+| `slope` | `1 - abs(dot(normal, projectionUp))`, clamped to 0–1; not an angle in radians. |
+| `fieldTexel` | Integer coordinates within this tile's field, including the skirt ring. |
+
+`worldPosition` is the undisplaced surface position. Prefer `rootUV` for an authored root map; on a cube sphere it is face-local. Callback values are TSL nodes, not JavaScript numbers. Replacing a callback invalidates its compute stage. After editing a source texture, mark the texture for upload and replace the callback identity to request recomputation; there is no painting/revision API yet.
+
+`textureWeights(weights, extra?)` accepts 1–32 nonnegative slot weights (negative values are clamped to zero). It keeps only the largest two, with ties favoring the lower slot index, normalizes those two, and quantizes the overlay fraction to eight bits. All-zero input selects slot 0. This conversion is intentionally lossy, not a full multi-layer splat representation. Referenced slot IDs must exist in the supplied texture set.
+
+## Native controls and authored maps
+
+Use `textureControl` to construct a TSL word, `decodeTextureControl` to inspect it in a shader, and `packTextureControl` / `unpackTextureControl` for CPU authoring.
+
+```ts
+import { textureControl, type TextureCallback } from "@hello-terrain/three";
+
+const assign: TextureCallback = ({ worldPosition }) => textureControl({
+  base: 0, overlay: 1, blend: 0.35,
+  uvRotation: Math.PI / 4, uvScale: 2,
+  hole: worldPosition.x.abs().lessThan(8),
+});
+```
+
+| Bits | Native field |
+|---|---|
+| 31–27 | Base slot, 0–31 |
+| 26–22 | Overlay slot, 0–31 |
+| 21–14 | Overlay blend, 0–255 |
+| 13–10 | Rotation, 16 steps per turn; API input is radians |
+| 9–7 | Signed three-bit power-of-two scale exponent, −4 through 3 |
+| 6–3 | Reserved; producers write zero |
+| 2 | Hole |
+| 1 | Navigation metadata |
+| 0 | Auto/procedural-selection metadata |
+
+Scale code zero means 1×; the supported multipliers are 1/16 through 8. Quantization rounds half steps toward positive infinity; values close to thresholds still have ordinary CPU/GPU floating-point precision differences. The navigation and auto bits are metadata: they do not generate a navmesh or automatically choose a procedural material. The [mixed example](/examples/materials/mixed-texturing) explicitly uses `auto` to select its callback result.
+
+This is a **native Hello Terrain schema**, not a Terrain3D file importer or compatibility guarantee. Control words remain uint32 throughout storage and readback; never put them in float texture channels or float buffers.
+
+- `controlMapSample(map, uv, level?)`: nearest, exact integer load from a native uint texture. Use a `DataTexture` with `RedFormat`, `UnsignedIntType`, nearest filters, no mip generation, and no color conversion. The example's `.r32` file is a 64×64 little-endian uint32 payload, not a standard image container.
+- `weightMapsToControl(maps, uv, slotOffset = 0)`: one or two linear RGBA weight textures, four consecutive slots per map. It samples explicit mip zero, then applies the same top-two reduction. Alpha is a weight, not opacity. Load PNG weights with `NoColorSpace`; do not treat them as sRGB color. Map orientation follows the source texture.
+
+The [painted example](/examples/materials/painted-texturing) switches between both real source formats. For exact numeric authoring without image-decoder transformations, use an unsigned-byte RGBA `DataTexture` for weights or native uint controls.
+
+## Texture sets and fast packing
+
+`createTerrainTextureSet(slots, { resolution? })` copies loaded, uncompressed RGBA unsigned-byte `DataTexture` or browser image sources into two arrays. Browser image packing needs a readable 2D canvas (including appropriate CORS permissions). Compressed source maps must be prepacked instead of passing through this CPU image packer.
+
+| Array | Channels | Color interpretation |
+|---|---|---|
+| `albedoHeight` | RGB albedo; A height | sRGB RGB, linear alpha |
+| `normalRoughAo` | RG tangent normal XY; B AO; A roughness | Linear data |
+
+Slot sources are `albedo`, `normal`, `height`, `roughness`, and `ao`; scalar sources use red. The normal's positive Z component is reconstructed from XY. The runtime packer resizes color in linear space, honors source orientation, and requests GPU mip generation. Its output resolution defaults to the first albedo's width, or 256 when absent. Input images must already be loaded; output sets support 1–32 slots.
+
+Slot parameters:
+
+- `uvScale`: terrain/world meters per repeat (default 10), combined with the control word's multiplier.
+- `tint`, `normalStrength`, `roughnessOffset`, `aoStrength`, `heightOffset`, `heightScale`.
+- `projection: "uv" | "vertical"`. Vertical mode uses one of eight horizontal orientations on steep slopes; it is **not triplanar mapping**.
+- `antiTiling: "none" | "detile"`, with optional `detiling: { rotation, shift }`. Rotation is in radians and shift in repeat-space units. Detiling rotates/shifts material samples deterministically per field corner and counter-rotates tangent normal XY.
+
+`terrainTextureSetFromArrays({ albedoHeight, normalRoughAo }, slots)` takes ownership of already packed `DataArrayTexture` or `CompressedArrayTexture` objects. Supply matching dimensions, layers (one per slot), and mip counts. Uncompressed fast arrays must be RGBA unsigned-byte; compressed inputs must encode the same RGBA channel contract in a format supported by the renderer/device. Normal/AO/roughness data must not be sRGB. This helper does not decode or repack compressed bytes.
+
+See the [BCn example](/examples/materials/materials-bcn) for two real BC3 KTX2 arrays, each with four layers and ten mip levels. Its loader explicitly handles three.js r186's native KTX2 array limitation. Native BC assets require `texture-compression-bc`; the example reports that requirement rather than substituting an unrelated material.
+
+## Shading and material binding
+
+Set `textureRender` to `{ corners: 4, heightBlend: true, blendSharpness: 0.5, holes: "discard" }` to spell out the defaults. `corners: 1` is an explicit lower-cost nearest-control choice, not an automatic distance policy. Height blending uses stable log-space normalization; it changes material weights, not terrain geometry or bounds.
+
+`terrainTasks.textureNodes` is `null` without both a callback/control field and a texture set. Otherwise it supplies:
+
+- `albedo`: RGBA color with hole discard; bind to `colorNode`.
+- `normal`: view-space shading normal for `normalNode`; `normalWorld` is also available.
+- `roughness`, `ao`, and blended material `height`.
+- `control`: nearest decoded native control, and `hole`: the active mode's mask.
+- `weightOf(slot)`: interpolated, height-adjusted weight for a referenced slot.
+
+`applyTerrainTextureNodes(material, nodes)` binds color, normal, roughness, and AO on standard/physical node materials. Keep `positionNode` bound separately. Custom color nodes must retain the hole discard if they replace `albedo`; evaluate any derivative-dependent shading before discarding. The supplied albedo path is also used by three's shadow override.
+
+Filtered material samples use explicit gradients derived from continuous position and the projection's analytic UV Jacobian, before divergent corner/slot selection. A flat per-instance integer varying does **not** imply derivative-uniform fragments. Integer control reads are exact loads and never filtered.
+
+Flat mapping uses world XZ. Cube-sphere UVs are face-local; torus UVs follow its periodic surface coordinates. This phase does not promise seamless image/normal-detail mapping across cube faces. Per-corner detiling and control resolution can also change with LOD. Triplanar/hex/bombing methods, automatic sample budgets, and distance/LOD quality policies remain later work.
+
+## Holes, queries, and readback
+
+| `textureRender.holes` | Rendered footprint |
+|---|---|
+| `"discard"` | Nearest control texel mask in color, shadow, and depth passes. |
+| `"collapse"` | Removes triangles touching a hole vertex, including the geometry's alternating/skirt diagonals; fragment masking uses that same footprint. |
+| `"none"` | Ignores hole flags for rendering and query validity. |
+
+Discard requires the material-node binding described above. Collapse also changes the position node. A texture callback without a texture set can produce a data field, but it does not automatically add discard to an unrelated custom material.
+
+`textureReadback` defaults to `false`. GPU sampling always has the current control field; CPU hole/material access is optional:
+
+- With control readback ready, CPU samples expose `hole`, `textureControl`, `textureBase`, `textureOverlay`, and `textureBlend`. Holes have `valid: false`; elevation/normal getters return `null`. Raycasts reject hole intersections and continue searching, including a solid rear surface behind a sphere's front hole.
+- With readback disabled or unavailable, textured CPU samples report `hole: null` and null material metadata. CPU queries/rays remain **geometric only**, so a visible hole can still receive a CPU hit. `holes: "none"` and untextured terrain report `hole: false`.
+- Batch results add nullable `holes` and `textureControls` arrays. Always check each sample's validity before using its metadata.
+
+Snapshots pair elevation, spatial index, bounds, and optional controls. Queries operate on the latest completed asynchronous snapshot, not a synchronous GPU view. This is terrain picking/query behavior, not physics-engine collision or navmesh integration.
+
+GPU `TerrainSampler` adds `sampleControl(x, z)` and `sampleHole(x, z)` (uint word and float 0/1 respectively). `sampleValidity` rejects holes; cube-sphere samplers also provide `sampleControlByDirection` and `sampleHoleByDirection`. Direct `evaluateElevation` / `evaluateNormal` calls still evaluate geometry and do not apply a texture hole mask.
+
+## Compute ordering and ownership
+
+The default stage chain is elevation → bounds reduction → terrain-field pack → texture field. `textureFieldStageTask` returns that accumulated pipeline. Custom elevation edits belong before the first `needsTileBounds` callback; append non-geometric stages after pack. Adding texture assignment does not move bounds reduction after texturing.
+
+The graph owns its computed control texture, optional uint readback mirror, default compiled pipeline, and query staging resources. Replacing those resources or disposing the graph releases them. Callers of `createComputePipelineTasks` own their custom compiled pipeline's `dispose()` lifecycle. Existing scene-object and terrain-field ownership remains unchanged.
+
+Texture sets are **caller-owned** and may be shared by terrains. The runtime packer does not own its source maps and does not retain them in slot metadata. A set owns its two output arrays; `dispose()` is idempotent. Do not dispose a set while any material/frame still uses it. `TerrainStandardMaterial` owns and disposes its material, not a supplied texture set. The [React example](/examples/materials/react-texturing) retains two palettes while mounted, swaps their binding without recreating the control field, and releases both on unmount.

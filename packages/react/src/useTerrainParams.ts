@@ -10,6 +10,10 @@ import {
   skirtScale,
   terrainFieldFilter,
   topology,
+  textureFn,
+  textureSet,
+  textureRender,
+  textureReadback,
   type TerrainGraph,
 } from "@hello-terrain/three";
 import type { ParamRef } from "@hello-terrain/work";
@@ -18,24 +22,28 @@ import type { TerrainOptions } from "./types";
 
 function resetOrSet<T>(
   graph: TerrainGraph,
-  ownedParamIds: Set<string>,
+  appliedValues: Map<string, unknown>,
   ref: ParamRef<T>,
   value: T | undefined,
   setValue: () => T,
 ) {
   if (value === undefined) {
-    if (ownedParamIds.has(ref.id)) {
+    if (appliedValues.has(ref.id)) {
       graph.reset(ref);
-      ownedParamIds.delete(ref.id);
+      appliedValues.delete(ref.id);
     }
     return;
   }
+  if (appliedValues.has(ref.id) && Object.is(appliedValues.get(ref.id), value)) return;
   graph.set(ref, setValue);
-  ownedParamIds.add(ref.id);
+  appliedValues.set(ref.id, value);
 }
 
 export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
-  const ownedParamIdsRef = useRef<Set<string>>(new Set());
+  const appliedParamsRef = useRef<{
+    graph: TerrainGraph;
+    values: Map<string, unknown>;
+  } | null>(null);
   const {
     rootSize: nextRootSize,
     origin: nextOrigin,
@@ -48,93 +56,100 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     topology: nextTopology,
     terrainFieldFilter: nextTerrainFieldFilter,
+    texture: nextTexture,
+    textureSet: nextTextureSet,
+    textureRender: nextTextureRender,
+    textureReadback: nextTextureReadback,
   } = options;
 
   useLayoutEffect(() => {
-    ownedParamIdsRef.current.clear();
-  }, [graph]);
-
-  useLayoutEffect(() => {
-    const ownedParamIds = ownedParamIdsRef.current;
+    let applied = appliedParamsRef.current;
+    if (applied?.graph !== graph) {
+      applied = { graph, values: new Map() };
+      appliedParamsRef.current = applied;
+    }
+    const appliedValues = applied.values;
 
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       rootSize,
       nextRootSize,
       () => nextRootSize as number,
     );
-    resetOrSet(graph, ownedParamIds, origin, nextOrigin, () => ({
+    resetOrSet(graph, appliedValues, origin, nextOrigin, () => ({
       x: nextOrigin?.x ?? 0,
       y: nextOrigin?.y ?? 0,
       z: nextOrigin?.z ?? 0,
     }));
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       maxLevel,
       nextMaxLevel,
       () => nextMaxLevel as number,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       maxNodes,
       nextMaxNodes,
       () => nextMaxNodes as number,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       innerTileSegments,
       nextInnerTileSegments,
       () => nextInnerTileSegments as number,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       skirtScale,
       nextSkirtScale,
       () => nextSkirtScale as number,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       elevationScale,
       nextElevationScale,
       () => nextElevationScale as number,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       radius,
       nextRadius,
       () => nextRadius as number,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       topology,
       nextTopology,
       () => nextTopology as Exclude<TerrainOptions["topology"], undefined>,
     );
     resetOrSet(
       graph,
-      ownedParamIds,
+      appliedValues,
       terrainFieldFilter,
       nextTerrainFieldFilter,
       () => nextTerrainFieldFilter as "nearest" | "linear",
     );
+    resetOrSet(graph, appliedValues, textureFn, nextTexture, () => nextTexture ?? null);
+    resetOrSet(graph, appliedValues, textureSet, nextTextureSet, () => nextTextureSet ?? null);
+    resetOrSet(graph, appliedValues, textureRender, nextTextureRender, () => nextTextureRender ?? {});
+    resetOrSet(graph, appliedValues, textureReadback, nextTextureReadback, () => nextTextureReadback ?? false);
 
-    if (elevation === undefined) {
-      if (ownedParamIds.has(elevationFn.id)) {
-        graph.reset(elevationFn);
-        ownedParamIds.delete(elevationFn.id);
-      }
-    } else {
-      graph.set(elevationFn, () => elevation);
-      ownedParamIds.add(elevationFn.id);
-    }
+    resetOrSet(
+      graph,
+      appliedValues,
+      elevationFn,
+      elevation,
+      () => elevation as Exclude<TerrainOptions["elevation"], undefined>,
+    );
   }, [
     graph,
     nextRootSize,
@@ -148,5 +163,9 @@ export function useTerrainParams(graph: TerrainGraph, options: TerrainOptions) {
     elevation,
     nextTopology,
     nextTerrainFieldFilter,
+    nextTexture,
+    nextTextureSet,
+    nextTextureRender,
+    nextTextureReadback,
   ]);
 }

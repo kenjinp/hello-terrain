@@ -1,6 +1,8 @@
 export { Terrain } from "./Terrain"
 export { TerrainProvider, useTerrainContext } from "./TerrainContext"
 export { useTerrain } from "./useTerrain"
+export { TerrainStandardMaterial } from "./TerrainStandardMaterial";
+export type { TerrainStandardMaterialProps } from "./TerrainStandardMaterial";
 export type {
   TerrainHandle,
   TerrainNodes,

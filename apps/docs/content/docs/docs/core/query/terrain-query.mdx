@@ -44,6 +44,14 @@ if (sample.valid) {
 }
 ```
 
+### Texture controls and holes
+
+Set the core `textureReadback` param (or the React option of the same name) to `true` for CPU material metadata and hole-aware sampling. It defaults to `false`; GPU rendering/sampling does not require it.
+
+Point and surface samples include `hole: boolean | null`, `textureControl: number | null`, `textureBase: number | null`, `textureOverlay: number | null`, and `textureBlend: number | null`. When control data is ready, holes have `valid: false` and elevation/normal getters return `null`. Blend is the decoded 0–1 native overlay fraction, not the fragment's height-adjusted material weight.
+
+When textured controls are unavailable, `hole` and material metadata are `null`: queries remain geometric and may return a point inside a visible hole. Untextured terrain and `textureRender.holes: "none"` report `hole: false`. Do not interpret unknown metadata as proof of solid ground. Batch results add nullable `holes: Uint8Array | null` and `textureControls: Uint32Array | null`; check per-sample validity before interpreting entries. See [Texturing](/docs/core/nodes/texturing) for mode footprints and ownership.
+
 ## Batch queries
 
 Use batch mode when you need many samples per frame (physics probes, AI paths, crowds).
@@ -169,7 +177,7 @@ and `getTileBounds`, plus a `sampleTerrainBatchByDirection(directions)` batch
 `sampleTerrain*` returns a `TerrainSurfaceSample`:
 
 ```ts
-interface TerrainSurfaceSample {
+interface TerrainSurfaceSample extends TerrainControlSample {
   position: Vector3; // center + direction * (radius + elevation)
   normal: Vector3; // world-space surface normal
   direction: Vector3; // unit direction used for the lookup
@@ -199,9 +207,9 @@ displacements above the base radius (not absolute world Y).
 ## Freshness and startup behavior
 
 - `graph.get(terrainTasks.terrainQuery)` always returns a `TerrainQueryContext`. Before the first successful readback, individual queries return `{ valid: false }`.
-- Per-sample `valid` indicates whether the queried point maps to an active tile with readback data.
+- Per-sample `valid` indicates an active tile with elevation readback data that is not a known hole. Without ready control readback, validity remains geometric.
 - Use `terrainQuery.generation` to detect when cache content changes between frames.
-- Values are frame-coherent snapshots: tile lookup, elevation data, and per-tile bounds are all paired from the same readback generation.
+- Values are frame-coherent snapshots: tile lookup, elevation data, per-tile bounds, and optional texture controls are paired from the same readback generation.
 - Readback is triggered by a separate `terrainReadbackTask` that runs on the GPU lane. It is fire-and-forget — downstream tasks like `terrainRaycastTask` depend on the stable `terrainQueryTask`, not the readback, so they don't block on GPU compute.
 - Readback reuses a persistent per-attribute GPU staging buffer instead of allocating one each frame, so the GPU buffer pool stays flat over time. (Three.js' `getArrayBufferAsync` leaks a `_readback` buffer per call and is only used as a no-backend fallback.)
 

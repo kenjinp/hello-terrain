@@ -6,6 +6,8 @@ import {
 } from "../gpu/terrainFieldStorage";
 import type { SpatialIndex } from "../quadtree";
 import { createSpatialIndex } from "../quadtree";
+import { lookupSpatialIndexRaw } from "../quadtree/spatialIndex";
+import { U32_EMPTY } from "../quadtree/types";
 import {
   type ReadbackSlot,
   canDeviceReadback,
@@ -40,14 +42,24 @@ export interface TerrainSnapshotState {
   backIndex: SpatialIndex;
   frontTileBounds: Float32Array<ArrayBuffer>;
   backTileBounds: Float32Array<ArrayBuffer>;
+  frontControl: Uint32Array<ArrayBuffer> | null;
+  backControl: Uint32Array<ArrayBuffer> | null;
+  controlReady: boolean;
+  disposed: boolean;
   frontLeafCount: number;
   globalRange: ElevationRange | null;
   hasSnapshot: boolean;
   readbackPending: boolean;
   generation: number;
-  lastScheduledStampGen: number;
+  /** Advances only when the leaf-keyed ranges supplied to LOD change. */
+  boundsGeneration: number;
+  boundsReady: boolean;
+  lastScheduledProductionGeneration: number;
+  lastScheduledAttribute: StorageBufferAttribute | null;
+  lastScheduledBoundsAttribute: StorageBufferAttribute | undefined;
   elevationReadback: ReadbackSlot;
   boundsReadback: ReadbackSlot;
+  controlReadback: ReadbackSlot;
   /** Conservative per-tile elevation range pyramid for LOD bounds. */
   elevationPyramid: TileElevationPyramid;
 }
@@ -62,6 +74,7 @@ export function createTerrainSnapshotState(
   maxNodes: number,
   maxLevel: number,
   totalElements: number,
+  withControl = false,
 ): TerrainSnapshotState {
   return {
     frontElevation: new Float32Array(totalElements),
@@ -70,14 +83,23 @@ export function createTerrainSnapshotState(
     backIndex: createSpatialIndex(maxNodes),
     frontTileBounds: new Float32Array(maxNodes * TILE_BOUNDS_FLOATS_PER_TILE),
     backTileBounds: new Float32Array(maxNodes * TILE_BOUNDS_FLOATS_PER_TILE),
+    frontControl: withControl ? new Uint32Array(totalElements) : null,
+    backControl: withControl ? new Uint32Array(totalElements) : null,
+    controlReady: false,
+    disposed: false,
     frontLeafCount: 0,
     globalRange: null,
     hasSnapshot: false,
     readbackPending: false,
     generation: 0,
-    lastScheduledStampGen: -1,
+    boundsGeneration: 0,
+    boundsReady: false,
+    lastScheduledProductionGeneration: -1,
+    lastScheduledAttribute: null,
+    lastScheduledBoundsAttribute: undefined,
     elevationReadback: createReadbackSlot(),
     boundsReadback: createReadbackSlot(),
+    controlReadback: createReadbackSlot(),
     elevationPyramid: createTileElevationPyramid(maxNodes, maxLevel),
   };
 }
@@ -98,12 +120,34 @@ function cloneSpatialIndex(target: SpatialIndex, source: SpatialIndex): void {
   target.values.set(source.values);
 }
 
+function matchesPublishedBounds(state: TerrainSnapshotState, leafCount: number): boolean {
+  if (!state.boundsReady || state.frontLeafCount !== leafCount) return false;
+  const index = state.backIndex;
+  for (let slot = 0; slot < index.size; slot++) {
+    if (index.stamp[slot] !== index.stampGen) continue;
+    const nextLeaf = index.values[slot]!;
+    if (nextLeaf >= leafCount) continue;
+    const previousLeaf = lookupSpatialIndexRaw(
+      state.frontIndex, index.keysSpace[slot]!, index.keysLevel[slot]!,
+      index.keysX[slot]!, index.keysY[slot]!,
+    );
+    if (previousLeaf === U32_EMPTY || previousLeaf >= state.frontLeafCount) return false;
+    const before = previousLeaf * TILE_BOUNDS_FLOATS_PER_TILE;
+    const after = nextLeaf * TILE_BOUNDS_FLOATS_PER_TILE;
+    if (
+      state.frontTileBounds[before + TILE_BOUNDS_LOD_MIN_OFFSET] !== state.backTileBounds[after + TILE_BOUNDS_LOD_MIN_OFFSET] ||
+      state.frontTileBounds[before + TILE_BOUNDS_LOD_MAX_OFFSET] !== state.backTileBounds[after + TILE_BOUNDS_LOD_MAX_OFFSET]
+    ) return false;
+  }
+  return true;
+}
+
 /**
  * Schedule an async GPU readback of the elevation field (and optionally tile
  * bounds) into the snapshot back-buffers, then swap front/back on completion.
  *
  * No-ops when a readback is already pending, the renderer does not support
- * readback, or the spatial index has not advanced since the last schedule.
+ * readback, or this field production has already been scheduled.
  * `captured` values are pinned at schedule time so the swapped-in snapshot is
  * internally consistent even if the config mutates while the readback flies.
  */
@@ -114,21 +158,29 @@ export function triggerSnapshotReadback(
   spatialIndex: SpatialIndex,
   boundsAttribute: StorageBufferAttribute | undefined,
   captured: {
+    productionGeneration: number;
     activeLeafCount: number;
     totalElements: number;
     verticesPerNode: number;
     elevationScale: number;
     originY: number;
   },
+  controlAttribute?: StorageBufferAttribute,
 ): void {
-  if (state.readbackPending) return;
+  if (state.disposed || state.readbackPending) return;
   const withReadback = renderer as RendererReadback;
   const useDeviceReadback = canDeviceReadback(renderer);
   if (!useDeviceReadback && !withReadback.getArrayBufferAsync) return;
-  if (spatialIndex.stampGen === state.lastScheduledStampGen) return;
+  if (
+    captured.productionGeneration === state.lastScheduledProductionGeneration &&
+    attribute === state.lastScheduledAttribute &&
+    boundsAttribute === state.lastScheduledBoundsAttribute
+  ) return;
 
   cloneSpatialIndex(state.backIndex, spatialIndex);
-  state.lastScheduledStampGen = spatialIndex.stampGen;
+  state.lastScheduledProductionGeneration = captured.productionGeneration;
+  state.lastScheduledAttribute = attribute;
+  state.lastScheduledBoundsAttribute = boundsAttribute;
 
   const { activeLeafCount, totalElements, verticesPerNode, elevationScale, originY } =
     captured;
@@ -136,19 +188,9 @@ export function triggerSnapshotReadback(
   state.readbackPending = true;
 
   /** Promote the (already-populated) back buffers to front and recompute range. */
-  const applySnapshot = (boundsFilled: boolean) => {
-    let boundsValid = activeLeafCount === 0;
-    if (boundsFilled) {
-      for (let i = 0; i < activeLeafCount; i += 1) {
-        if (
-          (state.backTileBounds[i * TILE_BOUNDS_FLOATS_PER_TILE + TILE_BOUNDS_LOD_MAX_OFFSET] ??
-            0) !== 0
-        ) {
-          boundsValid = true;
-          break;
-        }
-      }
-    }
+  const applySnapshot = (boundsFilled: boolean, controlFilled: boolean) => {
+    if (state.disposed) return;
+    const boundsChanged = boundsFilled && !matchesPublishedBounds(state, activeLeafCount);
 
     const oldFrontElevation = state.frontElevation;
     const oldFrontIndex = state.frontIndex;
@@ -157,13 +199,20 @@ export function triggerSnapshotReadback(
     state.frontLeafCount = activeLeafCount;
     state.backElevation = oldFrontElevation;
     state.backIndex = oldFrontIndex;
-    if (boundsFilled && boundsValid) {
+    if (controlFilled) {
+      const oldFrontControl = state.frontControl;
+      state.frontControl = state.backControl;
+      state.backControl = oldFrontControl;
+    }
+    state.controlReady = controlFilled;
+    if (boundsFilled) {
       const oldFrontBounds = state.frontTileBounds;
       state.frontTileBounds = state.backTileBounds;
       state.backTileBounds = oldFrontBounds;
     }
+    state.boundsReady = boundsFilled;
 
-    if (boundsFilled && boundsValid && activeLeafCount > 0) {
+    if (boundsFilled) {
       let gMin = Infinity;
       let gMax = -Infinity;
       for (let i = 0; i < activeLeafCount; i++) {
@@ -176,13 +225,16 @@ export function triggerSnapshotReadback(
         gMin = Math.min(gMin, a, b);
         gMax = Math.max(gMax, a, b);
       }
-      state.globalRange = { min: gMin, max: gMax };
-      buildTileElevationPyramid(
-        state.elevationPyramid,
-        state.frontIndex,
-        state.frontTileBounds,
-        activeLeafCount,
-      );
+      state.globalRange = activeLeafCount > 0 ? { min: gMin, max: gMax } : null;
+      if (boundsChanged) {
+        buildTileElevationPyramid(
+          state.elevationPyramid,
+          state.frontIndex,
+          state.frontTileBounds,
+          activeLeafCount,
+        );
+        state.boundsGeneration += 1;
+      }
     }
 
     state.hasSnapshot = true;
@@ -192,29 +244,24 @@ export function triggerSnapshotReadback(
   if (useDeviceReadback) {
     const runDeviceReadback = async (): Promise<void> => {
       state.backElevation.fill(0);
-      await readStorageBufferInto(
-        renderer,
-        attribute,
-        state.elevationReadback,
-        state.backElevation,
-        activeLeafCount * verticesPerNode,
-        "terrainElevationReadback",
+      // Queue all copies synchronously before any mapAsync can yield to another terrain frame.
+      const elevationPromise = readStorageBufferInto(
+        renderer, attribute, state.elevationReadback, state.backElevation,
+        activeLeafCount * verticesPerNode, "terrainElevationReadback",
       );
 
-      let boundsFilled = false;
-      if (boundsAttribute) {
-        state.backTileBounds.fill(0);
-        boundsFilled = await readStorageBufferInto(
-          renderer,
-          boundsAttribute,
-          state.boundsReadback,
-          state.backTileBounds,
-          activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE,
-          "terrainBoundsReadback",
-        );
-      }
-
-      applySnapshot(boundsFilled);
+      state.backTileBounds.fill(0);
+      const boundsPromise = boundsAttribute ? readStorageBufferInto(
+        renderer, boundsAttribute, state.boundsReadback, state.backTileBounds,
+        activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE, "terrainBoundsReadback",
+      ) : Promise.resolve(false);
+      state.backControl?.fill(0);
+      const controlPromise = controlAttribute && state.backControl ? readStorageBufferInto(
+        renderer, controlAttribute, state.controlReadback, state.backControl,
+        activeLeafCount * verticesPerNode, "terrainControlReadback",
+      ) : Promise.resolve(false);
+      const [elevationFilled, boundsFilled, controlFilled] = await Promise.all([elevationPromise, boundsPromise, controlPromise]);
+      if (elevationFilled) applySnapshot(boundsFilled, controlFilled);
     };
 
     runDeviceReadback()
@@ -235,6 +282,7 @@ export function triggerSnapshotReadback(
   const onComplete = (
     elevResult: ArrayBuffer,
     boundsResult: ArrayBuffer | null,
+    controlResult: ArrayBuffer | null,
   ) => {
     const data = new Float32Array(elevResult);
     state.backElevation.fill(0);
@@ -249,8 +297,12 @@ export function triggerSnapshotReadback(
       );
       boundsFilled = true;
     }
+    if (controlResult && state.backControl) {
+      state.backControl.fill(0);
+      state.backControl.set(new Uint32Array(controlResult).subarray(0, totalElements));
+    }
 
-    applySnapshot(boundsFilled);
+    applySnapshot(boundsFilled, Boolean(controlResult));
   };
 
   const elevationPromise = withReadback.getArrayBufferAsync!(attribute);
@@ -258,23 +310,18 @@ export function triggerSnapshotReadback(
     ? withReadback.getArrayBufferAsync!(boundsAttribute)
     : null;
 
-  if (boundsPromise) {
-    Promise.all([elevationPromise, boundsPromise])
-      .then(([elev, bounds]) => onComplete(elev, bounds))
-      .finally(() => {
-        state.readbackPending = false;
-      });
-  } else {
-    elevationPromise
-      .then((elev) => onComplete(elev, null))
-      .finally(() => {
-        state.readbackPending = false;
-      });
-  }
+  const controlPromise = controlAttribute ? withReadback.getArrayBufferAsync!(controlAttribute) : null;
+  Promise.all([elevationPromise, boundsPromise, controlPromise])
+    .then(([elev, bounds, control]) => onComplete(elev, bounds, control))
+    .finally(() => { state.readbackPending = false; });
 }
 
 /** Destroy the GPU staging buffers held by the snapshot state. */
 export function disposeSnapshotReadback(state: TerrainSnapshotState): void {
+  state.disposed = true;
+  state.lastScheduledAttribute = null;
+  state.lastScheduledBoundsAttribute = undefined;
   disposeReadbackSlot(state.elevationReadback);
   disposeReadbackSlot(state.boundsReadback);
+  disposeReadbackSlot(state.controlReadback);
 }

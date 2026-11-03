@@ -9,7 +9,7 @@ import {
 import {
   createTerrainFieldTextureTask,
   leafGpuBufferTask,
-  loadTerrainField,
+  loadTileField,
 } from "@hello-terrain/three";
 import type { Graph, TaskRef } from "@hello-terrain/work";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -170,7 +170,7 @@ export function TerrainFieldTextureDebug({
       const ix = floor(uvSafe.x.mul(uEdge)).toInt();
       const iy = floor(uvSafe.y.mul(uEdge)).toInt();
 
-      const sample = loadTerrainField(storage as any, ix, iy, tileIndex);
+      const sample = loadTileField(storage as any, ix, iy, tileIndex);
 
       const hNorm = sample.r.mul(0.5).add(0.5).clamp();
       const nx = sample.g;

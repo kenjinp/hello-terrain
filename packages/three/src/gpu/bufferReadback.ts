@@ -38,7 +38,7 @@ export function canDeviceReadback(renderer: WebGPURenderer): boolean {
 }
 
 /**
- * Copy the first `elementCount` float elements of a storage buffer attribute
+ * Copy the first `elementCount` 32-bit elements of a storage buffer attribute
  * into `target`, reusing the staging buffer held by `slot`.
  *
  * Only the requested (active) region is copied and mapped, which keeps the
@@ -57,7 +57,7 @@ export async function readStorageBufferInto(
   renderer: WebGPURenderer,
   attribute: StorageBufferAttribute,
   slot: ReadbackSlot,
-  target: Float32Array,
+  target: Float32Array | Uint32Array,
   elementCount: number,
   label: string,
 ): Promise<boolean> {
@@ -86,8 +86,9 @@ export async function readStorageBufferInto(
   device.queue.submit([encoder.finish()]);
 
   await staging.mapAsync(GPUMapMode.READ, 0, copyBytes);
-  const mapped = new Float32Array(staging.getMappedRange(0, copyBytes));
-  target.set(mapped);
+  const mapped = staging.getMappedRange(0, copyBytes);
+  // Copy bytes, not numeric float conversions: high-bit uint controls must survive unchanged.
+  new Uint8Array(target.buffer, target.byteOffset, copyBytes).set(new Uint8Array(mapped));
   staging.unmap();
 
   return true;

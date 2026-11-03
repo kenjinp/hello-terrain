@@ -12,7 +12,7 @@ import {
 import type { Node, StorageBufferNode } from "three/webgpu";
 import { isSkirtVertex } from "../tsl/skirt";
 import type { LeafStorageState, TerrainUniformsContext } from "../types";
-import type { TerrainFieldStorage } from "./terrainFieldStorage";
+import type { TileFieldStorage } from "./tileFieldStorage";
 import {
   denormalizeTerrainFieldElevation,
   loadTilePackBounds,
@@ -23,7 +23,7 @@ import { type LeafTileNodes, decodeLeafTile, faceUVFromTileLocal, tileLocalToFie
 
 function createTileElevation(
   terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage: TerrainFieldStorage | undefined,
+  terrainFieldStorage: TileFieldStorage | undefined,
   tileBoundsNode: StorageBufferNode | undefined,
 ) {
   if (!terrainFieldStorage || !tileBoundsNode) return float(0);
@@ -49,7 +49,7 @@ function createTileElevation(
  */
 function loadWorldNormal(
   terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage: TerrainFieldStorage,
+  terrainFieldStorage: TileFieldStorage,
 ) {
   const innerSegs = terrainUniforms.uInnerTileSegments;
   const u = tileLocalToFieldUV(positionLocal.x.add(float(0.5)), innerSegs);
@@ -60,7 +60,7 @@ function loadWorldNormal(
 
 function assignWorldNormal(
   terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage?: TerrainFieldStorage,
+  terrainFieldStorage?: TileFieldStorage,
 ) {
   if (!terrainFieldStorage) return;
   normalLocal.assign(Fn(() => loadWorldNormal(terrainUniforms, terrainFieldStorage))());
@@ -70,7 +70,7 @@ function assignWorldNormal(
 export function createFlatRenderVertexPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage?: TerrainFieldStorage,
+  terrainFieldStorage?: TileFieldStorage,
   tileBoundsNode?: StorageBufferNode,
 ): Node {
   return Fn(() => {
@@ -115,7 +115,7 @@ export function createFlatRenderVertexPosition(
 export function createCurvedRenderVertexPosition(
   leafStorage: LeafStorageState,
   terrainUniforms: TerrainUniformsContext,
-  terrainFieldStorage: TerrainFieldStorage | undefined,
+  terrainFieldStorage: TileFieldStorage | undefined,
   surfacePoint: (tile: LeafTileNodes, faceUV: Node, displacement: Node) => Node,
   tileBoundsNode?: StorageBufferNode,
   baseU = 1,

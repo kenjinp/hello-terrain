@@ -4,10 +4,13 @@ Realtime web terrain engine for vast virtual worlds. Built for [three.js](https:
 
 ## Features
 
-- Performant variable LOD system for huge (earth-scale!) open worlds
-- Elevation manipulation, terrain holes, texture painting, overlays, colors, and wetness
-- TSL-based elevation and texture assignment nodes
+- Quadtree-based variable LOD for flat, infinite-flat, cube-sphere, and torus terrain
+- GPU-evaluated TSL elevation functions and derived terrain normals
+- Custom appearance through three.js node materials
 - Composable compute stage plugins
+- Procedural/authored uint material controls, packed texture arrays, and hole-aware rendering
+
+Core texturing provides `textureFn`, runtime/prepacked texture sets, UV/vertical projection, detiling, and height blending. CPU hole/material queries require opt-in `textureReadback`; without it, CPU queries and rays remain geometric. See the [texturing contract](https://hello-terrain.kenny.wtf/docs/core/nodes/texturing) and [runnable examples](https://hello-terrain.kenny.wtf/examples/materials/procedural-texturing). Triplanar/hex/bombing quality methods, painting tools, overlays, caches, and wetness remain planned. No Terrain3D file compatibility or physics-collision integration is implied.
 
 ## Requirements
 

@@ -69,15 +69,9 @@ export const terrainRaycastTask = task(
       state.config.centerY = projection.center?.y ?? originValue.y;
       state.config.centerZ = projection.center?.z ?? originValue.z;
 
-      const range = terrainQuery.getGlobalElevationRange();
-      if (range) {
-        state.config.minY = range.min - BOUNDS_PADDING;
-        state.config.maxY = range.max + BOUNDS_PADDING;
-      } else {
-        const verticalExtent = Math.max(1, Math.abs(elevationScaleValue) * 2);
-        state.config.minY = originValue.y - verticalExtent;
-        state.config.maxY = originValue.y + verticalExtent;
-      }
+      const verticalExtent = Math.max(1, Math.abs(elevationScaleValue) * 2);
+      state.config.minY = originValue.y - verticalExtent;
+      state.config.maxY = originValue.y + verticalExtent;
 
       if (!raycast) {
         raycast = createTerrainRaycast({
@@ -85,7 +79,16 @@ export const terrainRaycastTask = task(
           getTerrainQuery: () => state.terrainQuery,
           getSurfaceQuery: () => state.surfaceQuery,
           getSphereQuery: () => state.sphereQuery,
-          getConfig: () => state.config,
+          getConfig: () => {
+            // Readback promotes snapshots without rebuilding this cached task.
+            // Refresh broad-phase bounds at the same time as the query used by pick().
+            const range = state.terrainQuery?.getGlobalElevationRange();
+            if (range) {
+              state.config.minY = range.min - BOUNDS_PADDING;
+              state.config.maxY = range.max + BOUNDS_PADDING;
+            }
+            return state.config;
+          },
         }) as TerrainRaycastWithState;
       }
       raycast[RAYCAST_STATE] = state;

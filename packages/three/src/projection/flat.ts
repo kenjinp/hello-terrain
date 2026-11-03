@@ -77,6 +77,16 @@ export function createFlatProjection(): SurfaceProjection {
     faceOutward: false,
 
     gpu: {
+      textureFrame(position) {
+        return {
+          uv: position.xz,
+          uvGradient: (derivative) => derivative.xz,
+          height: position.y,
+          up: vec3(0, 1, 0),
+          tangentU: vec3(1, 0, 0),
+          tangentV: vec3(0, 0, 1),
+        };
+      },
       renderVertexPosition(ctx: RenderVertexPositionContext): Node {
         return createFlatRenderVertexPosition(
           ctx.leafStorage,

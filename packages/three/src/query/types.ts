@@ -1,7 +1,8 @@
-import type { TerrainFieldStorage } from "../gpu/terrainFieldStorage";
+import type { TileFieldStorage } from "../gpu/tileFieldStorage";
 import type { SurfaceProjection } from "../projection/types";
 import type { ElevationCallback } from "../tsl/elevation";
 import type { TerrainUniformsContext } from "../types";
+import type { TerrainHoleMode } from "../texture/texture-hole";
 import type { Ray, Vector3 } from "three";
 import type {
   Node,
@@ -24,6 +25,9 @@ export interface TerrainSampler {
   sampleNormal: (worldX: Node, worldZ: Node) => Node;
   sampleTerrain: (worldX: Node, worldZ: Node) => Node;
   sampleValidity: (worldX: Node, worldZ: Node) => Node;
+  /** Raw native control, or zero when no texture field/tile is available. */
+  sampleControl: (worldX: Node, worldZ: Node) => Node;
+  sampleHole: (worldX: Node, worldZ: Node) => Node;
   evaluateElevation: (worldX: Node, worldZ: Node) => Node;
   evaluateNormal: (worldX: Node, worldZ: Node, epsilon?: Node) => Node;
 
@@ -35,10 +39,12 @@ export interface TerrainSampler {
   /** World-space surface normal reconstructed in the sphere tangent frame. */
   sampleNormalByDirection?: (direction: Node) => Node;
   sampleValidityByDirection?: (direction: Node) => Node;
+  sampleControlByDirection?: (direction: Node) => Node;
+  sampleHoleByDirection?: (direction: Node) => Node;
 }
 
 export interface CreateTerrainSamplerParams {
-  terrainFieldStorage: TerrainFieldStorage;
+  terrainFieldStorage: TileFieldStorage;
   tileBoundsNode: StorageBufferNode;
   spatialIndex: GpuSpatialIndexContext;
   uniforms: TerrainUniformsContext;
@@ -47,9 +53,20 @@ export interface CreateTerrainSamplerParams {
   maxLevel: number;
   /** Active surface projection (drives optional GPU sampler augmentation). */
   projection: SurfaceProjection;
+  textureFieldStorage?: TileFieldStorage | null;
+  holes?: TerrainHoleMode;
 }
 
-export interface TerrainSample {
+export interface TerrainControlSample {
+  /** Effective hole. null means texturing is enabled but control readback is unavailable. */
+  hole: boolean | null;
+  textureControl: number | null;
+  textureBase: number | null;
+  textureOverlay: number | null;
+  textureBlend: number | null;
+}
+
+export interface TerrainSample extends TerrainControlSample {
   elevation: number;
   normal: Vector3;
   valid: boolean;
@@ -59,6 +76,9 @@ export interface TerrainSampleBatch {
   normals: Float32Array;
   valid: Uint8Array;
   generation: number;
+  /** null when control data is unavailable; validity still distinguishes missing tiles. */
+  holes: Uint8Array | null;
+  textureControls: Uint32Array | null;
 }
 
 /**
@@ -68,7 +88,7 @@ export interface TerrainSampleBatch {
  * by `elevationScale`); `position` is the full world-space surface point
  * `center + direction * (radius + elevation)`.
  */
-export interface TerrainSurfaceSample {
+export interface TerrainSurfaceSample extends TerrainControlSample {
   position: Vector3;
   normal: Vector3;
   direction: Vector3;
@@ -82,6 +102,8 @@ export interface TerrainSurfaceSampleBatch {
   elevations: Float32Array;
   valid: Uint8Array;
   generation: number;
+  holes: Uint8Array | null;
+  textureControls: Uint32Array | null;
 }
 
 export interface TerrainTile {

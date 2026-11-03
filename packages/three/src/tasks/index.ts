@@ -14,3 +14,5 @@ export * from "./positions.task";
 export * from "./quadtree.task";
 export * from "./uniforms/terrainUniforms";
 export * from "./uniforms/uniforms.task";
+export * from "./texture-field.task";
+export * from "./texture-nodes.task";
