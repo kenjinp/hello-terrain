@@ -48,6 +48,8 @@ Imperative runtime helpers that update with the graph:
 
 Signals that the terrain nodes needed for rendering are available. Before `ready` is `true`, the terrain mesh stays hidden and render-prop materials do not mount.
 
+This does not mean that async CPU queries or bounds-driven LOD have finished updating. The runner continues consuming completed bounds snapshots while the camera is stationary; queries remain eventually consistent.
+
 ### `positionNode`
 
 The generated node material input used to displace the terrain surface.
@@ -71,6 +73,14 @@ const terrain = useTerrain({
 ```
 
 `TerrainStandardMaterial` binds the generated position and texture nodes and disposes its own material on replacement/unmount. Texture sets remain caller-owned and may be shared; release them only after all consumers stop using them. `textureReadback` is opt-in: without it, CPU queries/rays ignore rendered holes and report unknown hole/material metadata. See the [runnable React example](/examples/materials/react-texturing) and [texturing contract](/docs/core/nodes/texturing).
+
+## Parameter Updates
+
+The React adapter writes an option only when its input changes by `Object.is`. Replacing a texture set therefore does not rewrite unchanged geometry parameters. Treat object and callback inputs as immutable: use `useMemo` / `useCallback` when their identity should stay stable. Function-valued options are stored as values, not invoked as graph updater functions.
+
+Changing a previously supplied option to `undefined` resets that parameter once. An option the hook never supplied is left alone. If the graph instance changes, supplied options are applied to the replacement graph without resetting unrelated parameters.
+
+Direct `terrain.graph.set(...)` calls retain their existing invalidation behavior, including explicit same-value writes. Use that path when an imperative integration intentionally needs to invalidate a parameter.
 
 ## Basic Pattern
 

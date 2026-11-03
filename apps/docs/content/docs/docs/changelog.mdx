@@ -38,6 +38,14 @@ See [Terrain Texturing](/docs/core/nodes/texturing) for quantization, ownership,
 - Feathered the existing painted path at 256×256 source resolution and reduced its height-blend sharpness. Its course and solid center remain intact. Mixed inputs now combine authored sand coverage with the procedural background instead of leaving a hard painted border. Packed controls still use exact integer loads; no IDs or hole bits are filtered.
 - Flat raycasting now reads bounds from the latest completed query snapshot at pick time. Cached raycasters therefore reach negative elevations and later changed elevation ranges without requiring their graph task to rebuild.
 
+### React parameter invalidation and bounds-driven LOD
+
+- React writes only changed inputs (`Object.is`), resets previously owned options once when removed, and reapplies supplied inputs to a replacement graph. Function values, custom stages, explicit core `graph.set` invalidation, and texture-set ownership retain their contracts. Palette replacement no longer dirties unchanged geometry parameters.
+- Completed bounds snapshots now invalidate the existing quadtree-update path when keyed tile ranges/coverage change. Stationary terrain can finish refinement without an unrelated camera or material write; unchanged bounds stop further geometry work.
+- Readbacks are keyed by submitted production and source attributes rather than leaf-index stamps alone. Elevation-only changes and newer productions arriving during a pending map are retained; context recreation, all-zero bounds, and disposal during native pending maps are covered.
+
+On the same Apple/Metal setup, 68 settled control/candidate scene pairs matched exact pixels, queries, and normalized reports across flat/cube-sphere, array/atlas, motion, holes, and palette replacement/restoration; all 12 teardown checks passed. Both comparison builds include the necessary LOD correction, so under-refined geometry is not treated as a performance saving.
+
 
 ## 0.0.0-alpha.15 — Gallóglach
 

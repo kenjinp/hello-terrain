@@ -107,6 +107,8 @@ GPU elevation bounds per active tile, produced after all elevation-writing stage
 - `[0]` `lodMin`, `[1]` `lodMax` — inner vertices only (skirts excluded; used for LOD and CPU readback)
 - `[2]` `packMin`, `[3]` `packMax` — all vertices (used to normalize/denormalize terrain-field `.r`)
 
+`productionGeneration` advances after the default compute task submits the complete pipeline. Together with the source attribute identities, it identifies a production for readback even when leaf membership is unchanged or a recreated context restarts its counter. It is not a GPU-completion fence.
+
 ### 9) TerrainQueryContext
 
 CPU query facade and backing cache:
@@ -211,6 +213,10 @@ flowchart TD
 - later quadtree mutations do not invalidate an in-flight query snapshot.
 
 This clone is intentional correctness protection, not incidental duplication.
+
+The readback task is reconsidered on each graph run, but the cache deduplicates by production generation and source attributes. A newer production arriving during an in-flight map is reconsidered after that map completes; it is not acknowledged and lost. Disposed caches ignore late publications.
+
+Snapshot `generation` tracks published query data. The separate internal `boundsGeneration` changes only when keyed tile coverage or LOD min/max ranges change, not for slot reordering or height changes within unchanged ranges. All-zero bounds are valid. The graph consumes this revision on its next run to reevaluate LOD; unchanged bounds do not cause continuous geometry dispatches or duplicate readbacks.
 
 ### CPU Query Module Layout
 

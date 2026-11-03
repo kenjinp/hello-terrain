@@ -52,10 +52,12 @@ The terrain library is organized in layers from pure logic to runtime integratio
 ## Data Flow (Per Frame)
 
 1. App updates params (camera origin, scales, etc.).
-2. Graph runs quadtree selection and uploads leaf storage.
-3. Graph runs elevation → bounds reduction → terrain-field pack → optional texture control field.
+2. When invalidated, the graph runs quadtree selection and uploads leaf storage.
+3. Dirty compute work runs elevation → bounds reduction → terrain-field pack → optional texture control field.
 4. Graph exposes position nodes and, with a control callback and texture set, material nodes.
 5. App (or sink task) applies results to mesh/material for rendering.
+
+Async readback publishes coherent query snapshots independently of `run()` completion. On a later `run()`, a changed cache `boundsGeneration` invalidates the existing quadtree-update parameter. This lets LOD consume newly available ranges without another camera or material change. The React runner already calls the graph each frame; manual runners must continue calling `run()` to consume this feedback. Once keyed tile coverage/ranges stop changing, geometry compute stays cached.
 
 ## Public API Shape
 

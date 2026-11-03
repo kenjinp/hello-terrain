@@ -109,7 +109,7 @@ export interface CpuTerrainCache {
   sampleSurfaceBatchByPosition(positions: Float32Array): TerrainSurfaceSampleBatch;
 
   /**
-   * Previous-frame raw elevation min/max for a tile (unscaled field values).
+   * Latest completed snapshot's raw elevation min/max (unscaled field values).
    * Returns false when no snapshot data is available for the tile.
    */
   getTileElevationRange(
