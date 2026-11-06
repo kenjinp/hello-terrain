@@ -17,7 +17,7 @@ The instance-owned runtime is the standard application boundary. React and vanil
 
 ## Publication
 
-An accepted configuration is immutable data with explicitly borrowed functions/topologies/sources. Production uses a candidate slot; the last good render slot remains available if preparation fails. Complete node/storage/count/config records publish together. Paired elevation/bounds copies submit before either mapping awaits, and CPU publication captures matching index, source version and interpretation.
+An accepted configuration is immutable data with explicitly borrowed functions/topologies/sources. Production uses a candidate slot; the last good render slot remains available if preparation fails. Complete node/storage/count/config records publish together. Paired elevation/bounds copies normally share one pooled staging allocation and map, with a per-buffer fallback when the active payload exceeds the device allocation limit. Snapshot acquisition can overlap previous-record retirement, but CPU publication waits for successful retirement and captures matching index, source version and interpretation. Both operations drain before propagating failure.
 
 A published CPU record is never reused as a readback destination. Leases pin independent copies; resource retirement waits for submitted compute/draw/transfers. GPU fields, staging buffers and compute kernels belong to the backend. Borrowed renderers, textures and materials are never implicitly destroyed. Snapshot retention reports backpressure when pinned records exhaust the configured cap.
 

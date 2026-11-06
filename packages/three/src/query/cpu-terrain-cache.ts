@@ -142,8 +142,11 @@ export function createCpuTerrainCache(
     totalElements,
   );
   if (capturedState) {
-    state.frontElevation.set(capturedState.frontElevation);
-    state.frontTileBounds.set(capturedState.frontTileBounds);
+    // Published tile indices address the active prefix. Keep capacity for future
+    // readbacks without copying unused capacity into each immutable CPU snapshot.
+    const activeTiles = capturedState.frontLeafCount || maxNodes;
+    state.frontElevation.set(capturedState.frontElevation.subarray(0, activeTiles * shape.verticesPerNode));
+    state.frontTileBounds.set(capturedState.frontTileBounds.subarray(0, activeTiles * TILE_BOUNDS_FLOATS_PER_TILE));
     cloneSpatialIndex(state.frontIndex, capturedState.frontIndex);
     state.frontLeafCount = capturedState.frontLeafCount;
     state.globalRange = capturedState.globalRange && { ...capturedState.globalRange };
