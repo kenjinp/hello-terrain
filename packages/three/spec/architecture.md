@@ -17,9 +17,9 @@ The instance-owned runtime is the standard application boundary. React and vanil
 
 ## Publication
 
-An accepted configuration is immutable data with explicitly borrowed functions/topologies/sources. Production uses a candidate slot; the last good render slot remains available if preparation fails. Complete node/storage/count/config records publish together. Paired elevation/bounds copies submit before either mapping awaits, and CPU publication captures matching index, source version and interpretation.
+An accepted configuration is immutable data with explicitly borrowed functions/topologies/sources. Production uses a candidate slot; the last good render slot remains available if preparation fails. Complete node/storage/count/config records publish together. Paired elevation/bounds copies normally share one pooled staging allocation and map, with a per-buffer fallback when the active payload exceeds the device allocation limit. Snapshot acquisition can overlap previous-record retirement, but CPU publication waits for successful retirement and captures matching index, source version and interpretation. Both operations drain before propagating failure.
 
-A published CPU record is never reused as a readback destination. Leases pin independent copies; resource retirement waits for submitted compute/draw/transfers. GPU fields, staging buffers and compute kernels belong to the backend. Borrowed renderers, textures and materials are never implicitly destroyed. Snapshot retention reports backpressure when pinned records exhaust the configured cap.
+A published CPU record is never reused as a readback destination. Captured elevation arrays hold the active prefix and expand lazily if later used for readback. Mutable readback arrays clear only previously written stale tails. Leases pin independent copies; resource retirement waits for submitted compute/draw/transfers. GPU fields, staging buffers and compute kernels belong to the backend. The default elevation, bounds and field-pack kernels use separate ordered dispatches in one compute submission; custom pipeline callbacks retain their execution boundaries. Borrowed renderers, textures and materials are never implicitly destroyed. Snapshot retention reports backpressure when pinned records exhaust the configured cap.
 
 ## Coordinates and material integration
 
@@ -35,3 +35,12 @@ Camera movement first runs the quadtree selection target on an instance-owned CP
 
 
 Tasks are backend implementation details. Applications use runtime transactions and published queries. A public generic field graph and second rendering backend are not implemented.
+
+## Stable presentation resources
+
+Compatible publications keep binding position nodes and draw buffers/textures stable.
+The backend prepares copies from a candidate; the runtime commits them synchronously
+after its final acceptance checks and before notifying subscribers. CPU query snapshots
+continue to come from that candidate. Structural presentation resources retire behind
+a queue fence. Optional transactional precision preparation stages anchors without
+changing live state; custom hooks without it keep rotating presentation resources.

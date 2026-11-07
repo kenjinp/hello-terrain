@@ -1,0 +1,125 @@
+{
+  "baseline": "b4fde40f192f40aa653aef2abdbfe8b650330104",
+  "date": "2026-11-07",
+  "hardware": "NVIDIA GeForce RTX 4090",
+  "browser": "Chrome 156.0.8078.80 on Windows",
+  "method": "3 interleaved baseline/candidate blocks, fresh Chrome process per block, 20 measured samples per workload and resolution, 4 warmup, 640x480",
+  "aggregation": "Median of three block medians and median of three block percentiles; not pooled percentiles",
+  "fidelityComparisons": 294,
+  "fidelityMismatches": [],
+  "targetMet": false,
+  "rows": [
+    {
+      "segments": 13,
+      "scenario": "lod",
+      "baseline": {
+        "wallMsMedian": 12.600000023841858,
+        "wallMsP95": 14.5,
+        "wallMsP99": 15.900000035762787,
+        "updateMsMedian": 6.599999964237213,
+        "updateMsP95": 7.599999964237213,
+        "updateMsP99": 8.5,
+        "gpuEnvelopeMsMedian": 9.304064,
+        "gpuEnvelopeMsP95": 11.06944,
+        "gpuEnvelopeMsP99": 12.218368
+      },
+      "final": {
+        "wallMsMedian": 6.899999976158142,
+        "wallMsP95": 7.799999952316284,
+        "wallMsP99": 8.199999988079071,
+        "updateMsMedian": 3.699999988079071,
+        "updateMsP95": 4.5,
+        "updateMsP99": 4.800000011920929,
+        "gpuEnvelopeMsMedian": 3.456,
+        "gpuEnvelopeMsP95": 4.4032,
+        "gpuEnvelopeMsP99": 4.58752
+      },
+      "wallReductionPercent": 45.23809553093741,
+      "gpuEnvelopeReductionPercent": 62.854941668500985
+    },
+    {
+      "segments": 13,
+      "scenario": "edit",
+      "baseline": {
+        "wallMsMedian": 12.099999964237213,
+        "wallMsP95": 13.699999988079071,
+        "wallMsP99": 14,
+        "updateMsMedian": 6.300000011920929,
+        "updateMsP95": 7.5,
+        "updateMsP99": 8.099999964237213,
+        "gpuEnvelopeMsMedian": 9.110528,
+        "gpuEnvelopeMsP95": 10.503168,
+        "gpuEnvelopeMsP99": 10.543104
+      },
+      "final": {
+        "wallMsMedian": 6.699999988079071,
+        "wallMsP95": 7.899999976158142,
+        "wallMsP99": 8.199999988079071,
+        "updateMsMedian": 3.5,
+        "updateMsP95": 5,
+        "updateMsP99": 5.100000023841858,
+        "gpuEnvelopeMsMedian": 3.406848,
+        "gpuEnvelopeMsP95": 4.701184,
+        "gpuEnvelopeMsP99": 4.93568
+      },
+      "wallReductionPercent": 44.62809910841648,
+      "gpuEnvelopeReductionPercent": 62.60537259750478
+    },
+    {
+      "segments": 61,
+      "scenario": "lod",
+      "baseline": {
+        "wallMsMedian": 15.199999988079071,
+        "wallMsP95": 17,
+        "wallMsP99": 17.600000023841858,
+        "updateMsMedian": 8.400000035762787,
+        "updateMsP95": 10,
+        "updateMsP99": 10.700000047683716,
+        "gpuEnvelopeMsMedian": 11.656192,
+        "gpuEnvelopeMsP95": 13.16848,
+        "gpuEnvelopeMsP99": 13.700096
+      },
+      "final": {
+        "wallMsMedian": 6.800000011920929,
+        "wallMsP95": 8.700000047683716,
+        "wallMsP99": 8.899999976158142,
+        "updateMsMedian": 3.600000023841858,
+        "updateMsP95": 4.900000035762787,
+        "updateMsP99": 5,
+        "gpuEnvelopeMsMedian": 3.510272,
+        "gpuEnvelopeMsP95": 4.713472,
+        "gpuEnvelopeMsP99": 5.046272
+      },
+      "wallReductionPercent": 55.26315778122384,
+      "gpuEnvelopeReductionPercent": 69.88491610296056
+    },
+    {
+      "segments": 61,
+      "scenario": "edit",
+      "baseline": {
+        "wallMsMedian": 14.800000011920929,
+        "wallMsP95": 16,
+        "wallMsP99": 16.5,
+        "updateMsMedian": 8.399999976158142,
+        "updateMsP95": 9.800000011920929,
+        "updateMsP99": 9.900000035762787,
+        "gpuEnvelopeMsMedian": 11.341824,
+        "gpuEnvelopeMsP95": 12.572672,
+        "gpuEnvelopeMsP99": 12.98944
+      },
+      "final": {
+        "wallMsMedian": 6.600000023841858,
+        "wallMsP95": 7.800000011920929,
+        "wallMsP99": 8,
+        "updateMsMedian": 3.600000023841858,
+        "updateMsP95": 4.5,
+        "updateMsP99": 4.700000047683716,
+        "gpuEnvelopeMsMedian": 3.562496,
+        "gpuEnvelopeMsP95": 4.473856,
+        "gpuEnvelopeMsP99": 4.631552
+      },
+      "wallReductionPercent": 55.4054052802313,
+      "gpuEnvelopeReductionPercent": 68.58974358974359
+    }
+  ]
+}

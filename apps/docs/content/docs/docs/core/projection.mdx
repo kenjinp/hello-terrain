@@ -19,6 +19,12 @@ The exported `SurfaceProjection`, `SurfaceProjectionGpu`, and `SurfaceProjection
 
 GPU hooks produce compute coordinates, render positions, and field normals. `createRenderPrecision` optionally supplies anchored rendering resources; built-in flat, sphere, and torus implementations preserve small offsets before float32 rounding.
 
+A precision hook may additionally provide `prepare(count, leafData)`, which computes
+new anchors without changing live state and returns a nonthrowing commit function.
+This lets compatible publications reuse stable draw resources. Built-in hooks support
+it; custom hooks with only `update(count)` keep the existing rotating-resource path.
+The commit must only install prepared data and must not invoke user callbacks.
+
 CPU surface operations map a position to a datum key and reconstruct displaced positions and normals. CPU vector results use `Vec3` tuples from `math`. The Three backend connects these operations to its cache and runtime publication.
 
 A custom shape must provide matching forward/inverse mapping, orientation, normal reconstruction, conservative bounds, and neighbor behavior. Compare GPU local geometry against a CPU double-precision reference. Cross-face continuity, mixed-LOD borders, and shadow behavior need validation; implementing a projection hook alone does not guarantee them.

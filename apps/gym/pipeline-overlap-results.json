@@ -1,0 +1,100 @@
+{
+  "baseline": "b4fde40f192f40aa653aef2abdbfe8b650330104",
+  "scheduling": "publication-retirement-fence",
+  "date": "2026-11-07",
+  "hardware": "RTX 4090, Windows Chrome 156.0.8078.80",
+  "method": "3 interleaved blocks per side; fresh process each block; 20 measured samples per workload/resolution; 4 warmups; 640x480",
+  "aggregation": "Median of three block medians or percentiles; modes not pooled",
+  "completePipelineMetric": "wallMs includes successful post-draw queue fence AND normal default query/readback publication",
+  "gpuEnvelopeScope": "First compute to last draw only; may exclude later query readback, so NOT complete pipeline",
+  "fidelityComparisons": 294,
+  "fidelityMismatches": [],
+  "successfulFenceProofs": 588,
+  "under2msAtP99": false,
+  "rows": [
+    {
+      "segments": 13,
+      "scenario": "lod",
+      "baseline": {
+        "wallMsMedian": 9.5,
+        "wallMsP95": 10.600000023841858,
+        "wallMsP99": 11.5,
+        "gpuEnvelopeMsMedian": 3.139584,
+        "gpuEnvelopeMsP95": 3.56864,
+        "gpuEnvelopeMsP99": 3.984384
+      },
+      "final": {
+        "wallMsMedian": 3.700000047683716,
+        "wallMsP95": 4.600000023841858,
+        "wallMsP99": 4.800000011920929,
+        "gpuEnvelopeMsMedian": 0.25088,
+        "gpuEnvelopeMsP95": 0.379424,
+        "gpuEnvelopeMsP99": 0.87552
+      },
+      "wallReductionPercent": 61.05263107701352
+    },
+    {
+      "segments": 13,
+      "scenario": "edit",
+      "baseline": {
+        "wallMsMedian": 9.5,
+        "wallMsP95": 10.300000011920929,
+        "wallMsP99": 10.599999964237213,
+        "gpuEnvelopeMsMedian": 2.92352,
+        "gpuEnvelopeMsP95": 3.252224,
+        "gpuEnvelopeMsP99": 3.549184
+      },
+      "final": {
+        "wallMsMedian": 3.699999988079071,
+        "wallMsP95": 4.400000035762787,
+        "wallMsP99": 4.699999988079071,
+        "gpuEnvelopeMsMedian": 0.223232,
+        "gpuEnvelopeMsP95": 0.282496,
+        "gpuEnvelopeMsP99": 0.315968
+      },
+      "wallReductionPercent": 61.05263170443082
+    },
+    {
+      "segments": 61,
+      "scenario": "lod",
+      "baseline": {
+        "wallMsMedian": 11.700000047683716,
+        "wallMsP95": 13,
+        "wallMsP99": 13.399999976158142,
+        "gpuEnvelopeMsMedian": 3.326976,
+        "gpuEnvelopeMsP95": 3.9936,
+        "gpuEnvelopeMsP99": 4.012032
+      },
+      "final": {
+        "wallMsMedian": 3.699999988079071,
+        "wallMsP95": 4.700000047683716,
+        "wallMsP99": 5,
+        "gpuEnvelopeMsMedian": 0.268288,
+        "gpuEnvelopeMsP95": 0.398336,
+        "gpuEnvelopeMsP99": 0.45568
+      },
+      "wallReductionPercent": 68.37606860684097
+    },
+    {
+      "segments": 61,
+      "scenario": "edit",
+      "baseline": {
+        "wallMsMedian": 11.600000023841858,
+        "wallMsP95": 12.900000035762787,
+        "wallMsP99": 13.199999988079071,
+        "gpuEnvelopeMsMedian": 3.183616,
+        "gpuEnvelopeMsP95": 3.577856,
+        "gpuEnvelopeMsP99": 4.220928
+      },
+      "final": {
+        "wallMsMedian": 3.5,
+        "wallMsP95": 4.399999976158142,
+        "wallMsP99": 4.600000023841858,
+        "gpuEnvelopeMsMedian": 0.229376,
+        "gpuEnvelopeMsP95": 0.284672,
+        "gpuEnvelopeMsP99": 0.299008
+      },
+      "wallReductionPercent": 69.8275862689109
+    }
+  ]
+}

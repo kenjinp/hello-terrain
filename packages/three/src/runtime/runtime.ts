@@ -46,6 +46,9 @@ export interface TerrainProduction<Render> {
     render: Render;
     layoutKey?: string;
     snapshot(): Promise<TerrainSnapshotData>;
+    /** Synchronous, transactional presentation commit after final acceptance.
+     * Throw before changing live presentation on preparation/submission failure. */
+    commitPresentation?(): void;
     /** Completes only after compute/draw/copies can no longer reference resources. */
     retire(): Promise<void>;
 }
@@ -223,7 +226,7 @@ export function createTerrainRuntime<Config, Render>(
         for (const waiter of waiters) waiter.reject(error);
         waiters.clear();
     }
-    async function capture() {
+    async function capture(publicationReady?: Promise<void>) {
         if (readback || !published || !status.renderRevision) return readback;
         if (currentSnapshot?.revision === status.renderRevision) return;
         collect();
@@ -240,7 +243,19 @@ export function createTerrainRuntime<Config, Render>(
         emit({ readbackPending: true });
         readback = (async () => {
             try {
-                const data = await source.snapshot();
+                // Submit copies without waiting for the old production's retirement fence.
+                // Drain both operations before publishing or reporting failure, so the
+                // serialized update queue never releases a production with pending copies.
+                const [acquired, ready] = await Promise.allSettled([
+                    Promise.resolve().then(() => source.snapshot()),
+                    publicationReady,
+                ]);
+                if (ready.status === 'rejected') {
+                    if (acquired.status === 'fulfilled') acquired.value.dispose();
+                    throw ready.reason;
+                }
+                if (acquired.status === 'rejected') throw acquired.reason;
+                const data = acquired.value;
                 if (disposal) {
                     data.dispose();
                     return;
@@ -469,6 +484,9 @@ export function createTerrainRuntime<Config, Render>(
                                 : ('superseded' as const),
                         };
                     }
+                    // No await between acceptance, the presentation commit, and
+                    // publication. Subscribers may draw synchronously from emit().
+                    candidate.commitPresentation?.();
                     if (!published || candidate.layoutKey !== layoutKey) {
                         layoutVersion++;
                         layoutKey = candidate.layoutKey;
@@ -478,8 +496,14 @@ export function createTerrainRuntime<Config, Render>(
                     published = candidate;
                     publishedView = capturedView;
                     emit({ lifecycle: 'active', renderRevision: revision, lastError: null });
-                    if (previous) await previous.retire();
-                    if (waiters.size || options.readback === 'on-change') await capture();
+                    const retirement = previous?.retire() ?? Promise.resolve();
+                    const snapshot = waiters.size || options.readback === 'on-change'
+                        ? capture(retirement)
+                        : Promise.resolve();
+                    const [retired, captured] = await Promise.allSettled([retirement, snapshot]);
+                    // Retirement failure takes precedence, including when readback fails too.
+                    if (retired.status === 'rejected') throw retired.reason;
+                    if (captured.status === 'rejected') throw captured.reason;
                     return { status: 'published' as const, revision };
                 } catch (error) {
                     if (candidate && candidate !== published) await candidate.retire();

@@ -52,9 +52,14 @@ export function createComputePipelineTasks(leafStageTask: TaskRef<ComputePipelin
     return work(() =>
       compileComputePipeline(pipeline, edgeVertexCount, {
         preferSingleKernelWhenPossible: false,
-        midPipelineExecute: (renderer, instanceCount) => {
-          runTileBoundsReduction(renderer, boundsContext, instanceCount);
-        },
+        ...(leafStageTask === terrainFieldStageTask
+          ? { midPipelineCompute: {
+            kernel: boundsContext.kernel,
+            dispatchSize: (instanceCount: number): [number, number, number] => [1, 1, instanceCount],
+          } }
+          : { midPipelineExecute: (renderer: WebGPURenderer, instanceCount: number) => {
+            runTileBoundsReduction(renderer, boundsContext, instanceCount);
+          } }),
       }),
     );
   }).displayName("compileComputeTask");

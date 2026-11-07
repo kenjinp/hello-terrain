@@ -29,7 +29,12 @@ export type CompileComputePipelineOptions = {
   bindings?: Node[];
   workgroupSize?: [number, number];
   preferSingleKernelWhenPossible?: boolean;
-  /** Runs after all but the last stage when using staged kernels. */
+  /** Known intermediate GPU work eligible for ordered, single-submission dispatch. */
+  midPipelineCompute?: {
+    kernel: CompiledKernel;
+    dispatchSize: (instanceCount: number) => [number, number, number];
+  };
+  /** Runs after all but the last stage when using staged kernels. Takes precedence over batching. */
   midPipelineExecute?: (renderer: WebGPURenderer, instanceCount: number) => void;
 };
 
@@ -48,9 +53,12 @@ export function compileComputePipeline(
   const preferSingleKernelWhenPossible =
     options?.preferSingleKernelWhenPossible ?? true;
   const midPipelineExecute = options?.midPipelineExecute;
+  const midPipelineCompute = options?.midPipelineCompute;
   const uInstanceCount = uniform(0, "uint").setName("uInstanceCount");
   let singleKernel: CompiledKernel | undefined;
   const stagedKernelCache = new Map<string, CompiledKernel[]>();
+  // Three caches its compute group by array identity; retain this array too.
+  const orderedKernelCache = new Map<string, CompiledKernel[]>();
 
   function canRunSingleKernel(
     widthValue: number,
@@ -169,7 +177,7 @@ export function compileComputePipeline(
   function execute(renderer: WebGPURenderer, instanceCount: number) {
     const limits = getDeviceComputeLimits(renderer);
     const canUseSingleKernel =
-      preferSingleKernelWhenPossible && canRunSingleKernel(width, limits);
+      preferSingleKernelWhenPossible && !midPipelineCompute && canRunSingleKernel(width, limits);
     uInstanceCount.value = instanceCount;
 
     if (canUseSingleKernel) {
@@ -193,6 +201,25 @@ export function compileComputePipeline(
 
     const dispatchX = Math.ceil(width / workgroupX);
     const dispatchY = Math.ceil(width / workgroupY);
+    if (midPipelineCompute && !midPipelineExecute && stagedKernels.length > 1) {
+      if (instanceCount <= 0) return;
+      for (const kernel of stagedKernels) kernel.count = [dispatchX, dispatchY, instanceCount];
+      midPipelineCompute.kernel.count = midPipelineCompute.dispatchSize(instanceCount);
+      let ordered = orderedKernelCache.get(cacheKey);
+      if (!ordered) {
+        ordered = [
+          ...stagedKernels.slice(0, -1),
+          midPipelineCompute.kernel,
+          stagedKernels[stagedKernels.length - 1],
+        ];
+        orderedKernelCache.set(cacheKey, ordered);
+      }
+      // Separate ordered dispatches retain global storage dependencies. This is
+      // submission batching, not shader fusion or workgroup-local synchronization.
+      // Omit the dispatch override: Three uses each kernel's own count tuple.
+      renderer.compute(ordered);
+      return;
+    }
     for (let stageIndex = 0; stageIndex < stagedKernels.length; stageIndex += 1) {
       renderer.compute(stagedKernels[stageIndex], [dispatchX, dispatchY, instanceCount]);
       if (
@@ -208,6 +235,6 @@ export function compileComputePipeline(
   return { execute, dispose() {
     singleKernel?.dispose();
     for (const kernels of stagedKernelCache.values()) for (const kernel of kernels) kernel.dispose();
-    stagedKernelCache.clear(); singleKernel = undefined;
+    stagedKernelCache.clear(); orderedKernelCache.clear(); singleKernel = undefined;
   } };
 }

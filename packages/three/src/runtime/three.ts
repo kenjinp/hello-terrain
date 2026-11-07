@@ -1,4 +1,5 @@
 import { float } from 'three/tsl';
+import { compatiblePresentation, createPresentation, supportsPresentationCopy, type TerrainPresentation } from './presentation';
 import type { GraphEventCallback } from '@hello-terrain/work';
 import type { WebGPURenderer, BufferGeometry, BufferAttribute } from 'three/webgpu';
 import type { ShaderCallNodeInternal } from 'three/src/nodes/TSL.js';
@@ -112,6 +113,12 @@ export function createTerrain(options: CreateTerrainOptions) {
     };
     const slots = new Set<Slot>();
     const available: Slot[] = [];
+    const presentations = new Set<TerrainPresentation>();
+    let activePresentation: TerrainPresentation | null = null;
+    function destroyPresentation(presentation: TerrainPresentation) {
+        presentation.dispose();
+        presentations.delete(presentation);
+    }
     let selection: Slot | undefined;
     const graphListeners = new Set<GraphEventCallback>();
     let legacyQueries: (RuntimeQueries & { raycast: TerrainRaycast }) | null = null;
@@ -228,6 +235,7 @@ export function createTerrain(options: CreateTerrainOptions) {
             }
             slot ??= makeSlot(config);
             const g = slot.graph;
+            let presentation: TerrainPresentation | null = null;
             try {
                 if (slot.contentVersion !== revision.contentVersion) {
                     // Rebuild captured source nodes for explicit content/resource edits.
@@ -256,18 +264,42 @@ export function createTerrain(options: CreateTerrainOptions) {
                     leafStorage: g.peek(terrainTasks.leafStorage)!,
                     uniforms: g.peek(terrainTasks.updateUniforms)!,
                 });
-                slot.precision?.update(count);
+                // Custom precision hooks without transactional preparation keep the
+                // original rotating-resource path. Renderer variants without GPU copy
+                // support also retain their previous behavior.
+                const canPresent = supportsPresentationCopy(renderer) &&
+                    (!slot.precision || Boolean(slot.precision.prepare));
+                if (canPresent) {
+                    presentation = activePresentation && compatiblePresentation(activePresentation.config, config)
+                        ? activePresentation
+                        : createPresentation(renderer, config, materialContext, g.peek(terrainTasks.updateUniforms)!);
+                    presentations.add(presentation);
+                } else {
+                    slot.precision?.update(count);
+                }
                 const render = Object.freeze({
                     graph: g,
                     config,
                     count,
-                    positionNode: (slot.precision?.positionNode ??
+                    positionNode: (presentation?.positionNode ?? slot.precision?.positionNode ??
                         g.peek(terrainTasks.positionNode)!) as ShaderCallNodeInternal,
                     materialContext,
                 });
                 let retired = false;
                 return {
                     render,
+                    commitPresentation() {
+                        if (presentation) {
+                            const commit = presentation.prepare({
+                                leafStorage: g.peek(terrainTasks.leafStorage)!,
+                                field: g.peek(terrainTasks.createTerrainFieldTexture)!,
+                                boundsAttribute: g.peek(terrainTasks.tileBoundsContext)!.attribute,
+                                count,
+                            });
+                            commit();
+                        }
+                        activePresentation = presentation;
+                    },
                     layoutKey: Array.from(
                         g.peek(terrainTasks.leafStorage)!.data.subarray(0, count * 4)
                     ).join(','),
@@ -386,16 +418,21 @@ export function createTerrain(options: CreateTerrainOptions) {
                         if (retired) return;
                         retired = true;
                         await fence();
+                        if (presentation && presentation !== activePresentation) destroyPresentation(presentation);
                         available.push(slot!);
                     },
                 };
             } catch (error) {
                 await destroy(slot);
+                if (presentation && presentation !== activePresentation) destroyPresentation(presentation);
                 throw error;
             }
         },
         async dispose() {
             for (const slot of slots) await destroy(slot);
+            await fence();
+            for (const presentation of presentations) destroyPresentation(presentation);
+            activePresentation = null;
             available.length = 0;
             legacyQueries = null;
         },

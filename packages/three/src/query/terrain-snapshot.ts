@@ -11,7 +11,7 @@ import {
   canDeviceReadback,
   createReadbackSlot,
   disposeReadbackSlot,
-  readStorageBufferInto,
+  readStorageBuffersInto,
 } from "../gpu/bufferReadback";
 import {
   buildTileElevationPyramid,
@@ -50,8 +50,9 @@ export interface TerrainSnapshotState {
   lastError: unknown;
   lastScheduledStampGen: number;
   lastScheduledContentKey?: object;
-  elevationReadback: ReadbackSlot;
-  boundsReadback: ReadbackSlot;
+  snapshotReadback: ReadbackSlot;
+  /** Potentially written prefixes, keyed by identity across front/back swaps. */
+  readbackWrittenElements: WeakMap<Float32Array, number>;
   /** Conservative per-tile elevation range pyramid for LOD bounds. */
   elevationPyramid: TileElevationPyramid;
 }
@@ -81,8 +82,8 @@ export function createTerrainSnapshotState(
     pending: null,
     lastError: null,
     lastScheduledStampGen: -1,
-    elevationReadback: createReadbackSlot(),
-    boundsReadback: createReadbackSlot(),
+    snapshotReadback: createReadbackSlot(),
+    readbackWrittenElements: new WeakMap(),
     elevationPyramid: createTileElevationPyramid(maxNodes, maxLevel),
   };
 }
@@ -194,33 +195,35 @@ export function triggerSnapshotReadback(
 
   if (useDeviceReadback) {
     const runDeviceReadback = async (): Promise<void> => {
-      state.backElevation.fill(0);
-      state.backTileBounds.fill(0);
-      // Both calls submit their copies synchronously before either map awaits.
-      // A subsequent compute submission therefore cannot split this pair.
-      const elevationCopy = readStorageBufferInto(
-        renderer,
+      const prepareTarget = (target: Float32Array, elements: number) => {
+        // Successful copies overwrite the entire active prefix. Only a previously
+        // written tail needs clearing. Unknown/replaced arrays may have been
+        // populated by a captured cache or the fallback path: be conservative.
+        const previous = state.readbackWrittenElements.get(target) ?? target.length;
+        if (elements < previous) target.fill(0, elements, previous);
+        // Mark before mapping: a failed multi-buffer readback may still have
+        // written one target, which must be cleared correctly by the next retry.
+        state.readbackWrittenElements.set(target, elements);
+      };
+      prepareTarget(state.backElevation, activeLeafCount * verticesPerNode);
+      prepareTarget(state.backTileBounds, boundsAttribute ? activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE : 0);
+      // One command buffer captures the pair before any subsequent compute
+      // submission, and one map makes both results available together.
+      const requests = [{
         attribute,
-        state.elevationReadback,
-        state.backElevation,
-        activeLeafCount * verticesPerNode,
-        "terrainElevationReadback",
+        target: state.backElevation,
+        elementCount: activeLeafCount * verticesPerNode,
+      }];
+      if (boundsAttribute) requests.push({
+        attribute: boundsAttribute,
+        target: state.backTileBounds,
+        elementCount: activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE,
+      });
+      const filled = await readStorageBuffersInto(
+        renderer, requests, state.snapshotReadback, "terrainSnapshotReadback",
       );
-      const boundsCopy = boundsAttribute
-        ? readStorageBufferInto(
-          renderer,
-          boundsAttribute,
-          state.boundsReadback,
-          state.backTileBounds,
-          activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE,
-          "terrainBoundsReadback",
-        )
-        : Promise.resolve(false);
-      const [elevationFilled, boundsFilled] = await Promise.all([elevationCopy, boundsCopy]);
-      if (!elevationFilled || (boundsAttribute && !boundsFilled)) {
-        throw new Error("Terrain snapshot source buffer is unavailable");
-      }
-      applySnapshot(boundsFilled);
+      if (!filled) throw new Error("Terrain snapshot source buffer is unavailable");
+      applySnapshot(Boolean(boundsAttribute));
     };
 
     state.pending = runDeviceReadback()
@@ -238,6 +241,7 @@ export function triggerSnapshotReadback(
     const data = new Float32Array(elevResult);
     state.backElevation.fill(0);
     state.backElevation.set(data.subarray(0, totalElements));
+    state.readbackWrittenElements.set(state.backElevation, Math.min(data.length, totalElements));
 
     let boundsFilled = false;
     if (boundsResult) {
@@ -245,6 +249,9 @@ export function triggerSnapshotReadback(
       state.backTileBounds.fill(0);
       state.backTileBounds.set(
         rawBounds.subarray(0, activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE),
+      );
+      state.readbackWrittenElements.set(
+        state.backTileBounds, Math.min(rawBounds.length, activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE),
       );
       boundsFilled = true;
     }
@@ -283,6 +290,5 @@ export function triggerSnapshotReadback(
 /** Destroy the GPU staging buffers held by the snapshot state. */
 export function disposeSnapshotReadback(state: TerrainSnapshotState): void {
   state.disposed = true;
-  disposeReadbackSlot(state.elevationReadback);
-  disposeReadbackSlot(state.boundsReadback);
+  disposeReadbackSlot(state.snapshotReadback);
 }

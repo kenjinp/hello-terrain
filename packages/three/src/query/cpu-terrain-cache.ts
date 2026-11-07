@@ -136,14 +136,21 @@ export function createCpuTerrainCache(
   shape.verticesPerNode = shape.edgeVertexCount * shape.edgeVertexCount;
   let totalElements = maxNodes * shape.verticesPerNode;
 
+  // Published snapshots need only their active samples. Allocate mutable
+  // readback capacity lazily if a caller later uses the captured cache as a producer.
+  const activeElements = capturedState
+    ? (capturedState.frontLeafCount || maxNodes) * shape.verticesPerNode
+    : totalElements;
   const state: TerrainSnapshotState = createTerrainSnapshotState(
     maxNodes,
     initialConfig.maxLevel,
-    totalElements,
+    activeElements,
   );
   if (capturedState) {
-    state.frontElevation.set(capturedState.frontElevation);
-    state.frontTileBounds.set(capturedState.frontTileBounds);
+    // Published tile indices address the independent active prefix.
+    const activeTiles = capturedState.frontLeafCount || maxNodes;
+    state.frontElevation.set(capturedState.frontElevation.subarray(0, activeTiles * shape.verticesPerNode));
+    state.frontTileBounds.set(capturedState.frontTileBounds.subarray(0, activeTiles * TILE_BOUNDS_FLOATS_PER_TILE));
     cloneSpatialIndex(state.frontIndex, capturedState.frontIndex);
     state.frontLeafCount = capturedState.frontLeafCount;
     state.globalRange = capturedState.globalRange && { ...capturedState.globalRange };
@@ -361,6 +368,12 @@ export function createCpuTerrainCache(
       activeLeafCount,
       contentKey,
     ) {
+      if (!state.disposed && !state.readbackPending && state.frontElevation.length < totalElements) {
+        const front = new Float32Array(totalElements);
+        front.set(state.frontElevation);
+        state.frontElevation = front;
+        state.backElevation = new Float32Array(totalElements);
+      }
       const capturedConfig = pendingConfig;
       const capturedSurfaceOps = pendingSurfaceOps;
       triggerSnapshotReadback(state, renderer, attribute, spatialIndex, boundsAttribute, {

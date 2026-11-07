@@ -1,3 +1,4 @@
+import { runPipelineBench } from './pipeline';
 import React, { useLayoutEffect, useMemo } from "react";
 import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
@@ -59,6 +60,7 @@ export type BrowserOptions = {
 declare global {
   interface Window {
     runGym: (options: BrowserOptions) => Promise<GymResult>;
+    runPipelineBench: typeof runPipelineBench;
   }
 }
 
@@ -814,6 +816,7 @@ async function runBrowser(options: BrowserOptions): Promise<GymResult> {
 
 function initialize() {
   window.runGym = runBrowser;
+  window.runPipelineBench = runPipelineBench;
   document.getElementById("root")!.innerHTML =
     "<p style='padding:16px'>Terrain gym ready. Run pnpm gym, or open a replay URL from a report.</p>";
   const params = new URLSearchParams(location.search);

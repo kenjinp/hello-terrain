@@ -81,23 +81,20 @@ function createAnchoredPosition(
         return options.positionNode;
     })();
     const scratch: Vec3 = cpuVec3.create();
-    return {
-        positionNode,
-        attribute,
-        update(nextCount: number) {
+    function prepare(nextCount: number, leafData: Int32Array = leafStorage.data) {
+        if (!Number.isInteger(nextCount) || nextCount < 0 || nextCount > capacity || leafData.length < nextCount * 4)
+            throw new Error('Invalid precision anchor count');
+        const nextAnchors = new Float64Array(nextCount * 3);
+        for (let i = 0; i < nextCount; i++) {
+            datum(leafData[i * 4]!, leafData[i * 4 + 1]!, leafData[i * 4 + 2]!, leafData[i * 4 + 3]!, scratch);
+            nextAnchors.set(scratch, i * 3);
+        }
+        return () => {
+            anchors.set(nextAnchors);
             count = nextCount;
-            for (let i = 0; i < count; i++) {
-                datum(
-                    leafStorage.data[i * 4]!,
-                    leafStorage.data[i * 4 + 1]!,
-                    leafStorage.data[i * 4 + 2]!,
-                    leafStorage.data[i * 4 + 3]!,
-                    scratch
-                );
-                anchors.set(scratch, i * 3);
-            }
-        },
-    };
+        };
+    }
+    return { positionNode, attribute, prepare, update(nextCount: number) { prepare(nextCount)(); } };
 }
 
 export function createSpherePrecisionPosition(
