@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run ../../packages/three/gym --root ../..",
+    "test": "vitest run packages/three/gym apps/gym/src --root ../..",
     "browser:install": "playwright install chromium --no-shell"
   },
   "dependencies": {

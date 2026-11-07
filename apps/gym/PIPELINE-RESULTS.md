@@ -36,6 +36,31 @@ These are a fresh controlled comparison from November 7, including the allocatio
 dispatch-batching and stable-presentation follow-ups. They supersede earlier comparisons; do not
 compare candidate results across the two sessions without their matched baselines.
 
+## Separate scheduling comparison
+
+The optional `publication-retirement-fence` mode submits the draw synchronously
+at publication, overlaps it with normal query readback, and reuses the runtime's
+real post-draw queue fence. It still waits for both draw completion and matching
+fresh queries. The original baseline and candidate used the same mode and the same
+three-block/sample conditions above. These results are not pooled with serial runs.
+
+| Segments / workload | Full wall median, baseline to candidate | Reduction | Candidate p95 / p99 |
+| --- | --- | --- | --- |
+| 13 / LOD | 9.50 to 3.70 ms | 61.1% | 4.60 / 4.80 ms |
+| 13 / edit | 9.50 to 3.70 ms | 61.1% | 4.40 / 4.70 ms |
+| 61 / LOD | 11.70 to 3.70 ms | 68.4% | 4.70 / 5.00 ms |
+| 61 / edit | 11.60 to 3.50 ms | 69.8% | 4.40 / 4.60 ms |
+
+All 294 additional matched samples had identical pixel/geometry checks; all 588
+baseline/candidate samples recorded a valid post-draw fence. Draw submission
+returned at roughly 0.4–0.6 ms, while the recorded fence took another 2.6–2.9 ms
+(medians across measured samples). Full latency remains above 2 ms.
+
+The 0.22–0.27 ms compute-to-draw GPU envelope excludes possible later query
+completion and is not the full pipeline. A separate exploratory check with
+installed Edge 157 also remained at 3.6–4.2 ms full-wall medians; it is not included
+in the controlled Chrome comparison. See [scheduling results](pipeline-overlap-results.json).
+
 ## Changes and iteration
 
 1. Start coherent snapshot acquisition while previous publication retirement is

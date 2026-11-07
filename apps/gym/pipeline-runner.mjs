@@ -44,6 +44,7 @@ async function main() {
         url: { type: 'string' }, executable: { type: 'string' }, out: { type: 'string' },
         blocks: { type: 'string', default: '3' }, samples: { type: 'string', default: '20' },
         warmup: { type: 'string', default: '4' }, segments: { type: 'string', default: 'both' },
+        scheduling: { type: 'string', default: 'serial' },
         'timeout-ms': { type: 'string', default: '180000' },
         width: { type: 'string', default: '640' }, height: { type: 'string', default: '480' },
         label: { type: 'string', default: 'unlabeled' }, 'source-hash': { type: 'string' },
@@ -55,7 +56,7 @@ async function main() {
   [--executable INSTALLED_BROWSER] [--blocks 3] [--samples 20] [--warmup 4]
   [--segments 13|61|both] [--width 640] [--height 480] [--label baseline]
   [--source-hash VERIFIED_BUILD_SOURCE_HASH] [--browser-arg=FLAG] [--headed]
-  [--timeout-ms 180000]
+  [--timeout-ms 180000] [--scheduling serial|publication-overlap|publication-retirement-fence]
 Requires an already-running production server exporting window.runPipelineBench.
 Uses installed playwright; TERRAIN_PLAYWRIGHT_MODULE may name an absolute installed
 playwright or playwright-core package directory/entry (useful on Windows).
@@ -74,8 +75,10 @@ A successful exit does not mean the workload meets the 2 ms budget.`);
     };
     const config = { blocks: number('blocks', 1), samples: number('samples', 1),
         warmup: number('warmup', 0), timeoutMs: number('timeout-ms', 1), width: number('width', 1), height: number('height', 1),
+        scheduling: values.scheduling,
         segments: values.segments === 'both' ? [13, 61] : [Number(values.segments)] };
     if (!config.segments.every(v => v === 13 || v === 61)) throw new Error('--segments must be 13, 61, or both');
+    if (!['serial', 'publication-overlap', 'publication-retirement-fence'].includes(config.scheduling)) throw new Error('--scheduling must be serial, publication-overlap, or publication-retirement-fence');
     const modulePath = process.env.TERRAIN_PLAYWRIGHT_MODULE;
     if (modulePath && !isAbsolute(modulePath)) throw new Error('TERRAIN_PLAYWRIGHT_MODULE must be absolute');
     const require = createRequire(import.meta.url);
@@ -123,7 +126,11 @@ A successful exit does not mean the workload meets the 2 ms budget.`);
                         hardwareConcurrency: navigator.hardwareConcurrency, devicePixelRatio, crossOriginIsolated }));
                     const startedAt = new Date().toISOString();
                     const result = await bounded(page.evaluate(options => window.runPipelineBench(options),
-                        { segments: segment, width: config.width, height: config.height, samples: config.samples, warmup: config.warmup }), config.timeoutMs);
+                        { segments: segment, width: config.width, height: config.height, samples: config.samples, warmup: config.warmup, scheduling: config.scheduling }), config.timeoutMs);
+                    // Older serial builds may omit this field; an overlap
+                    // request must never silently measure an older serial server.
+                    if ((result.config?.scheduling ?? 'serial') !== config.scheduling)
+                        throw new Error('Served harness did not execute requested scheduling mode');
                     const record = { block: block + 1, segments: segment, startedAt,
                         completedAt: new Date().toISOString(), environment, servedScripts: await Promise.all(scriptRequests),
                         pageErrors, consoleErrors, result };
@@ -155,9 +162,10 @@ A successful exit does not mean the workload meets the 2 ms budget.`);
         report.completedAt = new Date().toISOString();
         await save('run.json', report);
         const lines = ['# Complete terrain pipeline benchmark', '',
-            `Label: ${report.label}`, `Browser: ${report.browser ?? 'unavailable'}`,
+            `Label: ${report.label}`, `Scheduling: ${config.scheduling}`, `Browser: ${report.browser ?? 'unavailable'}`,
             `Resolution: ${config.width} x ${config.height}; samples per scenario: ${config.samples}; warmup: ${config.warmup}`, '',
-            'Times in milliseconds; each block has its own distribution. No pass-duration sums or cold/warm pooling.', ''];
+            'Times in milliseconds; each block has its own distribution. No pass-duration sums or cold/warm pooling.',
+            'Full wall time includes both completed update/readback and draw. In publication scheduling modes GPU envelope ends at draw and may exclude later readback/query completion; it is not the complete-pipeline latency.', ''];
         for (const run of report.runs) for (const [kind, summary] of Object.entries(run.summary)) {
             lines.push(`## Block ${run.block}, segments ${run.segments}, ${kind}`);
             for (const metric of ['wallMs', 'updateMs', 'gpuEnvelopeMs']) {

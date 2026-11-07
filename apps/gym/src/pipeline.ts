@@ -1,9 +1,11 @@
+import { observePostDrawFence } from './pipelineFence';
 import { MeshBasicNodeMaterial, NoToneMapping, PerspectiveCamera, RenderTarget, Scene, WebGPURenderer } from 'three/webgpu';
 import { normalWorld, vec4 } from 'three/tsl';
 import { createTerrain } from '../../../packages/three/src/runtime/three';
 import { createTerrainBinding } from '../../../packages/three/src/runtime/binding';
 import { createFlatTopology } from '../../../packages/three/src/quadtree/topology/flat';
 import { terrainTasks } from '../../../packages/three/src/tasks/graph';
+import type { TerrainRevision } from '../../../packages/three/src/runtime/runtime';
 import type { ElevationCallback } from '../../../packages/three/src/tsl/elevation';
 
 export interface PipelineOptions {
@@ -12,6 +14,7 @@ export interface PipelineOptions {
     height?: number;
     warmup?: number;
     samples?: number;
+    scheduling?: 'serial' | 'publication-overlap' | 'publication-retirement-fence';
 }
 
 /** A timestamp envelope, not the sum of isolated pass durations.
@@ -75,8 +78,10 @@ function checksum(values: ArrayBufferView) {
 
 export async function runPipelineBench(options: PipelineOptions = {}) {
     const config = { segments: options.segments ?? 61, width: options.width ?? 640,
-        height: options.height ?? 480, warmup: options.warmup ?? 4, samples: options.samples ?? 20 };
+        height: options.height ?? 480, warmup: options.warmup ?? 4, samples: options.samples ?? 20,
+        scheduling: options.scheduling ?? 'serial' };
     if (![13, 61].includes(config.segments) || ![config.width, config.height, config.samples].every(v => Number.isInteger(v) && v > 0)
+        || !['serial', 'publication-overlap', 'publication-retirement-fence'].includes(config.scheduling)
         || !Number.isInteger(config.warmup) || config.warmup < 0) throw new Error('Invalid pipeline benchmark options');
     const setupBegin = performance.now();
     const renderer = new WebGPURenderer({ antialias: false });
@@ -118,21 +123,74 @@ export async function runPipelineBench(options: PipelineOptions = {}) {
         await device.queue.onSubmittedWorkDone();
         const before = terrain.getStatus();
         const envelope = timestampEnvelope(device);
-        let wallMs: number, updateMs: number;
+        let wallMs: number, updateMs: number, drawCompletionMs: number | null = null;
+        let drawnRevision: TerrainRevision | null = null;
+        let drawCount = 0, start = 0;
+        type DrawOutcome = { status: 'fulfilled' } | { status: 'rejected'; reason: unknown };
+        let draw: Promise<DrawOutcome> | undefined;
+        const retirementFence = config.scheduling === 'publication-retirement-fence'
+            ? observePostDrawFence(device.queue, () => performance.now() - start) : undefined;
+        // Binding subscribed at construction, before this observer. Presentation
+        // commit and binding synchronization therefore precede the draw.
+        const unsubscribe = config.scheduling !== 'serial'
+            ? terrain.subscribe(() => {
+                const revision = terrain.getStatus().renderRevision;
+                if (draw || !revision || revision.productionVersion === before.renderRevision?.productionVersion) return;
+                drawnRevision = revision;
+                drawCount++;
+                if (retirementFence) {
+                    try {
+                        envelope.startRender();
+                        retirementFence.draw(() => renderer.render(scene, camera), !before.renderRevision);
+                        draw = Promise.resolve({ status: 'fulfilled' });
+                    } catch (reason) {
+                        // Publication must not inherit a subscriber exception.
+                        draw = Promise.resolve({ status: 'rejected', reason });
+                    }
+                    return;
+                }
+                // Never throw/reject into synchronous runtime publication. Attach
+                // a rejection handler immediately, then drain this work below.
+                draw = (async () => {
+                    envelope.startRender();
+                    await renderer.renderAsync(scene, camera);
+                    await device.queue.onSubmittedWorkDone();
+                    drawCompletionMs = performance.now() - start;
+                })().then<DrawOutcome, DrawOutcome>(
+                    () => ({ status: 'fulfilled' }),
+                    reason => ({ status: 'rejected', reason }),
+                );
+            })
+            : () => {};
         try {
-            const start = performance.now();
+            start = performance.now();
             if (kind === 'edit') {
                 const index = iteration % 2;
                 offset = index ? 5 : 2;
                 terrain.configure({ elevation: fields[index] });
             } else pose(kind === 'cold' || iteration % 2 === 1);
             const update = await terrain.update(binding.viewFromCamera(camera, config.height));
-            if (update.status === 'error') throw update.error;
             updateMs = performance.now() - start;
-            envelope.startRender();
-            await renderer.renderAsync(scene, camera);
-            await device.queue.onSubmittedWorkDone();
+            if (config.scheduling === 'serial') {
+                if (update.status === 'error') throw update.error;
+                drawnRevision = terrain.getStatus().renderRevision;
+                drawCount++;
+                envelope.startRender();
+                await renderer.renderAsync(scene, camera);
+                await device.queue.onSubmittedWorkDone();
+                drawCompletionMs = performance.now() - start;
+            } else {
+                // Rendering has already started from publication while update
+                // awaited its normal snapshot. Both must finish for full wall time.
+                const outcome = draw ? await draw : undefined;
+                if (update.status === 'error') throw update.error;
+                if (!outcome) throw new Error('Overlap sample had no new render publication');
+                if (outcome.status === 'rejected') throw outcome.reason;
+                if (retirementFence) drawCompletionMs = await retirementFence.wait();
+            }
             wallMs = performance.now() - start;
+            unsubscribe();
+            retirementFence?.restore();
             envelope.restore();
             const timing = await envelope.result();
             const status = terrain.getStatus();
@@ -145,6 +203,13 @@ export async function runPipelineBench(options: PipelineOptions = {}) {
             const layout = JSON.stringify(tiles);
             const revision = status.renderRevision;
             const queryRevision = status.queryRevision;
+            if (drawCount !== 1 || !drawnRevision || !revision || !queryRevision ||
+                drawnRevision.instanceId !== revision.instanceId ||
+                drawnRevision.instanceId !== queryRevision.instanceId ||
+                drawnRevision.productionVersion !== revision.productionVersion ||
+                drawnRevision.productionVersion !== queryRevision.productionVersion ||
+                drawnRevision.editVersion !== status.acceptedEditVersion)
+                failures.push(`${kind}/${iteration}: drawn/render/query revision mismatch`);
             const changed = revision?.productionVersion !== before.renderRevision?.productionVersion;
             if (!changed || !timing.computePasses) failures.push(`${kind}/${iteration}: no actual production/compute`);
             if (kind === 'lod' && layout === previousLayout) failures.push(`lod/${iteration}: unchanged tile selection`);
@@ -159,16 +224,28 @@ export async function runPipelineBench(options: PipelineOptions = {}) {
             });
             const pixels = await renderer.readRenderTargetPixelsAsync(target, 0, 0, config.width, config.height);
             const geometry = binding.mesh.geometry;
-            samples.push({ kind, iteration, phase, updateStatus: update.status, wallMs, updateMs, ...timing,
+            samples.push({ kind, iteration, phase, updateStatus: update.status, wallMs, updateMs, drawCompletionMs, drawnRevision, drawCount, completionProof: retirementFence?.proof ?? null, ...timing,
                 leaves: leaves.count, tiles, layoutChanged: layout !== previousLayout,
                 renderRevision: revision, queryRevision, renderedInstances: binding.mesh.count,
                 geometry: { verticesPerTile: geometry.attributes.position?.count, indicesPerTile: geometry.index?.count },
                 probes, pixelChecksum: checksum(pixels), pixelBytes: pixels.byteLength });
             previousLayout = layout;
         } finally {
-            envelope.restore();
-            await device.queue.onSubmittedWorkDone();
-            envelope.dispose();
+            unsubscribe();
+            // Keep instrumentation/resources alive until an overlapping draw is
+            // drained even if update, validation, or diagnostics fail.
+            try {
+                await draw;
+                await retirementFence?.drain();
+            } finally {
+                retirementFence?.restore();
+                envelope.restore();
+                try {
+                    await device.queue.onSubmittedWorkDone();
+                } finally {
+                    envelope.dispose();
+                }
+            }
         }
     }
     try {
@@ -186,9 +263,12 @@ export async function runPipelineBench(options: PipelineOptions = {}) {
                 material: 'geometric normal diagnostic', shape: 'flat', analytic: '0.03*x + 0.02*z + offset',
                 cameraNear: [64, 60, 96], cameraFar: [-64, 1100, 1200], editOffsets: [2, 5] },
             definitions: {
-                wallMs: 'Before camera/config update through awaited update (including on-change query publication), current terrain render and queue completion; excludes diagnostic timestamp/pixel readback.',
+                wallMs: 'Before camera/config update through BOTH awaited update (including default query readback/publication) and current draw queue completion. Serial draws after update; publication-overlap starts drawing at new render publication. Excludes diagnostic timestamp/pixel readback.',
+                drawCompletionMs: 'Input change through completion of the current draw queue fence. May precede update/query completion in publication-overlap mode.',
+                scheduling: 'Serial is the unchanged scheduling baseline. Publication-overlap uses async render plus an external queue fence. Publication-retirement-fence submits initialized renderer.render synchronously inside publication, then observes/awaits the existing runtime post-draw retirement onSubmittedWorkDone promise plus normal update/readback. Cold production has no predecessor and requests one explicit post-draw fence. A missing/failed post-draw fence fails the sample; this relies on the current runtime retirement contract, NOT generic mapAsync completion. Do not pool modes.',
+                completionProof: 'Retirement-fence mode requires queue.submit during synchronous draw, render return before an observed fence call, successful fence completion, and matching drawn/render/query revision. WebGPU onSubmittedWorkDone completes preceding queue work: https://www.w3.org/TR/webgpu/#dom-gpuqueue-onsubmittedworkdone . mapAsync alone does not prove unrelated draw completion.',
                 updateMs: 'Camera/config update through awaited update, including default production CPU readback.',
-                gpuEnvelopeMs: 'First actual compute pass start to final actual render pass end on device timeline, including inter-submission CPU/readback idle gaps; null if unsupported. Not sum of pass costs.',
+                gpuEnvelopeMs: 'First actual compute pass start to final actual render pass end on device timeline, including inter-submission CPU/readback idle gaps; null if unsupported. Not sum of pass costs. In publication scheduling modes, query readback/publication may finish AFTER draw end: this is then not a complete-pipeline interval; wallMs remains authoritative.',
                 coldSetupAndFirstResultMs: 'Renderer/terrain setup plus cold production/render and diagnostics. Cold is not pooled with warmed samples.',
                 limitations: 'Single bounded flat analytic terrain with diagnostic shading, no application UI/shadows/postprocessing. Pixel checksums are comparison evidence, not standalone fidelity proof. Timestamp instrumentation has overhead.',
             },

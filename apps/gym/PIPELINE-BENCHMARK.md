@@ -124,3 +124,27 @@ Exit codes: 0 for completed passing fixture checks, 1 for correctness/page/conso
 2 for harness failures or unsupported primary GPU evidence (including unavailable
 browser/WebGPU, timestamp support, or adapter identity). Detailed raw results
 remain necessary to interpret unsupported optional timestamps and performance.
+
+## Scheduling modes
+
+`--scheduling serial` is the default and retains the original sequence: update
+through fresh query publication, then render and await draw completion.
+
+`--scheduling publication-overlap` starts a draw when its new render revision is
+published, while default query readback continues. Full wall time waits for both
+update and an explicit draw queue fence.
+
+`--scheduling publication-retirement-fence` draws synchronously from that same
+publication callback and observes the runtime's existing retirement queue fence.
+The observer verifies a real draw submission, then a later `onSubmittedWorkDone()`
+call and successful completion. Warm samples issue no duplicate fence; cold
+samples explicitly request one because there is no previous production to retire.
+Normal update/readback still completes, and drawn/render/query revisions must match.
+Missing or failed completion proof fails the sample. This mode depends on the
+current runtime retirement contract and is not a generic `mapAsync()` inference.
+
+Compare baseline and candidate with the same scheduling mode. In either overlap
+mode, `gpuEnvelopeMs` ends at the final draw and may precede readback/query
+completion. **Use full `wallMs` for complete-pipeline latency.** Raw samples include
+`drawCompletionMs`, revisions, draw count, and retirement-fence proof timestamps.
+All modes retain compute, draw, default CPU readback, and fidelity checks.
