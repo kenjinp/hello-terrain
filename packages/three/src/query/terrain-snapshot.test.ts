@@ -118,14 +118,14 @@ it("clears only stale tails for each physical buffer across grow/shrink swaps", 
   // First buffer previously held six values, regardless of last frame's two.
   expect(fillFirst.mock.calls).toEqual([[0, 3, 6], [7, 0, 3]]);
   expect([...f.state.frontElevation]).toEqual([7, 7, 7, 0, 0, 0, 0, 0]);
-  expect([...f.state.frontTileBounds]).toEqual([...new Array(12).fill(7), ...new Array(20).fill(0)]);
+  expect([...f.state.frontTileBounds]).toEqual([...Array.from({ length: 12 }, () => 7), ...Array.from({ length: 20 }, () => 0)]);
   fillSecond.mockClear();
   await f.trigger(5);
   expect(fillSecond.mock.calls).toEqual([[7, 0, 5]]);
   expect([...f.state.frontElevation]).toEqual([7, 7, 7, 7, 7, 0, 0, 0]);
   await f.trigger(0);
-  expect([...f.state.frontElevation]).toEqual(new Array(8).fill(0));
-  expect([...f.state.frontTileBounds]).toEqual(new Array(32).fill(0));
+  expect([...f.state.frontElevation]).toEqual(Array.from({ length: 8 }, () => 0));
+  expect([...f.state.frontTileBounds]).toEqual(Array.from({ length: 32 }, () => 0));
 });
 
 it("clears partial writes after failed batched readback without changing the published snapshot", async () => {
@@ -141,7 +141,7 @@ it("clears partial writes after failed batched readback without changing the pub
   expect(f.state.generation).toBe(1);
   await f.trigger(1);
   expect([...f.state.frontElevation]).toEqual([7, 0, 0, 0, 0, 0, 0, 0]);
-  expect([...f.state.frontTileBounds]).toEqual([7, 7, 7, 7, ...new Array(28).fill(0)]);
+  expect([...f.state.frontTileBounds]).toEqual([7, 7, 7, 7, ...Array.from({ length: 28 }, () => 0)]);
 });
 
 it("tracks bounds independently when optional bounds prevent a front/back swap", async () => {
@@ -149,9 +149,9 @@ it("tracks bounds independently when optional bounds prevent a front/back swap",
   await f.trigger(5);
   await f.trigger(4);
   await f.trigger(2, false);
-  expect([...f.state.backTileBounds]).toEqual(new Array(32).fill(0));
+  expect([...f.state.backTileBounds]).toEqual(Array.from({ length: 32 }, () => 0));
   await f.trigger(1);
-  expect([...f.state.frontTileBounds]).toEqual([7, 7, 7, 7, ...new Array(28).fill(0)]);
+  expect([...f.state.frontTileBounds]).toEqual([7, 7, 7, 7, ...Array.from({ length: 28 }, () => 0)]);
   expect(f.state.globalRange).toEqual({ min: 7, max: 7 });
 });
 
@@ -160,7 +160,7 @@ it("tracks full fallback results before reusing their arrays for active-only dev
   f.capability.mockReturnValue(false);
   Object.assign(f.renderer, { getArrayBufferAsync: vi.fn(async () => new Float32Array(8).fill(9).buffer) });
   await f.trigger(1, false);
-  expect([...f.state.frontElevation]).toEqual(new Array(8).fill(9));
+  expect([...f.state.frontElevation]).toEqual(Array.from({ length: 8 }, () => 9));
   f.capability.mockReturnValue(true);
   await f.trigger(2, false);
   await f.trigger(1, false);
@@ -174,6 +174,6 @@ it("handles later replacement arrays conservatively and retains full-capacity re
   await f.trigger(1);
   expect([...f.state.frontElevation]).toEqual([7, 0, 0, 0, 0, 0, 0, 0]);
   await f.trigger(8);
-  expect([...f.state.frontElevation]).toEqual(new Array(8).fill(7));
+  expect([...f.state.frontElevation]).toEqual(Array.from({ length: 8 }, () => 7));
   expect(f.state.frontElevation.length).toBe(8);
 });
