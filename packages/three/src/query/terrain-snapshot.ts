@@ -51,6 +51,8 @@ export interface TerrainSnapshotState {
   lastScheduledStampGen: number;
   lastScheduledContentKey?: object;
   snapshotReadback: ReadbackSlot;
+  /** Potentially written prefixes, keyed by identity across front/back swaps. */
+  readbackWrittenElements: WeakMap<Float32Array, number>;
   /** Conservative per-tile elevation range pyramid for LOD bounds. */
   elevationPyramid: TileElevationPyramid;
 }
@@ -81,6 +83,7 @@ export function createTerrainSnapshotState(
     lastError: null,
     lastScheduledStampGen: -1,
     snapshotReadback: createReadbackSlot(),
+    readbackWrittenElements: new WeakMap(),
     elevationPyramid: createTileElevationPyramid(maxNodes, maxLevel),
   };
 }
@@ -192,8 +195,18 @@ export function triggerSnapshotReadback(
 
   if (useDeviceReadback) {
     const runDeviceReadback = async (): Promise<void> => {
-      state.backElevation.fill(0);
-      state.backTileBounds.fill(0);
+      const prepareTarget = (target: Float32Array, elements: number) => {
+        // Successful copies overwrite the entire active prefix. Only a previously
+        // written tail needs clearing. Unknown/replaced arrays may have been
+        // populated by a captured cache or the fallback path: be conservative.
+        const previous = state.readbackWrittenElements.get(target) ?? target.length;
+        if (elements < previous) target.fill(0, elements, previous);
+        // Mark before mapping: a failed multi-buffer readback may still have
+        // written one target, which must be cleared correctly by the next retry.
+        state.readbackWrittenElements.set(target, elements);
+      };
+      prepareTarget(state.backElevation, activeLeafCount * verticesPerNode);
+      prepareTarget(state.backTileBounds, boundsAttribute ? activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE : 0);
       // One command buffer captures the pair before any subsequent compute
       // submission, and one map makes both results available together.
       const requests = [{
@@ -228,6 +241,7 @@ export function triggerSnapshotReadback(
     const data = new Float32Array(elevResult);
     state.backElevation.fill(0);
     state.backElevation.set(data.subarray(0, totalElements));
+    state.readbackWrittenElements.set(state.backElevation, Math.min(data.length, totalElements));
 
     let boundsFilled = false;
     if (boundsResult) {
@@ -235,6 +249,9 @@ export function triggerSnapshotReadback(
       state.backTileBounds.fill(0);
       state.backTileBounds.set(
         rawBounds.subarray(0, activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE),
+      );
+      state.readbackWrittenElements.set(
+        state.backTileBounds, Math.min(rawBounds.length, activeLeafCount * TILE_BOUNDS_FLOATS_PER_TILE),
       );
       boundsFilled = true;
     }

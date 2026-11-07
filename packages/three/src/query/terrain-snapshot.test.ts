@@ -1,4 +1,6 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
+import * as readback from "../gpu/bufferReadback";
+afterEach(() => vi.restoreAllMocks());
 import type { StorageBufferAttribute, WebGPURenderer } from "three/webgpu";
 import { createSpatialIndex } from "../quadtree";
 import {
@@ -79,4 +81,99 @@ it("submits elevation and zero-valued bounds copies together before either resol
   await Promise.resolve(); expect(state.hasSnapshot).toBe(false);
   pending[0].resolve(new Float32Array([0]).buffer); await state.pending;
   expect(state.hasSnapshot).toBe(true); expect(state.globalRange).toEqual({ min: 0, max: 0 });
+});
+
+
+function dirtyTailFixture() {
+  const state = createTerrainSnapshotState(8, 0, 8);
+  const index = createSpatialIndex(8);
+  const renderer = {} as WebGPURenderer;
+  const elevation = {} as StorageBufferAttribute;
+  const bounds = {} as StorageBufferAttribute;
+  const capability = vi.spyOn(readback, "canDeviceReadback").mockReturnValue(true);
+  const batch = vi.spyOn(readback, "readStorageBuffersInto").mockImplementation(async (_, requests) => {
+    for (const request of requests) request.target.fill(7, 0, request.elementCount);
+    return true;
+  });
+  const trigger = (count: number, withBounds = true) => {
+    triggerSnapshotReadback(state, renderer, elevation, index, withBounds ? bounds : undefined, {
+      activeLeafCount: count, totalElements: 8, verticesPerNode: 1,
+      elevationScale: 1, originY: 0, contentKey: {},
+    });
+    return state.pending;
+  };
+  return { state, trigger, batch, capability, renderer };
+}
+
+it("clears only stale tails for each physical buffer across grow/shrink swaps", async () => {
+  const f = dirtyTailFixture();
+  const first = f.state.backElevation;
+  const second = f.state.frontElevation;
+  const fillFirst = vi.spyOn(first, "fill");
+  const fillSecond = vi.spyOn(second, "fill");
+  await f.trigger(6);
+  await f.trigger(2);
+  fillFirst.mockClear();
+  await f.trigger(3);
+  // First buffer previously held six values, regardless of last frame's two.
+  expect(fillFirst.mock.calls).toEqual([[0, 3, 6], [7, 0, 3]]);
+  expect([...f.state.frontElevation]).toEqual([7, 7, 7, 0, 0, 0, 0, 0]);
+  expect([...f.state.frontTileBounds]).toEqual([...new Array(12).fill(7), ...new Array(20).fill(0)]);
+  fillSecond.mockClear();
+  await f.trigger(5);
+  expect(fillSecond.mock.calls).toEqual([[7, 0, 5]]);
+  expect([...f.state.frontElevation]).toEqual([7, 7, 7, 7, 7, 0, 0, 0]);
+  await f.trigger(0);
+  expect([...f.state.frontElevation]).toEqual(new Array(8).fill(0));
+  expect([...f.state.frontTileBounds]).toEqual(new Array(32).fill(0));
+});
+
+it("clears partial writes after failed batched readback without changing the published snapshot", async () => {
+  const f = dirtyTailFixture();
+  await f.trigger(2);
+  const published = f.state.frontElevation;
+  f.batch.mockImplementationOnce(async (_, requests) => {
+    requests[0].target.fill(9, 0, requests[0].elementCount);
+    throw new Error("second map failed");
+  });
+  await f.trigger(7);
+  expect(f.state.frontElevation).toBe(published);
+  expect(f.state.generation).toBe(1);
+  await f.trigger(1);
+  expect([...f.state.frontElevation]).toEqual([7, 0, 0, 0, 0, 0, 0, 0]);
+  expect([...f.state.frontTileBounds]).toEqual([7, 7, 7, 7, ...new Array(28).fill(0)]);
+});
+
+it("tracks bounds independently when optional bounds prevent a front/back swap", async () => {
+  const f = dirtyTailFixture();
+  await f.trigger(5);
+  await f.trigger(4);
+  await f.trigger(2, false);
+  expect([...f.state.backTileBounds]).toEqual(new Array(32).fill(0));
+  await f.trigger(1);
+  expect([...f.state.frontTileBounds]).toEqual([7, 7, 7, 7, ...new Array(28).fill(0)]);
+  expect(f.state.globalRange).toEqual({ min: 7, max: 7 });
+});
+
+it("tracks full fallback results before reusing their arrays for active-only device readback", async () => {
+  const f = dirtyTailFixture();
+  f.capability.mockReturnValue(false);
+  Object.assign(f.renderer, { getArrayBufferAsync: vi.fn(async () => new Float32Array(8).fill(9).buffer) });
+  await f.trigger(1, false);
+  expect([...f.state.frontElevation]).toEqual(new Array(8).fill(9));
+  f.capability.mockReturnValue(true);
+  await f.trigger(2, false);
+  await f.trigger(1, false);
+  expect([...f.state.frontElevation]).toEqual([7, 0, 0, 0, 0, 0, 0, 0]);
+});
+
+it("handles later replacement arrays conservatively and retains full-capacity readback", async () => {
+  const f = dirtyTailFixture();
+  await f.trigger(2);
+  f.state.backElevation = new Float32Array(8).fill(9);
+  await f.trigger(1);
+  expect([...f.state.frontElevation]).toEqual([7, 0, 0, 0, 0, 0, 0, 0]);
+  await f.trigger(8);
+  expect([...f.state.frontElevation]).toEqual(new Array(8).fill(7));
+  expect(f.state.frontElevation.length).toBe(8);
 });

@@ -20,10 +20,10 @@ the median of the three block p95 values, not a pooled percentile.
 
 | Segments / workload | Wall median, baseline to candidate | Reduction | Wall p95 | GPU envelope median |
 | --- | --- | --- | --- | --- |
-| 13 / LOD | 14.60 to 10.90 ms | 25.3% | 16.10 to 12.60 ms | 10.73 to 7.02 ms |
-| 13 / edit | 13.50 to 10.40 ms | 23.0% | 15.80 to 11.80 ms | 10.53 to 7.03 ms |
-| 61 / LOD | 16.90 to 12.20 ms | 27.8% | 18.90 to 13.50 ms | 12.77 to 8.13 ms |
-| 61 / edit | 16.80 to 12.00 ms | 28.6% | 18.40 to 13.20 ms | 13.05 to 8.57 ms |
+| 13 / LOD | 13.00 to 8.30 ms | 36.2% | 14.20 to 10.50 ms | 9.31 to 5.30 ms |
+| 13 / edit | 12.60 to 9.30 ms | 26.2% | 13.70 to 10.30 ms | 9.46 to 5.90 ms |
+| 61 / LOD | 14.70 to 9.40 ms | 36.1% | 16.40 to 11.10 ms | 11.29 to 5.72 ms |
+| 61 / edit | 14.90 to 9.30 ms | 37.6% | 16.50 to 10.80 ms | 11.41 to 6.06 ms |
 
 Wall latency starts before the actual configuration/view update and includes
 production compute, coherent default CPU readback/publication, terrain render,
@@ -32,11 +32,9 @@ last terrain draw across real submissions. This includes idle gaps between
 submissions, and is **not summed GPU busy time**. Diagnostic timestamp and pixel
 readback are outside the measured interval. No CPU/GPU times are added together.
 
-A final single-block verification after adding the allocation-limit compatibility
-fallback measured wall medians of 10.30/10.30 ms (13-segment LOD/edit) and
-12.10/12.70 ms (61-segment LOD/edit), with all fidelity assertions passing. Its
-p99 values also fail the 2 ms budget. This run is not substituted into the
-interleaved comparison.
+These are a fresh controlled comparison from November 7, including the allocation
+and dispatch-batching follow-up. They supersede the November 6 comparison; do not
+compare candidate results across the two sessions without their matched baselines.
 
 ## Changes and iteration
 
@@ -46,19 +44,33 @@ interleaved comparison.
 2. Batch elevation and bounds copies into a pooled staging buffer and one map.
    Respect device allocation limits, falling back to independently mapped buffers
    when the active payload cannot fit one allocation.
-3. Copy only active prefixes into independent, full-capacity CPU snapshots.
-   Preserve capacity, zero tails, retention, and later supported readback.
+3. Store only active elevation samples in independent CPU snapshots. Lazily
+   expand to full capacity if a captured cache is later used for readback.
+   Clear only previously written stale tails, tracking physical arrays across swaps.
+4. Submit default elevation, bounds, and terrain-field kernels as three ordered
+   dispatches in one compute pass/submission. No shader fusion. Custom pipeline
+   callbacks retain their existing execution path.
 
 These target synchronization and CPU transfer overhead rather than terrain shader
-quality. Further gains require investigation of the remaining complete-path
-latency; the evidence does not establish a particular unmeasured bottleneck.
+quality. A separate diagnostic run on the previous PR commit `ea255916` observed one
+shader-node-builder rebuild per measured publication (2.1–2.5 ms CPU), 3.0–3.4 ms
+readback mapping waits, and 2.8–3.4 ms final queue-completion waits. Actual compute
+passes totalled roughly 0.008–0.016 ms and render passes 0.003–0.029 ms. These
+extra-instrumented runs diagnose costs; they are not substituted into the
+controlled comparison, and overlapping stage times must not be added together.
+
+Avoiding repeated shader setup likely requires stable presentation resources
+separate from rotating production slots, while retaining custom material identity,
+ordered GPU copies and matching query revisions. That architecture is not included
+in this change. Browser scheduling and readback latency remain part of the measured
+complete path.
 
 ## Correctness and scope
 
 - All 294 matched baseline/candidate samples (including warmup/cold) had identical
   pixel checksums, tile/geometry counts, rendered instances, and leaf layouts.
   Analytic query and matching publication-revision checks passed.
-- Final hardware gym run: all nine scenarios passed, 4,546 assertions, including
+- Final hardware gym run: all nine scenarios passed, 4,549 assertions, including
   flat edits/LOD/nearest, isolation, sphere seams, torus wrap, skirts, materials,
   and Earth precision.
 - Full workspace tests and typecheck passed. Lint passed with nine existing

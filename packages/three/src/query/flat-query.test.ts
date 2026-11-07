@@ -68,11 +68,13 @@ it("copies only active snapshot samples while retaining independent query and re
     rootSize: 16, originX: 0, originY: 0, originZ: 0,
     innerTileSegments: segments, elevationScale: 1, maxLevel: 0, radius: 1,
   }, null, state);
+  const destinations = set.mock.contexts.map(value => (value as Float32Array).length);
   const copied = set.mock.calls.filter(([source]) =>
     source instanceof Float32Array && source.buffer === state.frontElevation.buffer);
   set.mockRestore();
   expect(copied).toHaveLength(1);
   expect(copied[0][0]).toHaveLength(vertices);
+  expect(destinations[0]).toBe(vertices);
   state.frontElevation.fill(9);
   expect(cache.getElevation(0, 0)).toBe(2);
   const data = new Float32Array(maxNodes * vertices).fill(7);
@@ -82,4 +84,29 @@ it("copies only active snapshot samples while retaining independent query and re
   expect(cache.getElevation(0, 0)).toBe(7);
   expect(state.frontElevation[0]).toBe(9);
   cache.dispose();
+});
+
+
+it("keeps compact captured queries intact after a failed expanded readback", async () => {
+  const vertices = 49, maxNodes = 8;
+  const source = createTerrainSnapshotState(maxNodes, 0, maxNodes * vertices);
+  source.frontElevation.fill(3);
+  source.frontLeafCount = 1;
+  source.hasSnapshot = true;
+  insertSpatialIndexRaw(source.frontIndex, 0, 0, 0, 0, 0);
+  const cache = createCpuTerrainCache(maxNodes, {
+    rootSize: 16, originX: 0, originY: 0, originZ: 0,
+    innerTileSegments: 4, elevationScale: 1, maxLevel: 0, radius: 1,
+  }, null, source);
+  const captured = cache.capture();
+  const failure = new Error("readback failed");
+  const renderer = { getArrayBufferAsync: async () => { throw failure; } } as unknown as Parameters<typeof cache.triggerReadback>[0];
+  cache.triggerReadback(renderer, {} as StorageBufferAttribute, source.frontIndex, undefined, maxNodes, {});
+  await cache.pending;
+  expect(cache.lastError).toBe(failure);
+  expect(cache.getElevation(0, 0)).toBe(3);
+  expect(captured.getElevation(0, 0)).toBe(3);
+  cache.dispose();
+  expect(captured.getElevation(0, 0)).toBe(3);
+  captured.dispose();
 });
