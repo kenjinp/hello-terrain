@@ -395,3 +395,48 @@ it.each(['manual', 'disabled'] as const)('does not acquire an unrequested snapsh
     expect(s.pending).toEqual([]);
     await s.runtime.dispose();
 });
+
+
+it('commits accepted presentation before notifying synchronous draw subscribers', async () => {
+    const s = fixture();
+    const original = s.backend.produce;
+    let drawn = 0;
+    const commit = vi.fn(() => { drawn++; });
+    s.backend.produce = async (...args) => ({ ...await original(...args), commitPresentation: commit });
+    const observations: number[] = [];
+    s.runtime.subscribe(() => {
+        if (s.runtime.getStatus().renderRevision) observations.push(drawn);
+    });
+    await s.runtime.update({ position: [0, 0, 0] });
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(observations.every(value => value === 1)).toBe(true);
+    await s.runtime.dispose();
+});
+
+it('does not commit aborted candidates and preserves last-good revisions after commit failure', async () => {
+    const s = fixture();
+    await s.runtime.update({ position: [0, 0, 0] });
+    const revision = s.runtime.getStatus().renderRevision;
+    const original = s.backend.produce;
+    const abort = new AbortController();
+    const commit = vi.fn();
+    s.backend.produce = async (...args) => {
+        const candidate = await original(...args);
+        abort.abort();
+        return { ...candidate, commitPresentation: commit };
+    };
+    s.runtime.configure({ height: 1 });
+    expect((await s.runtime.update({ position: [0, 0, 0] }, { signal: abort.signal })).status).toBe('cancelled');
+    expect(commit).not.toHaveBeenCalled();
+    expect(s.runtime.getStatus().renderRevision).toBe(revision);
+    const failure = new Error('presentation commit failed');
+    s.backend.produce = async (...args) => ({ ...await original(...args), layoutKey: 'changed', commitPresentation() { throw failure; } });
+    expect(await s.runtime.update({ position: [0, 0, 0] })).toMatchObject({ status: 'error', error: failure });
+    expect(s.runtime.getRender()).toBe(0);
+    expect(s.runtime.getStatus().renderRevision).toBe(revision);
+    s.backend.produce = original;
+    const success = await s.runtime.update({ position: [0, 0, 0] });
+    expect(success.status).toBe('published');
+    expect(s.runtime.getStatus().renderRevision!.layoutVersion).toBe(revision!.layoutVersion);
+    await s.runtime.dispose();
+});

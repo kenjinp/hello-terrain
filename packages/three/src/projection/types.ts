@@ -57,6 +57,10 @@ export interface SurfaceProjectionGpu {
     positionNode: Node;
     attribute: import("three/webgpu").StorageBufferAttribute;
     update(count: number): void;
+    /** Optional transactional preparation for persistent presentation resources.
+     * Must not mutate live anchors. The returned commit must not throw or invoke
+     * user callbacks; it only installs the prepared anchors/count. */
+    prepare?(count: number, leafData?: Int32Array): () => void;
   };
   /** Render-path world position; also assigns the vertex normal varying. */
   renderVertexPosition(ctx: RenderVertexPositionContext): Node;

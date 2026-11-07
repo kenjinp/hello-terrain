@@ -46,6 +46,9 @@ export interface TerrainProduction<Render> {
     render: Render;
     layoutKey?: string;
     snapshot(): Promise<TerrainSnapshotData>;
+    /** Synchronous, transactional presentation commit after final acceptance.
+     * Throw before changing live presentation on preparation/submission failure. */
+    commitPresentation?(): void;
     /** Completes only after compute/draw/copies can no longer reference resources. */
     retire(): Promise<void>;
 }
@@ -481,6 +484,9 @@ export function createTerrainRuntime<Config, Render>(
                                 : ('superseded' as const),
                         };
                     }
+                    // No await between acceptance, the presentation commit, and
+                    // publication. Subscribers may draw synchronously from emit().
+                    candidate.commitPresentation?.();
                     if (!published || candidate.layoutKey !== layoutKey) {
                         layoutVersion++;
                         layoutKey = candidate.layoutKey;

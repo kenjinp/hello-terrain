@@ -1,6 +1,6 @@
 # Terrain pipeline optimization results
 
-**The complete pipeline is not under 2 ms. The original 50% reduction target is also unmet.**
+**Complete serial pipeline latency is 6.6–6.9 ms in these workloads, a 45–55% reduction.**
 This draft improves measured complete latency without reducing terrain resolution,
 turning off default CPU queries, changing shaders, or omitting the terrain draw.
 
@@ -20,10 +20,10 @@ the median of the three block p95 values, not a pooled percentile.
 
 | Segments / workload | Wall median, baseline to candidate | Reduction | Wall p95 | GPU envelope median |
 | --- | --- | --- | --- | --- |
-| 13 / LOD | 13.00 to 8.30 ms | 36.2% | 14.20 to 10.50 ms | 9.31 to 5.30 ms |
-| 13 / edit | 12.60 to 9.30 ms | 26.2% | 13.70 to 10.30 ms | 9.46 to 5.90 ms |
-| 61 / LOD | 14.70 to 9.40 ms | 36.1% | 16.40 to 11.10 ms | 11.29 to 5.72 ms |
-| 61 / edit | 14.90 to 9.30 ms | 37.6% | 16.50 to 10.80 ms | 11.41 to 6.06 ms |
+| 13 / LOD | 12.60 to 6.90 ms | 45.2% | 14.50 to 7.80 ms | 9.30 to 3.46 ms |
+| 13 / edit | 12.10 to 6.70 ms | 44.6% | 13.70 to 7.90 ms | 9.11 to 3.41 ms |
+| 61 / LOD | 15.20 to 6.80 ms | 55.3% | 17.00 to 8.70 ms | 11.66 to 3.51 ms |
+| 61 / edit | 14.80 to 6.60 ms | 55.4% | 16.00 to 7.80 ms | 11.34 to 3.56 ms |
 
 Wall latency starts before the actual configuration/view update and includes
 production compute, coherent default CPU readback/publication, terrain render,
@@ -33,7 +33,7 @@ submissions, and is **not summed GPU busy time**. Diagnostic timestamp and pixel
 readback are outside the measured interval. No CPU/GPU times are added together.
 
 These are a fresh controlled comparison from November 7, including the allocation
-and dispatch-batching follow-up. They supersede the November 6 comparison; do not
+dispatch-batching and stable-presentation follow-ups. They supersede earlier comparisons; do not
 compare candidate results across the two sessions without their matched baselines.
 
 ## Changes and iteration
@@ -50,6 +50,10 @@ compare candidate results across the two sessions without their matched baseline
 4. Submit default elevation, bounds, and terrain-field kernels as three ordered
    dispatches in one compute pass/submission. No shader fusion. Custom pipeline
    callbacks retain their existing execution path.
+5. Keep draw buffers, terrain texture, uniforms and position nodes stable across
+   compatible LOD/elevation updates. Copy accepted candidate data into presentation
+   resources in queue order. Structural changes rebuild resources; custom precision
+   hooks without transactional preparation retain the original path.
 
 These target synchronization and CPU transfer overhead rather than terrain shader
 quality. A separate diagnostic run on the previous PR commit `ea255916` observed one
@@ -59,18 +63,18 @@ passes totalled roughly 0.008–0.016 ms and render passes 0.003–0.029 ms. The
 extra-instrumented runs diagnose costs; they are not substituted into the
 controlled comparison, and overlapping stage times must not be added together.
 
-Avoiding repeated shader setup likely requires stable presentation resources
-separate from rotating production slots, while retaining custom material identity,
-ordered GPU copies and matching query revisions. That architecture is not included
-in this change. Browser scheduling and readback latency remain part of the measured
-complete path.
+Stable presentation resources now avoid changing the bound position-node identity
+for compatible updates, covered by unit tests and the full GPU scenarios. A separate
+shader-builder-count probe was blocked by the local unsigned-script policy and was
+not run, so no measured post-change rebuild count is claimed. Browser scheduling
+and readback latency remain part of the measured complete path.
 
 ## Correctness and scope
 
 - All 294 matched baseline/candidate samples (including warmup/cold) had identical
   pixel checksums, tile/geometry counts, rendered instances, and leaf layouts.
   Analytic query and matching publication-revision checks passed.
-- Final hardware gym run: all nine scenarios passed, 4,549 assertions, including
+- Final hardware gym run: all nine scenarios passed, 4,546 assertions, including
   flat edits/LOD/nearest, isolation, sphere seams, torus wrap, skirts, materials,
   and Earth precision.
 - Full workspace tests and typecheck passed. Lint passed with nine existing
@@ -80,7 +84,7 @@ complete path.
   proof of visual equivalence for every application. The timed scene uses a
   diagnostic normal material; UI, shadows, postprocessing, and arbitrary custom
   materials are not part of this workload. Higher resolutions and other adapters
-  need separate measurements. Neither the 2 ms nor 50% target is claimed.
+  need separate measurements. Complete serial latency remains above 2 ms; reductions vary by workload.
 
 The earlier pmndrs/labs 0.12.0 investigation (commit
 `d7157ac128a6321e20429d70bbd0ac7c8432ebda`) used its real `bench.gpu` and `timedPass`

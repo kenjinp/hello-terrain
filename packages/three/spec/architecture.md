@@ -35,3 +35,12 @@ Camera movement first runs the quadtree selection target on an instance-owned CP
 
 
 Tasks are backend implementation details. Applications use runtime transactions and published queries. A public generic field graph and second rendering backend are not implemented.
+
+## Stable presentation resources
+
+Compatible publications keep binding position nodes and draw buffers/textures stable.
+The backend prepares copies from a candidate; the runtime commits them synchronously
+after its final acceptance checks and before notifying subscribers. CPU query snapshots
+continue to come from that candidate. Structural presentation resources retire behind
+a queue fence. Optional transactional precision preparation stages anchors without
+changing live state; custom hooks without it keep rotating presentation resources.
