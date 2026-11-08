@@ -202,7 +202,8 @@ export function createCpuTerrainCache(
       config.elevationScale,
       gradientScratch,
     );
-    return vec3.normalize(vec3.create(), [-dhdu, 1, -dhdv]);
+    const normal: Vec3 = [-dhdu, 1, -dhdv];
+    return vec3.normalize(normal, normal);
   };
 
   const sampleFromLookup = (lookup: TileLookupResult): TerrainSample => {

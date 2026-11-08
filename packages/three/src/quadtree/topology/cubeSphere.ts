@@ -1,7 +1,7 @@
 import { createCubeSphereProjection } from "../../projection/cubeSphere";
 import { boundingSphereFromPoints } from "../bounds";
 import { type ElevationRangeOut, type TileBounds, type TileId, type Topology } from "../types";
-import type { Vec3 } from "./cubeSphereFaces";
+import { vec3 } from "math";
 import {
   directionToFace,
   directionToFaceUV,
@@ -47,10 +47,12 @@ export function createCubeSphereTopology(cfg: CubeSphereTopologyConfig): Topolog
     const u = (nx + 0.5) / n;
     const v = (ny + 0.5) / n;
     faceUVToCube(face, u, v, cube);
+    // Reuse the instance-owned tuple, preserving hypot and division rounding:
+    // keep face/UV decisions identical at cross-face edges.
     const len = Math.hypot(cube[0], cube[1], cube[2]);
-    const dir: Vec3 = [cube[0] / len, cube[1] / len, cube[2] / len];
-    const nbrFace = directionToFace(dir);
-    directionToFaceUV(nbrFace, dir, uv);
+    vec3.set(cube, cube[0] / len, cube[1] / len, cube[2] / len);
+    const nbrFace = directionToFace(cube);
+    directionToFaceUV(nbrFace, cube, uv);
     let bx = Math.floor(uv[0] * n);
     let by = Math.floor(uv[1] * n);
     if (bx < 0) bx = 0;
