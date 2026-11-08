@@ -12,7 +12,8 @@
     "typecheck": "pnpm -r run typecheck",
     "lint": "oxlint .",
     "format": "oxfmt .",
-    "commit": "gitmoji -c"
+    "commit": "gitmoji -c",
+    "bench:raycast": "pnpm --filter @hello-terrain/gym bench:raycast"
   },
   "devDependencies": {
     "@config/typescript": "workspace:*",

@@ -8,7 +8,8 @@
     "build": "vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run packages/three/gym apps/gym/src --root ../..",
-    "browser:install": "playwright install chromium --no-shell"
+    "browser:install": "playwright install chromium --no-shell",
+    "bench:raycast": "node --import tsx raycast-bench.ts"
   },
   "dependencies": {
     "@hello-terrain/react": "workspace:*",

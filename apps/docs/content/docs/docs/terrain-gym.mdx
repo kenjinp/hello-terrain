@@ -120,3 +120,19 @@ The same run compares analytic small residuals with cached CPU datum offsets at 
 ## Skirt extrusion
 
 Run `pnpm gym --software --scenario terrain-skirts` to check the precision vertex paths on flat, sphere, and torus terrain. The fixture renders only skirt triangles: zero depth must cover no pixels, while positive depth must produce visible walls. This catches skirt detection based on already-clamped geometry positions. CPU mode reports unsupported for this rasterization check.
+
+## Public raycast CPU stress benchmark
+
+Run `pnpm bench:raycast --count 1000 --repeat 5 --warmup 200 --output /tmp/raycast.json`
+from the repository root. This separate benchmark drives the current public
+raycast API and pinned snapshot leases against seeded analytic plane and sphere
+fixtures, including Earth-scale coordinates, tangencies, thin features, late
+brackets and coverage gaps. It does not replace the browser gym or establish
+GPU, tile-cache, LOD, world-transform or rendered-triangle correctness.
+
+Each required hit is checked against an independent analytic reference. Diagnostic
+searches may correctly return `incomplete`; the report preserves reason counts,
+known-intersection completion rates and error beside batch latency and throughput.
+Batch p95/p99 are not individual-ray latency percentiles. Compare quality and
+timing on matched machines/settings, and replay the recorded seed and options.
+See `apps/gym/RAYCAST-BENCHMARK.md` for measurement contracts and exit codes.
