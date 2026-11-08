@@ -61,13 +61,10 @@ function EarthPlanetSceneImpl({ store, cameraMode }: { store: LevaStore; cameraM
       // wears the colour of the edge it extends from. Slide to 0 to see the
       // raw cracks.
       skirtScale: { value: 2_000, min: 0, max: 20_000, step: 100 },
-      // The elevation field is evaluated from `worldPosition` (~6.37e6 m) in a
-      // float32 compute pass. ULP at that magnitude is ~0.5 m, so once tile
-      // vertices get closer than a few metres their positions differ by ~1 ULP,
-      // the noise input quantises, and the surface dissolves into shard noise.
-      // Level 14 keeps vertices ~10 m apart (well above the precision floor);
-      // raising this past ~15 reintroduces the close-up shards.
-      maxLevel: { value: 14, min: 6, max: 18, step: 1 },
+      // Level 18 permits approximately one-metre ground samples. Geometry and
+      // source-world float32 precision are separate: extra LOD does not add new
+      // authored terrain frequencies or guarantee artifact-free source noise.
+      maxLevel: { value: 18, min: 6, max: 18, step: 1 },
       maxNodes: { value: 1024, min: 128, max: 4096, step: 1 },
       lod: folder({
         lodMode: { value: "distance", options: ["distance", "screen"] },

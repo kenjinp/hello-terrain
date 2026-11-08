@@ -1,4 +1,4 @@
-import { balance2to1 } from "./balance2to1";
+import { buildLeafIndex } from "./leafIndex";
 import { refineLeaves } from "./refine";
 import { beginUpdate, type QuadtreeState } from "./state";
 import { type LeafSet, type Topology, type UpdateParams } from "./types";
@@ -16,5 +16,6 @@ export function update(
 ): LeafSet {
   beginUpdate(state, topology, params);
   const leaves = refineLeaves(state, topology, params, outLeaves);
-  return balance2to1(state, topology, params, leaves);
+  buildLeafIndex(leaves, state.leafIndex);
+  return leaves;
 }

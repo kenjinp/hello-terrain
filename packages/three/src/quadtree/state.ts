@@ -25,6 +25,8 @@ export type QuadtreeState = {
 
   /** traversal scratch */
   stack: Uint32Array;
+  /** Camera-priority heap keys, indexed by node id. */
+  refinementPriority: Float64Array;
   /** root nodes for this frame */
   rootNodeIds: Uint32Array;
   rootCount: number;
@@ -59,6 +61,7 @@ export function createState(cfg: QuadtreeConfig, topology: Topology): QuadtreeSt
     leafNodeIds: new Uint32Array(cfg.maxNodes),
     leafIndex: createSpatialIndex(cfg.maxNodes),
     stack: new Uint32Array(cfg.maxNodes),
+    refinementPriority: new Float64Array(cfg.maxNodes),
     rootNodeIds: new Uint32Array(topology.maxRootCount),
     rootCount: 0,
     splitQueue: new Uint32Array(cfg.maxNodes),
@@ -103,4 +106,3 @@ export function beginUpdate(state: QuadtreeState, topology: Topology, params: Up
     state.rootCount = i + 1;
   }
 }
-

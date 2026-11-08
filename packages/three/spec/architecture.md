@@ -44,3 +44,22 @@ after its final acceptance checks and before notifying subscribers. CPU query sn
 continue to come from that candidate. Structural presentation resources retire behind
 a queue fence. Optional transactional precision preparation stages anchors without
 changing live state; custom hooks without it keep rotating presentation resources.
+
+## Capacity-limited refinement
+
+The quadtree spends its fixed node budget in camera-proximity order, rather than
+exhausting it depth-first on whichever root is visited first. Existing distance
+and screen-space criteria still decide whether a tile needs refinement. A
+priority queue orders eligible leaves by camera-relative bounds-center distance.
+
+Before a leaf splits, selection gathers all coarser edge neighbors that must
+also split to maintain 2:1 balance, recursively across topology boundaries.
+The complete split closure must fit before any allocation occurs. If it cannot
+fit, that candidate remains coarse and selection considers other candidates.
+This preserves complete root coverage and the seam table's 2:1 contract even
+under capacity pressure, without increasing GPU storage or changing sample
+resolution. Publication retains canonical depth-first leaf order.
+
+Capacity is still finite: distant tiles can remain below their requested LOD.
+A global maximum level is not proof of local detail. Validation must check the
+camera-local tile/sample spacing and neighbor balance alongside latency.

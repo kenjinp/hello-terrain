@@ -60,10 +60,10 @@ function EarthTorusSceneImpl({ store, cameraMode }: { store: LevaStore; cameraMo
       // skirt vertices before the colour lookup, so the wall always wears the
       // colour of the edge it extends from. Slide to 0 to see the raw cracks.
       skirtScale: { value: 2_000, min: 0, max: 20_000, step: 100 },
-      // Same float32 precision floor as the Earth planet example: world
-      // positions are ~6e6 m, so past level ~15 vertex positions quantise to
-      // ~1 ULP apart and the surface dissolves into shard noise.
-      maxLevel: { value: 14, min: 6, max: 18, step: 1 },
+      // Level 18 permits approximately one-metre ground samples. Geometry and
+      // source-world float32 precision are separate: extra LOD does not add new
+      // authored terrain frequencies or guarantee artifact-free source noise.
+      maxLevel: { value: 18, min: 6, max: 18, step: 1 },
       maxNodes: { value: 1024, min: 128, max: 4096, step: 1 },
       lod: folder({
         lodMode: { value: "distance", options: ["distance", "screen"] },
