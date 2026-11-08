@@ -39,6 +39,19 @@ await terrain.dispose();
 
 `maxNodes` is the existing internal quadtree/storage capacity, **not a guaranteed active-leaf count**. Required roots must fit. `innerTileSegments` controls both geometry and field resolution. Distance LOD remains the measured default; screen LOD is available as `{ mode: "screen", targetPixels: 8 }` with the view's projection factor. Numeric defaults are not performance promises.
 
+When capacity is tight, refinement prioritizes tiles near the camera. Every split
+reserves the neighboring splits required for 2:1 balance before using the budget.
+This keeps complete topology coverage and valid seam neighbors without increasing
+GPU storage. Distant tiles may remain coarser than the LOD criterion requests.
+Check the query's local tile level and nominal sample spacing rather than relying
+on the scene's global maximum level when validating ground-level detail.
+
+The Earth examples default to level 18 (approximately one-metre samples at ground level)
+without increasing their 1024-node budget. This improves close-up mesh sampling;
+it does not add frequencies or texture detail to the authored elevation source.
+Source-coordinate float32 limits and subtle mixed-tile shading/seam artifacts
+remain separate from camera-relative geometry precision.
+
 ## Publication and freshness
 
 `update` serializes candidate production and publishes a complete render record only after successful submission. A failed candidate leaves the previous render record available. Superseded queued configurations are skipped. The backend reuses retired graph/resource slots; it does not rebuild the library's task scheduler.
