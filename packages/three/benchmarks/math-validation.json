@@ -1,0 +1,113 @@
+{
+  "adapter": "Chromium SwiftShader software WebGPU",
+  "scenarios": [
+    {
+      "scenario": "sphere-seams",
+      "status": "passed",
+      "assertions": 761,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "a0d4e8829f060176f0776fc97fd94b5d03b63f508607da3ef02a2d0c411de42c"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "flat-edit",
+      "status": "passed",
+      "assertions": 511,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "a0d4e8829f060176f0776fc97fd94b5d03b63f508607da3ef02a2d0c411de42c"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "flat-lod",
+      "status": "passed",
+      "assertions": 1456,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "a0d4e8829f060176f0776fc97fd94b5d03b63f508607da3ef02a2d0c411de42c"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "instance-isolation",
+      "status": "passed",
+      "assertions": 615,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "a0d4e8829f060176f0776fc97fd94b5d03b63f508607da3ef02a2d0c411de42c"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "torus-wrap",
+      "status": "passed",
+      "assertions": 601,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "a0d4e8829f060176f0776fc97fd94b5d03b63f508607da3ef02a2d0c411de42c"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "earth-precision",
+      "status": "passed",
+      "assertions": 57,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "a0d4e8829f060176f0776fc97fd94b5d03b63f508607da3ef02a2d0c411de42c"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "terrain-skirts",
+      "status": "passed",
+      "assertions": 6,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "6b4e2b8b5c49dd91e1f1539e3ce2bd572750e40573beab721059eae405df1a87"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "material-authoring",
+      "status": "passed",
+      "assertions": 19,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "6b4e2b8b5c49dd91e1f1539e3ce2bd572750e40573beab721059eae405df1a87"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    },
+    {
+      "scenario": "flat-nearest",
+      "status": "passed",
+      "assertions": 511,
+      "failures": 0,
+      "source": {
+        "commit": "3143221263922cee9181ec55961e22c90b974f40",
+        "treeHash": "6b4e2b8b5c49dd91e1f1539e3ce2bd572750e40573beab721059eae405df1a87"
+      },
+      "lockfileHash": "e29b80812441bebac32e548545c204aea65de24a3cef91488c7a104f98c1eb60",
+      "harnessHash": "e0e9b6155cb92ad6647dcdc7c95b4b8f3489e2a6db372bf0c052db5551daf250"
+    }
+  ]
+}

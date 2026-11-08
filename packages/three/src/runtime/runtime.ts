@@ -140,13 +140,14 @@ function raycastSample(
         high = far,
         bracketed = false;
     const point = vec3.create();
+    const difference = vec3.create();
     for (let i = 0; i < budget; i++) {
         const t = bracketed ? (low + high) / 2 : near + ((far - near) * i) / (budget - 1);
         vec3.scaleAndAdd(point, origin, direction, t);
         const result = sample(point);
         if (result.status !== 'available')
             return { status: 'incomplete', reason: 'outside-coverage' };
-        const difference = vec3.subtract(vec3.create(), point, result.position);
+        vec3.subtract(difference, point, result.position);
         if (vec3.length(difference) <= tolerance)
             return { status: 'hit', distance: t, sample: { ...result, position: vec3.clone(point) } };
         const signed = vec3.dot(difference, result.normal);

@@ -5,9 +5,9 @@ import { CUBE_FACES } from '../quadtree/topology/cubeSphereFaces';
 export function cubeSphereDatum(out: Vec3, face: number, u: number, v: number, radius: number) {
     const basis = CUBE_FACES[face];
     if (!basis) throw new Error('Invalid cube face');
-    vec3.set(out, ...basis.forward);
-    vec3.scaleAndAdd(out, out, [...basis.right], u * 2 - 1);
-    vec3.scaleAndAdd(out, out, [...basis.up], v * 2 - 1);
+    vec3.copy(out, basis.forward);
+    vec3.scaleAndAdd(out, out, basis.right, u * 2 - 1);
+    vec3.scaleAndAdd(out, out, basis.up, v * 2 - 1);
     vec3.normalize(out, out);
     return vec3.scale(out, out, radius);
 }

@@ -440,3 +440,28 @@ it('does not commit aborted candidates and preserves last-good revisions after c
     expect(s.runtime.getStatus().renderRevision!.layoutVersion).toBe(revision!.layoutVersion);
     await s.runtime.dispose();
 });
+
+it('keeps raycast outputs independent across scratch reuse and terrain instances', async () => {
+    const a = fixture(), b = fixture();
+    for (const f of [a, b]) {
+        await f.runtime.update({ position: [0, 10, 0] });
+        const request = f.runtime.requestSnapshot();
+        await vi.waitFor(() => expect(f.pending).toHaveLength(1));
+        f.pending[0].finish();
+        await request;
+    }
+    const first = a.runtime.query.raycast([2, 10, 3], [0, -1, 0], { far: 20 });
+    expect(first.status).toBe('hit');
+    const saved = structuredClone(first);
+    expect(a.runtime.query.raycast([0, 10, 0], [1, 0, 0], { far: 20 })).toEqual({
+        status: 'incomplete', reason: 'work-budget',
+    });
+    expect(b.runtime.query.raycast([9, 10, 7], [0, -1, 0], { far: 20 }).status).toBe('hit');
+    expect(first).toEqual(saved);
+    if (first.status === 'hit') {
+        expect(first.sample.position[0]).toBe(2);
+        expect(Math.abs(first.sample.position[1])).toBeLessThanOrEqual(.001);
+        expect(first.sample.position[2]).toBe(3);
+    }
+    await a.runtime.dispose(); await b.runtime.dispose();
+});

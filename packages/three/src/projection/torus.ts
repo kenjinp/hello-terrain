@@ -153,7 +153,8 @@ export function createTorusProjection(config: TorusProjectionConfig): SurfacePro
         ny = -ny;
         nz = -nz;
       }
-      return cpuVec3.normalize(cpuVec3.create(), [nx, ny, nz]);
+      const normal: Vec3 = [nx, ny, nz];
+      return cpuVec3.normalize(normal, normal);
     },
   };
 
