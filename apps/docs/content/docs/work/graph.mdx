@@ -9,6 +9,7 @@ The `Graph` is the runtime that:
 - memoizes results
 - optionally enforces per-lane concurrency (when `laneConcurrency` is provided)
 - emits observability events
+- tears down what tasks created (see [Teardown](/work/teardown))
 
 ## Creating a Graph
 
@@ -22,9 +23,14 @@ The `graph()` function creates a new execution context with its own task registr
 
 ## API Reference
 
-### graph()
+### graph(options?)
 
 Creates a new graph instance.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `teardown.schedule` | `(flush: () => void) => void` | Decides when a batch of ready teardowns starts. Default: a microtask |
+| `teardown.timeoutMs` | `number` | How long one async teardown function may take before the graph gives up on it. Default: `30000` |
 
 **Returns:** `Graph`
 
@@ -73,12 +79,56 @@ console.log(report.status); // "ok", "error", or "cancelled"
 
 ### dispose()
 
-Releases resources held by the graph (currently: param subscriptions) and clears internal state.
+Aborts runs and leases that are still active, tears down every live value (dependents before
+their dependencies), releases param subscriptions and clears internal state. The graph is empty
+afterwards and can be used again.
 Use this when graphs are created/destroyed frequently (e.g. in hot-reload or per-level/per-scene lifecycles).
 
 ```ts
-g.dispose();
+await g.dispose();
 ```
+
+**Returns:** `Promise<void>` - resolves when every teardown has finished; rejects with an
+`AggregateError` afterwards if any of them failed.
+
+`graph[Symbol.asyncDispose]` does the same, so `await using g = graph()` works.
+
+<Callout type="note">
+  `dispose()` used to return `void`. Calls that ignore the result keep working, with one
+  difference: if a teardown fails, the ignored promise rejects and shows up as an unhandled
+  rejection. Await it, or add `.catch()` where it cannot be awaited (a React effect cleanup).
+</Callout>
+
+### settled()
+
+Resolves once no run is active and every teardown that could start has finished. `run()` does not
+wait for teardown functions; this does. It never rejects: failures are emitted as `teardown:error`.
+
+```ts
+await g.run();
+await g.settled();
+```
+
+**Returns:** `Promise<void>`
+
+### use(task, fn)
+
+Leases a task's value: it, and everything it was built on, is not torn down until `fn` settles,
+even if the task is recomputed meanwhile. Prefer it over `get()` when a value with a teardown is
+used outside a run.
+
+```ts
+const rows = await g.use(connection, (conn, signal) => conn.query("select 1", { signal }));
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `task` | `TaskRef<T>` | The task whose value to lease |
+| `fn` | `(value: T, signal: AbortSignal) => R \| Promise<R>` | Uses the value. `signal` aborts when the graph is disposed |
+
+**Returns:** `Promise<R>`
+
+**Throws:** `NoComputedValueError` if task is not ready, `UnknownNodeError` if task is not registered
 
 ### get(task)
 
@@ -282,13 +332,19 @@ Subscribe to events for observability:
 | `task:cacheHit` | `runId`, `taskId`, `at` | Task served from cache |
 | `task:error` | `runId`, `taskId`, `at`, `durationMs`, `error` | Task failed |
 | `param:set` | `paramId`, `at` | Param value set via `graph.set()` |
+| `teardown:finish` | `taskId`, `at`, `durationMs`, `reason` | A teardown function finished |
+| `teardown:error` | `taskId`, `at`, `reason`, `error` | A teardown function threw, rejected or timed out |
 
 ```ts
 g.on("run:*", (event) => console.log(`[${event.runId}]`, event.type));
 g.on("task:*", (event) => console.log(`[${event.runId}]`, event.type, event.taskId));
 g.on("task:error", (event) => console.error(`[${event.runId}]`, event.taskId, event.error));
 g.on("param:*", (event) => console.log("param event", event.type, event.paramId));
+g.on("teardown:error", (event) => console.error("teardown failed", event.taskId, event.error));
 ```
+
+Teardown events are not tied to a run, so they carry no `runId`. A `teardown:error` that nobody
+listens for is passed to `reportError` (or `console.error`).
 
 ## Error Handling
 
@@ -351,6 +407,19 @@ try {
 } catch (e) {
   // Tasks may throw the abort reason
 }
+```
+
+### TeardownTimeoutError
+
+Reported through `teardown:error` (and in the `AggregateError` of `dispose()`) when an async
+teardown function runs past `teardown.timeoutMs`. The graph moves on without it.
+
+```ts
+g.on("teardown:error", (e) => {
+  if (e.error instanceof TeardownTimeoutError) {
+    console.error(`Teardown of ${e.error.taskId} took more than ${e.error.timeoutMs} ms`);
+  }
+});
 ```
 
 ## Examples
@@ -514,6 +583,7 @@ console.log(snapshot.meta?.topoOrder);
 ```
 
 The returned shape is:
-- `nodes`: params + tasks (optionally includes `state`, `dirty`, `version`)
+- `nodes`: params + tasks (optionally includes `state`, `dirty`, `version`, `live`)
 - `edges`: `from -> to` dependencies (`kind: "param" | "task"`)
-- `meta`: internal counters like `compileCount` and optional `topoOrder`
+- `meta`: internal counters like `compileCount`, optional `topoOrder`, and with `includeRuntime`
+  the teardown counters `teardown: { pending, held, completed, failed }`

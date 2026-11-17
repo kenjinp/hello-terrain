@@ -4,6 +4,11 @@ import type { CacheStrategy, Lane } from "../../types";
 import { executeTaskCompiled } from "./executeTask";
 import type { RunContext, RunDeps, RunState, TaskNodeRuntime } from "./types";
 
+// What `pendingDepsCount` holds for a task that is no longer waiting. Kept in the same map as
+// the counts so that the scheduler needs no further per-run collections.
+const RUNNING = -1;
+const DONE = -2;
+
 function computeRequiredClosure<L extends Lane, Res>(
   state: RunState<L, Res>,
   deps: RunDeps,
@@ -95,6 +100,7 @@ export async function runCompiled<L extends Lane, Res>(
   const { mustRun, mustRunSet } = computeMustRun(state, deps, topoOrder, requiredTaskIds);
 
   // pending dependency counts only consider task->task deps that are also scheduled to run.
+  // Once a task leaves the queue its entry turns into RUNNING and then DONE.
   const pendingDepsCount = new Map<string, number>();
   for (const n of mustRun) {
     let count = 0;
@@ -118,9 +124,24 @@ export async function runCompiled<L extends Lane, Res>(
 
   const inFlight = new Set<Promise<void>>();
 
+  /** How many of a task's dependencies this run still has to compute. */
+  const pendingDeps = (taskId: string) => {
+    let count = 0;
+    const incoming = state.dagGetIncomingIds(taskId);
+    if (incoming) {
+      for (const depId of incoming) {
+        if (mustRunSet.has(depId) && pendingDepsCount.get(depId) !== DONE) count += 1;
+      }
+    }
+    return count;
+  };
+
   const unblockDependent = (dependentId: string) => {
     if (!mustRunSet.has(dependentId)) return;
-    const next = (pendingDepsCount.get(dependentId) ?? 0) - 1;
+    const waitingFor = pendingDepsCount.get(dependentId) ?? 0;
+    // Running, done, or already queued.
+    if (waitingFor <= 0) return;
+    const next = waitingFor - 1;
     pendingDepsCount.set(dependentId, next);
     if (next === 0) {
       const depNode = state.tasksMap.get(dependentId);
@@ -128,18 +149,61 @@ export async function runCompiled<L extends Lane, Res>(
     }
   };
 
-  const launch = (n: TaskNodeRuntime<L, Res>) => {
-    const p = executeTaskCompiled(deps, state, ctx, n, unblockDependent);
+  const finished = (taskId: string) => {
+    const node = state.tasksMap.get(taskId);
+    if (node && node.state !== "ready") {
+      // The result was built on a value that `ctx.teardownPrevious()` released meanwhile, so it
+      // was thrown away. The task runs again once what it reads is back.
+      const count = pendingDeps(taskId);
+      pendingDepsCount.set(taskId, count);
+      if (count === 0) pushReady(node);
+      return;
+    }
+    pendingDepsCount.set(taskId, DONE);
+    const dependents = state.dagGetAdjacenciesIds(taskId);
+    if (dependents) for (const dependentId of dependents) unblockDependent(dependentId);
+  };
+
+  // `ctx.teardownPrevious()` in `taskId` took the values of everything downstream of it away.
+  // Dependents that are dirty anyway are already waiting for it. This schedules the others:
+  // the ones this run had skipped as clean (a `cache: "once"` task, and what sits behind it) and
+  // the ones it had already computed.
+  const invalidated = (taskId: string) => {
+    const affected: string[] = [];
+    const seen = new Set<string>();
+    const stack = [...(state.dagGetAdjacenciesIds(taskId) ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const next = state.dagGetAdjacenciesIds(id);
+      if (next) for (const nextId of next) stack.push(nextId);
+      // One that is executing right now is dealt with when it finishes.
+      if (!requiredTaskIds.has(id) || pendingDepsCount.get(id) === RUNNING) continue;
+      mustRunSet.add(id);
+      // No longer done. The counts below must see that for every affected task first.
+      pendingDepsCount.set(id, 0);
+      affected.push(id);
+    }
+    for (const id of affected) pendingDepsCount.set(id, pendingDeps(id));
+  };
+
+  const launch = (n: TaskNodeRuntime<L, Res>): boolean => {
+    const id = n.ref.id;
+    // Queued before a release put a dependency back in front of it, or queued twice.
+    if ((pendingDepsCount.get(id) ?? 0) !== 0) return false;
+    pendingDepsCount.set(id, RUNNING);
+    const p = executeTaskCompiled(deps, state, ctx, n, finished, invalidated);
     inFlight.add(p);
     p.finally(() => inFlight.delete(p));
+    return true;
   };
 
   while (true) {
     let launchedAny = false;
     for (const queue of readyByLane.values()) {
       while (queue.length) {
-        launchedAny = true;
-        launch(queue.shift()!);
+        if (launch(queue.shift()!)) launchedAny = true;
       }
     }
 

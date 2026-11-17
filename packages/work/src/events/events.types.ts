@@ -1,4 +1,5 @@
 import type { RunStatus } from "../graph/graph.types";
+import type { ScopeTeardownReason } from "../tasks/task.types";
 import type { Lane } from "../types";
 
 /**
@@ -23,6 +24,8 @@ export type Unsubscribe = () => void;
  * - "task:finish": A task completes successfully.
  * - "task:error": A task throws or rejects with an error.
  * - "param:set": A param value was set via `graph.set()`.
+ * - "teardown:finish": A teardown function finished: a task's `.teardown(fn)` or a `ctx.scope` entry.
+ * - "teardown:error": A teardown function threw, rejected or timed out. The others still run.
  */
 export type GraphEvent =
   | { type: "run:start"; runId: string; at: number }
@@ -38,7 +41,21 @@ export type GraphEvent =
       durationMs: number;
       error: unknown;
     }
-  | { type: "param:set"; paramId: string; at: number };
+  | { type: "param:set"; paramId: string; at: number }
+  | {
+      type: "teardown:finish";
+      taskId: string;
+      at: number;
+      durationMs: number;
+      reason: ScopeTeardownReason;
+    }
+  | {
+      type: "teardown:error";
+      taskId: string;
+      at: number;
+      reason: ScopeTeardownReason;
+      error: unknown;
+    };
 
 export type GraphEventType = GraphEvent["type"];
 

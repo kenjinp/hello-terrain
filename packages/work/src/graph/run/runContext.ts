@@ -6,15 +6,20 @@ export function createRunContext<L extends Lane, Res>(
   deps: RunDeps,
   runId: string,
   startedAt: number,
-  options?: RunOptions<L, Res>,
+  options: RunOptions<L, Res> | undefined,
+  epoch: number,
 ): RunContext<L, Res> {
   const controller = new AbortController();
-  if (options?.signal) {
-    if (options.signal.aborted) controller.abort(options.signal.reason);
+  let detach: VoidFunction | undefined;
+  const outer = options?.signal;
+  if (outer) {
+    if (outer.aborted) controller.abort(outer.reason);
     else {
-      options.signal.addEventListener("abort", () => controller.abort(options.signal!.reason), {
-        once: true,
-      });
+      // Removed when the run ends: a long-lived signal passed to every run must not collect one
+      // listener, and with it one run context, per run.
+      const onAbort = () => controller.abort(outer.reason);
+      outer.addEventListener("abort", onAbort, { once: true });
+      detach = () => outer.removeEventListener("abort", onAbort);
     }
   }
   const signal = controller.signal;
@@ -36,7 +41,9 @@ export function createRunContext<L extends Lane, Res>(
   return {
     runId,
     startedAt,
+    epoch,
     controller,
+    pin: 0,
     signal,
     options,
     nowMs: deps.nowMs,
@@ -44,6 +51,7 @@ export function createRunContext<L extends Lane, Res>(
     status: "ok",
     taskCount: 0,
     cacheHits: 0,
+    detach,
   };
 }
 

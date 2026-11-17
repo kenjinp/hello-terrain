@@ -36,6 +36,43 @@ calcGraph.get(calcSquare); // 16
 - **Upstream tasks** referenced by `get(otherTask)` are registered automatically when discovered.
 - **`cache:"none"`**:\n  - the task recomputes on every run\n  - any downstream tasks are treated as dirty every run\n  - within a run, downstream tasks can still depend on values computed earlier in the run
 
+## Teardown
+
+A task can declare how its value is released. The teardown runs once for each value, when the
+task produces a different one or the graph is disposed. The new value is created first; runs
+never wait for teardown.
+
+```ts
+import { graph, param, task } from "@hello-terrain/work";
+
+const databaseUrl = param("postgres://localhost/app");
+
+const connection = task((get, work) => {
+  const url = get(databaseUrl);
+  return work(() => connect(url));
+}).teardown((conn) => conn.close());
+
+const g = graph();
+g.add(connection);
+
+await g.run(); // connection 1
+
+databaseUrl.set("postgres://replica/app");
+await g.run(); // connection 2 is created, then connection 1 is closed
+await g.settled(); // …and that has finished
+
+await g.dispose(); // connection 2 is closed
+```
+
+- `work((prev) => …)` receives the previous value. Returning it keeps it.
+- `ctx.scope.use / adopt / defer` register cleanups for what an execution acquires on the way.
+- `await ctx.teardownPrevious()` tears the old value down *before* creating the new one, for
+  things that cannot exist twice (a port, a lock).
+- `g.use(task, fn)` leases a value so that it is not torn down while `fn` uses it.
+- `managed({ inputs, create, update, teardown })` from `@hello-terrain/work/managed` builds a
+  create / update-in-place / teardown task.
+- Dependents are torn down before their dependencies. Failures are emitted as `teardown:error`.
+
 ## Lanes and `laneConcurrency`
 
 Tasks can be tagged with a **lane** (default `"cpu"`). Lanes become meaningful when you pass

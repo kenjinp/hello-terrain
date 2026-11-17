@@ -2,9 +2,31 @@ import type { ParamRef } from "../../param/param.types";
 import type { Getter, TaskRef } from "../../tasks/task.types";
 import { TASK_DEF } from "../../tasks/task.types";
 import type { CacheStrategy, Lane } from "../../types";
-import type { RunContext, RunDeps, RunState, TaskNodeRuntime } from "./types";
+import type { Generation } from "../teardown";
+import type { Execution, RunContext, RunDeps, RunState, TaskNodeRuntime } from "./types";
 
-type WorkCalledRef = { value: boolean };
+function holdOne(exec: Execution, g: Generation) {
+  const reads = exec.reads;
+  if (reads === undefined) exec.reads = [g];
+  else if (reads.includes(g)) return;
+  else reads.push(g);
+  g.holders += 1;
+}
+
+/**
+ * The execution now depends on what it just read: that generation is not torn down until
+ * the value this execution produces has been. A value with no teardown of its own passes on
+ * what it was built on, so the hold reaches through plain derived values.
+ */
+function hold(upstream: { gen?: Generation; reads?: Generation[] }, exec: Execution) {
+  const own = upstream.gen;
+  if (own !== undefined) {
+    holdOne(exec, own);
+    return;
+  }
+  const through = upstream.reads;
+  if (through !== undefined) for (let i = 0; i < through.length; i++) holdOne(exec, through[i]);
+}
 
 type GetFactoryArgs<L extends Lane, Res> = {
   deps: RunDeps;
@@ -12,7 +34,13 @@ type GetFactoryArgs<L extends Lane, Res> = {
   ctx: RunContext<L, Res>;
   taskId: string;
   dependenciesSeen: Set<string>;
-  workCalled: WorkCalledRef;
+  /**
+   * The version of each dependency at the moment it was read. Stamped here and not when the task
+   * finishes: an overlapping run may replace a dependency while this task is still computing,
+   * and the task must then count as built on the old one.
+   */
+  versionsSeen: Map<string, number>;
+  exec: Execution;
 };
 
 function ensureValidRef(taskId: string, ref: any) {
@@ -22,10 +50,10 @@ function ensureValidRef(taskId: string, ref: any) {
 }
 
 export function createGetForDiscovery<L extends Lane, Res>(args: GetFactoryArgs<L, Res>): Getter {
-  const { deps, state, taskId, dependenciesSeen, workCalled, ctx } = args;
+  const { deps, state, taskId, dependenciesSeen, versionsSeen, exec, ctx } = args;
 
   return <T>(refAny: any): T => {
-    if (workCalled.value) {
+    if (exec.workCalled) {
       throw new Error(
         `Task "${taskId}" called get() after work(). Read all dependencies before calling work().`,
       );
@@ -37,6 +65,7 @@ export function createGetForDiscovery<L extends Lane, Res>(args: GetFactoryArgs<
     if (deps.isParam(refAny)) {
       const ref = refAny as ParamRef<any>;
       const node = state.ensureParamRegistered(ref);
+      if (!versionsSeen.has(ref.id)) versionsSeen.set(ref.id, node.version);
       return (node.bound ? node.bound.value : ref.get()) as T;
     }
 
@@ -54,6 +83,8 @@ export function createGetForDiscovery<L extends Lane, Res>(args: GetFactoryArgs<
         ((cache !== "none" && !state.isTaskDirty(upstream as TaskNodeRuntime<L, Res>)) ||
           computedThisRun)
       ) {
+        if (!versionsSeen.has(ref.id)) versionsSeen.set(ref.id, upstream.version);
+        hold(upstream, exec);
         return upstream.value as T;
       }
 
@@ -65,10 +96,10 @@ export function createGetForDiscovery<L extends Lane, Res>(args: GetFactoryArgs<
 }
 
 export function createGetForCompiled<L extends Lane, Res>(args: GetFactoryArgs<L, Res>): Getter {
-  const { deps, state, taskId, dependenciesSeen, workCalled } = args;
+  const { deps, state, taskId, dependenciesSeen, versionsSeen, exec } = args;
 
   return <T>(refAny: any): T => {
-    if (workCalled.value) {
+    if (exec.workCalled) {
       throw new Error(
         `Task "${taskId}" called get() after work(). Read all dependencies before calling work().`,
       );
@@ -80,6 +111,7 @@ export function createGetForCompiled<L extends Lane, Res>(args: GetFactoryArgs<L
     if (deps.isParam(refAny)) {
       const ref = refAny as ParamRef<any>;
       const node = state.ensureParamRegistered(ref);
+      if (!versionsSeen.has(ref.id)) versionsSeen.set(ref.id, node.version);
       return (node.bound ? node.bound.value : ref.get()) as T;
     }
 
@@ -88,6 +120,8 @@ export function createGetForCompiled<L extends Lane, Res>(args: GetFactoryArgs<L
       const upstream = state.tasksMap.get(ref.id);
       if (!upstream) throw new deps.UnknownTaskError(ref.id);
       if (upstream.state !== "ready") throw new deps.NoComputedValueError(ref.id);
+      if (!versionsSeen.has(ref.id)) versionsSeen.set(ref.id, upstream.version);
+      hold(upstream, exec);
       return upstream.value as T;
     }
 

@@ -13,8 +13,16 @@ import {
   UnknownNodeError,
   UnknownTaskError,
 } from "./graph.errors";
-import type { Graph, InspectOptions, InspectResult, RunOptions, RunReport } from "./graph.types";
+import type {
+  Graph,
+  GraphOptions,
+  InspectOptions,
+  InspectResult,
+  RunOptions,
+  RunReport,
+} from "./graph.types";
 import { createRun } from "./run";
+import { createTeardown, type Generation, type Teardown } from "./teardown";
 
 type TaskNodeRuntime<L extends Lane, Res> = {
   ref: Task<any, L, Res>;
@@ -27,6 +35,11 @@ type TaskNodeRuntime<L extends Lane, Res> = {
   lastComputedRunId?: string;
   value?: unknown;
   error?: unknown;
+  /** True while `value` is a value that still has to be torn down. */
+  live: boolean;
+  gen?: Generation;
+  reads?: Generation[];
+  disposed?: boolean;
 };
 
 type ParamNodeRuntime = {
@@ -57,9 +70,18 @@ type GraphState<L extends Lane, Res> = {
   ensureTaskRegistered<T>(task: Task<T, L, Res>): TaskRef<T>;
   currentVersion(nodeId: string): number;
   isTaskDirty(task: TaskNodeRuntime<L, Res>): boolean;
+
+  readonly teardown: Teardown;
+  epoch(): number;
+  runStarted(run: ActiveRun): void;
+  runFinished(run: ActiveRun): void;
 };
 
-export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
+type ActiveRun = { readonly controller: AbortController; pin: number };
+
+export function graph<Res = unknown, L extends Lane = Lane>(
+  options?: GraphOptions,
+): Graph<L, Res> {
   const { on, emit, hasListeners } = events();
   const tasksMap = new Map<string, TaskNodeRuntime<L, Res>>();
   const paramsMap = new Map<string, ParamNodeRuntime>();
@@ -84,6 +106,98 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     topoOrder = d.topologicalSortIds().filter((id) => tasksMap.has(id));
     compiledVersion = structureVersion;
   };
+
+  // Dependency depth per task: 0 for tasks that read no other task. Tasks at the same depth
+  // cannot depend on each other, which is what lets their teardowns overlap.
+  let depthByTask = new Map<string, number>();
+  let depthVersion = -1;
+  function depths() {
+    compileTopologyIfNeeded();
+    if (depthVersion === compiledVersion) return depthByTask;
+    depthByTask = new Map();
+    for (const id of topoOrder) {
+      let depth = 0;
+      const incoming = d.getIncomingIds(id);
+      if (incoming) {
+        for (const depId of incoming) {
+          const upstream = depthByTask.get(depId);
+          if (upstream !== undefined && upstream >= depth) depth = upstream + 1;
+        }
+      }
+      depthByTask.set(id, depth);
+    }
+    depthVersion = compiledVersion;
+    return depthByTask;
+  }
+
+  // Runs in flight. A value retired while a run is active is not torn down before that run
+  // ends, so a run that overlaps the one that retired it can still finish reading it.
+  // `ctx.teardownPrevious()` is the exception: it does not wait for anyone.
+  const activeRuns = new Set<ActiveRun>();
+  // Leases in flight. They hold exactly what they read; `dispose()` aborts them.
+  const leases = new Set<AbortController>();
+
+  function oldestPin(): number {
+    let oldest = Number.POSITIVE_INFINITY;
+    for (const run of activeRuns) if (run.pin < oldest) oldest = run.pin;
+    return oldest;
+  }
+
+  /** Every task downstream of `taskId`, dependents before the tasks they depend on. */
+  function dependentsOf(taskId: string): TaskNodeRuntime<L, Res>[] {
+    const seen = new Set<string>();
+    const stack = [...(d.getAdjacenciesId(taskId) ?? [])];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (seen.has(id) || !tasksMap.has(id)) continue;
+      seen.add(id);
+      const next = d.getAdjacenciesId(id);
+      if (next) for (const nextId of next) stack.push(nextId);
+    }
+    if (seen.size === 0) return [];
+    const depth = depths();
+    return [...seen]
+      .sort((x, y) => (depth.get(y) ?? 0) - (depth.get(x) ?? 0))
+      .map((id) => tasksMap.get(id)!);
+  }
+
+  /** A task lost the value it was built on: it has to recompute before it is read again. */
+  function invalidate(node: { ref: { readonly id: string } }) {
+    const t = tasksMap.get(node.ref.id);
+    if (!t) return;
+    if (t.state !== "running") t.state = "idle";
+    dirtyTasks.add(t.ref.id);
+  }
+
+  const teardown = createTeardown({
+    options: options?.teardown,
+    emit,
+    shouldEmit: hasListeners,
+    nowMs,
+    oldestPin,
+    dependentsOf,
+    invalidate,
+  });
+  let idleWaiters: VoidFunction[] = [];
+  let epoch = 0;
+
+  function runFinished(run: ActiveRun) {
+    activeRuns.delete(run);
+    // Every run that ends can unpin something, not only the last one.
+    teardown.pump();
+    if (activeRuns.size === 0 && idleWaiters.length) {
+      const waiters = idleWaiters;
+      idleWaiters = [];
+      for (const resolve of waiters) resolve();
+    }
+  }
+
+  async function settled(): Promise<void> {
+    do {
+      if (activeRuns.size > 0) await new Promise<void>((resolve) => idleWaiters.push(resolve));
+      await teardown.settled();
+    } while (activeRuns.size > 0);
+  }
 
   /** Mark all downstream tasks dirty starting from `nodeId`. */
   function propagateDirty(nodeId: string) {
@@ -173,6 +287,9 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
       lastDepVersions: new Map(),
       value: undefined,
       error: undefined,
+      live: false,
+      gen: undefined,
+      reads: undefined,
     };
 
     tasksMap.set(task.id, node);
@@ -265,6 +382,13 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     ensureTaskRegistered,
     currentVersion,
     isTaskDirty,
+    teardown,
+    epoch: () => epoch,
+    runStarted: (run) => {
+      run.pin = teardown.mark();
+      activeRuns.add(run);
+    },
+    runFinished,
   };
 
   const runImpl = createRun({
@@ -285,7 +409,14 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     return runImpl(state as any, options);
   }
 
-  function dispose() {
+  function dispose(): Promise<void> {
+    // Runs still in flight belong to the old epoch: whatever they produce is torn down.
+    epoch += 1;
+    for (const run of activeRuns) run.controller.abort(new CancelledError());
+    for (const lease of leases) lease.abort(new CancelledError());
+    teardown.disposeAll(tasksMap.values());
+    teardown.pump();
+
     for (const p of paramsMap.values()) {
       try {
         p.unsubscribe?.();
@@ -302,6 +433,42 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     structureVersion += 1;
     compiledVersion = -1;
     compileCount = 0;
+    depthVersion = -2;
+    return disposed();
+  }
+
+  /** Every teardown runs to the end before the failures are reported, all of them at once. */
+  async function disposed(): Promise<void> {
+    await settled();
+    await teardown.drained();
+    const errors = teardown.takeDisposeErrors();
+    if (errors.length > 0)
+      throw new AggregateError(
+        errors,
+        errors.length + " teardown(s) failed while the graph was disposed",
+      );
+  }
+
+  /**
+   * A lease: the value, and everything it was built on, stays alive until `fn` settles, even
+   * if the task is recomputed in the meantime.
+   */
+  async function use<T, R>(
+    taskRef: TaskRef<T>,
+    fn: (value: T, signal: AbortSignal) => R | PromiseLike<R>,
+  ): Promise<R> {
+    const node = tasksMap.get(taskRef.id);
+    if (!node) throw new UnknownNodeError(taskRef.id);
+    if (node.state !== "ready") throw new NoComputedValueError(taskRef.id);
+    const controller = new AbortController();
+    const held = teardown.hold(node);
+    leases.add(controller);
+    try {
+      return await fn(node.value as T, controller.signal);
+    } finally {
+      leases.delete(controller);
+      if (held) teardown.release(held);
+    }
   }
 
   function inspect(options?: InspectOptions): InspectResult {
@@ -329,6 +496,7 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
         state: options?.includeRuntime ? t.state : undefined,
         dirty: options?.includeRuntime ? isTaskDirty(t) : undefined,
         version: options?.includeRuntime ? t.version : undefined,
+        live: options?.includeRuntime ? t.live : undefined,
       });
 
       for (const depId of d.getIncomingIds(t.ref.id) ?? []) {
@@ -349,6 +517,7 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
             compiledVersion,
             compileCount,
             topoOrder,
+            teardown: teardown.counts(),
           }
         : undefined,
     };
@@ -359,6 +528,9 @@ export function graph<Res = unknown, L extends Lane = Lane>(): Graph<L, Res> {
     on,
     run,
     dispose,
+    [Symbol.asyncDispose]: dispose,
+    settled,
+    use,
     inspect,
     get: getTaskValue,
     peek: peekTaskValue,

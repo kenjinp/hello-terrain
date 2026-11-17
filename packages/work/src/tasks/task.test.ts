@@ -46,8 +46,38 @@ describe("task()", () => {
       throw new Error("unexpected");
     };
 
-    const ctx: TaskContext = { lane: "cpu", signal: new AbortController().signal, now: () => 0 };
+    const ctx: TaskContext = {
+      lane: "cpu",
+      signal: new AbortController().signal,
+      now: () => 0,
+      scope: { use: (value) => value, adopt: (value) => value, defer: () => {} },
+      teardownPrevious: async () => {},
+    };
     expect(await def.compute(get, (fn: any) => fn(), ctx)).toBe(42);
+  });
+
+  it("has one teardown, which must be a function", () => {
+    const t = task(() => ({ close() {} })).teardown((value) => value.close());
+    expect(() => t.teardown(() => {})).toThrow(/already called/);
+    expect(() => task(() => 1).teardown(undefined as any)).toThrow(TypeError);
+  });
+
+  it("types the previous value passed to work()", () => {
+    const sync = task((_get, work) =>
+      work((prev: { id: number } | undefined) => prev ?? { id: 1 }),
+    );
+    expectTypeOf(sync).toExtend<TaskRef<{ id: number }>>();
+
+    const async = task((_get, work) =>
+      work(async (prev: { id: number } | undefined) => prev ?? { id: 1 }),
+    );
+    expectTypeOf(async).toExtend<TaskRef<{ id: number }>>();
+
+    // A previous value of another type than the one returned is refused.
+    task((_get, work) =>
+      // @ts-expect-error prev is a number here, not a string
+      work((prev: string | undefined) => (prev ? 1 : 2)),
+    );
   });
 
   it("preserves output typing for the TS server/linter", () => {

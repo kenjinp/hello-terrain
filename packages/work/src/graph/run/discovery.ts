@@ -13,6 +13,13 @@ export async function runDiscovery<L extends Lane, Res>(
   // In-flight task executions for this run (used to dedupe concurrent compute requests).
   const inFlight = new Map<string, Promise<void>>();
 
+  // `ctx.teardownPrevious()` takes the values of every dependent away, including ones this run
+  // had already served from cache or computed.
+  let invalidated = false;
+  const onInvalidated = () => {
+    invalidated = true;
+  };
+
   const computeTask = async (taskId: string, stack: Set<string>): Promise<void> => {
     // True cycle detection is per-call-stack: if a task requests itself upstream, the graph is cyclical.
     if (stack.has(taskId)) throw new deps.CyclicalGraphError(taskId);
@@ -36,8 +43,13 @@ export async function runDiscovery<L extends Lane, Res>(
     const nextStack = new Set(stack);
     nextStack.add(taskId);
 
-    const p = executeTaskDiscovery(deps, state, ctx, node, (missingId) =>
-      computeTask(missingId, nextStack),
+    const p = executeTaskDiscovery(
+      deps,
+      state,
+      ctx,
+      node,
+      (missingId) => computeTask(missingId, nextStack),
+      onInvalidated,
     );
     inFlight.set(taskId, p);
     try {
@@ -48,5 +60,12 @@ export async function runDiscovery<L extends Lane, Res>(
   };
 
   await Promise.all(targets.map((t) => computeTask(t.id, new Set())));
-}
 
+  // Bring those back. Whatever lost its value is upstream of a target that lost its own.
+  while (invalidated && !ctx.signal.aborted) {
+    invalidated = false;
+    const again = targets.filter((t) => state.tasksMap.get(t.id)?.state === "idle");
+    if (again.length === 0) break;
+    await Promise.all(again.map((t) => computeTask(t.id, new Set())));
+  }
+}
