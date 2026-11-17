@@ -1,0 +1,341 @@
+---
+title: Teardown
+description: Releasing what a task created when its value is replaced or the graph is disposed
+---
+
+Tasks often create things that have to be released: connections, file handles, GPU buffers,
+timers, subscriptions. A task that declares a **teardown** has every value it produced released
+exactly once, when the graph stops owning that value.
+
+```ts
+import { graph, param, task } from "@hello-terrain/work";
+
+const databaseUrl = param("postgres://localhost/app");
+
+const connection = task((get, work) => {
+  const url = get(databaseUrl);
+  return work(() => connect(url));
+}).teardown((conn) => conn.close());
+
+const g = graph();
+g.add(connection);
+
+await g.run();                 // connection 1 is created
+
+databaseUrl.set("postgres://replica/app");
+await g.run();                 // connection 2 is created, then connection 1 is closed
+
+await g.dispose();             // connection 2 is closed
+```
+
+## When teardown runs
+
+A value is torn down once, for one of these reasons. The reason is passed as `info.reason`.
+
+| Reason | When |
+|--------|------|
+| `"replaced"` | The task produced a different value |
+| `"released"` | The task, or a task it depends on, called `ctx.teardownPrevious()` |
+| `"disposed"` | The graph was disposed |
+
+```ts
+task(/* … */).teardown(async (value, info) => {
+  // info.reason: "replaced" | "released" | "disposed"
+  // info.signal: aborted when this teardown runs past the graph's timeout
+  await value.close({ signal: info.signal });
+});
+```
+
+Three rules cover most of the behaviour:
+
+- **Teardown never blocks a run.** The new value is created first and the old one is torn down
+  afterwards. `g.run()` does not wait for teardown functions, not even async ones. Use
+  [`g.settled()`](#waiting-for-teardown) when you need to.
+- **Nothing is torn down while something still uses it.** See [Holds](#holds).
+- **A recompute that throws tears nothing down.** The previous value stays current and is
+  offered to the next attempt.
+
+A task has one teardown: calling `.teardown()` twice throws.
+
+### Keeping a value
+
+`work(fn)` passes the task's previous value to `fn`, or `undefined` when there is none. Returning
+it keeps it: nothing is torn down.
+
+```ts
+const pool = task((get, work) => {
+  const url = get(databaseUrl);
+  const size = get(poolSize);
+  return work((prev) => {
+    if (prev && prev.url === url) {
+      prev.resize(size);
+      return prev;                  // same object: kept
+    }
+    return createPool(url, size);   // different object: `prev` is torn down
+  });
+}).teardown((pool) => pool.end());
+```
+
+"Different" means not `Object.is`-equal, so this also works for primitives such as a file
+descriptor number.
+
+### Disposable values
+
+For values that implement `Symbol.dispose` or `Symbol.asyncDispose`, pass the exported `dispose`
+helper. Nothing is disposed implicitly: a task without `.teardown()` leaves its values alone.
+
+```ts
+import { dispose, task } from "@hello-terrain/work";
+
+const connection = task((get, work) => {
+  const url = get(databaseUrl);
+  return work(() => connect(url));
+}).teardown(dispose);
+```
+
+## Holds
+
+A value that was replaced is torn down as soon as all of these are true:
+
+1. **No value built on it is alive.** When a task calls `get(dep)`, the value it goes on to
+   produce holds `dep`'s value until it is torn down or replaced itself.
+2. **No run that could have read it is active.** Only runs that started before the value was
+   replaced count, so a graph that is never idle still tears down.
+3. **No lease holds it.** See [`g.use()`](#leases).
+
+What follows from that:
+
+- **Dependents are torn down before their dependencies**, on replace, on release and on dispose,
+  also when the dependent's teardown is async.
+- **Holds pass through plain values.** If `handle` reads `connection` and has no teardown of its
+  own, whatever reads `handle` still holds the connection.
+- **A stale dependent keeps its dependency alive.** If `report` read connection 1 and is not
+  recomputed when the connection is replaced (it was not among the `targets`, its recompute
+  failed, or it is `cache("once")`), connection 1 stays open until `report` recomputes or the
+  graph is disposed. The graph cannot know whether `report` still references it, so it does not
+  guess.
+
+<Callout type="note">
+  `g.inspect({ includeRuntime: true }).meta.teardown.held` counts teardowns that are waiting on a
+  hold. A number that only grows is a leak, usually a stale dependent.
+</Callout>
+
+## ctx.scope
+
+`.teardown(fn)` releases the value a task returns. `ctx.scope` is for everything else an
+execution acquires along the way. Its cleanups belong to the value the execution returns and run
+when that value is torn down. The methods are those of TC39's `DisposableStack`.
+
+| Method | Description |
+|--------|-------------|
+| `scope.use(value)` | Registers `value[Symbol.asyncDispose]` or `value[Symbol.dispose]`. Returns the value. `null` and `undefined` pass through |
+| `scope.adopt(value, fn)` | Registers `fn(value, info)`. Returns the value |
+| `scope.defer(fn)` | Registers `fn(info)` |
+
+```ts
+const session = task((get, work, ctx) => {
+  const url = get(databaseUrl);
+  return work(async () => {
+    const conn = ctx.scope.adopt(await connect(url), (c) => c.close());
+    const feed = ctx.scope.use(conn.subscribe("events")); // has Symbol.dispose
+    ctx.scope.defer(() => console.log("session closed"));
+    return { conn, feed };
+  });
+});
+```
+
+- Entries run **newest first**, after the task's own `.teardown(fn)`.
+- If the execution **throws**, its entries run straight away with
+  `info.reason === "failed"` and `info.error`. In the example, a `subscribe()` that throws still
+  closes the connection.
+- `use` and `adopt` register the same object once, however often it is passed.
+- Entries are carried over when the task returns the same object again. A task that returns
+  `undefined` or a primitive runs its previous entries on every recompute, like an effect
+  cleanup:
+
+```ts
+const logger = task((get, work, ctx) => {
+  const ms = get(intervalMs);
+  return work(() => {
+    const timer = setInterval(report, ms);
+    ctx.scope.defer(() => clearInterval(timer));
+  });
+});
+```
+
+`ctx.scope` is only valid while the task is computing. Using it afterwards throws.
+
+## ctx.teardownPrevious()
+
+By default the old and the new value exist side by side for a moment. Some things cannot exist
+twice: a listening port, an exclusive lock, a device with a single context. For those, a task can
+tear down its previous value first:
+
+```ts
+const server = task(async (get, work, ctx) => {
+  const port = get(portParam);
+  if (port < 1024) throw new Error("Refusing a privileged port"); // the old server keeps serving
+
+  await ctx.teardownPrevious();   // the old server is closed, the port is free
+  return work(() => listen(port));
+}).teardown((server) => server.close());
+```
+
+The call:
+
+1. tears down every value that was built on the previous value, dependents first, with reason
+   `"released"`, and makes those tasks recompute in the same run;
+2. tears down the task's previous value and waits for it;
+3. resolves. `work(prev)` now receives `undefined`.
+
+It is a call inside the compute function, not a flag on the task, so that the task decides when
+the outage starts: validate first, and a bad input leaves the old value in place. Calling it
+again in the same execution returns the same promise. It does not wait for leases or other runs.
+
+<Callout type="warn">
+  Dependents that are outside the run's `targets` lose their value too and stay without one until
+  they are run again.
+</Callout>
+
+## managed()
+
+`managed()` builds a task for the common shape "create it, update it in place when possible,
+recreate it otherwise, tear it down at the end". It lives in its own entry point and uses only the
+public API.
+
+```ts
+import { managed } from "@hello-terrain/work/managed";
+
+const server = managed({
+  inputs: (get) => ({ port: get(portParam), routes: get(routesParam) }),
+  create: ({ port, routes }, ctx) => listen(port, routes),
+  update: (current, next, prev) => {
+    if (next.port !== prev.port) return false;   // cannot change in place: recreate
+    current.setRoutes(next.routes);
+    return true;                                 // kept
+  },
+  teardown: (server) => server.close(),
+  exclusive: true,
+});
+```
+
+| Property | Description |
+|----------|-------------|
+| `inputs(get)` | Reads the dependencies. Runs first on every execution |
+| `create(inputs, ctx)` | Creates the value. May be async |
+| `update(current, next, prev)` | Optional. Return `true` after bringing `current` up to date to keep it. Anything else recreates |
+| `teardown(value, info)` | Same contract as `.teardown(fn)` |
+| `exclusive` | Call `ctx.teardownPrevious()` before `create`. Off by default |
+
+The second argument takes the usual task options (`lane`, `cache`, `tags`).
+
+<Callout type="note">
+  Write `create` before `update`. TypeScript infers the value type from `create`, and only for
+  the properties that come after it.
+</Callout>
+
+If the decision does not depend on comparing old and new inputs, two tasks do the same without a
+helper: one that creates the value and depends only on what forces a rebuild, and one that reads
+it and applies what can change in place.
+
+## The graph side
+
+### Waiting for teardown
+
+`g.settled()` resolves once no run is active and every teardown that could start has finished. It
+never rejects. Values that are still held are not waited for.
+
+```ts
+await g.run();
+await g.settled();
+```
+
+### Disposing the graph
+
+`g.dispose()` aborts active runs and leases, tears down every live value (dependents first) with
+reason `"disposed"` and clears the graph. It returns a promise that resolves when all teardowns
+have finished, and rejects with an `AggregateError` afterwards if any of them failed. The graph is
+empty afterwards and can be used again.
+
+```ts
+await g.dispose();
+
+// or
+{
+  await using g = graph();
+  // …
+} // disposed here
+```
+
+### Leases
+
+`g.get()` and `g.peek()` hand out references the graph cannot track. `g.use(task, fn)` is the
+tracked way to use a value outside a run: the value, and everything it was built on, is not torn
+down until `fn` settles, even if the task recomputes meanwhile.
+
+```ts
+const rows = await g.use(connection, (conn, signal) => conn.query("select 1", { signal }));
+```
+
+`signal` aborts when the graph is disposed. `g.use()` rejects with `NoComputedValueError` when the
+task has no value yet.
+
+### Options
+
+```ts
+const g = graph({
+  teardown: {
+    // When a batch of ready teardowns starts. Default: a microtask.
+    schedule: (flush) => requestIdleCallback(flush),
+    // How long one async teardown function may take. Default: 30 000. Infinity waits forever.
+    timeoutMs: 5_000,
+  },
+});
+```
+
+### Failures
+
+- A teardown that throws or rejects does not stop any other teardown. It is emitted as
+  `teardown:error`. Without a listener for it, the error goes to `reportError` (or
+  `console.error`): a failed teardown is never silent.
+- A teardown that runs past `timeoutMs` has its `info.signal` aborted and is reported as a
+  `TeardownTimeoutError`. Whatever waited behind it proceeds.
+
+### Observing
+
+| Event | Properties | Description |
+|-------|------------|-------------|
+| `teardown:finish` | `taskId`, `at`, `durationMs`, `reason` | A teardown function finished |
+| `teardown:error` | `taskId`, `at`, `reason`, `error` | A teardown function threw, rejected or timed out |
+
+One event is emitted per teardown function: a task's `.teardown(fn)` or one `ctx.scope` entry.
+
+`g.inspect({ includeRuntime: true }).meta.teardown` has the counters `pending`, `held`,
+`completed` and `failed`. They make backpressure a one-liner when values are replaced faster
+than they can be torn down:
+
+```ts
+await g.run();
+const pending = g.inspect({ includeRuntime: true }).meta?.teardown?.pending ?? 0;
+if (pending > 32) await g.settled();
+```
+
+## Hazards
+
+- **Read dependencies before acquiring anything.** The first time a task runs, a `get()` of a
+  dependency that has no value yet aborts the attempt and retries it later. Acquire inside
+  `work()`, or register what you acquire on `ctx.scope`, so that an aborted attempt cleans up.
+- **Do not await `g.dispose()` or `g.settled()` inside a task or a lease.** Each waits for the
+  other.
+- **A run or lease that never ends holds values forever.** Pass an abort signal to runs, and
+  honour the `signal` a lease is given.
+- **A synchronous teardown still blocks the thread.** It runs after the run, not for free. Use
+  `schedule` to move it, or make it async.
+- **Returning `prev` is a claim** that the value is still valid for the inputs just read. A value
+  that secretly keeps a reference to a dependency the task no longer reads is not protected.
+- **`scope.defer()` on a value that is kept adds an entry per execution.** Prefer `scope.adopt()`,
+  which registers an object once, or register only when creating.
+- **Overlapping runs with `ctx.teardownPrevious()`.** Two runs of the same graph at the same time
+  can both execute a task. The value that loses is torn down, but for a moment two values exist
+  after all, which is what `teardownPrevious()` is there to prevent. Do not overlap runs of a
+  graph that relies on it.

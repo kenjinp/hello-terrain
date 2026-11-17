@@ -1,6 +1,6 @@
 import { CacheStrategy, Lane } from "../types";
 import { createNodeId } from "../utils";
-import type { Task, TaskCompute, TaskOptions } from "./task.types";
+import type { Task, TaskCompute, TaskOptions, TaskTeardown } from "./task.types";
 import { TASK_DEF } from "./task.types";
 
 /**
@@ -92,6 +92,22 @@ export function task<
      */
     tags(tags: readonly string[]) {
       options.tags = tags;
+      return ref;
+    },
+
+    /**
+     * Declares how this task's value is torn down.
+     * @param fn - Called with each value the task produced, once the graph stops owning it.
+     * @returns The same task ref (fluent API).
+     */
+    teardown(fn: TaskTeardown<Out>) {
+      if (typeof fn !== "function") {
+        throw new TypeError("task().teardown(fn) requires a function");
+      }
+      if (options.teardown !== undefined) {
+        throw new Error("task().teardown(fn) was already called: a task has one teardown");
+      }
+      options.teardown = fn;
       return ref;
     },
 

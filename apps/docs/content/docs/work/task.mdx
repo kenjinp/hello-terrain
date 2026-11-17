@@ -82,6 +82,23 @@ const processed = task(async () => {
   `work()` may be called **at most once per task compute**. Calling `work()` more than once will throw.
 </Callout>
 
+The callback receives the task's **previous value**, or `undefined` when there is none. Returning
+it keeps it, which is how a task updates something in place instead of creating it again:
+
+```ts
+const pool = task((get, work) => {
+  const url = get(databaseUrl);
+  const size = get(poolSize);
+  return work((prev) => {
+    if (prev && prev.url === url) {
+      prev.resize(size);
+      return prev;
+    }
+    return createPool(url, size);
+  });
+}).teardown((pool) => pool.end());
+```
+
 #### ctx (TaskContext)
 
 Provides execution context including lane info, abort signal, and timing utilities.
@@ -92,6 +109,8 @@ Provides execution context including lane info, abort signal, and timing utiliti
 | `signal` | `AbortSignal` | Abort signal for cancellation |
 | `now()` | `() => number` | High-precision time in milliseconds |
 | `resources` | `unknown` | User-supplied resources (if provided to run) |
+| `scope` | `TaskScope` | Cleanups for what this execution acquires: `use`, `adopt`, `defer`. See [Teardown](/work/teardown#ctxscope) |
+| `teardownPrevious()` | `() => Promise<void>` | Tears down the task's previous value now and waits for it. See [Teardown](/work/teardown#ctxteardownprevious) |
 
 ```ts
 const fetchData = task(async (get, work, ctx) => {
@@ -189,6 +208,23 @@ const critical = task((get, work) => {
 }).tags(["critical", "user-facing"]);
 ```
 
+### teardown(fn)
+
+Declares how the task's value is released. `fn(value, info)` is called once for each value the
+task produced, when the graph stops owning it: the task produced a different value, the task
+called `ctx.teardownPrevious()`, or the graph was disposed. It may be async; runs never wait for
+it. A task has one teardown.
+
+```ts
+const connection = task((get, work) => {
+  const url = get(databaseUrl);
+  return work(() => connect(url));
+}).teardown((conn) => conn.close());
+```
+
+For values that implement `Symbol.dispose` or `Symbol.asyncDispose`, pass the exported `dispose`
+helper: `.teardown(dispose)`. See [Teardown](/work/teardown) for ordering, `ctx.scope` and the rest.
+
 ## Gotchas
 
 ### Closure state is re-created on every run
@@ -211,8 +247,9 @@ const connectTask = task((get, work) => {
 });
 ```
 
-If you need state that persists across runs, use the **create / update** pattern (see below) or
-move the variable to module scope (not recommended for multi-instance use).
+If you need state that persists across runs, use the previous value that `work(prev)` receives,
+the **create / update** pattern (see below) or move the variable to module scope (not recommended
+for multi-instance use).
 
 ### The create / update pattern
 
@@ -242,6 +279,11 @@ const updateDbPool = task((get, work) => {
 ```
 
 This keeps the resource identity stable while allowing reactive updates.
+
+A `cache("once")` task never replaces its value, so add `.teardown(fn)` to it if the resource has
+to be released when the graph is disposed. When the resource sometimes has to be **recreated**
+(the pool's URL changed), use `work(prev)` in a single task, or
+[`managed()`](/work/teardown#managed), which does the create / update / teardown bookkeeping for you.
 
 ### Stale references in `cache("once")` tasks
 

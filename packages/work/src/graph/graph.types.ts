@@ -1,5 +1,5 @@
 import type { ParamRef, ParamSetInput } from "../param/param.types";
-import type { Task, TaskRef, TaskState } from "../tasks/task.types";
+import type { ScopeTeardownReason, Task, TaskRef, TaskState } from "../tasks/task.types";
 import type { CacheStrategy, Lane } from "../types";
 
 /**
@@ -32,6 +32,8 @@ export type RunStatus = "ok" | "error" | "cancelled";
  * - "task:finish": A task completes successfully.
  * - "task:error": A task throws or rejects with an error.
  * - "param:set": A param value was set via `graph.set()`.
+ * - "teardown:finish": A teardown function finished: a task's `.teardown(fn)` or a `ctx.scope` entry.
+ * - "teardown:error": A teardown function threw, rejected or timed out. The others still run.
  */
 export type GraphEvent =
   | { type: "run:start"; runId: string; at: number }
@@ -59,7 +61,21 @@ export type GraphEvent =
       durationMs: number;
       error: unknown;
     }
-  | { type: "param:set"; paramId: string; at: number };
+  | { type: "param:set"; paramId: string; at: number }
+  | {
+      type: "teardown:finish";
+      taskId: string;
+      at: number;
+      durationMs: number;
+      reason: ScopeTeardownReason;
+    }
+  | {
+      type: "teardown:error";
+      taskId: string;
+      at: number;
+      reason: ScopeTeardownReason;
+      error: unknown;
+    };
 
 export type GraphEventType = GraphEvent["type"];
 
@@ -111,6 +127,26 @@ export type RunOptions<L extends string, Res> = {
   signal?: AbortSignal;
 } & (unknown extends Res ? { resources?: Res } : { resources: Res });
 
+/** How a graph tears down the values its tasks retire. */
+export interface GraphTeardownOptions {
+  /**
+   * Decides when a batch of ready teardowns starts: call `flush` when it should. The default
+   * is a microtask. Use it to move teardown off the critical path (idle callback, next frame)
+   * or to wait for something outside the graph that still uses the retired values.
+   */
+  schedule?: (flush: () => void) => void;
+  /**
+   * How long one async teardown function may take before the graph gives up on it: its
+   * `signal` is aborted, a `TeardownTimeoutError` is reported and whatever waited behind it
+   * proceeds. Default 30 000. `Infinity` waits forever.
+   */
+  timeoutMs?: number;
+}
+
+export interface GraphOptions {
+  teardown?: GraphTeardownOptions;
+}
+
 export interface Graph<L extends Lane = Lane, Res = unknown> {
   on(cb: GraphEventCallback): Unsubscribe;
   on<S extends GraphEventSelector>(
@@ -122,7 +158,30 @@ export interface Graph<L extends Lane = Lane, Res = unknown> {
       ? [options?: RunOptions<L, Res>]
       : [options: RunOptions<L, Res>]
   ): Promise<RunReport>;
-  dispose(): void;
+  /**
+   * Tears down every live value, dependents before their dependencies, and clears the graph.
+   * In-flight runs and leases are aborted first. Resolves when all teardowns have finished;
+   * rejects with an `AggregateError` afterwards if any of them failed. The graph is empty
+   * afterwards and can be used again.
+   */
+  dispose(): Promise<void>;
+  /** Same as `dispose()`, so that `await using g = graph()` works. */
+  [Symbol.asyncDispose](): Promise<void>;
+  /**
+   * Resolves once no run is active and every teardown that could start has finished. Never
+   * rejects: failures go to `teardown:error`. Values still held by a lease or a dependent are
+   * not waited for.
+   */
+  settled(): Promise<void>;
+  /**
+   * Leases a task's value: it, and everything it was built on, is not torn down until `fn`
+   * settles, even if the task is recomputed meanwhile. `signal` aborts when the graph is
+   * disposed. `ctx.teardownPrevious()` does not wait for leases.
+   */
+  use<T, R>(
+    taskRef: TaskRef<T>,
+    fn: (value: T, signal: AbortSignal) => R | PromiseLike<R>,
+  ): Promise<R>;
   inspect(options?: InspectOptions): InspectResult;
   get<T>(taskRef: TaskRef<T>): T;
   peek<T>(taskRef: TaskRef<T>): T | undefined;
@@ -157,6 +216,8 @@ export type InspectNode =
       state?: TaskState;
       dirty?: boolean;
       version?: number;
+      /** True while the task holds a value that has not been torn down. */
+      live?: boolean;
     };
 
 export type InspectEdge = {
@@ -170,6 +231,14 @@ export type InspectMeta = {
   compiledVersion: number;
   compileCount: number;
   topoOrder?: readonly string[];
+  /**
+   * Teardown counters, in teardown functions (a task's `.teardown(fn)` or one `ctx.scope` entry).
+   * - `pending`: of retired values, not finished yet.
+   * - `held`: the part of `pending` that has not started, because a run, a lease or a value
+   *   built on it still holds the retired value. A number that only grows is a leak.
+   * - `completed` / `failed`: totals since the graph was created.
+   */
+  teardown?: { pending: number; held: number; completed: number; failed: number };
 };
 
 export type InspectOptions = {

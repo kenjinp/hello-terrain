@@ -23,6 +23,57 @@ export interface TaskOptions<L extends Lane = Lane> {
   cache?: CacheStrategy;
   /** Tags for this task (useful for filtering, debugging, etc). */
   tags?: readonly string[];
+  /** How the task's value is torn down. Set with `.teardown(fn)`. */
+  teardown?: TaskTeardown<any>;
+}
+
+/**
+ * Why a value is being torn down.
+ *
+ * - "replaced": the task produced a different value.
+ * - "released": the task, or a task it depends on, called `ctx.teardownPrevious()`.
+ * - "disposed": the graph was disposed.
+ */
+export type TeardownReason = "replaced" | "released" | "disposed";
+
+/** Details passed to a task's teardown function. */
+export interface TeardownInfo {
+  readonly reason: TeardownReason;
+  /** Aborted when this teardown runs past the graph's `teardown.timeoutMs`. */
+  readonly signal: AbortSignal;
+}
+
+/**
+ * Details passed to a `ctx.scope` entry: the same as `TeardownInfo`, plus the case where the
+ * execution that registered the entry threw and so never produced a value.
+ */
+export type ScopeTeardownInfo =
+  | TeardownInfo
+  | { readonly reason: "failed"; readonly error: unknown; readonly signal: AbortSignal };
+
+export type ScopeTeardownReason = ScopeTeardownInfo["reason"];
+
+/**
+ * Tears down a value a task produced. Called once for each value, when the graph stops owning
+ * it. May be async; task execution never waits for it.
+ */
+export type TaskTeardown<T> = (value: T, info: TeardownInfo) => void | PromiseLike<void>;
+
+/**
+ * Cleanups owned by the value an execution produces. The methods are those of TC39's
+ * `DisposableStack` and mean the same thing. Entries run newest first, after the task's
+ * `.teardown(fn)`; if the execution throws they run straight away with reason `"failed"`.
+ */
+export interface TaskScope {
+  /** Registers `value[Symbol.asyncDispose] ?? value[Symbol.dispose]`. Returns the value. */
+  use<V extends Disposable | AsyncDisposable | null | undefined>(value: V): V;
+  /** Registers `teardown(value, info)`. Returns the value. */
+  adopt<V>(
+    value: V,
+    teardown: (value: V, info: ScopeTeardownInfo) => void | PromiseLike<void>,
+  ): V;
+  /** Registers a callback. */
+  defer(fn: (info: ScopeTeardownInfo) => void | PromiseLike<void>): void;
 }
 
 /**
@@ -40,6 +91,18 @@ export interface TaskContext<L extends Lane = Lane, Resources = unknown> {
   now(): number;
   /** User-supplied resources for this execution, if any. */
   resources?: Resources;
+  /**
+   * Cleanups for what this execution acquires. They belong to the value the execution returns
+   * and run when that value is torn down. Only valid while the task is computing.
+   */
+  readonly scope: TaskScope;
+  /**
+   * Tears down the task's previous value now and resolves when that has finished. For values
+   * that cannot exist twice (a port, a lock): validate the inputs, call this, then create.
+   * Values built on the previous value are torn down first and their tasks recompute.
+   * Afterwards `work(prev)` receives `undefined`.
+   */
+  teardownPrevious(): Promise<void>;
 }
 
 /**
@@ -84,6 +147,16 @@ export interface TaskRef<_T> {
    * @returns The current task ref (for chaining).
    */
   tags(tags: readonly string[]): this;
+
+  /**
+   * Declare how this task's value is torn down. `fn` is called once for each value the task
+   * produced, when the graph stops owning it: the task produced a different value, the task
+   * called `ctx.teardownPrevious()`, or the graph was disposed. A task has one teardown;
+   * calling this twice throws.
+   * @param fn - Receives the retired value. May be async.
+   * @returns The current task ref (for chaining).
+   */
+  teardown(fn: TaskTeardown<_T>): this;
 }
 
 /**
@@ -107,10 +180,11 @@ export type Getter = <T>(ref: NodeRef<T>) => T;
  * Runs a function inside a logical "work" unit, used for isolation or purity distinctions.
  *
  * @template R - The value returned by the function.
- * @param fn - The function to execute in the work unit.
+ * @param fn - The function to execute in the work unit. It receives the task's previous value,
+ *   or `undefined` when there is none. Returning it keeps the value: nothing is torn down.
  * @returns The result of the function call.
  */
-export type Work = <R>(fn: () => R) => R;
+export type Work = <R>(fn: (prev: Awaited<R> | undefined) => R) => R;
 
 /**
  * The compute function type for a task that discovers dependencies dynamically.

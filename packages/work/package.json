@@ -16,6 +16,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
+    },
+    "./managed": {
+      "types": "./dist/managed.d.ts",
+      "import": "./dist/managed.mjs",
+      "require": "./dist/managed.cjs"
     }
   },
   "files": [
