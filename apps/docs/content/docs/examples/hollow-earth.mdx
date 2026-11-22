@@ -1,0 +1,108 @@
+---
+title: Hollow Earth
+description: An Earth-sized world turned inside out — a central sun, moons that cast the night, raymarched air and a walkable inner surface
+---
+
+import HollowEarthScene from "@/examples/HollowEarthScene"
+
+<div className="h-[600px] rounded overflow-hidden">
+<HollowEarthScene />
+</div>
+
+## Overview
+
+The same Earth-sized cube-sphere as the [Earth-Scale Planet](/examples/earth-planet) example (authalic radius **6,371,007.2 m**, ~10 km of relief), built with `invert: true` so the continents grow *inward*. A small sun sits at the centre of the world, five bodies orbit it, and you stand on the inside of the shell with the far side of the planet for a sky.
+
+```tsx
+const topology = createCubeSphereTopology({ radius: SHELL_RADIUS, invert: true });
+```
+
+That one flag is the only terrain-library change from the outside-in planet. Everything else on this page — the light, the shadows, the air, the water and the cameras — is example code layered on the terrain's `positionNode` and runtime queries.
+
+### Controls
+
+- **Tour** cuts between the six scripted shots every 18 seconds. Click a shot to hold it.
+- **Walk** drops you onto the nearest dry land. Click the canvas to capture the mouse, **WASD** to move, **Space** to jump, **Shift** to sprint, **Esc** to release.
+- **Fly** is the altitude-scaled fly camera from the Earth-Scale Planet example.
+- **[** and **]** step the clock back and forward an hour (hold **Shift** for six), so you can dial in dusk or an eclipse without waiting. The example needs focus for hotkeys — click it first.
+
+## How it works
+
+### Night comes from a moon, not from rotation
+
+With the sun at the centre, every point on the shell has it at the zenith, permanently. Nothing rotates into shadow, so the day/night cycle has to be cast.
+
+**Nyx** does that. It is a dark body 820 km in radius orbiting only 1,000 km from the sun, which lets it block a cone of light about 55° wide. One orbit is one day; wherever its shadow falls, it is night. Because the sun is a disc and not a point, the edge of the shadow is a penumbra roughly 2,500 km across — dusk and dawn. Nyx's orbit is tilted 23.4° and precesses, so the band of night wanders over the year and the poles never see full night.
+
+The four outer moons are too small and too far from the sun for that. They cast travelling eclipse spots a few hundred kilometres wide instead.
+
+None of this uses a shadow map. The only occluders are spheres, and all light comes from one point, so "how much of the sun can this point see?" has a closed form: for each body, compare its disc with the cross-section of the cone that joins the point to the sun.
+
+```ts
+const along = dot(body.xyz.sub(p), toSun);             // where the sun ray passes the body
+const miss = length(body.xyz.sub(p).sub(toSun.mul(along))); // …and by how much
+const coneRadius = SUN_RADIUS * along / sunDistance;   // size of the sun's disc there
+const overlap = 1 - smoothstep(abs(bodyRadius - coneRadius), bodyRadius + coneRadius, miss);
+```
+
+The same function shades the terrain, the water, the moons (they eclipse each other) and every sample of the atmosphere.
+
+### An atmosphere that gets thicker towards the walls
+
+The air follows the model from Maxime Heckel's [On Rendering the Sky, Sunsets, and Planets](https://blog.maximeheckel.com/posts/on-rendering-the-sky-sunsets-and-planets/): a raymarch that accumulates Rayleigh scattering, Mie scattering and ozone absorption along each view ray. The inversion is in the density function — altitude is measured from the shell towards the centre, so the air is densest against the ground and the middle of the world is vacuum:
+
+```ts
+const altitude = SHELL_RADIUS - length(samplePosition);
+const rayleigh = exp(-altitude / 8500);
+```
+
+Three things differ from a conventional sky shader:
+
+- **There is no sky to render.** Every ray ends on the shell, a moon or the sun, so the march is done in the materials rather than in a post-processing pass, with the fragment's own position as the end of the ray. No depth-buffer reconstruction is needed.
+- **The light march is free.** A normal planet needs a second loop from every sample towards the sun. Here sunlight always travels radially and density depends only on radius, so the optical depth between the sun and a sample is `H · exp(-altitude / H)` — one `exp`, no loop.
+- **Most of each ray is vacuum.** A ray can cross 12,700 km with air only in the first and last hundred. Each ray is clipped against the top of the atmosphere and marched as two short segments, with samples bunched towards the ground.
+
+The shadow test runs per sample, so Nyx's shadow darkens the air as well as the land, and the moons drag visible shafts through the haze.
+
+Since the sun never sits low in the sky, there is no long slanted light path to redden it. The warm terminator comes from limb darkening instead: as Nyx covers the disc, only the sun's dimmer, redder rim is left (`terminatorWarmth`).
+
+### Water
+
+The sea is the terrain drawn a second time. A wrapper around the terrain's `positionNode` pulls every vertex onto the sea-level sphere and keeps the distance it moved as the water depth:
+
+```ts
+const displaced = vec3(terrainPositionNode).toVar();
+const radius = length(displaced);
+seabedDepth.assign(radius.sub(SHELL_RADIUS));
+return displaced.div(radius).mul(SHELL_RADIUS);
+```
+
+Passing one `useTerrain` handle to two `<Terrain>` components shares the quadtree and the compute pass, so the water costs a draw call and gets tessellated exactly where the camera needs it. The depth test against the terrain draws the coastline.
+
+In the fragment shader, depth drives Beer–Lambert absorption (red dies in a few metres, which is what turns shallows turquoise), Fresnel blends that with a reflection of the sky — a short atmosphere march towards the far side of the world — and a sum of travelling waves perturbs the normal. Waves shorter than a few pixels are faded out of the normal and into the width of the sun's glint.
+
+### Precision at 6,371 km
+
+A float32 world position at this radius is quantised to about half a metre, which is far too coarse for metre-long waves or ground detail. Both are evaluated in camera-relative coordinates instead: the fragment's offset from the camera is exact, and the camera's own position is supplied modulo 8,192 m from float64 on the CPU. Every wave vector and noise lattice is snapped to that period, so the pattern is seamless when the origin wraps.
+
+The terrain mesh itself still has the precision floor described in the Earth-Scale Planet example. That is why the walker defaults to a 12 m eye height and a brisk 60 m/s stride — lower either in the `player` controls to see the vertices swim.
+
+### Standing on the walls
+
+`WalkerCamera` keeps a position and a heading tangent to the ground. "Up" is the direction to the sun, so it changes as you move; each frame the heading is flattened against the new up (parallel transport), which keeps the view steady the whole way round the world. The ground height comes from the terrain's runtime query:
+
+```ts
+const sample = terrain.runtime.surfaceQuery.sampleTerrainByPosition(position);
+const ground = Math.min(sample.position.length(), SHELL_RADIUS); // land, or the sea surface
+position.setLength(ground - heightAboveGround - eyeHeight);
+```
+
+Gravity is a scalar acting on `heightAboveGround`, pushing outward. The cinematic shots use the same query to stay clear of mountains.
+
+## Source
+
+- `examples/HollowEarthScene.tsx` — scene, controls and camera bar
+- `examples/hollow-earth/world.ts` — radii, orbits and the simulation clock
+- `examples/hollow-earth/shading.ts` — eclipse shadows and the atmosphere march
+- `examples/hollow-earth/materials.ts` — terrain, water, moon and sun shading
+- `examples/hollow-earth/cameras.tsx` — shots and the wall-walking camera
