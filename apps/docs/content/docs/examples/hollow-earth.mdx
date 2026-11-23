@@ -26,6 +26,22 @@ That one flag is the only terrain-library change from the outside-in planet. Eve
 - **Fly** is the altitude-scaled fly camera from the Earth-Scale Planet example.
 - **[** and **]** step the clock back and forward an hour (hold **Shift** for six), so you can dial in dusk or an eclipse without waiting. The example needs focus for hotkeys — click it first.
 
+### Quality
+
+The `quality` control switches between three presets; append `?quality=high` or `?quality=ultra` to the URL to start in one. Switching rebuilds the scene, because most of these are shader loop counts or allocation sizes.
+
+| | Standard | High | Ultra |
+| --- | --- | --- | --- |
+| Atmosphere samples per ray | 2 × 8 | 2 × 16 | 2 × 28 |
+| Reflected-sky samples | 2 × 4 | 2 × 8 | 2 × 12 |
+| Water waves | 18 | 28 | 40 |
+| Finest ground detail | 8 m | 1 m | 1 m |
+| Tile resolution | 61 | 61 | 93 |
+| Tile budget | 1536 | 2048 | 2048 |
+| Max pixel ratio | 1 | 1.5 | 2 |
+
+Ultra is meant for a high-end discrete GPU.
+
 ## How it works
 
 ### Night comes from a moon, not from rotation
@@ -102,6 +118,7 @@ Gravity is a scalar acting on `heightAboveGround`, pushing outward. The cinemati
 ## Source
 
 - `examples/HollowEarthScene.tsx` — scene, controls and camera bar
+- `examples/hollow-earth/quality.ts` — the quality presets
 - `examples/hollow-earth/world.ts` — radii, orbits and the simulation clock
 - `examples/hollow-earth/shading.ts` — eclipse shadows and the atmosphere march
 - `examples/hollow-earth/materials.ts` — terrain, water, moon and sun shading

@@ -25,6 +25,7 @@ import {
   varyingProperty,
   vec3,
 } from "three/tsl";
+import type { QualityPreset } from "./quality";
 import type { HollowEarthShading, HollowEarthUniforms } from "./shading";
 import { ORBITING_BODIES, SHELL_RADIUS } from "./world";
 
@@ -65,9 +66,6 @@ const periodicNoise = Fn(([position, period]: [TslNode, TslNode]) => {
   return mix(mix(x00, x10, blend.y), mix(x01, x11, blend.y), blend.z).add(0.5);
 });
 
-/** Ground-detail octaves: cell size in metres. Each must divide DETAIL_PERIOD. */
-const DETAIL_CELLS = [512, 64, 8] as const;
-
 /**
  * Terrain surface colour: biome albedo, sunlight from the centre of the
  * world, analytic eclipse shadows, then the air between surface and eye.
@@ -79,7 +77,7 @@ const DETAIL_CELLS = [512, 64, 8] as const;
 export function createTerrainColorNode(
   u: HollowEarthUniforms,
   shading: HollowEarthShading,
-  params: { skirtScale: number; innerTileSegments: number },
+  params: { skirtScale: number; quality: QualityPreset },
 ) {
   // Recovering elevation subtracts two ~6.37e6 m magnitudes, so it has to run
   // per vertex (see `skirtAwareElevation` in earthTerrain.ts). On an inverted
@@ -87,7 +85,7 @@ export function createTerrainColorNode(
   const rawElevation = float(SHELL_RADIUS).sub(positionWorld.length());
   const elevation = varying(
     select(
-      isSkirtVertex(params.innerTileSegments),
+      isSkirtVertex(params.quality.innerTileSegments),
       rawElevation.add(float(params.skirtScale)),
       rawElevation,
     ),
@@ -115,7 +113,8 @@ export function createTerrainColorNode(
     const footprint = length(relative).mul(0.0018);
     const detailPosition = u.detailOrigin.add(relative).toVar();
     const grain = float(1).toVar();
-    for (const cell of DETAIL_CELLS) {
+    // Each cell size must divide DETAIL_PERIOD.
+    for (const cell of params.quality.detailCells) {
       const resolved = float(1).sub(smoothstep(cell * 0.2, cell * 0.8, footprint));
       const noise = periodicNoise(detailPosition.div(cell), float(DETAIL_PERIOD / cell));
       grain.mulAssign(mix(float(1), noise.mul(0.7).add(0.65), resolved));
@@ -152,7 +151,7 @@ export function createTerrainColorNode(
     const fill = shading.worldshineRadiance().mul(Math.PI).mul(facing.mul(0.5).add(0.5));
     const lit = albedo.mul(INV_PI).mul(sun.mul(facing).add(skylight).add(fill));
 
-    return shading.applyAtmosphere(lit);
+    return shading.applyAtmosphere(lit, params.quality.atmosphereSteps);
   })();
 }
 
@@ -232,10 +231,10 @@ function createWaves(count: number): Wave[] {
 export function createWaterNodes(
   u: HollowEarthUniforms,
   shading: HollowEarthShading,
-  params: { skirtScale: number; innerTileSegments: number },
+  params: { skirtScale: number; quality: QualityPreset },
 ) {
   const seabedDepth = varyingProperty("float", "vHollowEarthSeabedDepth");
-  const waves = createWaves(18);
+  const waves = createWaves(params.quality.waveCount);
 
   // Neighbouring tiles compute their shared edge through different float32
   // arithmetic, so the edges do not always meet. The terrain hides that with
@@ -245,7 +244,7 @@ export function createWaterNodes(
     Fn(() => {
       const displaced = vec3(terrainPositionNode).toVar();
       const radius = length(displaced).toVar();
-      const skirt = isSkirtVertex(params.innerTileSegments);
+      const skirt = isSkirtVertex(params.quality.innerTileSegments);
       // A skirt vertex must carry its edge vertex's depth, not its own: the
       // wall is a sub-pixel sliver, and a depth gradient across it gets
       // extrapolated into garbage (and then into foam) by multisampling.
@@ -318,7 +317,12 @@ export function createWaterNodes(
     // The sky of a hollow world is the far side of the shell: a chord away.
     const chord = skyCos.mul(2 * SHELL_RADIUS);
     const farPoint = positionWorld.add(skyward.mul(chord));
-    const sky = shading.marchAtmosphere(positionWorld, skyward, chord, 4);
+    const sky = shading.marchAtmosphere(
+      positionWorld,
+      skyward,
+      chord,
+      params.quality.reflectionSteps,
+    );
     const farLand = vec3(0.09, 0.12, 0.15)
       .mul(INV_PI)
       .mul(shading.sunLight(farPoint))
@@ -342,7 +346,7 @@ export function createWaterNodes(
     const water = mix(refracted, reflected, fresnel).add(glint);
     const surface = mix(water, vec3(0.82).mul(INV_PI).mul(surfaceLight), foam);
 
-    return shading.applyAtmosphere(surface);
+    return shading.applyAtmosphere(surface, params.quality.atmosphereSteps);
   })();
 
   return { positionNode, colorNode };
@@ -353,6 +357,7 @@ export function createBodyColorNode(
   u: HollowEarthUniforms,
   shading: HollowEarthShading,
   index: number,
+  steps: number,
 ) {
   const body = ORBITING_BODIES[index];
   return Fn(() => {
@@ -373,19 +378,23 @@ export function createBodyColorNode(
       .mul(INV_PI)
       .mul(sun.mul(max(dot(normal, toSun), 0)).add(shading.worldshineRadiance().mul(Math.PI)));
 
-    return shading.applyAtmosphere(lit, 6);
+    return shading.applyAtmosphere(lit, steps);
   })();
 }
 
 /** The sun's photosphere: limb-darkened and far brighter than anything it lights. */
-export function createSunColorNode(u: HollowEarthUniforms, shading: HollowEarthShading) {
+export function createSunColorNode(
+  u: HollowEarthUniforms,
+  shading: HollowEarthShading,
+  steps: number,
+) {
   return Fn(() => {
     const normal = positionWorld.normalize();
     const view = cameraPosition.sub(positionWorld).normalize();
     const mu = max(dot(normal, view), 0);
     const limb = pow(mu, float(0.55)).mul(0.65).add(0.35);
     const surface = vec3(1.0, 0.93, 0.8).mul(u.sunIntensity).mul(45).mul(limb);
-    return shading.applyAtmosphere(surface, 6);
+    return shading.applyAtmosphere(surface, steps);
   })();
 }
 

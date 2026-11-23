@@ -17,19 +17,24 @@ export function CelestialBodies({
   uniforms,
   shading,
   state,
+  atmosphereSteps,
 }: {
   uniforms: HollowEarthUniforms;
   shading: HollowEarthShading;
   state: HollowEarthState;
+  /** Atmosphere samples per ray segment in front of each body. */
+  atmosphereSteps: number;
 }) {
   const bodyRefs = useRef<(THREE.Mesh | null)[]>([]);
   const nodes = useMemo(
     () => ({
-      sun: createSunColorNode(uniforms, shading),
+      sun: createSunColorNode(uniforms, shading, atmosphereSteps),
       corona: createCoronaColorNode(uniforms),
-      bodies: ORBITING_BODIES.map((_, index) => createBodyColorNode(uniforms, shading, index)),
+      bodies: ORBITING_BODIES.map((_, index) =>
+        createBodyColorNode(uniforms, shading, index, atmosphereSteps),
+      ),
     }),
-    [uniforms, shading],
+    [uniforms, shading, atmosphereSteps],
   );
 
   useFrame(() => {

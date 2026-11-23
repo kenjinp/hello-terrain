@@ -11,6 +11,12 @@ import {
   WAVE_TIME_PERIOD,
 } from "@/examples/hollow-earth/materials";
 import {
+  isQualityId,
+  QUALITY_PRESETS,
+  type QualityId,
+  type QualityPreset,
+} from "@/examples/hollow-earth/quality";
+import {
   createHollowEarthShading,
   createHollowEarthUniforms,
   type HollowEarthUniforms,
@@ -39,9 +45,13 @@ import * as THREE from "three/webgpu";
 type LevaStore = ReturnType<typeof useCreateStore>;
 type CameraMode = string;
 
-// Pinned so the material's skirt-vertex detection can't drift from the mesh.
-const INNER_TILE_SEGMENTS = 61;
 const SHOT_SECONDS = 18;
+
+function getInitialQuality(): QualityId {
+  if (typeof window === "undefined") return "standard";
+  const requested = new URLSearchParams(window.location.search).get("quality");
+  return isQualityId(requested) ? requested : "standard";
+}
 
 function wrap(value: number, period: number) {
   return ((value % period) + period) % period;
@@ -124,10 +134,12 @@ function HollowEarthSceneImpl({
   store,
   mode,
   state,
+  quality,
 }: {
   store: LevaStore;
   mode: CameraMode;
   state: HollowEarthState;
+  quality: QualityPreset;
 }) {
   const controls = useControls(
     "Hollow Earth",
@@ -177,7 +189,6 @@ function HollowEarthSceneImpl({
           // See the Earth-Scale Planet example: level 14 keeps vertices ~10 m
           // apart, above the float32 precision floor at this radius.
           maxLevel: { value: 14, min: 6, max: 18, step: 1 },
-          maxNodes: { value: 1536, min: 128, max: 4096, step: 1 },
           distanceFactor: { value: 4, min: 0.5, max: 4, step: 0.1 },
         },
         { collapsed: true },
@@ -219,8 +230,9 @@ function HollowEarthSceneImpl({
     topology,
     radius: SHELL_RADIUS,
     maxLevel: controls.maxLevel,
-    maxNodes: controls.maxNodes,
-    innerTileSegments: INNER_TILE_SEGMENTS,
+    maxNodes: quality.maxNodes,
+    // From the same preset the materials use, so skirt detection can't drift.
+    innerTileSegments: quality.innerTileSegments,
     skirtScale: controls.skirtScale,
     elevationScale: controls.elevationScale,
     elevation,
@@ -235,17 +247,17 @@ function HollowEarthSceneImpl({
     () =>
       createTerrainColorNode(uniforms, shading, {
         skirtScale: controls.skirtScale,
-        innerTileSegments: INNER_TILE_SEGMENTS,
+        quality,
       }),
-    [uniforms, shading, controls.skirtScale],
+    [uniforms, shading, controls.skirtScale, quality],
   );
   const water = useMemo(
     () =>
       createWaterNodes(uniforms, shading, {
         skirtScale: controls.skirtScale,
-        innerTileSegments: INNER_TILE_SEGMENTS,
+        quality,
       }),
-    [uniforms, shading, controls.skirtScale],
+    [uniforms, shading, controls.skirtScale, quality],
   );
 
   const renderer = useThree((three) => three.renderer) as unknown as THREE.WebGPURenderer;
@@ -305,7 +317,7 @@ function HollowEarthSceneImpl({
       <color attach="background" args={["#000000"]} />
       <Terrain
         terrain={terrain}
-        maxNodes={controls.maxNodes}
+        maxNodes={quality.maxNodes}
         frustumCulled={false}
         onBeforeRender={syncDetailOrigin}
       >
@@ -316,14 +328,19 @@ function HollowEarthSceneImpl({
       {controls.showWater && (
         <Terrain
           terrain={terrain}
-          maxNodes={controls.maxNodes}
+          maxNodes={quality.maxNodes}
           frustumCulled={false}
           onBeforeRender={syncDetailOrigin}
         >
           {({ positionNode }) => <WaterMaterial positionNode={positionNode} water={water} />}
         </Terrain>
       )}
-      <CelestialBodies uniforms={uniforms} shading={shading} state={state} />
+      <CelestialBodies
+        uniforms={uniforms}
+        shading={shading}
+        state={state}
+        atmosphereSteps={quality.bodySteps}
+      />
       {mode === "walk" ? (
         <WalkerCamera
           terrain={terrain}
@@ -446,6 +463,19 @@ function CameraBar({
 
 export default function HollowEarthScene() {
   const store = useCreateStore();
+  // `?quality=high` or `?quality=ultra` picks the starting preset.
+  const { quality: qualityId } = useControls(
+    {
+      quality: {
+        value: getInitialQuality(),
+        options: Object.fromEntries(
+          Object.entries(QUALITY_PRESETS).map(([id, preset]) => [preset.label, id]),
+        ) as Record<string, QualityId>,
+      },
+    },
+    { store },
+  );
+  const quality: QualityPreset = QUALITY_PRESETS[qualityId];
   const state = useMemo(createHollowEarthState, []);
   const [mode, setMode] = useState<CameraMode>(SHOTS[0].id);
   const [touring, setTouring] = useState(true);
@@ -493,10 +523,17 @@ export default function HollowEarthScene() {
           fov: 55,
           position: [2.2e6, 0.9e6, 1.3e6],
         }}
-        dpr={[1, 1]}
+        dpr={[1, quality.maxDpr]}
         performance={{ min: 0.5 }}
       >
-        <HollowEarthSceneImpl store={store} mode={mode} state={state} />
+        {/* Keyed: a preset changes shader loop counts and the terrain allocation. */}
+        <HollowEarthSceneImpl
+          key={qualityId}
+          store={store}
+          mode={mode}
+          state={state}
+          quality={quality}
+        />
       </Canvas>
     </ExamplesCanvas>
   );
