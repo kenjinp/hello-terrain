@@ -1,6 +1,6 @@
 ---
 title: Hollow Earth
-description: An Earth-sized world turned inside out — a central sun, moons that cast the night, raymarched air and a walkable inner surface
+description: An Earth-sized world turned inside out — a central sun, moons that cast the night, plate-tectonic terrain, raymarched air and clouds, and a walkable inner surface
 ---
 
 import HollowEarthScene from "@/examples/HollowEarthScene"
@@ -28,17 +28,19 @@ That one flag is the only change to the terrain setup from the outside-in planet
 
 ### Quality
 
-The `quality` control switches between three presets; append `?quality=high` or `?quality=ultra` to the URL to start in one. Switching rebuilds the scene, because most of these are shader loop counts or allocation sizes.
+The `quality` control switches between four presets; append `?quality=low`, `?quality=high` or `?quality=ultra` to the URL to start in one. Switching rebuilds the scene, because most of these are shader loop counts or allocation sizes.
 
-| | Standard | High | Ultra |
-| --- | --- | --- | --- |
-| Atmosphere samples per pixel | 2 × 10 | 2 × 16 | 2 × 32 |
-| Reflected-sky samples | 2 × 4 | 2 × 8 | 2 × 12 |
-| Water waves | 18 | 28 | 40 |
-| Finest ground detail | 8 m | 1 m | 1 m |
-| Tile resolution | 61 | 61 | 93 |
-| Tile budget | 1536 | 2048 | 2048 |
-| Max pixel ratio | 1 | 1.5 | 2 |
+| | Low | Standard | High | Ultra |
+| --- | --- | --- | --- | --- |
+| Atmosphere samples per pixel | 2 × 6 | 2 × 10 | 2 × 16 | 2 × 32 |
+| Cloud samples (near + far side) | 10 + 4 | 18 + 6 | 32 + 10 | 56 + 16 |
+| Reflected-sky samples | 2 × 3 | 2 × 4 | 2 × 8 | 2 × 12 |
+| Water waves | 12 | 18 | 28 | 40 |
+| Finest ground detail | 64 m | 8 m | 1 m | 1 m |
+| Tile resolution | 31 | 61 | 61 | 93 |
+| Tile budget | 1024 | 1536 | 2560 | 3072 |
+| LOD distance factor | 4 | 4 | 6 | 7 |
+| Max pixel ratio | 1 | 1 | 1.5 | 2 |
 
 Ultra is meant for a high-end discrete GPU.
 
@@ -84,14 +86,39 @@ Since the sun never sits low in the sky, there is no long slanted light path to 
 
 ### Terrain with things to measure against
 
-A featureless shell gives the eye nothing to judge 6,371 km by, so the elevation function (`elevation.ts`) builds landforms of known size: continents and shallow shelves; mountain belts confined to narrow ribbons so they read as ranges with passes, peaking near 7 km; plateaus about 1.5 km high with abrupt edges; patches of hill country between flat plains; valleys that flood into lakes and inlets where they cut below sea level; and seamount chains whose tallest peaks surface as islands.
+A featureless shell gives the eye nothing to judge 6,371 km by, so the world is laid out by a small model of plate tectonics (`tectonics()` in `elevation.ts`). The surface is cut into about thirty Voronoi plates, each continental or oceanic and each with a drift direction, which gives every border a type:
 
-Two details make that hold up from every distance:
+| Border | What it builds |
+| --- | --- |
+| Continent colliding with continent | A broad, high range |
+| Ocean plate under a continent | A coastal cordillera, with a trench offshore |
+| Ocean colliding with ocean | A trench and a volcanic island arc behind it |
+| Ocean plates separating | A mid-ocean ridge |
+| A continent pulling apart | A rift valley, flooding into long lakes |
+
+Fractal noise then erodes and extends the plate outlines into coasts. On top of that: worn-down ancient ranges away from any border, plateaus with abrupt edges, patches of hill country, valleys that flood where they cut below sea level, hotspot tracks of seamounts whose tallest peaks surface as island chains, and a continental shelf — a terrace about 130 m down that ends at a shelf break and drops to a 4 km abyssal plain. The water shader brightens shelf seas, which is what makes them visible from across the world.
+
+Ranges are built from ridged noise squeezed across the plate border, so crests run parallel to it the way fold belts do.
+
+Three details make that hold up from every distance:
 
 - **Octaves are faded per tile.** The elevation callback receives `tileLevel`, which gives the tile's vertex spacing. Any octave finer than a couple of vertices is replaced by its mean. Without this, a far-side tile with vertices 50 km apart samples a 7 km ridge at random and produces shards.
+- **The material puts the missing octaves back.** A far-side range would otherwise arrive as a smooth swell. The terrain material re-evaluates the ridge function per pixel at two band limits — what the tile carries and what the pixel can show — and uses the difference: the extra height moves the snow and tree lines, and its analytic gradient bends the normal. Tile size comes from screen-space derivatives of the tile UVs, so no per-tile data is needed. Close up, where the mesh already carries every octave, the whole branch is skipped.
 - **The noise lattice is wrapped.** Hashing raw lattice coordinates in the tens of thousands (a kilometre-scale octave on an Earth-sized sphere) runs `sin` out of float32 precision. Wrapping the lattice every 256 cells keeps hash inputs small.
 
 Tree line and snow line sit lower where nights are long, and snow only holds on the gentler slopes, which is what draws the rock faces.
+
+### Clouds and their shadows
+
+A cloud deck sits between 1.5 and 6.5 km above the sea, so the tallest ranges stand through it. It is marched in the same full-screen pass as the air, and follows the structure of the volumetric clouds in [three-geospatial](https://github.com/takram-design-engineering/three-geospatial): a low-frequency weather pattern decides where cloud systems are and how tall they grow, a Perlin–Worley volume gives the base shapes, and finer Worley noise erodes the edges. The noise is one tileable 64³ texture generated on the CPU at start-up.
+
+That library targets an ordinary planet under a distant sun, and shadows its clouds with cascaded Beer shadow maps. Here the geometry allows something simpler. The density is kept *separable* — weather that depends only on direction from the centre, times a profile that depends only on altitude — and all sunlight travels along radii. So the optical depth of cloud between any point and the sun has a closed form: the column's total depth times the fraction of the profile above the point. One function, a few texture taps, no shadow maps:
+
+- on the terrain and the sea it is the cloud shadow;
+- inside the cloud it is the self-shadowing that darkens the bases;
+- at every sample of the atmosphere march it is the volumetric shadow — the shafts of light under broken cloud.
+
+Each pixel's samples are offset by a different fraction of a step, which trades banding for fine grain. The clouds also act as a veil inside the air: only the air in front of them hazes them, and air behind them only shows through by their transmittance.
 
 ### Water
 
@@ -148,6 +175,7 @@ The fix is to make the expensive part independent of geometry:
 - `examples/hollow-earth/world.ts` — radii, orbits and the simulation clock
 - `examples/hollow-earth/elevation.ts` and `noise.ts` — the landforms
 - `examples/hollow-earth/shading.ts` — eclipse shadows and the atmosphere march
-- `examples/hollow-earth/atmospherePass.ts` — the atmosphere as a post-processing pass
+- `examples/hollow-earth/clouds.ts` — cloud noise, density and the closed-form cloud shadow
+- `examples/hollow-earth/atmospherePass.ts` — the atmosphere and cloud march as a post-processing pass
 - `examples/hollow-earth/materials.ts` — terrain, water, moon and sun shading
 - `examples/hollow-earth/cameras.tsx` — shots and the wall-walking camera

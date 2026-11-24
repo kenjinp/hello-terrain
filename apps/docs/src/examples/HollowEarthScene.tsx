@@ -4,6 +4,7 @@ import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { CelestialBodies } from "@/examples/hollow-earth/CelestialBodies";
 import { createAtmospherePipeline } from "@/examples/hollow-earth/atmospherePass";
+import { createClouds, createCloudNoiseTexture } from "@/examples/hollow-earth/clouds";
 import { CinematicCamera, SHOTS, WalkerCamera } from "@/examples/hollow-earth/cameras";
 import { createHollowEarthElevation } from "@/examples/hollow-earth/elevation";
 import {
@@ -100,6 +101,9 @@ function useUniformControls(
     worldshine: number;
     waveHeight: number;
     waterClarity: number;
+    cloudCoverage: number;
+    cloudDensity: number;
+    cloudShadowStrength: number;
   },
 ) {
   useEffect(() => {
@@ -113,6 +117,9 @@ function useUniformControls(
     uniforms.worldshine.value = controls.worldshine;
     uniforms.waveHeight.value = controls.waveHeight;
     uniforms.waterClarity.value = controls.waterClarity;
+    uniforms.cloudCoverage.value = controls.cloudCoverage;
+    uniforms.cloudDensity.value = controls.cloudDensity;
+    uniforms.cloudShadowStrength.value = controls.cloudShadowStrength;
   }, [
     uniforms,
     controls.sunIntensity,
@@ -125,6 +132,9 @@ function useUniformControls(
     controls.worldshine,
     controls.waveHeight,
     controls.waterClarity,
+    controls.cloudCoverage,
+    controls.cloudDensity,
+    controls.cloudShadowStrength,
   ]);
 }
 
@@ -170,6 +180,16 @@ function HollowEarthSceneImpl({
         },
         { collapsed: true },
       ),
+      clouds: folder(
+        {
+          showClouds: { value: true, label: "enabled" },
+          cloudCoverage: { value: 0.44, min: 0, max: 1, step: 0.01, label: "coverage" },
+          cloudDensity: { value: 1, min: 0.1, max: 3, step: 0.05, label: "density" },
+          cloudShadowStrength: { value: 1, min: 0, max: 2, step: 0.05, label: "shadows" },
+          cloudSpeed: { value: 0.35, min: 0, max: 3, step: 0.05, label: "wind (rad/day)" },
+        },
+        { collapsed: true },
+      ),
       water: folder(
         {
           showWater: { value: true, label: "enabled" },
@@ -191,7 +211,6 @@ function HollowEarthSceneImpl({
           // See the Earth-Scale Planet example: level 14 keeps vertices ~10 m
           // apart, above the float32 precision floor at this radius.
           maxLevel: { value: 14, min: 6, max: 18, step: 1 },
-          distanceFactor: { value: 4, min: 0.5, max: 4, step: 0.1 },
         },
         { collapsed: true },
       ),
@@ -200,7 +219,18 @@ function HollowEarthSceneImpl({
   );
 
   const uniforms = useMemo(createHollowEarthUniforms, []);
-  const shading = useMemo(() => createHollowEarthShading(uniforms), [uniforms]);
+  // The noise volume takes a moment to generate, so it is built once and
+  // kept even while clouds are switched off.
+  const cloudNoise = useMemo(createCloudNoiseTexture, []);
+  useEffect(() => () => cloudNoise.dispose(), [cloudNoise]);
+  const clouds = useMemo(
+    () => (controls.showClouds ? createClouds(uniforms, cloudNoise) : null),
+    [controls.showClouds, uniforms, cloudNoise],
+  );
+  const shading = useMemo(
+    () => createHollowEarthShading(uniforms, clouds?.shadow),
+    [uniforms, clouds],
+  );
   useUniformControls(uniforms, controls);
 
   // `invert: true` displaces elevation towards the centre and flips the
@@ -233,9 +263,9 @@ function HollowEarthSceneImpl({
   });
 
   useEffect(() => {
-    const lod: LodCriteria = { mode: "distance", distanceFactor: controls.distanceFactor };
+    const lod: LodCriteria = { mode: "distance", distanceFactor: quality.lodDistanceFactor };
     terrain.graph.set(quadtreeUpdate, (prev: UpdateParams) => ({ ...prev, ...lod }));
-  }, [terrain.graph, controls.distanceFactor]);
+  }, [terrain.graph, quality.lodDistanceFactor]);
 
   const terrainColor = useMemo(
     () =>
@@ -282,8 +312,8 @@ function HollowEarthSceneImpl({
   const scene = useThree((three) => three.scene) as unknown as THREE.Scene;
   const camera = useThree((three) => three.camera) as unknown as THREE.PerspectiveCamera;
   const atmosphere = useMemo(
-    () => createAtmospherePipeline(renderer, scene, camera, shading, quality.atmosphereSteps),
-    [renderer, scene, camera, shading, quality.atmosphereSteps],
+    () => createAtmospherePipeline(renderer, scene, camera, uniforms, shading, clouds, quality),
+    [renderer, scene, camera, uniforms, shading, clouds, quality],
   );
   useEffect(() => () => atmosphere.dispose(), [atmosphere]);
   useFrame(() => atmosphere.render(), { phase: "render" });
@@ -300,6 +330,8 @@ function HollowEarthSceneImpl({
       uniforms.bodies[i].value.set(centre.x, centre.y, centre.z, ORBITING_BODIES[i].radius);
     }
     uniforms.waveTime.value = wrap(seconds.current, WAVE_TIME_PERIOD);
+    // Tied to the world clock, so scrubbing time moves the weather too.
+    uniforms.cloudDrift.value = wrap(state.days * controls.cloudSpeed, Math.PI * 2);
   });
 
   // Waves and ground detail are evaluated relative to the camera; hand them

@@ -6,11 +6,14 @@ import {
   dot,
   exp,
   float,
+  dFdx,
+  dFdy,
   Discard,
   Fn,
   If,
   length,
   max,
+  min,
   mix,
   normalWorld,
   positionWorld,
@@ -18,11 +21,23 @@ import {
   reflect,
   select,
   smoothstep,
+  uv,
   varying,
   varyingProperty,
   vec3,
 } from "three/tsl";
-import { fbm, noise, periodicNoise } from "./noise";
+import {
+  RANGE_FREQUENCY,
+  RANGE_HEIGHT,
+  RANGE_OCTAVES,
+  RANGE_STRETCH,
+  rangePosition,
+  rangeProfile,
+  rangeProfileSlope,
+  stretchAcross,
+  tectonics,
+} from "./elevation";
+import { fbm, noise, periodicNoise, ridgedBands, ridgedComplete } from "./noise";
 import type { QualityPreset } from "./quality";
 import type { HollowEarthShading, HollowEarthUniforms } from "./shading";
 import { ORBITING_BODIES, SHELL_RADIUS } from "./world";
@@ -65,9 +80,11 @@ export function createTerrainColorNode(
     const outward = positionWorld.normalize().toVar();
     const up = outward.negate().toVar();
     const fieldNormal = normalWorld.normalize().toVar();
-    const normal = select(dot(fieldNormal, up).lessThan(0), fieldNormal.negate(), fieldNormal);
-    const facing = max(dot(normal, up), 0).toVar();
-    const slope = float(1).sub(facing);
+    const normal = select(
+      dot(fieldNormal, up).lessThan(0),
+      fieldNormal.negate(),
+      fieldNormal,
+    ).toVar();
     const height = float(elevation).toVar();
 
     const lit = vec3(0).toVar();
@@ -77,6 +94,73 @@ export function createTerrainColorNode(
     If(height.lessThan(-120), () => {
       lit.assign(srgb(0.3, 0.36, 0.34).mul(0.05));
     }).Else(() => {
+      const relative = shading.cameraRelativePosition().toVar();
+
+      // --- Relief the mesh is too coarse to carry ----------------------------
+      // From across the world a tile's vertices are tens of kilometres apart,
+      // so a mountain range arrives as a smooth swell. Re-evaluate the ridge
+      // function per pixel and add back, as shading, exactly the octaves the
+      // mesh dropped: the height they would add (for snow and tree lines) and
+      // their slope (for the normal).
+      const reliefHeight = float(0).toVar();
+      const reliefSlope = vec3(0).toVar();
+      const relief = float(1).toVar();
+      If(height.greaterThan(120), () => {
+        // Size of this tile and of this pixel, from screen-space derivatives:
+        // tile UVs run 0..1 across a tile, so metres-per-UV is the tile size.
+        const tileUv = uv();
+        const stepX = length(dFdx(relative)).toVar();
+        const stepY = length(dFdy(relative)).toVar();
+        const tileSize = min(
+          stepX.div(length(dFdx(tileUv)).max(1e-7)),
+          stepY.div(length(dFdy(tileUv)).max(1e-7)),
+        );
+        const toNoise = RANGE_FREQUENCY / SHELL_RADIUS;
+        // Spacings are judged along the squeezed axis, where detail is finest.
+        const squeezed = toNoise * RANGE_STRETCH;
+        const meshSpacing = tileSize.mul(squeezed / params.quality.innerTileSegments).toVar();
+        const pixelSpacing = max(stepX, stepY).mul(squeezed).toVar();
+
+        If(ridgedComplete(RANGE_OCTAVES, meshSpacing).lessThan(0.999), () => {
+          const world = tectonics(outward);
+          const belt = world.belt.toVar();
+          If(belt.greaterThan(0.02), () => {
+            const bands = ridgedBands(
+              RANGE_OCTAVES,
+              rangePosition(world),
+              meshSpacing,
+              pixelSpacing,
+            );
+            const fine = bands.fine.toVar();
+            const coarse = bands.coarse.toVar();
+            reliefHeight.assign(
+              belt.mul(RANGE_HEIGHT).mul(rangeProfile(fine).sub(rangeProfile(coarse))),
+            );
+            // Chain rule back through the stretch (a symmetric matrix).
+            reliefSlope.assign(
+              stretchAcross(
+                bands.fineGradient
+                  .mul(rangeProfileSlope(fine))
+                  .sub(bands.coarseGradient.mul(rangeProfileSlope(coarse))),
+                world.across,
+              )
+                .mul(belt)
+                .mul(RANGE_HEIGHT * toNoise),
+            );
+            // The sun is always overhead, so slopes alone barely shade.
+            // Darken valley floors a little, as if the ridges shaded them.
+            relief.assign(mix(float(1), smoothstep(0.05, 0.7, fine).mul(0.45).add(0.6), belt));
+          });
+        });
+      });
+      const trueHeight = height.add(reliefHeight).toVar();
+      const shadedNormal = normal
+        .sub(reliefSlope.sub(up.mul(dot(reliefSlope, up))))
+        .normalize()
+        .toVar();
+      const shadedFacing = max(dot(shadedNormal, up), 0).toVar();
+      const shadedSlope = float(1).sub(shadedFacing);
+
       // --- Biomes ---------------------------------------------------------
       const nightBand = float(1).sub(smoothstep(0.42, 0.85, outward.y.abs()));
       const moisture = fbm(outward.mul(3.1).add(vec3(11.3, 4.7, 8.1)), 2);
@@ -84,7 +168,6 @@ export function createTerrainColorNode(
 
       // Close-range variation, in camera-relative coordinates. Octaves
       // smaller than a few pixels are faded out rather than left to shimmer.
-      const relative = shading.cameraRelativePosition().toVar();
       const footprint = length(relative).mul(0.0018);
       const detailPosition = u.detailOrigin.add(relative).toVar();
       const grain = float(1).toVar();
@@ -95,7 +178,7 @@ export function createTerrainColorNode(
         grain.mulAssign(mix(float(1), sample.mul(0.7).add(0.65), resolved));
       }
       // Strata: banding by altitude, broken up so it is not ruler-straight.
-      const strata = noise(vec3(height.mul(1 / 140), outward.x.mul(40), outward.z.mul(40)))
+      const strata = noise(vec3(trueHeight.mul(1 / 140), outward.x.mul(40), outward.z.mul(40)))
         .mul(0.3)
         .add(0.85);
 
@@ -115,26 +198,28 @@ export function createTerrainColorNode(
       );
       // Tree line, then bare rock, then snow — all lower where nights are long.
       const treeLine = mix(float(3400), float(2100), nightBand);
-      const meadow = mix(lowland, alpine, smoothstep(0, 500, height.sub(treeLine)));
-      const highland = mix(meadow, rock, smoothstep(600, 1500, height.sub(treeLine)));
-      const cliffs = mix(highland, rock, smoothstep(0.07, 0.2, slope));
-      const snowLine = mix(float(5600), float(3700), nightBand);
+      const meadow = mix(lowland, alpine, smoothstep(0, 500, trueHeight.sub(treeLine)));
+      const highland = mix(meadow, rock, smoothstep(600, 1500, trueHeight.sub(treeLine)));
+      const cliffs = mix(highland, rock, smoothstep(0.07, 0.2, shadedSlope));
+      const snowLine = mix(float(6000), float(4300), nightBand);
       const snowy = mix(
         cliffs,
         snow,
-        smoothstep(0, 700, height.sub(snowLine)).mul(float(1).sub(smoothstep(0.1, 0.22, slope))),
+        smoothstep(0, 700, trueHeight.sub(snowLine)).mul(
+          float(1).sub(smoothstep(0.1, 0.22, shadedSlope)),
+        ),
       );
-      const shore = mix(sand, snowy, smoothstep(6, 45, height));
-      const seabed = mix(silt, sand, smoothstep(-180, 0, height));
-      const albedo = select(height.lessThan(0), seabed, shore).mul(grain);
+      const shore = mix(sand, snowy, smoothstep(6, 45, trueHeight));
+      const seabed = mix(silt, sand, smoothstep(-180, 0, trueHeight));
+      const albedo = select(trueHeight.lessThan(0), seabed, shore).mul(grain);
 
       // --- Lighting -------------------------------------------------------
-      const sun = shading.sunIrradiance(positionWorld, height).toVar();
+      const sun = shading.sunIrradiance(positionWorld, trueHeight).toVar();
       // Slopes see less of the sky and the far world than level ground does.
-      const openness = facing.mul(facing);
+      const openness = shadedFacing.mul(shadedFacing);
       const skylight = vec3(0.32, 0.48, 0.85).mul(sun.g).mul(0.16).mul(openness);
       const fill = shading.worldshineRadiance().mul(Math.PI).mul(openness.mul(0.75).add(0.25));
-      lit.assign(albedo.mul(INV_PI).mul(sun.mul(facing).add(skylight).add(fill)));
+      lit.assign(albedo.mul(relief).mul(INV_PI).mul(sun.mul(shadedFacing).add(skylight).add(fill)));
     });
 
     return lit;
@@ -297,7 +382,12 @@ export function createWaterNodes(
       const seabed = mix(srgb(0.84, 0.77, 0.58), srgb(0.3, 0.36, 0.34), smoothstep(0, 180, depth));
       const floor = seabed.mul(INV_PI).mul(surfaceLight).mul(waterTransmittance);
       const turbidity = float(1).sub(exp(path.mul(-0.035).div(u.waterClarity)));
-      const body = vec3(0.004, 0.02, 0.042).mul(surfaceLight).mul(turbidity);
+      // Shelf seas carry sediment and plankton: brighter and greener than
+      // the open ocean, which is what makes continental shelves visible.
+      const shelf = float(1).sub(smoothstep(40, 420, depth));
+      const body = mix(vec3(0.004, 0.02, 0.042), vec3(0.012, 0.062, 0.07), shelf)
+        .mul(surfaceLight)
+        .mul(turbidity);
       const refracted = floor.add(body);
 
       // --- Above the surface ---------------------------------------------------

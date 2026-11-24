@@ -9,6 +9,9 @@ export interface QualityPreset {
   atmosphereSteps: number;
   /** Atmosphere samples per segment for the sky reflected in the water. */
   reflectionSteps: number;
+  /** Cloud samples through the deck around the camera, and across the world. */
+  cloudSteps: number;
+  cloudFarSteps: number;
   /** Plane waves summed for the water normal. */
   waveCount: number;
   /** Ground-detail noise octaves, as cell sizes in metres (powers of two). */
@@ -17,39 +20,63 @@ export interface QualityPreset {
   innerTileSegments: number;
   /** Terrain tile budget. */
   maxNodes: number;
+  /** A tile splits when the camera is within this many tile radii. */
+  lodDistanceFactor: number;
   /** Upper bound on device pixel ratio. */
   maxDpr: number;
 }
 
 export const QUALITY_PRESETS = {
+  low: {
+    label: "Low",
+    atmosphereSteps: 6,
+    reflectionSteps: 3,
+    cloudSteps: 10,
+    cloudFarSteps: 4,
+    waveCount: 12,
+    detailCells: [512, 64],
+    innerTileSegments: 31,
+    maxNodes: 1024,
+    lodDistanceFactor: 4,
+    maxDpr: 1,
+  },
   standard: {
     label: "Standard",
     atmosphereSteps: 10,
     reflectionSteps: 4,
+    cloudSteps: 18,
+    cloudFarSteps: 6,
     waveCount: 18,
     detailCells: [512, 64, 8],
     innerTileSegments: 61,
     maxNodes: 1536,
+    lodDistanceFactor: 4,
     maxDpr: 1,
   },
   high: {
     label: "High",
     atmosphereSteps: 16,
     reflectionSteps: 8,
+    cloudSteps: 32,
+    cloudFarSteps: 10,
     waveCount: 28,
     detailCells: [512, 64, 8, 1],
     innerTileSegments: 61,
-    maxNodes: 2048,
+    maxNodes: 2560,
+    lodDistanceFactor: 6,
     maxDpr: 1.5,
   },
   ultra: {
     label: "Ultra",
     atmosphereSteps: 32,
     reflectionSteps: 12,
+    cloudSteps: 56,
+    cloudFarSteps: 16,
     waveCount: 40,
     detailCells: [512, 64, 8, 1],
     innerTileSegments: 93,
-    maxNodes: 2048,
+    maxNodes: 3072,
+    lodDistanceFactor: 7,
     maxDpr: 2,
   },
 } as const satisfies Record<string, QualityPreset>;

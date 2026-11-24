@@ -73,6 +73,12 @@ export function createHollowEarthUniforms() {
     waveTime: uniform(0),
     waveHeight: uniform(1),
     waterClarity: uniform(1),
+    /** 0 = clear skies everywhere, 1 = overcast everywhere. */
+    cloudCoverage: uniform(0.44),
+    cloudDensity: uniform(1),
+    cloudShadowStrength: uniform(1),
+    /** Rotation of the weather about the world Y axis, in radians. */
+    cloudDrift: uniform(0),
   };
 }
 
@@ -83,6 +89,8 @@ export interface AtmosphereResult {
   inscatter: TslNode;
   /** RGB transmittance of whatever sits at the end of the ray. */
   transmittance: TslNode;
+  /** RGB transmittance of the air in front of the veil, if one was given. */
+  veilTransmittance: TslNode;
 }
 
 /**
@@ -98,7 +106,11 @@ export interface AtmosphereResult {
  *    shadows (on the ground *and* inside the air volume) are analytic
  *    ray/sphere tests rather than shadow maps.
  */
-export function createHollowEarthShading(u: HollowEarthUniforms) {
+export function createHollowEarthShading(
+  u: HollowEarthUniforms,
+  /** Fraction of sunlight that gets through the clouds to a point, if any. */
+  cloudShadow?: (point: TslNode) => TslNode,
+) {
   const shellRadius = float(SHELL_RADIUS);
 
   /**
@@ -189,13 +201,17 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
       .add(vec3(MIE_EXTINCTION).mul(opticalDepth.y))
       .add(vec3(...OZONE_ABSORPTION).mul(opticalDepth.z));
 
-  /** Sun irradiance reaching a point at `altitude`, shadows included. */
-  const sunIrradiance = (point: TslNode, altitude: TslNode) => {
+  /** Sun irradiance at `altitude` after eclipses and air, ignoring cloud. */
+  const clearSunIrradiance = (point: TslNode, altitude: TslNode) => {
     const density = densityAt(altitude);
     return sunLight(point)
       .mul(exp(extinction(sunOpticalDepth(altitude, density)).negate()))
       .mul(u.sunIntensity);
   };
+
+  /** Sun irradiance reaching a point at `altitude`, every shadow included. */
+  const sunIrradiance = (point: TslNode, altitude: TslNode) =>
+    clearSunIrradiance(point, altitude).mul(cloudShadow ? cloudShadow(point) : float(1));
 
   /** Soft fill light: the rest of the lit shell, seen through two skies. */
   const worldshineRadiance = () => vec3(0.62, 0.78, 1.0).mul(u.worldshine).mul(u.sunIntensity);
@@ -215,6 +231,11 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
     rayDirection: TslNode,
     rayLength: TslNode,
     steps: number,
+    /**
+     * Something semi-opaque part-way along the ray (the clouds): air behind
+     * `distance` only shows through by `transmittance`.
+     */
+    veil?: { distance: TslNode; transmittance: TslNode },
   ): AtmosphereResult {
     const origin = vec3(rayOrigin).toVar();
     const direction = vec3(rayDirection).toVar();
@@ -237,6 +258,7 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
 
     const opticalDepth = vec3(0).toVar();
     const inscatter = vec3(0).toVar();
+    const veilOpticalDepth = vec3(0).toVar();
     const anisotropy = u.mieAnisotropy;
     const ambient = worldshineRadiance().mul(INV_4PI).toVar();
 
@@ -250,7 +272,7 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
         const u0 = warp(x0);
         const u1 = warp(x1);
         const stepLength = segmentLength.mul(u1.sub(u0)).toVar();
-        const t = start.add(segmentLength.mul(u0.add(u1).mul(0.5)));
+        const t = start.add(segmentLength.mul(u0.add(u1).mul(0.5))).toVar();
         const position = origin.add(direction.mul(t)).toVar();
         const radius = length(position).toVar();
         const altitude = altitudeOf(radius).toVar();
@@ -283,12 +305,25 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
           .mul(rayleighPhase)
           .add(mie.mul(miePhase))
           .mul(sunLight(position))
+          .mul(cloudShadow ? cloudShadow(position) : float(1))
           .mul(sunTransmittance)
           .mul(u.sunIntensity);
         const fill = rayleigh.add(mie).mul(ambient);
 
-        inscatter.addAssign(direct.add(fill).mul(viewTransmittance).mul(stepLength));
-        opticalDepth.addAssign(density.mul(stepLength.mul(0.5)));
+        const contribution = direct.add(fill).mul(viewTransmittance).mul(stepLength);
+        if (veil) {
+          // Fraction of this step that lies in front of the veil. A hard
+          // in-front/behind test would band wherever the veil's distance
+          // crosses a step boundary.
+          const stepStart = start.add(segmentLength.mul(u0));
+          const inFront = veil.distance.sub(stepStart).div(stepLength.max(1e-3)).clamp(0, 1);
+          inscatter.addAssign(contribution.mul(mix(veil.transmittance, float(1), inFront)));
+          opticalDepth.addAssign(density.mul(stepLength.mul(0.5)));
+          veilOpticalDepth.addAssign(density.mul(stepLength).mul(inFront));
+        } else {
+          inscatter.addAssign(contribution);
+          opticalDepth.addAssign(density.mul(stepLength.mul(0.5)));
+        }
       });
     };
 
@@ -298,6 +333,7 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
     return {
       inscatter,
       transmittance: exp(extinction(opticalDepth).negate()),
+      veilTransmittance: exp(extinction(veilOpticalDepth).negate()),
     };
   }
 
@@ -311,6 +347,7 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
   return {
     altitudeOf,
     cameraRelativePosition,
+    clearSunIrradiance,
     marchAtmosphere,
     sunIrradiance,
     sunLight,
