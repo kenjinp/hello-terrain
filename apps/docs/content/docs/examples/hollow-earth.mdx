@@ -11,13 +11,13 @@ import HollowEarthScene from "@/examples/HollowEarthScene"
 
 ## Overview
 
-The same Earth-sized cube-sphere as the [Earth-Scale Planet](/examples/earth-planet) example (authalic radius **6,371,007.2 m**, ~10 km of relief), built with `invert: true` so the continents grow *inward*. A small sun sits at the centre of the world, five bodies orbit it, and you stand on the inside of the shell with the far side of the planet for a sky.
+The same Earth-sized cube-sphere as the [Earth-Scale Planet](/examples/earth-planet) example (authalic radius **6,371,007.2 m**), built with `invert: true` so the continents grow *inward*. A small sun sits at the centre of the world, five bodies orbit it, and you stand on the inside of the shell with the far side of the planet for a sky.
 
 ```tsx
 const topology = createCubeSphereTopology({ radius: SHELL_RADIUS, invert: true });
 ```
 
-That one flag is the only terrain-library change from the outside-in planet. Everything else on this page — the light, the shadows, the air, the water and the cameras — is example code layered on the terrain's `positionNode` and runtime queries.
+That one flag is the only change to the terrain setup from the outside-in planet, apart from a different elevation function. Everything else on this page — the light, the shadows, the air, the water and the cameras — is example code layered on the terrain's `positionNode` and runtime queries.
 
 ### Controls
 
@@ -32,7 +32,7 @@ The `quality` control switches between three presets; append `?quality=high` or 
 
 | | Standard | High | Ultra |
 | --- | --- | --- | --- |
-| Atmosphere samples per ray | 2 × 8 | 2 × 16 | 2 × 28 |
+| Atmosphere samples per pixel | 2 × 10 | 2 × 16 | 2 × 32 |
 | Reflected-sky samples | 2 × 4 | 2 × 8 | 2 × 12 |
 | Water waves | 18 | 28 | 40 |
 | Finest ground detail | 8 m | 1 m | 1 m |
@@ -74,13 +74,24 @@ const rayleigh = exp(-altitude / 8500);
 
 Three things differ from a conventional sky shader:
 
-- **There is no sky to render.** Every ray ends on the shell, a moon or the sun, so the march is done in the materials rather than in a post-processing pass, with the fragment's own position as the end of the ray. No depth-buffer reconstruction is needed.
+- **It still runs as a post-processing pass**, even though there is no sky to fill in — every ray ends on the shell, a moon or the sun. See [Performance](#performance) for why.
 - **The light march is free.** A normal planet needs a second loop from every sample towards the sun. Here sunlight always travels radially and density depends only on radius, so the optical depth between the sun and a sample is `H · exp(-altitude / H)` — one `exp`, no loop.
 - **Most of each ray is vacuum.** A ray can cross 12,700 km with air only in the first and last hundred. Each ray is clipped against the top of the atmosphere and marched as two short segments, with samples bunched towards the ground.
 
 The shadow test runs per sample, so Nyx's shadow darkens the air as well as the land, and the moons drag visible shafts through the haze.
 
 Since the sun never sits low in the sky, there is no long slanted light path to redden it. The warm terminator comes from limb darkening instead: as Nyx covers the disc, only the sun's dimmer, redder rim is left (`terminatorWarmth`).
+
+### Terrain with things to measure against
+
+A featureless shell gives the eye nothing to judge 6,371 km by, so the elevation function (`elevation.ts`) builds landforms of known size: continents and shallow shelves; mountain belts confined to narrow ribbons so they read as ranges with passes, peaking near 7 km; plateaus about 1.5 km high with abrupt edges; patches of hill country between flat plains; valleys that flood into lakes and inlets where they cut below sea level; and seamount chains whose tallest peaks surface as islands.
+
+Two details make that hold up from every distance:
+
+- **Octaves are faded per tile.** The elevation callback receives `tileLevel`, which gives the tile's vertex spacing. Any octave finer than a couple of vertices is replaced by its mean. Without this, a far-side tile with vertices 50 km apart samples a 7 km ridge at random and produces shards.
+- **The noise lattice is wrapped.** Hashing raw lattice coordinates in the tens of thousands (a kilometre-scale octave on an Earth-sized sphere) runs `sin` out of float32 precision. Wrapping the lattice every 256 cells keeps hash inputs small.
+
+Tree line and snow line sit lower where nights are long, and snow only holds on the gentler slopes, which is what draws the rock faces.
 
 ### Water
 
@@ -115,11 +126,28 @@ position.setLength(ground - heightAboveGround - eyeHeight);
 
 Gravity is a scalar acting on `heightAboveGround`, pushing outward. The cinematic shots use the same query to stay clear of mountains.
 
+## Performance
+
+The first version of this example marched the atmosphere inside every material. It ran poorly at ground level and noticeably better looking straight up, for two reasons that compound:
+
+- **A logarithmic depth buffer disables early depth rejection.** It writes depth from the fragment shader, so the GPU cannot discard a hidden fragment before shading it. Every layer runs its full shader: the seabed under the sea, the water sphere under every continent, and the stacked skirt walls around the camera.
+- **Near the horizon, terrain triangles are slivers.** Tiles are sized by distance, not by the angle they are seen at, so ground seen edge-on is covered in triangles a fraction of a pixel tall. Each one still shades a full 2×2 pixel block.
+
+Looking up, the far side of the world is seen face-on and neither applies, hence the difference.
+
+The fix is to make the expensive part independent of geometry:
+
+- The atmosphere is a full-screen pass (`atmospherePass.ts`) that reads depth and marches once per pixel, however many triangles or layers are behind that pixel.
+- Water fragments under land are discarded before any work, and sea floor too deep to see skips its shading.
+- The scene is rendered without multisampling; FXAA runs after tone mapping instead.
+
 ## Source
 
 - `examples/HollowEarthScene.tsx` — scene, controls and camera bar
 - `examples/hollow-earth/quality.ts` — the quality presets
 - `examples/hollow-earth/world.ts` — radii, orbits and the simulation clock
+- `examples/hollow-earth/elevation.ts` and `noise.ts` — the landforms
 - `examples/hollow-earth/shading.ts` — eclipse shadows and the atmosphere march
+- `examples/hollow-earth/atmospherePass.ts` — the atmosphere as a post-processing pass
 - `examples/hollow-earth/materials.ts` — terrain, water, moon and sun shading
 - `examples/hollow-earth/cameras.tsx` — shots and the wall-walking camera

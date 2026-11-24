@@ -5,12 +5,10 @@
  */
 export interface QualityPreset {
   label: string;
-  /** Atmosphere samples per ray segment (each view ray has up to two). */
+  /** Atmosphere samples per ray segment, per pixel (a ray has up to two). */
   atmosphereSteps: number;
   /** Atmosphere samples per segment for the sky reflected in the water. */
   reflectionSteps: number;
-  /** Atmosphere samples per segment in front of the sun and moons. */
-  bodySteps: number;
   /** Plane waves summed for the water normal. */
   waveCount: number;
   /** Ground-detail noise octaves, as cell sizes in metres (powers of two). */
@@ -26,9 +24,8 @@ export interface QualityPreset {
 export const QUALITY_PRESETS = {
   standard: {
     label: "Standard",
-    atmosphereSteps: 8,
+    atmosphereSteps: 10,
     reflectionSteps: 4,
-    bodySteps: 6,
     waveCount: 18,
     detailCells: [512, 64, 8],
     innerTileSegments: 61,
@@ -39,7 +36,6 @@ export const QUALITY_PRESETS = {
     label: "High",
     atmosphereSteps: 16,
     reflectionSteps: 8,
-    bodySteps: 10,
     waveCount: 28,
     detailCells: [512, 64, 8, 1],
     innerTileSegments: 61,
@@ -48,9 +44,8 @@ export const QUALITY_PRESETS = {
   },
   ultra: {
     label: "Ultra",
-    atmosphereSteps: 28,
+    atmosphereSteps: 32,
     reflectionSteps: 12,
-    bodySteps: 16,
     waveCount: 40,
     detailCells: [512, 64, 8, 1],
     innerTileSegments: 93,

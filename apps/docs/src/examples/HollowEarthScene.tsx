@@ -3,7 +3,9 @@
 import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { CelestialBodies } from "@/examples/hollow-earth/CelestialBodies";
+import { createAtmospherePipeline } from "@/examples/hollow-earth/atmospherePass";
 import { CinematicCamera, SHOTS, WalkerCamera } from "@/examples/hollow-earth/cameras";
+import { createHollowEarthElevation } from "@/examples/hollow-earth/elevation";
 import {
   createTerrainColorNode,
   createWaterNodes,
@@ -28,7 +30,6 @@ import {
   SHELL_RADIUS,
   updateHollowEarthState,
 } from "@/examples/hollow-earth/world";
-import { createEarthElevation } from "@/examples/terrain/earthTerrain";
 import { SurfaceFlyCamera } from "@/examples/terrain/SurfaceFlyCamera";
 import { Terrain, useTerrain, type TerrainNodes } from "@hello-terrain/react";
 import {
@@ -46,6 +47,8 @@ type LevaStore = ReturnType<typeof useCreateStore>;
 type CameraMode = string;
 
 const SHOT_SECONDS = 18;
+/** Metres per unit of normalised elevation. The elevation function works in metres. */
+const ELEVATION_SCALE = 10_000;
 
 function getInitialQuality(): QualityId {
   if (typeof window === "undefined") return "standard";
@@ -184,7 +187,6 @@ function HollowEarthSceneImpl({
       ),
       terrain: folder(
         {
-          elevationScale: { value: 10_000, min: 1_000, max: 20_000, step: 500 },
           skirtScale: { value: 2_000, min: 0, max: 20_000, step: 100 },
           // See the Earth-Scale Planet example: level 14 keeps vertices ~10 m
           // apart, above the float32 precision floor at this radius.
@@ -211,19 +213,11 @@ function HollowEarthSceneImpl({
 
   const elevation = useMemo(
     () =>
-      createEarthElevation({
-        sampleRadius: SHELL_RADIUS,
-        continentFrequency: 2,
-        seaLevel: 0.5,
-        coastWidth: 0.04,
-        continentWarp: 0.15,
-        warpFrequency: 1.5,
-        landHeight: 0.6,
-        oceanDepth: 1,
-        mountainFrequency: 8,
-        ruggedness: 0.5,
+      createHollowEarthElevation({
+        elevationScale: ELEVATION_SCALE,
+        innerTileSegments: quality.innerTileSegments,
       }),
-    [],
+    [quality.innerTileSegments],
   );
 
   const terrain = useTerrain({
@@ -234,7 +228,7 @@ function HollowEarthSceneImpl({
     // From the same preset the materials use, so skirt detection can't drift.
     innerTileSegments: quality.innerTileSegments,
     skirtScale: controls.skirtScale,
-    elevationScale: controls.elevationScale,
+    elevationScale: ELEVATION_SCALE,
     elevation,
   });
 
@@ -283,6 +277,16 @@ function HollowEarthSceneImpl({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [renderer, state]);
+
+  // Take over the render phase: scene first, then the atmosphere over it.
+  const scene = useThree((three) => three.scene) as unknown as THREE.Scene;
+  const camera = useThree((three) => three.camera) as unknown as THREE.PerspectiveCamera;
+  const atmosphere = useMemo(
+    () => createAtmospherePipeline(renderer, scene, camera, shading, quality.atmosphereSteps),
+    [renderer, scene, camera, shading, quality.atmosphereSteps],
+  );
+  useEffect(() => () => atmosphere.dispose(), [atmosphere]);
+  useFrame(() => atmosphere.render(), { phase: "render" });
 
   const seconds = useRef(0);
   useFrame((_, delta) => {
@@ -335,12 +339,7 @@ function HollowEarthSceneImpl({
           {({ positionNode }) => <WaterMaterial positionNode={positionNode} water={water} />}
         </Terrain>
       )}
-      <CelestialBodies
-        uniforms={uniforms}
-        shading={shading}
-        state={state}
-        atmosphereSteps={quality.bodySteps}
-      />
+      <CelestialBodies uniforms={uniforms} shading={shading} state={state} />
       {mode === "walk" ? (
         <WalkerCamera
           terrain={terrain}
@@ -516,7 +515,7 @@ export default function HollowEarthScene() {
       </div>
       <Canvas
         className="touch-none relative left-0 top-0 h-full w-full"
-        renderer={{ antialias: true, logarithmicDepthBuffer: true }}
+        renderer={{ antialias: false, logarithmicDepthBuffer: true }}
         camera={{
           near: 0.5,
           far: SHELL_RADIUS * 4,

@@ -1,5 +1,4 @@
 import {
-  cameraPosition,
   cameraWorldMatrix,
   clamp,
   dot,
@@ -309,22 +308,8 @@ export function createHollowEarthShading(u: HollowEarthUniforms) {
    */
   const cameraRelativePosition = () => cameraWorldMatrix.mul(vec4(positionView, 0)).xyz;
 
-  /** Composite a surface colour behind the air between it and the camera. */
-  function applyAtmosphere(color: TslNode, steps = 8) {
-    const relative = cameraRelativePosition().toVar();
-    const distance = length(relative).max(1e-3).toVar();
-    const { inscatter, transmittance } = marchAtmosphere(
-      cameraPosition,
-      relative.div(distance),
-      distance,
-      steps,
-    );
-    return vec3(color).mul(transmittance).add(inscatter);
-  }
-
   return {
     altitudeOf,
-    applyAtmosphere,
     cameraRelativePosition,
     marchAtmosphere,
     sunIrradiance,
