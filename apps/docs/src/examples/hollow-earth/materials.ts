@@ -40,7 +40,7 @@ import {
 import { fbm, noise, periodicNoise, ridgedBands, ridgedComplete } from "./noise";
 import type { QualityPreset } from "./quality";
 import type { HollowEarthShading, HollowEarthUniforms } from "./shading";
-import { ORBITING_BODIES, SHELL_RADIUS } from "./world";
+import { LIGHT_BODY_INDICES, ORBITING_BODIES, SHELL_RADIUS } from "./world";
 
 // oxlint-disable-next-line typescript/no-explicit-any
 type TslNode = any;
@@ -214,12 +214,15 @@ export function createTerrainColorNode(
       const albedo = select(trueHeight.lessThan(0), seabed, shore).mul(grain);
 
       // --- Lighting -------------------------------------------------------
-      const sun = shading.sunIrradiance(positionWorld, trueHeight).toVar();
+      // Every light that is on, each from its own direction: under the
+      // central sun that is straight down, but a lamp on an orbit rakes
+      // across the land and picks the relief out.
+      const light = shading.irradiance(positionWorld, trueHeight, shadedNormal);
       // Slopes see less of the sky and the far world than level ground does.
       const openness = shadedFacing.mul(shadedFacing);
-      const skylight = vec3(0.32, 0.48, 0.85).mul(sun.g).mul(0.16).mul(openness);
-      const fill = shading.worldshineRadiance().mul(Math.PI).mul(openness.mul(0.75).add(0.25));
-      lit.assign(albedo.mul(relief).mul(INV_PI).mul(sun.mul(shadedFacing).add(skylight).add(fill)));
+      const skylight = vec3(0.32, 0.48, 0.85).mul(light.flux.g).mul(0.16).mul(openness);
+      const fill = shading.ambientRadiance().mul(Math.PI).mul(openness.mul(0.75).add(0.25));
+      lit.assign(albedo.mul(relief).mul(INV_PI).mul(light.direct.add(skylight).add(fill)));
     });
 
     return lit;
@@ -372,10 +375,28 @@ export function createWaterNodes(
       const normal = up.sub(tangentGradient).normalize().toVar();
 
       // --- Below the surface ---------------------------------------------------
-      const surfaceLight = shading
-        .sunIrradiance(positionWorld, float(0))
-        .add(shading.worldshineRadiance().mul(Math.PI))
-        .toVar();
+      // Sea-level light, and each light's mirror glint. The glint is a
+      // Gaussian lobe whose variance is the light's disc plus whatever waves
+      // are too small to see; under the central sun it sits directly below
+      // the viewer, under an orbiting lamp it stretches towards it.
+      const mirrored = reflect(view.negate(), normal).toVar();
+      const variance = hiddenSlope.mul(u.waveHeight).mul(u.waveHeight).mul(4).add(4.5e-4).toVar();
+      const directLight = vec3(0).toVar();
+      const glint = vec3(0).toVar();
+      shading.forEachLight(positionWorld, float(0), ({ toLight, radiance }) => {
+        directLight.addAssign(radiance.mul(max(dot(up, toLight), 0)));
+        const angleSq = float(2)
+          .mul(float(1).sub(dot(mirrored, toLight)))
+          .max(0);
+        glint.addAssign(
+          radiance.mul(
+            exp(angleSq.div(variance.mul(2)).negate())
+              .div(variance.mul(2 * Math.PI))
+              .mul(0.02),
+          ),
+        );
+      });
+      const surfaceLight = directLight.add(shading.ambientRadiance().mul(Math.PI)).toVar();
       const path = depth.mul(float(1).add(float(1).div(viewCos.max(0.25))));
       const absorption = vec3(0.34, 0.052, 0.024).div(u.waterClarity);
       const waterTransmittance = exp(absorption.mul(path).negate());
@@ -394,7 +415,6 @@ export function createWaterNodes(
       const fresnel = float(0.02).add(
         float(0.98).mul(pow(float(1).sub(max(dot(normal, view), 0)), float(5))),
       );
-      const mirrored = reflect(view.negate(), normal).toVar();
       // Keep the reflection ray off the water; grazing waves can tip it under.
       const skyward = mirrored.add(up.mul(max(float(0.03).sub(dot(mirrored, up)), 0))).normalize();
       const skyCos = max(dot(skyward, up), 0.03).toVar();
@@ -409,22 +429,8 @@ export function createWaterNodes(
       );
       const farLand = vec3(0.09, 0.12, 0.15)
         .mul(INV_PI)
-        .mul(shading.sunLight(farPoint))
-        .mul(u.sunIntensity);
+        .mul(shading.irradiance(farPoint, float(0)).flux);
       const reflected = farLand.mul(sky.transmittance).add(sky.inscatter);
-
-      // The sun is always at the zenith, so its glitter sits under the viewer.
-      // A Gaussian lobe whose variance is the sun's disc plus unresolved waves.
-      const sunAngleSq = float(2)
-        .mul(float(1).sub(dot(mirrored, up)))
-        .max(0);
-      const variance = hiddenSlope.mul(u.waveHeight).mul(u.waveHeight).mul(4).add(4.5e-4);
-      const sunDirect = shading.sunIrradiance(positionWorld, float(0));
-      const glint = sunDirect.mul(
-        exp(sunAngleSq.div(variance.mul(2)).negate())
-          .div(variance.mul(2 * Math.PI))
-          .mul(0.02),
-      );
 
       const foam = float(1)
         .sub(smoothstep(0.2, 2.4, float(seabedDepth)))
@@ -441,54 +447,104 @@ export function createWaterNodes(
   return { positionNode, colorNode };
 }
 
-/** Lit, shadowed surface of one orbiting body (index into the body list). */
+/**
+ * Surface of one orbiting body (index into the body list): rock lit and
+ * shadowed like everything else, plus — if it is a lamp and currently
+ * burning — its own glow.
+ */
 export function createBodyColorNode(
   u: HollowEarthUniforms,
   shading: HollowEarthShading,
   index: number,
 ) {
   const body = ORBITING_BODIES[index];
+  // 0 is the sun, so a body's light index is its lamp slot + 1 (or 0: none).
+  const lightIndex = LIGHT_BODY_INDICES.indexOf(index as (typeof LIGHT_BODY_INDICES)[number]) + 1;
+
   return Fn(() => {
     const centre = u.bodies[index].xyz;
     const normal = positionWorld.sub(centre).normalize().toVar();
-    const sunDistance = length(positionWorld).max(1).toVar();
-    const toSun = positionWorld.negate().div(sunDistance);
+    const altitude = float(SHELL_RADIUS).sub(length(positionWorld));
 
     const mottling = noise(normal.mul(4.2).add(vec3(index * 13.7)))
       .mul(0.6)
-      .add(noise(normal.mul(17).add(vec3(index * 5.1))).mul(0.4));
+      .add(noise(normal.mul(17).add(vec3(index * 5.1))).mul(0.4))
+      .toVar();
     const albedo = vec3(...body.albedo).mul(mottling.mul(1.1).add(0.45));
 
-    // Inverse-square falloff, normalised to the irradiance at the shell.
-    const falloff = float(SHELL_RADIUS).div(sunDistance);
-    const sun = shading.sunLight(positionWorld).mul(u.sunIntensity).mul(falloff).mul(falloff);
+    const light = shading.irradiance(positionWorld, altitude, normal, lightIndex || -1);
     const lit = albedo
       .mul(INV_PI)
-      .mul(sun.mul(max(dot(normal, toSun), 0)).add(shading.worldshineRadiance().mul(Math.PI)));
+      .mul(light.direct.add(shading.ambientRadiance().mul(Math.PI)))
+      .toVar();
+
+    if (lightIndex > 0) {
+      // Burning: limb-darkened, with the surface mottling showing through as
+      // hotter and cooler patches.
+      const view = cameraPosition.sub(positionWorld).normalize();
+      const limb = pow(max(dot(normal, view), 0), float(0.55))
+        .mul(0.6)
+        .add(0.4);
+      lit.addAssign(
+        u.lights[lightIndex].color
+          .mul(u.sunIntensity)
+          .mul(GLOW_BOOST)
+          .mul(limb)
+          .mul(mottling.mul(0.5).add(0.75)),
+      );
+    }
 
     return lit;
   })();
 }
 
-/** The sun's photosphere: limb-darkened and far brighter than anything it lights. */
-export function createSunColorNode(u: HollowEarthUniforms) {
+/**
+ * How much brighter a light's own surface is than the ground it lights, per
+ * unit of light colour. Physically this is thousands; anything well past
+ * white is enough.
+ */
+const GLOW_BOOST = 45;
+
+/**
+ * The central body. Burning, it is a limb-darkened photosphere; switched
+ * off, a dark cinder lit by whatever else is shining.
+ */
+export function createSunColorNode(u: HollowEarthUniforms, shading: HollowEarthShading) {
   return Fn(() => {
-    const normal = positionWorld.normalize();
+    const normal = positionWorld.normalize().toVar();
     const view = cameraPosition.sub(positionWorld).normalize();
     const mu = max(dot(normal, view), 0);
     const limb = pow(mu, float(0.55)).mul(0.65).add(0.35);
-    const surface = vec3(1.0, 0.93, 0.8).mul(u.sunIntensity).mul(45).mul(limb);
-    return surface;
+    const glow = u.lights[0].color
+      .mul(vec3(1.0, 0.93, 0.8))
+      .mul(u.sunIntensity)
+      .mul(GLOW_BOOST);
+    // Even at its dimmest a cooling star still shows a dull red surface.
+    const embers = vec3(0.5, 0.06, 0.01).mul(u.sunIntensity).mul(0.12);
+
+    const altitude = float(SHELL_RADIUS).sub(length(positionWorld));
+    const light = shading.irradiance(positionWorld, altitude, normal, 0);
+    const cinder = vec3(0.05, 0.045, 0.04)
+      .mul(noise(normal.mul(9)).mul(0.8).add(0.6))
+      .mul(INV_PI)
+      .mul(light.direct.add(shading.ambientRadiance().mul(Math.PI)));
+
+    return glow.add(embers.mul(u.sunEmbers)).mul(limb).add(cinder);
   })();
 }
 
-/** Additive glow on a larger sphere around the sun; fades to nothing at its rim. */
-export function createCoronaColorNode(u: HollowEarthUniforms) {
+/**
+ * Additive glow on a larger sphere around a light (0 = the sun); fades to
+ * nothing at the sphere's rim and scales with how brightly the light burns.
+ */
+export function createCoronaColorNode(u: HollowEarthUniforms, lightIndex: number) {
   return Fn(() => {
-    const normal = positionWorld.normalize();
+    const centre = u.lights[lightIndex].position.xyz;
+    const normal = positionWorld.sub(centre).normalize();
     const view = cameraPosition.sub(positionWorld).normalize();
     const mu = max(dot(normal, view), 0);
-    return vec3(1.0, 0.78, 0.5)
+    return u.lights[lightIndex].color
+      .mul(vec3(1.0, 0.82, 0.6))
       .mul(u.sunIntensity)
       .mul(pow(mu, float(7)).mul(1.4));
   })();

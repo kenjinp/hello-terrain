@@ -7,6 +7,8 @@ export interface QualityPreset {
   label: string;
   /** Atmosphere samples per ray segment, per pixel (a ray has up to two). */
   atmosphereSteps: number;
+  /** Samples through the interior gas along each ray. */
+  nebulaSteps: number;
   /** Atmosphere samples per segment for the sky reflected in the water. */
   reflectionSteps: number;
   /**
@@ -32,6 +34,7 @@ export const QUALITY_PRESETS = {
   low: {
     label: "Low",
     atmosphereSteps: 6,
+    nebulaSteps: 6,
     reflectionSteps: 3,
     volumeScale: 0.34,
     waveCount: 12,
@@ -44,6 +47,7 @@ export const QUALITY_PRESETS = {
   standard: {
     label: "Standard",
     atmosphereSteps: 10,
+    nebulaSteps: 10,
     reflectionSteps: 4,
     volumeScale: 0.5,
     waveCount: 18,
@@ -56,6 +60,7 @@ export const QUALITY_PRESETS = {
   high: {
     label: "High",
     atmosphereSteps: 16,
+    nebulaSteps: 16,
     reflectionSteps: 8,
     volumeScale: 0.5,
     waveCount: 28,
@@ -68,6 +73,7 @@ export const QUALITY_PRESETS = {
   ultra: {
     label: "Ultra",
     atmosphereSteps: 32,
+    nebulaSteps: 28,
     reflectionSteps: 12,
     volumeScale: 0.5,
     waveCount: 40,

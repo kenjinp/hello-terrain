@@ -11,7 +11,7 @@ import HollowEarthScene from "@/examples/HollowEarthScene"
 
 ## Overview
 
-The same Earth-sized cube-sphere as the [Earth-Scale Planet](/examples/earth-planet) example (authalic radius **6,371,007.2 m**), built with `invert: true` so the continents grow *inward*. A small sun sits at the centre of the world, five bodies orbit it, and you stand on the inside of the shell with the far side of the planet for a sky.
+The same Earth-sized cube-sphere as the [Earth-Scale Planet](/examples/earth-planet) example (authalic radius **6,371,007.2 m**), built with `invert: true` so the continents grow *inward*. A small sun sits at the centre of the world, five bodies orbit it through a haze of glowing gas and stars, and you stand on the inside of the shell with the far side of the planet for a sky.
 
 ```tsx
 const topology = createCubeSphereTopology({ radius: SHELL_RADIUS, invert: true });
@@ -26,6 +26,16 @@ That one flag is the only change to the terrain setup from the outside-in planet
 - **Fly** is the altitude-scaled fly camera from the Earth-Scale Planet example.
 - **[** and **]** step the clock back and forward an hour (hold **Shift** for six), so you can dial in dusk or an eclipse without waiting. The example needs focus for hotkeys — click it first.
 
+### Light systems
+
+The `lighting` control changes what makes day and night; `?light=pulse` or `?light=relay` in the URL starts in one.
+
+| | Day | Night |
+| --- | --- | --- |
+| **Eclipse** (default) | The central sun, always on | The shadow of Nyx, which orbits close to it |
+| **Pulse** | The central sun, flaring up at dawn | The sun itself cools to a red ember and goes out; the starscape lights the ground |
+| **Relay** | No sun. The four moons take turns glowing | Whichever lamp is lit is the time of day: Selene is a white noon, Ember a long orange dusk, Brume a blue full moon, Pebble a green one |
+
 ### Quality
 
 The `quality` control switches between four presets; append `?quality=low`, `?quality=high` or `?quality=ultra` to the URL to start in one. Switching rebuilds the scene, because most of these are shader loop counts or allocation sizes.
@@ -34,6 +44,7 @@ The `quality` control switches between four presets; append `?quality=low`, `?qu
 | --- | --- | --- | --- | --- |
 | Atmosphere samples per pixel | 2 × 6 | 2 × 10 | 2 × 16 | 2 × 32 |
 | Volume resolution (fraction of canvas) | 0.34 | 0.5 | 0.5 | 0.5 |
+| Nebula samples per pixel | 6 | 10 | 16 | 28 |
 | Reflected-sky samples | 2 × 3 | 2 × 4 | 2 × 8 | 2 × 12 |
 | Water waves | 12 | 18 | 28 | 40 |
 | Finest ground detail | 64 m | 8 m | 1 m | 1 m |
@@ -64,6 +75,28 @@ const overlap = 1 - smoothstep(abs(bodyRadius - coneRadius), bodyRadius + coneRa
 ```
 
 The same function shades the terrain, the water, the moons (they eclipse each other) and every sample of the atmosphere.
+
+### Three ways to make a night
+
+That closed form never assumed the light was at the centre, so the light became a list: the sun plus the four moons, each with a position, a radius and a colour that can be zero. `updateLights` in `world.ts` sets the colours from the time of day, and the shaders loop over whichever are on, with inverse-square falloff measured from the lamp instead of from the centre.
+
+- **Eclipse** is the original: one light, and Nyx to block it.
+- **Pulse** removes Nyx and dims the sun instead. A cooling star reddens as it fades, so its colour slides from white through orange as its output falls with the square of its level. The fade down takes longer than the flare up.
+- **Relay** switches the sun off for good. Selene (36% of the sun's output), Ember (16%), Brume (2%) and Pebble (5%) are lit in turn with a short crossfade. A lamp is far closer to one side of the shell than the other — Pebble passes 1,200 km overhead — so its light is anything but even: a bright spot follows each one around the world.
+
+Two things keep the dim settings readable. A little light is added everywhere for the starscape, and the exposure follows the total light output the way an eye does (`gain = brightness^-0.45`, capped at 7×), so Brume's 2% reads as a bright moonlit night and not as black. Turn **eye adaptation** off to see the unadjusted levels.
+
+One trap worth knowing about if you write a loop like this in TSL. Each light is wrapped in an `If` so that dark lamps cost nothing, and any expression shared between those branches has to be a variable (`.toVar()`) declared before them. TSL otherwise assigns it inside the first branch that uses it, and the other branches read it unset whenever that light is off — which showed up here as a hard-edged white disc 50° across around one moon.
+
+### A sky with galaxies in it
+
+The space between the sun and the air is 12,000 km across — and is drawn as if it were far bigger. Two things fill it, both in `cosmos.ts`.
+
+**Gas** is raymarched in the same reduced-resolution pass as the atmosphere. Its density comes from a small tileable 3D noise texture sampled three times: twice in world space, for large masses and fine filaments, and once by direction and the *logarithm* of the distance from the centre. That last one makes the structure self-similar — it repeats, smaller, every time you halve the radius — so the eye never finds a largest cloud to judge the size of the room by. The gas glows faintly on its own, scatters the light of whatever is lit, and takes the same eclipse shadows as everything else, so Nyx drags a dark cone through it.
+
+**Stars and galaxies** sit on five nested shells between the top of the air and a quarter of the way to the centre. Each shell is cut into cells, and a cell may hold one star or, rarely, one small spiral. They are drawn analytically in the full-resolution composite, by the angle between the view ray and the star as seen from the camera, with anything smaller than a pixel spread over the pixel so nothing twinkles as you move. Because the shells are at different depths they slide against each other as you travel, and the far side of the world shows through all of them.
+
+Stars fade behind bright air and bright ground the way real ones do behind a daytime sky, so in Eclipse mode you see them from the night side and from space, and in the other two modes they come out as the light goes.
 
 ### An atmosphere that gets thicker towards the walls
 
@@ -162,9 +195,10 @@ The fix is to make the expensive part independent of geometry:
 
 - `examples/HollowEarthScene.tsx` — scene, controls and camera bar
 - `examples/hollow-earth/quality.ts` — the quality presets
-- `examples/hollow-earth/world.ts` — radii, orbits and the simulation clock
+- `examples/hollow-earth/world.ts` — radii, orbits, the light systems and the simulation clock
 - `examples/hollow-earth/elevation.ts` and `noise.ts` — the landforms
-- `examples/hollow-earth/shading.ts` — eclipse shadows and the atmosphere march
+- `examples/hollow-earth/shading.ts` — lights, eclipse shadows and the atmosphere march
+- `examples/hollow-earth/cosmos.ts` — interior gas, stars and galaxies
 - `examples/hollow-earth/atmospherePass.ts` — the atmosphere as a post-processing pass
 - `examples/hollow-earth/materials.ts` — terrain, water, moon and sun shading
 - `examples/hollow-earth/cameras.tsx` — shots and the wall-walking camera

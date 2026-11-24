@@ -1,10 +1,12 @@
 import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import {
+  dot,
   float,
   Fn,
   ivec2,
   logarithmicDepthToViewZ,
   pass,
+  pow,
   renderOutput,
   rtt,
   uniform,
@@ -14,7 +16,9 @@ import {
   vec4,
 } from "three/tsl";
 import * as THREE from "three/webgpu";
+import type { HollowEarthCosmos } from "./cosmos";
 import type { HollowEarthShading } from "./shading";
+import { SHELL_RADIUS } from "./world";
 
 // oxlint-disable-next-line typescript/no-explicit-any
 type TslNode = any;
@@ -44,7 +48,9 @@ export function createAtmospherePipeline(
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
   shading: HollowEarthShading,
-  quality: { atmosphereSteps: number; volumeScale: number },
+  /** The interior starscape, or null to leave the inside of the world empty. */
+  cosmos: HollowEarthCosmos | null,
+  quality: { atmosphereSteps: number; nebulaSteps: number; volumeScale: number },
 ) {
   // The pass has its own camera uniforms: inside the full-screen quad the
   // built-in camera nodes describe the quad's camera, not the scene's.
@@ -54,6 +60,14 @@ export function createAtmospherePipeline(
     projectionInverse: uniform(new THREE.Matrix4()),
     near: uniform(camera.near),
     far: uniform(camera.far),
+    /**
+     * 0.5 when the camera is inside the air, 0 when it is in the vacuum:
+     * the power of the whole ray's air transmittance that stands in for
+     * "the air in front of the starscape".
+     */
+    nearAir: uniform(0.5),
+    /** Scene luminance at which stars start to wash out. */
+    adaptation: uniform(1),
     /** Size of the scene's colour and depth targets, in pixels. */
     sceneSize: uniform(new THREE.Vector2(1, 1)),
     /** Size of the reduced-resolution volume target, in pixels. */
@@ -85,16 +99,25 @@ export function createAtmospherePipeline(
   };
 
   // --- Reduced resolution: the light scattered along each ray --------------
+  // rgb = light added along the ray, a = how much of what lies behind the
+  // nebulae shows through them.
   const volumeNode = rtt(
     Fn(() => {
       const ray = rayAt(uv());
+      const direction = ray.direction.toVar();
+      const distance = ray.distance.toVar();
       const air = shading.marchAtmosphere(
         view.position,
-        ray.direction,
-        ray.distance,
+        direction,
+        distance,
         quality.atmosphereSteps,
       );
-      return vec4(air.inscatter, 1);
+      if (!cosmos) return vec4(air.inscatter, 1);
+
+      const nebula = cosmos.marchNebula(view.position, direction, distance, quality.nebulaSteps);
+      // The gas is beyond the air around the camera, so that air veils it.
+      const veil = pow(air.transmittance, vec3(view.nearAir));
+      return vec4(air.inscatter.add(nebula.radiance.mul(veil)), nebula.transmittance);
     })(),
     null,
     null,
@@ -118,7 +141,7 @@ export function createAtmospherePipeline(
     const texel = screen.mul(view.volumeSize).sub(0.5);
     const corner = texel.floor();
     const blend = texel.fract();
-    const light = vec3(0).toVar();
+    const light = vec4(0).toVar();
     const totalWeight = float(0).toVar();
     for (const [dx, dy] of [
       [0, 0],
@@ -133,7 +156,7 @@ export function createAtmospherePipeline(
       const tapDistance = rayAt(tap).distance;
       const mismatch = tapDistance.sub(distance).abs().div(distance.max(1));
       const weight = bilinear.add(0.02).div(mismatch.mul(40).add(0.02)).toVar();
-      light.addAssign(volume.sample(tap).rgb.mul(weight));
+      light.addAssign(volume.sample(tap).mul(weight));
       totalWeight.addAssign(weight);
     }
     light.divAssign(totalWeight);
@@ -144,7 +167,20 @@ export function createAtmospherePipeline(
       distance,
       Math.max(4, Math.round(quality.atmosphereSteps / 2)),
     );
-    return vec4(sceneColor.rgb.mul(airTransmittance).add(light), 1);
+    const behind = sceneColor.rgb.mul(light.a).toVar();
+    if (cosmos) {
+      // Stars are computed here, per full-resolution pixel, so they stay
+      // sharp; they sit inside the gas and behind the air around the camera.
+      const stars = cosmos.starfield(view.position, ray.direction, distance);
+      const veil = pow(airTransmittance, vec3(view.nearAir));
+      const lit = behind.mul(airTransmittance).add(light.rgb).toVar();
+      // An eye adapted to a bright sky or a sunlit landscape cannot see
+      // stars against it. Fade them by how bright their backdrop is.
+      const backdrop = dot(lit, vec3(0.2126, 0.7152, 0.0722)).div(view.adaptation);
+      const drowned = float(1).div(backdrop.mul(backdrop).mul(4).add(1));
+      return vec4(lit.add(stars.mul(light.a.sqrt()).mul(veil).mul(drowned)), 1);
+    }
+    return vec4(behind.mul(airTransmittance).add(light.rgb), 1);
   })();
 
   // three r183 renamed PostProcessing to RenderPipeline; the published typings
@@ -165,6 +201,7 @@ export function createAtmospherePipeline(
       view.projectionInverse.value.copy(camera.projectionMatrixInverse);
       view.near.value = camera.near;
       view.far.value = camera.far;
+      view.nearAir.value = camera.position.length() > SHELL_RADIUS - 100_000 ? 0.5 : 0;
       renderer.getDrawingBufferSize(drawingBufferSize);
       view.sceneSize.value.copy(drawingBufferSize);
       view.volumeSize.value.set(
@@ -172,6 +209,10 @@ export function createAtmospherePipeline(
         Math.max(1, Math.floor(drawingBufferSize.y * quality.volumeScale)),
       );
       pipeline.render();
+    },
+    /** Scene luminance at which stars start to wash out (drops as the eye adapts). */
+    setAdaptation(level: number) {
+      view.adaptation.value = level;
     },
     dispose() {
       volume.renderTarget?.dispose();

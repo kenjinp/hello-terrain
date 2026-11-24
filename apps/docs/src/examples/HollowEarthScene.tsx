@@ -4,6 +4,11 @@ import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { CelestialBodies } from "@/examples/hollow-earth/CelestialBodies";
 import { createAtmospherePipeline } from "@/examples/hollow-earth/atmospherePass";
+import {
+  createCosmos,
+  createCosmosNoiseTexture,
+  createCosmosUniforms,
+} from "@/examples/hollow-earth/cosmos";
 import { CinematicCamera, SHOTS, WalkerCamera } from "@/examples/hollow-earth/cameras";
 import { createHollowEarthElevation } from "@/examples/hollow-earth/elevation";
 import {
@@ -26,6 +31,11 @@ import {
 import {
   createHollowEarthState,
   type HollowEarthState,
+  isLightSystem,
+  LIGHT_BODY_INDICES,
+  LIGHT_SYSTEMS,
+  type LightSystem,
+  NYX_INDEX,
   ORBITING_BODIES,
   SHELL_RADIUS,
   updateHollowEarthState,
@@ -54,6 +64,12 @@ function getInitialQuality(): QualityId {
   if (typeof window === "undefined") return "standard";
   const requested = new URLSearchParams(window.location.search).get("quality");
   return isQualityId(requested) ? requested : "standard";
+}
+
+function getInitialLightSystem(): LightSystem {
+  if (typeof window === "undefined") return "eclipse";
+  const requested = new URLSearchParams(window.location.search).get("light");
+  return isLightSystem(requested) ? requested : "eclipse";
 }
 
 function wrap(value: number, period: number) {
@@ -97,7 +113,6 @@ function useUniformControls(
     scaleHeight: number;
     mieAnisotropy: number;
     terminatorWarmth: number;
-    worldshine: number;
     waveHeight: number;
     waterClarity: number;
   },
@@ -110,7 +125,6 @@ function useUniformControls(
     uniforms.scaleHeight.value = controls.scaleHeight;
     uniforms.mieAnisotropy.value = controls.mieAnisotropy;
     uniforms.terminatorWarmth.value = controls.terminatorWarmth;
-    uniforms.worldshine.value = controls.worldshine;
     uniforms.waveHeight.value = controls.waveHeight;
     uniforms.waterClarity.value = controls.waterClarity;
   }, [
@@ -122,7 +136,6 @@ function useUniformControls(
     controls.scaleHeight,
     controls.mieAnisotropy,
     controls.terminatorWarmth,
-    controls.worldshine,
     controls.waveHeight,
     controls.waterClarity,
   ]);
@@ -161,12 +174,23 @@ function HollowEarthSceneImpl({
         },
         { collapsed: true },
       ),
+      cosmos: folder(
+        {
+          showCosmos: { value: true, label: "enabled" },
+          starBrightness: { value: 1, min: 0, max: 4, step: 0.05, label: "stars" },
+          nebulaBrightness: { value: 1, min: 0, max: 4, step: 0.05, label: "nebula glow" },
+          nebulaDensity: { value: 1, min: 0, max: 2.5, step: 0.05, label: "nebula density" },
+        },
+        { collapsed: true },
+      ),
       light: folder(
         {
           sunIntensity: { value: 20, min: 1, max: 60, step: 1 },
           exposure: { value: 0.22, min: 0.02, max: 2, step: 0.01 },
+          adaptExposure: { value: true, label: "eye adaptation" },
           terminatorWarmth: { value: 0.7, min: 0, max: 1, step: 0.05 },
           worldshine: { value: 0.045, min: 0, max: 0.4, step: 0.005 },
+          starlight: { value: 0.035, min: 0, max: 0.2, step: 0.001 },
         },
         { collapsed: true },
       ),
@@ -200,6 +224,21 @@ function HollowEarthSceneImpl({
 
   const uniforms = useMemo(createHollowEarthUniforms, []);
   const shading = useMemo(() => createHollowEarthShading(uniforms), [uniforms]);
+
+  // The starscape inside the world. Its noise volume is generated once.
+  const cosmosUniforms = useMemo(createCosmosUniforms, []);
+  const cosmosNoise = useMemo(createCosmosNoiseTexture, []);
+  useEffect(() => () => cosmosNoise.dispose(), [cosmosNoise]);
+  const cosmos = useMemo(
+    () =>
+      controls.showCosmos ? createCosmos(uniforms, cosmosUniforms, shading, cosmosNoise) : null,
+    [controls.showCosmos, uniforms, cosmosUniforms, shading, cosmosNoise],
+  );
+  useEffect(() => {
+    cosmosUniforms.starBrightness.value = controls.starBrightness;
+    cosmosUniforms.nebulaBrightness.value = controls.nebulaBrightness;
+    cosmosUniforms.nebulaDensity.value = controls.nebulaDensity;
+  }, [cosmosUniforms, controls.starBrightness, controls.nebulaBrightness, controls.nebulaDensity]);
   useUniformControls(uniforms, controls);
 
   // `invert: true` displaces elevation towards the centre and flips the
@@ -257,9 +296,6 @@ function HollowEarthSceneImpl({
   useEffect(() => {
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
   }, [renderer]);
-  useEffect(() => {
-    renderer.toneMappingExposure = controls.exposure;
-  }, [renderer, controls.exposure]);
 
   // `[` and `]` step the clock by an hour, so any moment of the day (or any
   // eclipse) can be dialled in without waiting for it.
@@ -281,14 +317,17 @@ function HollowEarthSceneImpl({
   const scene = useThree((three) => three.scene) as unknown as THREE.Scene;
   const camera = useThree((three) => three.camera) as unknown as THREE.PerspectiveCamera;
   const atmosphere = useMemo(
-    () => createAtmospherePipeline(renderer, scene, camera, shading, quality),
-    [renderer, scene, camera, shading, quality],
+    () => createAtmospherePipeline(renderer, scene, camera, shading, cosmos, quality),
+    [renderer, scene, camera, shading, cosmos, quality],
   );
   useEffect(() => () => atmosphere.dispose(), [atmosphere]);
   useFrame(() => atmosphere.render(), { phase: "render" });
 
   const seconds = useRef(0);
-  useFrame((_, delta) => {
+  const adaptation = useRef(1);
+  const ambientScratch = useMemo(() => new THREE.Vector3(), []);
+  const starlightScratch = useMemo(() => new THREE.Vector3(), []);
+  useFrame((root, delta) => {
     if (!controls.paused) {
       const step = Math.min(delta, 0.25);
       seconds.current += step;
@@ -296,8 +335,46 @@ function HollowEarthSceneImpl({
     }
     for (let i = 0; i < ORBITING_BODIES.length; i++) {
       const centre = state.bodyPositions[i];
-      uniforms.bodies[i].value.set(centre.x, centre.y, centre.z, ORBITING_BODIES[i].radius);
+      // A body that does not exist in this light system casts no shadow.
+      const radius = i === NYX_INDEX && !state.nyxPresent ? 0 : ORBITING_BODIES[i].radius;
+      uniforms.bodies[i].value.set(centre.x, centre.y, centre.z, radius);
     }
+
+    // Lights: the sun stays at the origin; each lamp rides its body.
+    ambientScratch.set(0, 0, 0);
+    uniforms.lights.forEach((light, index) => {
+      const color = state.lightColors[index];
+      light.color.value.copy(color);
+      if (index > 0) {
+        const centre = state.bodyPositions[LIGHT_BODY_INDICES[index - 1]];
+        light.position.value.set(centre.x, centre.y, centre.z, light.position.value.w);
+      }
+      ambientScratch.add(color);
+    });
+    // Fill light: what is shining, bounced off the rest of the shell and
+    // tinted by the sky, plus the starscape — which is all there is at night.
+    uniforms.ambient.value
+      .set(0.62, 0.78, 1.0)
+      .multiply(ambientScratch)
+      .multiplyScalar(controls.worldshine)
+      .add(
+        starlightScratch
+          .set(0.55, 0.62, 1.0)
+          .multiplyScalar(controls.showCosmos ? controls.starlight * controls.starBrightness : 0),
+      );
+    // Eye adaptation: open up as the light goes, the way dusk does not look
+    // a hundred times darker than noon. Eased, so a lamp catching does not
+    // snap the exposure.
+    const gain = controls.adaptExposure
+      ? Math.min(7, Math.max(state.brightness, 0.015) ** -0.45)
+      : 1;
+    adaptation.current += (gain - adaptation.current) * Math.min(1, delta * 2.5);
+    renderer.toneMappingExposure = controls.exposure * adaptation.current;
+    atmosphere.setAdaptation(1 / adaptation.current);
+    // A sun that has merely dimmed still shows embers; a dead one does not.
+    uniforms.sunEmbers.value = state.lightSystem === "pulse" ? 1 : 0;
+    cosmosUniforms.pixelAngle.value =
+      THREE.MathUtils.degToRad(camera.fov) / Math.max(1, renderer.domElement.height);
     uniforms.waveTime.value = wrap(seconds.current, WAVE_TIME_PERIOD);
   });
 
@@ -461,6 +538,7 @@ function CameraBar({
 
 export default function HollowEarthScene() {
   const store = useCreateStore();
+  const state = useMemo(createHollowEarthState, []);
   // `?quality=high` or `?quality=ultra` picks the starting preset.
   const { quality: qualityId } = useControls(
     {
@@ -474,7 +552,23 @@ export default function HollowEarthScene() {
     { store },
   );
   const quality: QualityPreset = QUALITY_PRESETS[qualityId];
-  const state = useMemo(createHollowEarthState, []);
+
+  // `?light=pulse` or `?light=relay` picks the starting light system.
+  const { lighting } = useControls(
+    {
+      lighting: {
+        value: getInitialLightSystem(),
+        options: Object.fromEntries(
+          Object.entries(LIGHT_SYSTEMS).map(([id, label]) => [label, id]),
+        ) as Record<string, LightSystem>,
+      },
+    },
+    { store },
+  );
+  useEffect(() => {
+    state.lightSystem = lighting;
+    updateHollowEarthState(state, state.days);
+  }, [state, lighting]);
   const [mode, setMode] = useState<CameraMode>(SHOTS[0].id);
   const [touring, setTouring] = useState(true);
 
