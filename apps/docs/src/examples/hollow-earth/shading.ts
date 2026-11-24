@@ -338,6 +338,56 @@ export function createHollowEarthShading(
   }
 
   /**
+   * RGB transmittance of the air along a ray, and nothing else: no light, no
+   * shadows, no texture lookups. Cheap enough to run at full resolution while
+   * the scattering is computed at a fraction of it.
+   */
+  function marchTransmittance(
+    rayOrigin: TslNode,
+    rayDirection: TslNode,
+    rayLength: TslNode,
+    steps: number,
+  ) {
+    const origin = vec3(rayOrigin).toVar();
+    const direction = vec3(rayDirection).toVar();
+    const total = float(rayLength).toVar();
+
+    const innerRadius = shellRadius.sub(u.scaleHeight.mul(ATMOSPHERE_HEIGHT));
+    const originRadius = length(origin);
+    const b = dot(origin, direction).toVar();
+    const c = originRadius.sub(innerRadius).mul(originRadius.add(innerRadius)).toVar();
+    const discriminant = b.mul(b).sub(c);
+    const inVacuum = c.lessThan(0);
+    const crossesVacuum = discriminant.greaterThan(0).and(inVacuum.or(b.lessThan(0)));
+    const root = sqrt(max(discriminant, 0));
+    const half = total.mul(0.5);
+    const leaveAir = select(inVacuum, float(0), select(crossesVacuum, b.negate().sub(root), half));
+    const reenterAir = select(crossesVacuum, b.negate().add(root), half);
+    const nearEnd = min(leaveAir, total).max(0).toVar();
+    const farStart = min(reenterAir, total).max(0).toVar();
+
+    const opticalDepth = vec3(0).toVar();
+    const marchSegment = (start: TslNode, end: TslNode, denseAtEnd: boolean) => {
+      const segmentLength = end.sub(start).max(0).toVar();
+      Loop(steps, ({ i }: { i: TslNode }) => {
+        const x0 = float(i).div(steps);
+        const x1 = float(i).add(1).div(steps);
+        const warp = (x: TslNode) =>
+          denseAtEnd ? float(1).sub(float(1).sub(x).mul(float(1).sub(x))) : x.mul(x);
+        const u0 = warp(x0);
+        const u1 = warp(x1);
+        const t = start.add(segmentLength.mul(u0.add(u1).mul(0.5)));
+        const altitude = altitudeOf(length(origin.add(direction.mul(t))));
+        opticalDepth.addAssign(densityAt(altitude).mul(segmentLength.mul(u1.sub(u0))));
+      });
+    };
+    marchSegment(float(0), nearEnd, false);
+    marchSegment(farStart, total, true);
+
+    return exp(extinction(opticalDepth).negate());
+  }
+
+  /**
    * Fragment position relative to the camera, in world orientation. Derived
    * from view space so it stays smooth near the eye; `positionWorld` itself is
    * quantised to ~0.5 m at Earth radius in float32.
@@ -349,6 +399,7 @@ export function createHollowEarthShading(
     cameraRelativePosition,
     clearSunIrradiance,
     marchAtmosphere,
+    marchTransmittance,
     sunIrradiance,
     sunLight,
     sunVisibility,

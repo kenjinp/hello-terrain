@@ -4,7 +4,7 @@ import { ExamplesCanvas, useExamplesCanvas } from "@/components/ExamplesCanvas";
 import { FpsDebug } from "@/components/FpsDebug";
 import { CelestialBodies } from "@/examples/hollow-earth/CelestialBodies";
 import { createAtmospherePipeline } from "@/examples/hollow-earth/atmospherePass";
-import { createClouds, createCloudNoiseTexture } from "@/examples/hollow-earth/clouds";
+import { createClouds, createCloudNoiseTextures } from "@/examples/hollow-earth/clouds";
 import { CinematicCamera, SHOTS, WalkerCamera } from "@/examples/hollow-earth/cameras";
 import { createHollowEarthElevation } from "@/examples/hollow-earth/elevation";
 import {
@@ -221,7 +221,7 @@ function HollowEarthSceneImpl({
   const uniforms = useMemo(createHollowEarthUniforms, []);
   // The noise volume takes a moment to generate, so it is built once and
   // kept even while clouds are switched off.
-  const cloudNoise = useMemo(createCloudNoiseTexture, []);
+  const cloudNoise = useMemo(createCloudNoiseTextures, []);
   useEffect(() => () => cloudNoise.dispose(), [cloudNoise]);
   const clouds = useMemo(
     () => (controls.showClouds ? createClouds(uniforms, cloudNoise) : null),

@@ -33,6 +33,7 @@ The `quality` control switches between four presets; append `?quality=low`, `?qu
 | | Low | Standard | High | Ultra |
 | --- | --- | --- | --- | --- |
 | Atmosphere samples per pixel | 2 × 6 | 2 × 10 | 2 × 16 | 2 × 32 |
+| Volume resolution (fraction of canvas) | 0.34 | 0.5 | 0.5 | 0.5 |
 | Cloud samples (near + far side) | 10 + 4 | 18 + 6 | 32 + 10 | 56 + 16 |
 | Reflected-sky samples | 2 × 3 | 2 × 4 | 2 × 8 | 2 × 12 |
 | Water waves | 12 | 18 | 28 | 40 |
@@ -110,9 +111,9 @@ Tree line and snow line sit lower where nights are long, and snow only holds on 
 
 ### Clouds and their shadows
 
-A cloud deck sits between 1.5 and 6.5 km above the sea, so the tallest ranges stand through it. It is marched in the same full-screen pass as the air, and follows the structure of the volumetric clouds in [three-geospatial](https://github.com/takram-design-engineering/three-geospatial): a low-frequency weather pattern decides where cloud systems are and how tall they grow, a Perlin–Worley volume gives the base shapes, and finer Worley noise erodes the edges. The noise is one tileable 64³ texture generated on the CPU at start-up.
+A cloud deck sits between 1.5 and 6.5 km above the sea, so the tallest ranges stand through it. It is marched in the same full-screen pass as the air, and follows the structure of the volumetric clouds in [three-geospatial](https://github.com/takram-design-engineering/three-geospatial): a low-frequency weather pattern decides where cloud systems are and how tall they grow, a Perlin–Worley volume gives the base shapes, and finer Worley noise erodes the edges. The noise is two small tileable 3D textures generated on the CPU at start-up: a 64³ shape volume and a 48³ weather volume, so a march sample costs one texture tap under clear sky and five inside a cloud.
 
-That library targets an ordinary planet under a distant sun, and shadows its clouds with cascaded Beer shadow maps. Here the geometry allows something simpler. The density is kept *separable* — weather that depends only on direction from the centre, times a profile that depends only on altitude — and all sunlight travels along radii. So the optical depth of cloud between any point and the sun has a closed form: the column's total depth times the fraction of the profile above the point. One function, a few texture taps, no shadow maps:
+That library targets an ordinary planet under a distant sun, and shadows its clouds with cascaded Beer shadow maps. Here the geometry allows something simpler. The density is kept *separable* — weather that depends only on direction from the centre, times a profile that depends only on altitude — and all sunlight travels along radii. So the optical depth of cloud between any point and the sun has a closed form: the column's total depth times the fraction of the profile above the point. One function, two texture taps, no shadow maps:
 
 - on the terrain and the sea it is the cloud shadow;
 - inside the cloud it is the self-shadowing that darkens the bases;
@@ -165,6 +166,8 @@ Looking up, the far side of the world is seen face-on and neither applies, hence
 The fix is to make the expensive part independent of geometry:
 
 - The atmosphere is a full-screen pass (`atmospherePass.ts`) that reads depth and marches once per pixel, however many triangles or layers are behind that pixel.
+- That march, clouds included, runs in a reduced-resolution target — a quarter of the pixels at the default 0.5 — because what it produces is soft. The composite upsamples it with depth-aware weights, so haze does not smear across silhouettes. Only the air's transmittance, which needs no lighting or texture lookups, is marched at full resolution.
+- Each reduced-resolution ray is cast through the centre of one specific scene pixel and uses that pixel's depth. Casting it through the boundary between pixels, where a half-resolution texel naturally sits, pairs a ray with a neighbour's depth and shows up as bands.
 - Water fragments under land are discarded before any work, and sea floor too deep to see skips its shading.
 - The scene is rendered without multisampling; FXAA runs after tone mapping instead.
 

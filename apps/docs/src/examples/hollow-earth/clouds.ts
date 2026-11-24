@@ -22,6 +22,7 @@ const DETAIL_SCALE = 1 / 31_000;
 const WISP_SCALE = 1 / 8_700;
 
 const NOISE_SIZE = 64;
+const WEATHER_SIZE = 48;
 
 /** Small deterministic PRNG so the texture is identical on every load. */
 function createRandom(seed: number) {
@@ -116,67 +117,12 @@ function createTileableWorley(cells: number, random: () => number) {
   };
 }
 
-/**
- * The cloud noise volume, generated once on the CPU. Tileable, so it can be
- * repeated across a world 12,700 km wide:
- *
- * - R: Perlin–Worley — billowy base shapes
- * - G: Worley fbm — mid-scale erosion
- * - B: Perlin fbm — weather (where the cloud systems are)
- * - A: fine Worley fbm — wisps
- */
-export function createCloudNoiseTexture() {
-  const size = NOISE_SIZE;
-  const random = createRandom(0x51ed270b);
-  const perlin = [4, 8, 16].map((period) => createTileablePerlin(period, random));
-  const weather = [3, 6, 12, 24].map((period) => createTileablePerlin(period, random));
-  const shapeWorley = [4, 8, 16].map((cells) => createTileableWorley(cells, random));
-  const detailWorley = [6, 12, 24].map((cells) => createTileableWorley(cells, random));
-  const wispWorley = [10, 20].map((cells) => createTileableWorley(cells, random));
-
-  const channels = [0, 1, 2, 3].map(() => new Float32Array(size * size * size));
-  const octaves = (layers: ((u: number, v: number, w: number) => number)[], gain: number) => {
-    return (u: number, v: number, w: number) => {
-      let total = 0;
-      let amplitude = 1;
-      let range = 0;
-      for (const layer of layers) {
-        total += layer(u, v, w) * amplitude;
-        range += amplitude;
-        amplitude *= gain;
-      }
-      return total / range;
-    };
-  };
-  const perlinFbm = octaves(perlin, 0.5);
-  const weatherFbm = octaves(weather, 0.55);
-  const shapeFbm = octaves(shapeWorley, 0.5);
-  const detailFbm = octaves(detailWorley, 0.5);
-  const wispFbm = octaves(wispWorley, 0.5);
-
-  let index = 0;
-  for (let z = 0; z < size; z++) {
-    for (let y = 0; y < size; y++) {
-      for (let x = 0; x < size; x++) {
-        const u = (x + 0.5) / size;
-        const v = (y + 0.5) / size;
-        const w = (z + 0.5) / size;
-        const billow = shapeFbm(u, v, w);
-        // Perlin remapped so Worley cells bulge out of it.
-        const base = perlinFbm(u, v, w) * 0.5 + 0.5;
-        channels[0][index] = (base - (1 - billow) * 0.6) / (1 - (1 - billow) * 0.6 + 1e-3);
-        channels[1][index] = detailFbm(u, v, w);
-        channels[2][index] = weatherFbm(u, v, w);
-        channels[3][index] = wispFbm(u, v, w);
-        index++;
-      }
-    }
-  }
-
+function toTexture(channels: Float32Array[], size: number) {
   // Stretch every channel to the full 8-bit range.
   const data = new Uint8Array(size * size * size * 4);
   for (let channel = 0; channel < 4; channel++) {
     const values = channels[channel];
+    if (!values) continue;
     let low = Infinity;
     let high = -Infinity;
     for (const value of values) {
@@ -201,6 +147,102 @@ export function createCloudNoiseTexture() {
   return texture;
 }
 
+type Field = (u: number, v: number, w: number) => number;
+
+function fillVolume(size: number, fields: Field[]) {
+  const channels = fields.map(() => new Float32Array(size * size * size));
+  let index = 0;
+  for (let z = 0; z < size; z++) {
+    for (let y = 0; y < size; y++) {
+      for (let x = 0; x < size; x++) {
+        const u = (x + 0.5) / size;
+        const v = (y + 0.5) / size;
+        const w = (z + 0.5) / size;
+        for (let channel = 0; channel < fields.length; channel++) {
+          channels[channel][index] = fields[channel](u, v, w);
+        }
+        index++;
+      }
+    }
+  }
+  return toTexture(channels, size);
+}
+
+const octaves = (layers: Field[], gain: number): Field => {
+  return (u, v, w) => {
+    let total = 0;
+    let amplitude = 1;
+    let range = 0;
+    for (const layer of layers) {
+      total += layer(u, v, w) * amplitude;
+      range += amplitude;
+      amplitude *= gain;
+    }
+    return total / range;
+  };
+};
+
+/**
+ * The cloud noise, generated once on the CPU. Both volumes are tileable, so
+ * they can be repeated across a world 12,700 km wide.
+ *
+ * `shape` (64³) — R: Perlin–Worley, billowy base shapes. G: Worley fbm,
+ * mid-scale erosion. B: fine Worley fbm, wisps.
+ *
+ * `weather` (48³) — R: where the cloud systems are. G: how tall clouds grow.
+ * Sampled by direction from the centre, so one tap gives the weather.
+ */
+export function createCloudNoiseTextures() {
+  const random = createRandom(0x51ed270b);
+  const perlin = octaves(
+    [4, 8, 16].map((period) => createTileablePerlin(period, random)),
+    0.5,
+  );
+  const billow = octaves(
+    [4, 8, 16].map((cells) => createTileableWorley(cells, random)),
+    0.5,
+  );
+  const erosion = octaves(
+    [6, 12, 24].map((cells) => createTileableWorley(cells, random)),
+    0.5,
+  );
+  const wisps = octaves(
+    [10, 20].map((cells) => createTileableWorley(cells, random)),
+    0.5,
+  );
+  const shape = fillVolume(NOISE_SIZE, [
+    (u, v, w) => {
+      const cells = billow(u, v, w);
+      // Perlin remapped so Worley cells bulge out of it.
+      const base = perlin(u, v, w) * 0.5 + 0.5;
+      return (base - (1 - cells) * 0.6) / (1 - (1 - cells) * 0.6 + 1e-3);
+    },
+    erosion,
+    wisps,
+  ]);
+
+  const systems = octaves(
+    [2, 5].map((period) => createTileablePerlin(period, random)),
+    0.5,
+  );
+  const growth = octaves(
+    [3, 7].map((period) => createTileablePerlin(period, random)),
+    0.5,
+  );
+  const weather = fillVolume(WEATHER_SIZE, [systems, growth]);
+
+  return {
+    shape,
+    weather,
+    dispose() {
+      shape.dispose();
+      weather.dispose();
+    },
+  };
+}
+
+export type CloudNoiseTextures = ReturnType<typeof createCloudNoiseTextures>;
+
 /**
  * A cloud deck for the inside of the shell.
  *
@@ -210,13 +252,13 @@ export function createCloudNoiseTexture() {
  * this world travels along radii, that makes the light's path through the
  * cloud a one-dimensional problem — `shadow()` is the optical depth of the
  * column above a point, in closed form. It plays the role of the Beer shadow
- * maps in three-geospatial's clouds, without the maps: the same function
+ * maps in three-geospatial's clouds, without the maps: the same quantity
  * shadows the ground, the sea, the cloud itself and every sample of the air,
  * which is where the shafts of light under broken cloud come from.
  */
-export function createClouds(u: HollowEarthUniforms, noiseTexture: THREE.Data3DTexture) {
+export function createClouds(u: HollowEarthUniforms, noise: CloudNoiseTextures) {
   // Explicit level: these are sampled inside loops and branches.
-  const sample = (position: TslNode) => texture3D(noiseTexture, position, 0);
+  const shapeAt = (position: TslNode) => texture3D(noise.shape, position, 0);
 
   /** Rotate about the world Y axis by the wind angle, so weather drifts. */
   const drift = (position: TslNode) => {
@@ -230,36 +272,56 @@ export function createClouds(u: HollowEarthUniforms, noiseTexture: THREE.Data3DT
   };
 
   /**
-   * Weather at a direction from the centre: x = coverage (0 = clear sky,
-   * 1 = overcast), y = how tall the clouds grow there (0..1 of the deck).
+   * Weather at a direction from the centre, in one texture tap: x = coverage
+   * (0 = clear sky), y = how tall the clouds grow there (0..1 of the deck).
    */
-  const weather = Fn(([direction]: [TslNode]) => {
-    const d = drift(direction).toVar();
-    const systems = sample(d.mul(0.9).add(vec3(0.13, 0.57, 0.31))).b;
-    const fronts = sample(
-      vec3(d.z, d.x, d.y)
-        .mul(2.3)
-        .add(vec3(0.71, 0.22, 0.48)),
-    ).b;
-    const pattern = systems.mul(0.62).add(fronts.mul(0.38));
+  const weather = (direction: TslNode) => {
+    const local = texture3D(
+      noise.weather,
+      drift(direction)
+        .mul(0.83)
+        .add(vec3(0.13, 0.57, 0.31)),
+      0,
+    );
     // Capped below 1 so even the thickest systems keep breaks in them.
-    const coverage = clamp(pattern.sub(float(1).sub(u.cloudCoverage)).mul(2.6).add(0.5), 0, 0.86);
-    const growth = sample(
-      vec3(d.y, d.z, d.x)
-        .mul(1.6)
-        .add(vec3(0.4, 0.9, 0.15)),
-    ).b;
-    return vec3(coverage, mix(float(0.3), float(1), smoothstep(0.3, 0.75, growth)), 0);
-  });
-
-  /** Base cloud shape before fine erosion, from the weather and one tap. */
-  const baseShape = (position: TslNode, coverage: TslNode, profile: TslNode) => {
-    const shape = sample(drift(position).mul(SHAPE_SCALE)).r;
-    return clamp(shape.mul(profile).sub(float(1).sub(coverage)).div(coverage.max(1e-3)), 0, 1);
+    const coverage = clamp(local.r.sub(float(1).sub(u.cloudCoverage)).mul(2.6).add(0.5), 0, 0.86);
+    return vec3(coverage, mix(float(0.3), float(1), smoothstep(0.3, 0.75, local.g)), 0);
   };
 
-  /** Cloud density (0..1) at a world position. */
-  const density = Fn(([position]: [TslNode]) => {
+  /** Base cloud shape before fine erosion, from the weather and one tap. */
+  const baseShape = (position: TslNode, coverage: TslNode, profile: TslNode) =>
+    clamp(
+      shapeAt(drift(position).mul(SHAPE_SCALE))
+        .r.mul(profile)
+        .sub(float(1).sub(coverage))
+        .div(coverage.max(1e-3)),
+      0,
+      1,
+    );
+
+  /**
+   * Optical depth of the whole cloud column in a direction: the weather
+   * times one shape tap at mid-deck.
+   */
+  const columnDepth = (direction: TslNode, local: TslNode) => {
+    const deckDepth = local.y.mul(CLOUD_TOP - CLOUD_BASE);
+    const middle = direction.mul(float(SHELL_RADIUS - CLOUD_BASE).sub(deckDepth.mul(0.4)));
+    return baseShape(middle, local.x, float(0.85))
+      .mul(deckDepth)
+      .mul(0.5 * CLOUD_EXTINCTION)
+      .mul(u.cloudDensity);
+  };
+
+  /** Fraction of a column's cloud that lies above `heightFraction`. */
+  const above = (heightFraction: TslNode, local: TslNode) =>
+    float(1).sub(smoothstep(0, local.y, heightFraction));
+
+  /**
+   * One march sample: x = cloud density (0..1) at a world position, y = the
+   * optical depth of cloud between it and the sun. Costs nothing outside the
+   * deck, one tap under clear sky, and five inside a cloud.
+   */
+  const sample = Fn(([position]: [TslNode]) => {
     const p = vec3(position).toVar();
     const radius = p.length().toVar();
     const altitude = float(SHELL_RADIUS).sub(radius);
@@ -267,10 +329,11 @@ export function createClouds(u: HollowEarthUniforms, noiseTexture: THREE.Data3DT
       .sub(CLOUD_BASE)
       .div(CLOUD_TOP - CLOUD_BASE)
       .toVar();
-    const result = float(0).toVar();
+    const result = vec3(0).toVar();
 
     If(heightFraction.greaterThan(0).and(heightFraction.lessThan(1)), () => {
-      const local = weather(p.div(radius)).toVar();
+      const direction = p.div(radius).toVar();
+      const local = weather(direction).toVar();
       If(local.x.greaterThan(0.01), () => {
         // Rounded bottoms, tops set by how tall clouds grow here.
         const profile = smoothstep(0, 0.1, heightFraction).mul(
@@ -279,16 +342,17 @@ export function createClouds(u: HollowEarthUniforms, noiseTexture: THREE.Data3DT
         const base = baseShape(p, local.x, profile).toVar();
         If(base.greaterThan(0.001), () => {
           const moved = drift(p).toVar();
-          const erosion = sample(moved.mul(DETAIL_SCALE))
+          const erosion = shapeAt(moved.mul(DETAIL_SCALE))
             .g.mul(0.65)
-            .add(sample(moved.mul(WISP_SCALE)).a.mul(0.35));
+            .add(shapeAt(moved.mul(WISP_SCALE)).b.mul(0.35));
           // Erode the edges, leave the cores solid.
-          const strength = float(1).sub(base.mul(0.75)).mul(0.6);
-          result.assign(
+          const strength = float(1).sub(base.mul(0.75)).mul(0.48);
+          result.x.assign(
             clamp(base.sub(erosion.mul(strength)).div(float(1).sub(strength)), 0, 1).mul(
               u.cloudDensity,
             ),
           );
+          result.y.assign(columnDepth(direction, local).mul(above(heightFraction, local)));
         });
       });
     });
@@ -297,28 +361,24 @@ export function createClouds(u: HollowEarthUniforms, noiseTexture: THREE.Data3DT
   });
 
   /**
-   * Optical depth of the cloud between `position` and the sun. Closed form:
-   * the column's total depth (weather × one shape tap at mid-deck) times the
-   * fraction of the profile that lies above `position`.
+   * Fraction of direct sunlight reaching `position` through the clouds, for
+   * the ground, the sea and the air. Closed form — the column's depth times
+   * the fraction of the profile above the point — in two texture taps.
+   * Never fully black: light scattered forward through cloud still arrives.
    */
-  const opticalDepth = Fn(([position]: [TslNode]) => {
+  const shadow = Fn(([position]: [TslNode]) => {
     const p = vec3(position).toVar();
     const radius = p.length().toVar();
     const altitude = float(SHELL_RADIUS).sub(radius);
-    const result = float(0).toVar();
+    const result = float(1).toVar();
 
     If(altitude.lessThan(CLOUD_TOP), () => {
       const direction = p.div(radius).toVar();
       const local = weather(direction).toVar();
       If(local.x.greaterThan(0.01), () => {
-        const deckDepth = local.y.mul(CLOUD_TOP - CLOUD_BASE);
-        const middle = direction.mul(float(SHELL_RADIUS - CLOUD_BASE).sub(deckDepth.mul(0.4)));
-        const column = baseShape(middle, local.x, float(0.85))
-          .mul(deckDepth)
-          .mul(0.5 * CLOUD_EXTINCTION)
-          .mul(u.cloudDensity);
         const heightFraction = altitude.sub(CLOUD_BASE).div(CLOUD_TOP - CLOUD_BASE);
-        result.assign(column.mul(float(1).sub(smoothstep(0, local.y, heightFraction))));
+        const depth = columnDepth(direction, local).mul(above(heightFraction, local));
+        result.assign(exp(depth.mul(u.cloudShadowStrength).negate()).mul(0.9).add(0.1));
       });
     });
 
@@ -326,28 +386,19 @@ export function createClouds(u: HollowEarthUniforms, noiseTexture: THREE.Data3DT
   });
 
   /**
-   * Fraction of direct sunlight reaching `position` through the clouds, for
-   * the ground, the sea and the air. Never fully black: light scattered
-   * forward through the cloud still arrives.
+   * Sunlight surviving `depth` of cloud, for a point *inside* the cloud.
+   * Light that has scattered several times travels much further than Beer's
+   * law allows, which is why clouds are white and not black inside;
+   * approximated by summing a few progressively weaker, progressively more
+   * penetrating copies.
    */
-  const shadow = (position: TslNode) =>
-    exp(opticalDepth(position).mul(u.cloudShadowStrength).negate()).mul(0.9).add(0.1);
-
-  /**
-   * Sunlight reaching a point *inside* the cloud. Light that has scattered
-   * several times travels much further than Beer's law allows, which is why
-   * clouds are white and not black inside; approximated by summing a few
-   * progressively weaker, progressively more penetrating copies.
-   */
-  const interiorLight = (position: TslNode) => {
-    const depth = opticalDepth(position).toVar();
-    return exp(depth.negate())
+  const interiorLight = (depth: TslNode) =>
+    exp(depth.negate())
       .add(exp(depth.mul(-0.3)).mul(0.5))
       .add(exp(depth.mul(-0.08)).mul(0.25))
       .div(1.75);
-  };
 
-  return { density, shadow, interiorLight, extinction: CLOUD_EXTINCTION };
+  return { sample, shadow, interiorLight, extinction: CLOUD_EXTINCTION };
 }
 
 export type HollowEarthClouds = ReturnType<typeof createClouds>;

@@ -9,6 +9,11 @@ export interface QualityPreset {
   atmosphereSteps: number;
   /** Atmosphere samples per segment for the sky reflected in the water. */
   reflectionSteps: number;
+  /**
+   * Resolution of the atmosphere and cloud march, as a fraction of the
+   * canvas. Its cost falls with the square of this.
+   */
+  volumeScale: number;
   /** Cloud samples through the deck around the camera, and across the world. */
   cloudSteps: number;
   cloudFarSteps: number;
@@ -31,6 +36,7 @@ export const QUALITY_PRESETS = {
     label: "Low",
     atmosphereSteps: 6,
     reflectionSteps: 3,
+    volumeScale: 0.34,
     cloudSteps: 10,
     cloudFarSteps: 4,
     waveCount: 12,
@@ -44,6 +50,7 @@ export const QUALITY_PRESETS = {
     label: "Standard",
     atmosphereSteps: 10,
     reflectionSteps: 4,
+    volumeScale: 0.5,
     cloudSteps: 18,
     cloudFarSteps: 6,
     waveCount: 18,
@@ -57,6 +64,7 @@ export const QUALITY_PRESETS = {
     label: "High",
     atmosphereSteps: 16,
     reflectionSteps: 8,
+    volumeScale: 0.5,
     cloudSteps: 32,
     cloudFarSteps: 10,
     waveCount: 28,
@@ -70,6 +78,7 @@ export const QUALITY_PRESETS = {
     label: "Ultra",
     atmosphereSteps: 32,
     reflectionSteps: 12,
+    volumeScale: 0.5,
     cloudSteps: 56,
     cloudFarSteps: 16,
     waveCount: 40,
