@@ -38,6 +38,7 @@ import {
   NYX_INDEX,
   ORBITING_BODIES,
   SHELL_RADIUS,
+  daylightAt,
   updateHollowEarthState,
 } from "@/examples/hollow-earth/world";
 import { SurfaceFlyCamera } from "@/examples/terrain/SurfaceFlyCamera";
@@ -189,8 +190,8 @@ function HollowEarthSceneImpl({
           exposure: { value: 0.22, min: 0.02, max: 2, step: 0.01 },
           adaptExposure: { value: true, label: "eye adaptation" },
           terminatorWarmth: { value: 0.7, min: 0, max: 1, step: 0.05 },
-          worldshine: { value: 0.045, min: 0, max: 0.4, step: 0.005 },
-          starlight: { value: 0.035, min: 0, max: 0.2, step: 0.001 },
+          worldshine: { value: 0.012, min: 0, max: 0.4, step: 0.005 },
+          starlight: { value: 0.006, min: 0, max: 0.2, step: 0.001 },
         },
         { collapsed: true },
       ),
@@ -325,6 +326,7 @@ function HollowEarthSceneImpl({
 
   const seconds = useRef(0);
   const adaptation = useRef(1);
+  const darkAdapted = useRef(1);
   const ambientScratch = useMemo(() => new THREE.Vector3(), []);
   const starlightScratch = useMemo(() => new THREE.Vector3(), []);
   useFrame((root, delta) => {
@@ -366,11 +368,19 @@ function HollowEarthSceneImpl({
     // a hundred times darker than noon. Eased, so a lamp catching does not
     // snap the exposure.
     const gain = controls.adaptExposure
-      ? Math.min(7, Math.max(state.brightness, 0.015) ** -0.45)
+      ? Math.min(3, Math.max(state.brightness, 0.015) ** -0.4)
       : 1;
     adaptation.current += (gain - adaptation.current) * Math.min(1, delta * 2.5);
     renderer.toneMappingExposure = controls.exposure * adaptation.current;
     atmosphere.setAdaptation(1 / adaptation.current);
+    // Stars and gas only show to dark-adapted eyes: at night, or out in the
+    // vacuum where there is no lit ground filling your view.
+    const daylight = daylightAt(state, camera.position);
+    const inAir =
+      1 - THREE.MathUtils.smoothstep(SHELL_RADIUS - camera.position.length(), 60_000, 160_000);
+    const target = 1 - inAir * (1 - 1 / (1 + (daylight / 0.03) ** 2));
+    darkAdapted.current += (target - darkAdapted.current) * Math.min(1, delta * 1.5);
+    atmosphere.setDarkAdapted(darkAdapted.current);
     // A sun that has merely dimmed still shows embers; a dead one does not.
     uniforms.sunEmbers.value = state.lightSystem === "pulse" ? 1 : 0;
     cosmosUniforms.pixelAngle.value =

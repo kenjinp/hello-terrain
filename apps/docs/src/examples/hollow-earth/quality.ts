@@ -9,6 +9,8 @@ export interface QualityPreset {
   atmosphereSteps: number;
   /** Samples through the interior gas along each ray. */
   nebulaSteps: number;
+  /** Whether eclipse shadows fall through the interior gas (costly). */
+  nebulaShadows: boolean;
   /** Atmosphere samples per segment for the sky reflected in the water. */
   reflectionSteps: number;
   /**
@@ -34,7 +36,8 @@ export const QUALITY_PRESETS = {
   low: {
     label: "Low",
     atmosphereSteps: 6,
-    nebulaSteps: 6,
+    nebulaSteps: 4,
+    nebulaShadows: false,
     reflectionSteps: 3,
     volumeScale: 0.34,
     waveCount: 12,
@@ -47,7 +50,8 @@ export const QUALITY_PRESETS = {
   standard: {
     label: "Standard",
     atmosphereSteps: 10,
-    nebulaSteps: 10,
+    nebulaSteps: 6,
+    nebulaShadows: false,
     reflectionSteps: 4,
     volumeScale: 0.5,
     waveCount: 18,
@@ -60,7 +64,8 @@ export const QUALITY_PRESETS = {
   high: {
     label: "High",
     atmosphereSteps: 16,
-    nebulaSteps: 16,
+    nebulaSteps: 10,
+    nebulaShadows: true,
     reflectionSteps: 8,
     volumeScale: 0.5,
     waveCount: 28,
@@ -73,7 +78,8 @@ export const QUALITY_PRESETS = {
   ultra: {
     label: "Ultra",
     atmosphereSteps: 32,
-    nebulaSteps: 28,
+    nebulaSteps: 16,
+    nebulaShadows: true,
     reflectionSteps: 12,
     volumeScale: 0.5,
     waveCount: 40,

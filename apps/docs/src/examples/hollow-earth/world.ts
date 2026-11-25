@@ -212,6 +212,50 @@ export interface HollowEarthState {
   brightness: number;
 }
 
+/**
+ * How brightly a point is lit, relative to standing under the full sun: every
+ * light that is on, with inverse-square falloff and the same disc-against-cone
+ * eclipse test the shaders use. Used to decide how adapted to daylight an
+ * observer there would be.
+ */
+export function daylightAt(state: HollowEarthState, point: Vector3): number {
+  let total = 0;
+  for (let k = 0; k < LIGHT_COUNT; k++) {
+    const color = state.lightColors[k];
+    const luminance = 0.2126 * color.x + 0.7152 * color.y + 0.0722 * color.z;
+    if (luminance < 1e-5) continue;
+    const ownBody = k === 0 ? -1 : LIGHT_BODY_INDICES[k - 1];
+    const lightRadius = k === 0 ? SUN_RADIUS : ORBITING_BODIES[ownBody].radius;
+    const lx = k === 0 ? 0 : state.bodyPositions[ownBody].x;
+    const ly = k === 0 ? 0 : state.bodyPositions[ownBody].y;
+    const lz = k === 0 ? 0 : state.bodyPositions[ownBody].z;
+    const dx = lx - point.x;
+    const dy = ly - point.y;
+    const dz = lz - point.z;
+    const distance = Math.max(Math.hypot(dx, dy, dz), lightRadius);
+    let visible = 1;
+    for (let i = 0; i < ORBITING_BODIES.length; i++) {
+      if (i === ownBody || (i === NYX_INDEX && !state.nyxPresent)) continue;
+      const body = state.bodyPositions[i];
+      const bx = body.x - point.x;
+      const by = body.y - point.y;
+      const bz = body.z - point.z;
+      const along = (bx * dx + by * dy + bz * dz) / distance;
+      if (along <= 0 || along >= distance) continue;
+      const miss = Math.sqrt(Math.max(bx * bx + by * by + bz * bz - along * along, 0));
+      const radius = ORBITING_BODIES[i].radius;
+      const cone = Math.max((lightRadius * along) / distance, 1);
+      const low = Math.abs(radius - cone);
+      const t = Math.min(Math.max((miss - low) / (radius + cone - low), 0), 1);
+      const covered = Math.min(radius, cone) / cone;
+      visible *= 1 - (1 - t * t * (3 - 2 * t)) * covered * covered;
+    }
+    const falloff = SHELL_RADIUS / distance;
+    total += luminance * falloff * falloff * visible;
+  }
+  return total;
+}
+
 export function createHollowEarthState(): HollowEarthState {
   const state: HollowEarthState = {
     days: 0.31,

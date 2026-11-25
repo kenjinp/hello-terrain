@@ -281,28 +281,33 @@ export function createCosmos(
     const r = distance.div(COSMOS_RADIUS).toVar();
     const direction = p.div(distance);
 
-    const masses = noiseAt(p.mul(1 / 7.5e6).add(vec3(0.21, 0.63, 0.47))).r;
-    // Sampled in log-radius: every halving of the distance to the centre
-    // repeats the pattern at half the size, so structure never runs out as
-    // you look inward — the gas has no largest or smallest scale.
-    const depth = log(r.add(0.035));
-    const nested = noiseAt(direction.mul(1.3).add(vec3(0.6, 1.0, 0.8).mul(depth.mul(0.85)))).b;
-    const filaments = noiseAt(p.mul(1 / 1.6e6)).g;
+    const masses = noiseAt(p.mul(1 / 7.5e6).add(vec3(0.21, 0.63, 0.47))).r.toVar();
+    const floor = float(0.98).sub(cosmos.nebulaDensity.mul(0.34)).toVar();
+    const result = vec4(0).toVar();
+    // Most of the volume is empty, and the large masses alone can tell: skip
+    // the other two fetches wherever even the densest fine structure could
+    // not lift this point over the threshold.
+    If(masses.mul(0.62).add(0.58).greaterThan(floor), () => {
+      // Sampled in log-radius: every halving of the distance to the centre
+      // repeats the pattern at half the size, so structure never runs out as
+      // you look inward — the gas has no largest or smallest scale.
+      const depth = log(r.add(0.035));
+      const nested = noiseAt(direction.mul(1.3).add(vec3(0.6, 1.0, 0.8).mul(depth.mul(0.85)))).b;
+      const filaments = noiseAt(p.mul(1 / 1.6e6)).g;
 
-    const body = masses
-      .mul(0.62)
-      .add(nested.mul(0.58))
-      .sub(float(0.98).sub(cosmos.nebulaDensity.mul(0.34)));
-    const density = body
-      .mul(2.4)
-      .clamp(0, 1)
-      .mul(filaments.mul(0.95).add(0.4))
-      // Thin out against the air, so the gas never touches the sky.
-      .mul(float(1).sub(smoothstep(0.84, 1, r)));
+      const body = masses.mul(0.62).add(nested.mul(0.58)).sub(floor);
+      const density = body
+        .mul(2.4)
+        .clamp(0, 1)
+        .mul(filaments.mul(0.95).add(0.4))
+        // Thin out against the air, so the gas never touches the sky.
+        .mul(float(1).sub(smoothstep(0.84, 1, r)));
 
-    const warm = mix(vec3(1.0, 0.26, 0.4), vec3(0.16, 0.6, 0.78), smoothstep(0.35, 0.7, nested));
-    const color = mix(warm, vec3(0.45, 0.3, 1.0), smoothstep(0.45, 0.9, filaments).mul(0.6));
-    return vec4(color, density);
+      const warm = mix(vec3(1.0, 0.26, 0.4), vec3(0.16, 0.6, 0.78), smoothstep(0.35, 0.7, nested));
+      const color = mix(warm, vec3(0.45, 0.3, 1.0), smoothstep(0.45, 0.9, filaments).mul(0.6));
+      result.assign(vec4(color, density));
+    });
+    return result;
   });
 
   /**
@@ -316,6 +321,7 @@ export function createCosmos(
     rayDirection: TslNode,
     sceneDistance: TslNode,
     steps: number,
+    shadows: boolean,
   ) {
     const origin = vec3(rayOrigin).toVar();
     const direction = vec3(rayDirection).toVar();
@@ -351,9 +357,22 @@ export function createCosmos(
         If(sample.a.greaterThan(0.004), () => {
           const lit = vec3(0).toVar();
           const altitude = float(SHELL_RADIUS).sub(length(position));
-          shading.forEachLight(position, altitude, ({ radiance: light }) => {
-            lit.addAssign(min(light, brightest));
-          });
+          if (shadows) {
+            shading.forEachLight(position, altitude, ({ radiance: light }) => {
+              lit.addAssign(min(light, brightest));
+            });
+          } else {
+            // Unshadowed: inverse-square falloff from each light and nothing
+            // else. A fraction of the cost, and the gas is too thin for the
+            // missing eclipse cones to be obvious.
+            for (const light of u.lights) {
+              const offset = light.position.xyz.sub(position);
+              const falloffSq = float(SHELL_RADIUS * SHELL_RADIUS).div(
+                dot(offset, offset).max(light.position.w.mul(light.position.w)),
+              );
+              lit.addAssign(min(light.color.mul(u.sunIntensity).mul(falloffSq), brightest));
+            }
+          }
           const emitted = sample.rgb.mul(glow).add(sample.rgb.mul(lit).mul(0.006));
           const stepTransmittance = exp(
             sample.a.mul(stepLength).mul(cosmos.nebulaDensity).mul(-GAS_EXTINCTION),

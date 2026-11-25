@@ -2,6 +2,8 @@ import { fxaa } from "three/addons/tsl/display/FXAANode.js";
 import {
   dot,
   float,
+  If,
+  mix,
   Fn,
   ivec2,
   logarithmicDepthToViewZ,
@@ -50,7 +52,12 @@ export function createAtmospherePipeline(
   shading: HollowEarthShading,
   /** The interior starscape, or null to leave the inside of the world empty. */
   cosmos: HollowEarthCosmos | null,
-  quality: { atmosphereSteps: number; nebulaSteps: number; volumeScale: number },
+  quality: {
+    atmosphereSteps: number;
+    nebulaSteps: number;
+    nebulaShadows: boolean;
+    volumeScale: number;
+  },
 ) {
   // The pass has its own camera uniforms: inside the full-screen quad the
   // built-in camera nodes describe the quad's camera, not the scene's.
@@ -68,6 +75,8 @@ export function createAtmospherePipeline(
     nearAir: uniform(0.5),
     /** Scene luminance at which stars start to wash out. */
     adaptation: uniform(1),
+    /** 1 when the observer's eyes are dark-adapted, towards 0 in daylight. */
+    darkAdapted: uniform(1),
     /** Size of the scene's colour and depth targets, in pixels. */
     sceneSize: uniform(new THREE.Vector2(1, 1)),
     /** Size of the reduced-resolution volume target, in pixels. */
@@ -114,10 +123,27 @@ export function createAtmospherePipeline(
       );
       if (!cosmos) return vec4(air.inscatter, 1);
 
-      const nebula = cosmos.marchNebula(view.position, direction, distance, quality.nebulaSteps);
-      // The gas is beyond the air around the camera, so that air veils it.
-      const veil = pow(air.transmittance, vec3(view.nearAir));
-      return vec4(air.inscatter.add(nebula.radiance.mul(veil)), nebula.transmittance);
+      // Standing in daylight the gas cannot be seen at all, so it is not
+      // marched either — which is most of what it costs.
+      const result = vec4(air.inscatter, 1).toVar();
+      If(view.darkAdapted.greaterThan(0.01), () => {
+        const nebula = cosmos.marchNebula(
+          view.position,
+          direction,
+          distance,
+          quality.nebulaSteps,
+          quality.nebulaShadows,
+        );
+        // The gas is beyond the air around the camera, so that air veils it.
+        const veil = pow(air.transmittance, vec3(view.nearAir)).mul(view.darkAdapted);
+        result.assign(
+          vec4(
+            air.inscatter.add(nebula.radiance.mul(veil)),
+            mix(float(1), nebula.transmittance, view.darkAdapted),
+          ),
+        );
+      });
+      return result;
     })(),
     null,
     null,
@@ -171,14 +197,19 @@ export function createAtmospherePipeline(
     if (cosmos) {
       // Stars are computed here, per full-resolution pixel, so they stay
       // sharp; they sit inside the gas and behind the air around the camera.
-      const stars = cosmos.starfield(view.position, ray.direction, distance);
-      const veil = pow(airTransmittance, vec3(view.nearAir));
       const lit = behind.mul(airTransmittance).add(light.rgb).toVar();
-      // An eye adapted to a bright sky or a sunlit landscape cannot see
-      // stars against it. Fade them by how bright their backdrop is.
+      // An eye adapted to daylight cannot see stars, and nor can one looking
+      // at a bright sky or a sunlit landscape. Fade them by both — and skip
+      // working them out at all where they would not show.
       const backdrop = dot(lit, vec3(0.2126, 0.7152, 0.0722)).div(view.adaptation);
-      const drowned = float(1).div(backdrop.mul(backdrop).mul(4).add(1));
-      return vec4(lit.add(stars.mul(light.a.sqrt()).mul(veil).mul(drowned)), 1);
+      const seen = view.darkAdapted.div(backdrop.mul(backdrop).mul(40).add(1)).toVar();
+      const result = vec4(lit, 1).toVar();
+      If(seen.greaterThan(0.004), () => {
+        const stars = cosmos.starfield(view.position, ray.direction, distance);
+        const veil = pow(airTransmittance, vec3(view.nearAir));
+        result.rgb.addAssign(stars.mul(light.a.sqrt()).mul(veil).mul(seen));
+      });
+      return result;
     }
     return vec4(behind.mul(airTransmittance).add(light.rgb), 1);
   })();
@@ -213,6 +244,10 @@ export function createAtmospherePipeline(
     /** Scene luminance at which stars start to wash out (drops as the eye adapts). */
     setAdaptation(level: number) {
       view.adaptation.value = level;
+    },
+    /** How dark-adapted the observer is: 1 at night or in space, 0 in daylight. */
+    setDarkAdapted(level: number) {
+      view.darkAdapted.value = level;
     },
     dispose() {
       volume.renderTarget?.dispose();
